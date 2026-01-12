@@ -369,6 +369,48 @@ mod treasury_tests {
                     assert_eq!(Curr::free_balance(&burn), 140u128);
                 });
             }
+
+            #[test]
+            fn fund_treasury_above_threshold_only_sweeps_up_to_burn_cap() {
+                let mut ext = ExtBuilder::build_default()
+                    .with_genesis_config()
+                    .with_balances()
+                    .as_externality();
+
+                ext.execute_with(|| {
+                    // In tests BalanceOf<TestRuntime> is u128, so this is fine.
+                    let total_supply: BalanceOf<TestRuntime> = 10_000u128.into();
+                    TotalSupply::<TestRuntime>::put(total_supply);
+
+                    let treasury = TokenManager::compute_treasury_account_id();
+                    let burn = TokenManager::burn_pot_account();
+
+                    let threshold: BalanceOf<TestRuntime> =
+                        <TestRuntime as token_manager::Config>::TreasuryBurnThreshold::get() * total_supply;
+
+                    let cap: BalanceOf<TestRuntime> = <TestRuntime as token_manager::Config>::TreasuryBurnCap::get();
+                    assert!(cap > 0u128.into());
+
+                    // Make treasury exceed threshold by more than the cap
+                    let extra_over_cap: BalanceOf<TestRuntime> = 123u128.into();
+                    let excess: BalanceOf<TestRuntime> = cap.saturating_add(extra_over_cap);
+                    let fund_amount: BalanceOf<TestRuntime> = threshold.saturating_add(excess);
+
+                    let from = account_id_with_100_avt();
+
+                    <crate::pallet::Pallet<TestRuntime> as TreasuryManager<TestRuntime>>::fund_treasury(
+                        from.clone(),
+                        fund_amount,
+                    )
+                    .unwrap();
+
+                    // Only `cap` should be swept
+                    assert_eq!(Curr::free_balance(&burn), cap);
+
+                    // Treasury remains above threshold by (excess - cap) == extra_over_cap
+                    assert_eq!(Curr::free_balance(&treasury), threshold.saturating_add(extra_over_cap));
+                });
+            }
         }
     }
 }

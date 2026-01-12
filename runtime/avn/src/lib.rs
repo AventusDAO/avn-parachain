@@ -668,6 +668,7 @@ parameter_types! {
     pub const MinBurnPeriod: u32 = 7200;
     pub const BurnEnabled: bool = true;
     pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const TreasuryBurnCap: u128 = 10 * AVT;
 }
 
 impl pallet_summary::Config for Runtime {
@@ -704,6 +705,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type MinBurnPeriod = MinBurnPeriod;
     type BurnEnabled = BurnEnabled;
     type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 impl pallet_nft_manager::Config for Runtime {

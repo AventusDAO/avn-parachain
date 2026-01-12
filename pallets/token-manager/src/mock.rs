@@ -93,6 +93,7 @@ parameter_types! {
     pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
     pub const MinBurnPeriod: u32 = 50;
     pub static BurnEnabledFlag: bool = true;
+    pub const TreasuryBurnCap: u128 = 10 * ONE_TOKEN;
 }
 
 pub struct BurnEnabled;
@@ -122,6 +123,7 @@ impl token_manager::Config for TestRuntime {
     type TreasuryBurnThreshold = TreasuryBurnThreshold;
     type MinBurnPeriod = MinBurnPeriod;
     type BurnEnabled = BurnEnabled;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 parameter_types! {

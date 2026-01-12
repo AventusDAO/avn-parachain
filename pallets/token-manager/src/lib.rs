@@ -174,6 +174,9 @@ pub mod pallet {
         /// Flag to enable burn mechanism
         #[pallet::constant]
         type BurnEnabled: Get<bool>;
+        /// Max amount allowed to be burned at once
+        #[pallet::constant]
+        type TreasuryBurnCap: Get<BalanceOf<Self>>;
     }
 
     #[pallet::pallet]
