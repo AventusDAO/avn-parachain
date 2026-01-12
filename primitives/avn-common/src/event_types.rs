@@ -166,9 +166,9 @@ impl ValidEvents {
             ValidEvents::Erc20DirectTransfer =>
                 H256(hex!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")),
 
-            // keccak256("LogAvtSupplyUpdated(uint256,uint256,uint32)")
+            // hex string of keccak256 for LogAvtSupplyUpdated(uint256,uint256,uint32)
             ValidEvents::AvtSupplyUpdated =>
-                H256(hex!("0000000000000000000000000000000000000000000000000000000000000000")),
+                H256(hex!("4f329d0d0d89ca94365b34a2342dc677a3891e1cfe20e5fe9ed28e438649a540")),
         }
     }
 
