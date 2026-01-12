@@ -45,15 +45,29 @@ impl<T: Config> Pallet<T> {
             return;
         }
 
+        let cap = T::TreasuryBurnCap::get();
+        let burn_amount = excess.min(cap);
+
+        if burn_amount.is_zero() {
+            return;
+        }
+
         let treasury = Self::compute_treasury_account_id();
         let burn_pot = Self::burn_pot_account();
 
-        match T::Currency::transfer(&treasury, &burn_pot, excess, ExistenceRequirement::KeepAlive) {
+        match T::Currency::transfer(
+            &treasury,
+            &burn_pot,
+            burn_amount,
+            ExistenceRequirement::KeepAlive,
+        ) {
             Ok(_) => {
-                Self::deposit_event(Event::<T>::TreasuryExcessSentToBurnPot { amount: excess });
+                Self::deposit_event(Event::<T>::TreasuryExcessSentToBurnPot {
+                    amount: burn_amount,
+                });
             },
             Err(e) => {
-                log::error!("Failed to sweep {:?} to burn pot: {:?}", excess, e);
+                log::error!("Failed to sweep {:?} to burn pot: {:?}", burn_amount, e);
             },
         }
     }
