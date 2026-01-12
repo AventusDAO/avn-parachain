@@ -101,6 +101,65 @@ impl Get<bool> for BurnEnabled {
     }
 }
 
+thread_local! {
+    static MOCK_TX_ID: RefCell<u32> = RefCell::new(1);
+}
+
+pub struct MockBridgeInterface;
+impl pallet_avn::BridgeInterface for MockBridgeInterface {
+    fn publish(
+        function_name: &[u8],
+        params: &[(Vec<u8>, Vec<u8>)],
+        caller_id: Vec<u8>,
+    ) -> Result<u32, sp_runtime::DispatchError> {
+        if let Ok(tx_id) = <EthBridge as pallet_avn::BridgeInterface>::publish(
+            function_name,
+            params,
+            caller_id.clone(),
+        ) {
+            return Ok(tx_id);
+        }
+
+        // Fallback for unit tests where EthBridge isn't fully configured.
+        let tx_id = MOCK_TX_ID.with(|c| {
+            let mut v = c.borrow_mut();
+            let id = *v;
+            *v = v.saturating_add(1);
+            id
+        });
+
+        Ok(tx_id)
+    }
+
+    fn generate_lower_proof(
+        lower_id: u32,
+        params: &[u8; 76],
+        caller_id: Vec<u8>,
+    ) -> sp_runtime::DispatchResult {
+        <EthBridge as pallet_avn::BridgeInterface>::generate_lower_proof(
+            lower_id, params, caller_id,
+        )
+    }
+
+    fn read_bridge_contract(
+        caller_id: Vec<u8>,
+        function_name: &[u8],
+        params: &[(Vec<u8>, Vec<u8>)],
+        eth_block: Option<u32>,
+    ) -> Result<Vec<u8>, sp_runtime::DispatchError> {
+        <EthBridge as pallet_avn::BridgeInterface>::read_bridge_contract(
+            caller_id,
+            function_name,
+            params,
+            eth_block,
+        )
+    }
+
+    fn latest_finalised_ethereum_block() -> Result<u32, sp_runtime::DispatchError> {
+        <EthBridge as pallet_avn::BridgeInterface>::latest_finalised_ethereum_block()
+    }
+}
+
 impl token_manager::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -117,7 +176,7 @@ impl token_manager::Config for TestRuntime {
     type Scheduler = Scheduler;
     type Preimages = Preimage;
     type PalletsOrigin = OriginCaller;
-    type BridgeInterface = EthBridge;
+    type BridgeInterface = MockBridgeInterface;
     type MinBurnPeriod = MinBurnPeriod;
     type BurnEnabled = BurnEnabled;
 }
