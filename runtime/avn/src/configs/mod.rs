@@ -522,6 +522,16 @@ impl pallet_eth_bridge::Config for Runtime {
     type Quorum = Avn;
 }
 
+parameter_types! {
+    pub const MaxLinkedAccounts: u32 = 10;
+}
+
+impl pallet_cross_chain_voting::pallet::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type MaxLinkedAccounts = MaxLinkedAccounts;
+}
+
 // Other pallets
 parameter_types! {
     pub const AssetDeposit: Balance = 10 * MILLI_AVT;

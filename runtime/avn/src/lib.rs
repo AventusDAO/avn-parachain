@@ -372,6 +372,9 @@ mod runtime {
 
     #[runtime::pallet_index(102)]
     pub type Whitelist = pallet_whitelist;
+
+    #[runtime::pallet_index(103)]
+    pub type CrossChainVoting = pallet_cross_chain_voting;
 }
 
 #[docify::export(register_validate_block)]

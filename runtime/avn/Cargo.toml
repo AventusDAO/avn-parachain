@@ -106,6 +106,8 @@ pallet-eth-bridge.workspace = true
 pallet-eth-bridge-runtime-api.workspace = true
 pallet-parachain-staking.workspace = true
 pallet-avn-anchor.workspace = true
+pallet-cross-chain-voting.workspace = true
+pallet-cross-chain-voting-runtime-api.workspace = true
 
 # Common Runtime
 runtime-common.workspace = true
@@ -186,6 +188,8 @@ std = [
 	"pallet-validators-manager/std",
 	"pallet-avn-transaction-payment/std",
 	"pallet-parachain-staking/std",
+	"pallet-cross-chain-voting/std",
+	"pallet-cross-chain-voting-runtime-api/std",
 	# Avn Common Runtime
 	"runtime-common/std",
 	# OpenGov

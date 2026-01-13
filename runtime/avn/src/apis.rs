@@ -23,7 +23,7 @@ use frame_support::{
 use pallet_aura::Authorities;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata};
+use sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata, H160};
 use sp_runtime::{
     traits::Block as BlockT,
     transaction_validity::{TransactionSource, TransactionValidity},
@@ -274,6 +274,20 @@ impl_runtime_apis! {
         }
     }
 
+    impl pallet_cross_chain_voting_runtime_api::CrossChainVotingApi<Block> for Runtime {
+        fn get_total_linked_balance(t1_identity_account: H160) -> Balance {
+            pallet_cross_chain_voting::Pallet::<Runtime>::get_total_linked_balance(t1_identity_account)
+        }
+
+        fn get_linked_accounts(t1_identity_account: H160) -> Vec<AccountId> {
+            pallet_cross_chain_voting::LinkedAccounts::<Runtime>::get(t1_identity_account).to_vec()
+        }
+
+        fn get_identity_account(t2_linked_account: AccountId) -> Option<H160> {
+            pallet_cross_chain_voting::LinkedAccountToIdentity::<Runtime>::get(t2_linked_account)
+        }
+    }
+    
     impl cumulus_primitives_core::CollectCollationInfo<Block> for Runtime {
         fn collect_collation_info(header: &<Block as BlockT>::Header) -> cumulus_primitives_core::CollationInfo {
             ParachainSystem::collect_collation_info(header)
