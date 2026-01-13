@@ -1,4 +1,4 @@
-// Copyright 2025 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus Network Services (UK) Ltd.
 
 //! This pallet implements the AvN pallet's **BridgeInterface** interface, providing a **publish**
 //! and **generate_lower_proof** methods which other pallets, implementing the
