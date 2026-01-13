@@ -109,7 +109,6 @@ pallet-avn-anchor.workspace = true
 
 # Common Runtime
 runtime-common.workspace = true
-node-primitives.workspace = true
 
 [features]
 default = [
@@ -153,7 +152,6 @@ std = [
 	"parachains-common/std",
 	"polkadot-parachain-primitives/std",
 	"polkadot-runtime-common/std",
-	"node-primitives/std",
 	"sp-api/std",
 	"sp-block-builder/std",
 	"sp-consensus-aura/std",

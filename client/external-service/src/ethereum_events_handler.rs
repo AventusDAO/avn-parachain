@@ -1,11 +1,11 @@
 use crate::{timer::Web3Timer, web3_utils, BlockT, ETH_FINALITY};
 use futures::{future::try_join_all, lock::Mutex};
-use node_primitives::AccountId;
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
 use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_api::ApiExt;
 use sp_avn_common::{
+    primitives::AccountId
     eth::EthBridgeInstance,
     event_discovery::{
         encode_eth_event_submission_data, events_helpers::EthereumEventsPartitionFactory,
@@ -33,7 +33,7 @@ use web3::{
     Web3,
 };
 
-pub use sp_avn_common::context_constants::{
+pub use sp_avn_common::constants::context::{
     SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT, SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
 };
 

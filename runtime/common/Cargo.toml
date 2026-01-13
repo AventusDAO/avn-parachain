@@ -19,7 +19,6 @@ smallvec.workspace = true
 # Substrate
 frame-support = { features = ["experimental"], workspace = true }
 sp-runtime.workspace = true
-node-primitives.workspace = true
 
 [features]
 default = [
@@ -30,7 +29,6 @@ std = [
 	"codec/std",
 	"log/std",
 	"scale-info/std",
-	"node-primitives/std",
 	"sp-runtime/std",
 	"frame-support/std",
 ]

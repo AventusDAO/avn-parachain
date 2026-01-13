@@ -19,9 +19,19 @@
 
 /// AVT, the native token, uses 18 decimals of precision.
 
-pub mod currency {
-    use node_primitives::Balance;
+pub mod context {
+    pub const ADD_CONFIRMATION_CONTEXT: &'static [u8] = b"EthBridgeConfirmation";
+    pub const ADD_CORROBORATION_CONTEXT: &'static [u8] = b"EthBridgeCorroboration";
+    pub const ADD_ETH_TX_HASH_CONTEXT: &'static [u8] = b"EthBridgeEthTxHash";
+    pub const SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT: &'static [u8] = b"EthBridgeDiscoveredEthEventsHash";
+    pub const SUBMIT_LATEST_ETH_BLOCK_CONTEXT: &'static [u8] = b"EthBridgeLatestEthereumBlockHash";
 
+}
+
+pub mod currency {
+    use crate::primitives::Balance;
+
+    // TODO: Rename AVT to BASE in the future.
     pub const PICO_AVT: Balance = 1_000_000;
     pub const NANO_AVT: Balance = 1_000 * PICO_AVT;
     pub const MICRO_AVT: Balance = 1_000 * NANO_AVT;
@@ -51,7 +61,7 @@ pub mod currency {
 
 /// Time.
 pub mod time {
-    use node_primitives::{BlockNumber, Moment};
+    use crate::primitives::{BlockNumber, Moment};
 
     /// Change this to adjust the block time.
     pub const MILLISECS_PER_BLOCK: u64 = 12000;

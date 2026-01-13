@@ -1072,7 +1072,6 @@ dependencies = [
  "hex-literal",
  "jsonrpsee",
  "log",
- "node-primitives",
  "pallet-avn",
  "pallet-eth-bridge",
  "pallet-eth-bridge-runtime-api",
@@ -1151,7 +1150,6 @@ dependencies = [
  "frame-try-runtime",
  "hex-literal",
  "log",
- "node-primitives",
  "pallet-assets",
  "pallet-aura",
  "pallet-authority-discovery",
@@ -1240,7 +1238,6 @@ dependencies = [
  "frame-try-runtime",
  "hex-literal",
  "log",
- "node-primitives",
  "pallet-assets",
  "pallet-aura",
  "pallet-authority-discovery",
@@ -1309,7 +1306,6 @@ version = "8.5.0"
 dependencies = [
  "frame-support",
  "log",
- "node-primitives",
  "parity-scale-codec",
  "scale-info",
  "smallvec",
@@ -3845,7 +3841,6 @@ dependencies = [
  "jsonrpc-core",
  "jsonrpsee",
  "log",
- "node-primitives",
  "pallet-eth-bridge-runtime-api",
  "parity-scale-codec",
  "sc-client-api",
@@ -7148,14 +7143,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
 
 [[package]]
-name = "node-primitives"
-version = "2.0.0"
-dependencies = [
- "sp-core",
- "sp-runtime",
-]
-
-[[package]]
 name = "nodrop"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8277,6 +8264,32 @@ dependencies = [
  "sp-arithmetic",
  "sp-core",
  "sp-runtime",
+]
+
+[[package]]
+name = "pallet-node-manager"
+version = "8.5.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "log",
+ "pallet-avn",
+ "pallet-balances",
+ "pallet-session",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "parking_lot 0.12.3",
+ "scale-info",
+ "sp-application-crypto",
+ "sp-avn-common",
+ "sp-core",
+ "sp-io",
+ "sp-keystore",
+ "sp-runtime",
+ "sp-state-machine",
+ "sp-std",
 ]
 
 [[package]]
@@ -14073,6 +14086,7 @@ dependencies = [
  "alloy-sol-types",
  "byte-slice-cast",
  "derive_more 0.99.17",
+ "frame-support",
  "hex",
  "hex-literal",
  "impl-trait-for-tuples",

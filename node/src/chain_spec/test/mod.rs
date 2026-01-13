@@ -9,7 +9,7 @@ use crate::chain_spec::{
     ImOnlineId, ParaId,
 };
 use avn_test_runtime::{self as avn_test_runtime};
-use node_primitives::AccountId;
+use primitives::AccountId::AccountId;
 use sp_avn_common::eth::EthereumNetwork;
 use sp_core::{H160, H256};
 

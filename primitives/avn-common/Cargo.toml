@@ -27,7 +27,7 @@ sp-core.workspace = true
 sp-std.workspace = true
 sp-runtime = { workspace = true, features = ["serde"]}
 sp-io.workspace = true
-
+frame-support = { workspace = true }
 libsecp256k1 = { version = "0.7.0", default-features = false, features = [
 	"hmac",
 ] }
@@ -51,6 +51,7 @@ std = [
 	"sp-std/std",
 	"sp-io/std",
 	"sp-runtime/std",
+	"frame-support/std",
 	"libsecp256k1/std",
 	"sha3/std",
 	"alloy-primitives/std",

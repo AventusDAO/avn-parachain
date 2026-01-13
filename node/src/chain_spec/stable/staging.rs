@@ -7,7 +7,7 @@ use crate::chain_spec::stable::{
     get_account_id_from_seed, get_authority_keys_from_seed_with_derivation, testnet_genesis,
 };
 use hex_literal::hex;
-use node_primitives::AccountId;
+use sp_avn_common::primitives::AccountId;
 use sp_core::{crypto::UncheckedInto, ecdsa, sr25519, ByteArray, H160};
 
 pub fn staging_testnet_config() -> ChainSpec {

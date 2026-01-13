@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use node_primitives::{AccountId, Balance, Nonce};
+use sp_avn_common::primitives::{AccountId, Balance, Nonce};
 use runtime_common::opaque::Block;
 
 use sc_transaction_pool_api::TransactionPool;

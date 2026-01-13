@@ -10,7 +10,6 @@ rust-version = "1.85.0"
 resolver = "2"
 members = [
     "node",
-    "node/primitives",
     "client/*",
     "pallets/*",
     "pallets/*/runtime-api",
@@ -168,7 +167,6 @@ pallet-parachain-staking = { path = "./pallets/parachain-staking", default-featu
 pallet-avn-anchor = { path = "./pallets/avn-anchor", default-features = false }
 
 # Common Runtime
-node-primitives = { path = "./node/primitives/", default-features = false }
 runtime-common = { package = "avn-runtime-common", path = "./runtime/common", default-features = false }
 avn-parachain-runtime = { path = "./runtime/avn/", default-features = false }
 avn-test-runtime = { package = "avn-parachain-test-runtime", path = "./runtime/test/", default-features = false }

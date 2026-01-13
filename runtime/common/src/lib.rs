@@ -12,11 +12,10 @@ use frame_support::{
 };
 pub use sp_runtime::{MultiAddress, Perbill, Permill};
 
-pub use node_primitives::{AccountId, Signature};
-use node_primitives::{Balance, BlockNumber};
+pub use sp_avn_common::primitives::{AccountId, Signature};
+use sp_avn_common::primitives::{Balance, BlockNumber};
 
-pub mod constants;
-use constants::currency::*;
+use sp_avn_common::constants::currency::*;
 use weights::ExtrinsicBaseWeight;
 
 /// The address format for describing accounts.

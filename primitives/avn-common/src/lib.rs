@@ -23,13 +23,15 @@ use sp_runtime::{
     MultiSignature,
 };
 use sp_std::{boxed::Box, vec::Vec};
+use frame_support::PalletId;
 
 pub const OPEN_BYTES_TAG: &'static [u8] = b"<Bytes>";
 pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
 
 #[path = "tests/helpers.rs"]
 pub mod avn_tests_helpers;
-pub mod context_constants;
+pub mod constants;
+pub mod primitives;
 pub mod eth;
 pub mod eth_key_actions;
 pub mod event_discovery;
@@ -56,6 +58,10 @@ pub const ETHEREUM_PREFIX_32_BYTES: &'static [u8] = b"\x19Ethereum Signed Messag
 pub const EXTERNAL_SERVICE_PORT_NUMBER_KEY: &'static [u8; 15] = b"avn_port_number";
 /// Default port number the external service runs on.
 pub const DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER: &str = "2020";
+// Offchain DB key for registered node
+pub const REGISTERED_NODE_KEY: &'static [u8; 18] = b"is_registered_node";
+// Pallet identifier for node manager
+pub const NODE_MANAGER_PALLET_ID: PalletId = PalletId(*b"node_mgr");
 
 // Ethereum param types
 pub const UINT256: &[u8] = b"uint256";

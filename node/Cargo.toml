@@ -70,7 +70,6 @@ sp-timestamp = { default-features = true, workspace = true }
 sp-transaction-pool = { default-features = true, workspace = true }
 substrate-frame-rpc-system = { default-features = true, workspace = true }
 substrate-prometheus-endpoint = { default-features = true, workspace = true }
-node-primitives.workspace = true
 
 # AvN dependencies
 sp-authority-discovery = { default-features = true, workspace = true }

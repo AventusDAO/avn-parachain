@@ -63,8 +63,8 @@ use sp_avn_common::{
 };
 
 use crate::apis::RUNTIME_API_VERSIONS;
-pub use node_primitives::{AccountId, Signature};
-pub(crate) use node_primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
+pub use sp_avn_common::primitives::{AccountId, Signature};
+pub(crate) use sp_avn_common::primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
 
 use runtime_common::{
     constants::{currency::*, time::*},
