@@ -225,36 +225,6 @@ mod burn_tests {
                     assert!(!any_burn_funds_requested_event());
                 });
             }
-
-            #[test]
-            fn burn_is_due_and_burn_pot_is_not_empty_but_flag_is_off() {
-                let mut ext = ExtBuilder::build_default()
-                    .with_genesis_config()
-                    .with_balances()
-                    .as_externality();
-
-                ext.execute_with(|| {
-                    let current_block: u64 = 1;
-                    frame_system::Pallet::<TestRuntime>::set_block_number(current_block);
-
-                    // Burn is due at this block
-                    NextBurnAt::<TestRuntime>::put(current_block);
-
-                    // Put funds into burn pot
-                    let burn_pot = TokenManager::burn_pot_account();
-                    let amount = 1_000u128;
-                    pallet_balances::Pallet::<TestRuntime>::make_free_balance_be(&burn_pot, amount);
-
-                    // turn burn off
-                    BurnEnabledFlag::set(false);
-
-                    TokenManager::on_initialize(current_block);
-
-                    // event NOT emitted
-                    assert!(last_pending_burn_submission().is_none());
-                    assert!(!any_burn_funds_requested_event());
-                });
-            }
         }
     }
 

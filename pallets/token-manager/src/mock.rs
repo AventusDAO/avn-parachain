@@ -91,14 +91,7 @@ parameter_types! {
 
 parameter_types! {
     pub const MinBurnPeriod: u32 = 50;
-    pub static BurnEnabledFlag: bool = true;
-}
-
-pub struct BurnEnabled;
-impl Get<bool> for BurnEnabled {
-    fn get() -> bool {
-        BurnEnabledFlag::get()
-    }
+    pub static BurnEnabled: bool = true;
 }
 
 thread_local! {

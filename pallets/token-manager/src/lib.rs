@@ -277,6 +277,9 @@ pub mod pallet {
             tx_id: u32,
             amount: BalanceOf<T>,
         },
+        BurnFailed {
+            tx_id: u32,
+        },
     }
 
     #[pallet::error]
@@ -677,7 +680,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(12)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::set_burn_period())]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_funds())]
         pub fn burn_funds(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
             let burner = ensure_signed(origin)?;
 
@@ -686,7 +689,7 @@ pub mod pallet {
             let free = T::Currency::free_balance(&burner);
             ensure!(free >= amount, Error::<T>::InsufficientSenderBalance);
 
-            Self::publish_burn_tokens_on_t1_from(&burner, amount)?;
+            Self::publish_burn_tokens_on_t1(&burner, amount)?;
             Ok(())
         }
     }
@@ -698,7 +701,8 @@ pub mod pallet {
                 return <T as Config>::WeightInfo::on_initialize_burn_not_due();
             }
 
-            return Self::burn_from_pot(n);
+            Self::schedule_next_burn(n);
+            return Self::burn_from_pot();
         }
     }
 }
@@ -1258,6 +1262,7 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
 
             Self::deposit_event(Event::<T>::BurnConfirmed { tx_id, amount });
         } else {
+            Self::deposit_event(Event::<T>::BurnFailed { tx_id });
             log::error!("Transaction failed on Ethereum. TxId: {:?}", tx_id);
         }
 
