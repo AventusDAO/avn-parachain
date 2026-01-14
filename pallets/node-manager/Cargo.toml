@@ -23,8 +23,6 @@ sp-application-crypto = { workspace = true }
 sp-core = { workspace = true }
 sp-std = { workspace = true }
 pallet-avn = { workspace = true }
-#common-primitives = { workspace = true }
-#prediction-market-primitives = { workspace = true }
 
 # Optional imports for benchmarking
 frame-benchmarking = { workspace = true, optional = true }
@@ -34,7 +32,6 @@ pallet-timestamp = { workspace = true }
 pallet-balances = { workspace = true, features=["insecure_zero_ed", "default"] }
 pallet-session = { workspace = true }
 sp-state-machine = { workspace = true }
-#prediction-market-primitives = { workspace = true, features=["mock"]}
 parking_lot = {  workspace = true }
 
 sp-avn-common = { workspace = true, features=["test-utils"] }
@@ -55,8 +52,6 @@ std = [
 	"sp-std/std",
 	"frame-benchmarking?/std",
 	"pallet-avn/std",
-	#"common-primitives/std",
-	#"prediction-market-primitives/std",
 	"sp-avn-common/std",
 ]
 runtime-benchmarks = [

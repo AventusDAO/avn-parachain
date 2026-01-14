@@ -208,7 +208,7 @@ benchmarks! {
 
     on_initialise_with_new_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
-        let block_number: BlockNumberFor<T> = (reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into()).into();
+        let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();
         enable_rewards::<T>();
     }: { Pallet::<T>::on_initialize(block_number) }
     verify {
@@ -288,10 +288,11 @@ benchmarks! {
     }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author ,signature)
     verify {
         let max_batch_size = MaxBatchSize::<T>::get();
-        let nodes_to_pay = max_batch_size.min(registered_nodes).saturated_into::<BalanceOf<T>>();
-        let expected_balance = nodes_to_pay.
-                bmul_bdiv(RewardAmount::<T>::get(), registered_nodes.saturated_into::<BalanceOf<T>>())
-                .unwrap();
+        let nodes_to_pay = max_batch_size.min(registered_nodes);
+        let ratio = Perquintill::from_rational(nodes_to_pay as u128, registered_nodes as u128);
+        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
+        let expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+
         assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
     }
 
@@ -338,9 +339,11 @@ benchmarks! {
     }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author ,signature)
     verify {
         let max_batch_size = MaxBatchSize::<T>::get();
-        let expected_balance = max_batch_size.min(n).saturated_into::<BalanceOf<T>>().
-            bmul_bdiv(RewardAmount::<T>::get(), n.saturated_into::<BalanceOf<T>>())
-            .unwrap();
+        let nodes_to_pay = max_batch_size.min(n);
+        let ratio = Perquintill::from_rational(nodes_to_pay as u128, n as u128);
+        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
+        let expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+
         assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
     }
 
