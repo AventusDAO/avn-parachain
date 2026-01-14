@@ -11,6 +11,7 @@ use alloc::{
 use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
+use frame_support::PalletId;
 use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
     crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed},
@@ -23,7 +24,6 @@ use sp_runtime::{
     MultiSignature,
 };
 use sp_std::{boxed::Box, vec::Vec};
-use frame_support::PalletId;
 
 pub const OPEN_BYTES_TAG: &'static [u8] = b"<Bytes>";
 pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
@@ -31,13 +31,13 @@ pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
 #[path = "tests/helpers.rs"]
 pub mod avn_tests_helpers;
 pub mod constants;
-pub mod primitives;
 pub mod eth;
 pub mod eth_key_actions;
 pub mod event_discovery;
 pub mod event_types;
 pub mod http_data_codec;
 pub mod ocw_lock;
+pub mod primitives;
 #[cfg(test)]
 #[path = "tests/test_event_discovery.rs"]
 pub mod test_event_discovery;

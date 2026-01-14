@@ -27,7 +27,7 @@ pub(crate) use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 pub(crate) mod constants {
     pub use sp_avn_common::{
         constants::{currency::AVT, time::*},
-        primitives::{Balance, BlockNumber}
+        primitives::{Balance, BlockNumber},
     };
 
     pub(crate) const SMALL_EVENT_CHALLENGE_PERIOD: BlockNumber = 5 * MINUTES;

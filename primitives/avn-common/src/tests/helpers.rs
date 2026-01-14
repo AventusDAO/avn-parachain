@@ -19,7 +19,7 @@ pub mod ethereum_converters {
 pub mod utilities {
     use codec::Decode;
     use sp_core::{sr25519, Pair};
-    use sp_runtime::{traits::Verify};
+    use sp_runtime::traits::Verify;
     pub type AccountIdTest = u128;
     pub type SignatureTest = sr25519::Signature;
     pub type TestAccountIdPK = <SignatureTest as Verify>::Signer;
@@ -34,7 +34,8 @@ pub mod utilities {
         }
 
         pub fn account_id(&self) -> TestAccountIdPK {
-            return TestAccountIdPK::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
+            return TestAccountIdPK::decode(&mut self.key_pair().public().to_vec().as_slice())
+                .unwrap();
         }
 
         pub fn key_pair(&self) -> sr25519::Pair {

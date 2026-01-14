@@ -39,13 +39,11 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
-use runtime_common::{
-    OperationalFeeMultiplier,
-};
+use runtime_common::OperationalFeeMultiplier;
 
 use sp_avn_common::{
-    event_discovery::filters::{AllEventsFilter, NoEventsFilter},
     constants::{currency::*, time::*},
+    event_discovery::filters::{AllEventsFilter, NoEventsFilter},
 };
 use sp_core::{ConstU128, H160};
 use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};

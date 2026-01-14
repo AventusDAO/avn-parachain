@@ -66,16 +66,13 @@ use sp_avn_common::{
 };
 
 use crate::apis::RUNTIME_API_VERSIONS;
+pub(crate) use sp_avn_common::primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
 pub use sp_avn_common::{
     constants::{currency::*, time::*},
-    primitives::{AccountId, Signature}
+    primitives::{AccountId, Signature},
 };
-pub(crate) use sp_avn_common::primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
 
-use runtime_common::{
-
-    weights, Address, Header, TransactionByteFee, WeightToFee,
-};
+use runtime_common::{weights, Address, Header, TransactionByteFee, WeightToFee};
 
 pub type NegativeImbalance<T> = <pallet_balances::Pallet<T> as Currency<
     <T as frame_system::Config>::AccountId,
