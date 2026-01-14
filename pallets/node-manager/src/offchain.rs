@@ -105,7 +105,7 @@ impl<T: Config> Pallet<T> {
     pub fn try_get_node_author(block_number: BlockNumberFor<T>) -> Option<Author<T>> {
         let setup_result = AVN::<T>::pre_run_setup(block_number, OCW_ID.to_vec());
         if let Err(_) = setup_result {
-            return None;
+            return None
         }
 
         let (this_author, _) = setup_result.expect("We have an author");
@@ -113,10 +113,10 @@ impl<T: Config> Pallet<T> {
 
         if is_primary.is_err() {
             log::error!("💔 Error checking if author is Primary");
-            return None;
+            return None
         }
 
-        return Some(this_author);
+        return Some(this_author)
     }
 
     pub fn can_trigger_payment() -> Result<bool, ()> {
@@ -126,7 +126,7 @@ impl<T: Config> Pallet<T> {
 
         if last_paid_pointer.is_some() {
             log::info!("👷 Resuming payment for period: {:?}", oldest_period);
-            return Ok(true);
+            return Ok(true)
         }
 
         if oldest_period < current_period && last_paid_pointer.is_none() {
@@ -136,10 +136,10 @@ impl<T: Config> Pallet<T> {
                 current_period
             );
 
-            return Ok(true);
+            return Ok(true)
         }
 
-        return Ok(false);
+        return Ok(false)
     }
 
     pub fn get_node_from_signing_key() -> Option<(T::AccountId, T::SignerId)> {
@@ -162,7 +162,7 @@ impl<T: Config> Pallet<T> {
         let maybe_node_id = Self::get_formatted_node_id_from_local_storage();
         if let Some(node_id) = maybe_node_id {
             if let Some(key_pair) = Self::match_node_id_to_signing_key(node_id, &local_keys) {
-                return Some(key_pair);
+                return Some(key_pair)
             }
         }
 
@@ -171,7 +171,7 @@ impl<T: Config> Pallet<T> {
         if let Some((node_id, signing_key)) = Self::search_node_id_by_signing_key(&local_keys) {
             log::info!("🔐 NodeId found, storing in local db for next time.");
             let _ = Self::record_formatted_node_id(node_id.clone());
-            return Some((node_id, signing_key));
+            return Some((node_id, signing_key))
         }
 
         log::error!("💔 Unable to find a valid nodeId.");
@@ -189,7 +189,7 @@ impl<T: Config> Pallet<T> {
             heartbeat_count,
             block_number,
         ) {
-            return false;
+            return false
         }
 
         let heartbeat_period = HeartbeatPeriod::<T>::get();
@@ -199,10 +199,10 @@ impl<T: Config> Pallet<T> {
             // Send heartbeat if threshold is not reached and the current block is at or past the
             // next allowed block.
             return below_threshold &&
-                block_number >= last_submission + BlockNumberFor::<T>::from(heartbeat_period);
+                block_number >= last_submission + BlockNumberFor::<T>::from(heartbeat_period)
         } else {
             // First heartbeat
-            return true;
+            return true
         }
     }
 
@@ -249,7 +249,7 @@ impl<T: Config> Pallet<T> {
                 // Allow BLOCK_INCLUSION_PERIOD blocks for the transaction to be included
                 return current_block <=
                     last_submission
-                        .saturating_add(BlockNumberFor::<T>::from(BLOCK_INCLUSION_PERIOD));
+                        .saturating_add(BlockNumberFor::<T>::from(BLOCK_INCLUSION_PERIOD))
             },
             _ => false,
         }
@@ -292,7 +292,7 @@ impl<T: Config> Pallet<T> {
     ) -> Option<(T::AccountId, T::SignerId)> {
         if let Some(node_info) = NodeRegistry::<T>::get(&node_id) {
             if local_keys.binary_search(&node_info.signing_key).is_ok() {
-                return Some((node_id, node_info.signing_key));
+                return Some((node_id, node_info.signing_key))
             } else {
                 log::warn!("🔐 NodeId and signing key do not match");
             }

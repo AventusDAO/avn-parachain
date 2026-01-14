@@ -25,7 +25,7 @@ impl<T: Config> Pallet<T> {
         total_reward: &BalanceOf<T>,
     ) -> Result<BalanceOf<T>, DispatchError> {
         if total_uptime.is_zero() {
-            return Err(DispatchError::Arithmetic(ArithmeticError::DivisionByZero));
+            return Err(DispatchError::Arithmetic(ArithmeticError::DivisionByZero))
         }
 
         // Convert everything to u128 to satisfy Perquintill requirements.
@@ -55,7 +55,7 @@ impl<T: Config> Pallet<T> {
                     error: Error::<T>::NodeNotRegistered.into(),
                 });
                 // We skip paying rewards for this node and continue without erroring
-                return Ok(());
+                return Ok(())
             },
         };
 

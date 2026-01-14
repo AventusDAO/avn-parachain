@@ -42,7 +42,7 @@ fn register_nodes(registrar: AccountId, owner: AccountId, num_of_nodes: u8) -> A
     set_ocw_node_id(this_node);
     UintAuthorityId::set_all_keys(vec![UintAuthorityId(this_node_signing_key)]);
 
-    return this_node;
+    return this_node
 }
 
 fn register_node_and_send_heartbeat(

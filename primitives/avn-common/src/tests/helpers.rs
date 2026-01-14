@@ -35,11 +35,11 @@ pub mod utilities {
 
         pub fn account_id(&self) -> TestAccountIdPK {
             return TestAccountIdPK::decode(&mut self.key_pair().public().to_vec().as_slice())
-                .unwrap();
+                .unwrap()
         }
 
         pub fn key_pair(&self) -> sr25519::Pair {
-            return sr25519::Pair::from_seed(&self.seed);
+            return sr25519::Pair::from_seed(&self.seed)
         }
 
         pub fn public_key(&self) -> sr25519::Public {

@@ -452,7 +452,7 @@ pub mod pallet {
                         *maybe_registrar = Some(registrar.clone())
                     });
                     Self::deposit_event(Event::NodeRegistrarSet { new_registrar: registrar });
-                    return Ok(Some(<T as Config>::WeightInfo::set_admin_config_registrar()).into());
+                    return Ok(Some(<T as Config>::WeightInfo::set_admin_config_registrar()).into())
                 },
                 AdminConfig::RewardPeriod(period) => {
                     let heartbeat = <HeartbeatPeriod<T>>::get();
@@ -468,16 +468,14 @@ pub mod pallet {
                     });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_reward_period()).into()
-                    );
+                    )
                 },
                 AdminConfig::BatchSize(size) => {
                     ensure!(size > 0, Error::<T>::BatchSizeInvalid);
                     <MaxBatchSize<T>>::mutate(|s| *s = size.clone());
                     Self::deposit_event(Event::BatchSizeSet { new_size: size });
-                    return Ok(
-                        Some(<T as Config>::WeightInfo::set_admin_config_reward_batch_size())
-                            .into(),
-                    );
+                    return Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_batch_size())
+                        .into())
                 },
                 AdminConfig::Heartbeat(period) => {
                     let reward_period = RewardPeriod::<T>::get().length;
@@ -487,7 +485,7 @@ pub mod pallet {
                     Self::deposit_event(Event::HeartbeatPeriodSet { new_heartbeat_period: period });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat()).into()
-                    );
+                    )
                 },
                 AdminConfig::RewardAmount(amount) => {
                     ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::RewardAmountZero);
@@ -495,14 +493,14 @@ pub mod pallet {
                     Self::deposit_event(Event::RewardAmountSet { new_amount: amount });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_reward_amount()).into()
-                    );
+                    )
                 },
                 AdminConfig::RewardToggle(enabled) => {
                     <RewardEnabled<T>>::mutate(|e| *e = enabled.clone());
                     Self::deposit_event(Event::RewardToggled { enabled });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_reward_enabled()).into()
-                    );
+                    )
                 },
                 AdminConfig::MinUptimeThreshold(threshold) => {
                     ensure!(threshold > Perbill::zero(), Error::<T>::UptimeThresholdZero);
@@ -510,7 +508,7 @@ pub mod pallet {
                     Self::deposit_event(Event::MinUptimeThresholdSet { threshold });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_min_threshold()).into()
-                    );
+                    )
                 },
             }
         }
@@ -543,7 +541,7 @@ pub mod pallet {
             if total_heartbeats == 0 && maybe_node_uptime.is_none() {
                 // No nodes to pay for this period so complete it
                 Self::complete_reward_payout(oldest_period);
-                return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into());
+                return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
             }
 
             ensure!(total_heartbeats > 0, Error::<T>::TotalUptimeNotFound);
@@ -597,7 +595,7 @@ pub mod pallet {
 
             return Ok(
                 Some(<T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32)).into()
-            );
+            )
         }
 
         /// Offchain call: Submit heartbeat to show node is still alive
@@ -744,7 +742,7 @@ pub mod pallet {
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
             let rewards_enabled = <RewardEnabled<T>>::get();
             if !rewards_enabled {
-                return <T as Config>::WeightInfo::on_initialise_no_reward_period();
+                return <T as Config>::WeightInfo::on_initialise_no_reward_period()
             }
 
             let reward_period = RewardPeriod::<T>::get();
@@ -771,10 +769,10 @@ pub mod pallet {
                     previous_period_reward: reward_amount,
                 });
 
-                return <T as Config>::WeightInfo::on_initialise_with_new_reward_period();
+                return <T as Config>::WeightInfo::on_initialise_with_new_reward_period()
             }
 
-            return <T as Config>::WeightInfo::on_initialise_no_reward_period();
+            return <T as Config>::WeightInfo::on_initialise_no_reward_period()
         }
 
         fn offchain_worker(n: BlockNumberFor<T>) {
@@ -782,7 +780,7 @@ pub mod pallet {
 
             if <RewardEnabled<T>>::get() == false {
                 log::warn!("🌐 OCW - rewards are disabled, skipping");
-                return;
+                return
             }
 
             let maybe_author = Self::try_get_node_author(n);
@@ -790,7 +788,7 @@ pub mod pallet {
                 let oldest_unpaid_period = OldestUnpaidRewardPeriodIndex::<T>::get();
                 Self::trigger_payment_if_required(oldest_unpaid_period, author);
                 // If this is an author node, we don't need to send a heartbeat
-                return;
+                return
             }
 
             Self::send_heartbeat_if_required(n);
@@ -802,7 +800,7 @@ pub mod pallet {
         type Call = Call<T>;
         fn validate_unsigned(source: TransactionSource, call: &Self::Call) -> TransactionValidity {
             if <RewardEnabled<T>>::get() == false {
-                return InvalidTransaction::Custom(ERROR_CODE_REWARD_DISABLED).into();
+                return InvalidTransaction::Custom(ERROR_CODE_REWARD_DISABLED).into()
             }
 
             let reduce_priority: TransactionPriority = TransactionPriority::from(1000u64);
@@ -853,7 +851,7 @@ pub mod pallet {
                             .is_err()
                             {
                                 return InvalidTransaction::Custom(ERROR_CODE_INVALID_HEARTBEAT)
-                                    .into();
+                                    .into()
                             }
 
                             if !Self::offchain_signature_is_valid(
@@ -864,14 +862,14 @@ pub mod pallet {
                                 return InvalidTransaction::Custom(
                                     ERROR_CODE_INVALID_HEARTBEAT_SIGNATURE,
                                 )
-                                .into();
+                                .into()
                             }
 
                             return ValidTransaction::with_tag_prefix("NodeManagerHeartbeat")
                                 .and_provides(call)
                                 .priority(TransactionPriority::max_value() - reduce_priority)
                                 .longevity(64_u64)
-                                .build();
+                                .build()
                         },
                         _ => InvalidTransaction::Custom(ERROR_CODE_INVALID_NODE).into(),
                     }
@@ -980,7 +978,7 @@ pub mod pallet {
                 signature,
                 signature_valid
             );
-            return signature_valid;
+            return signature_valid
         }
 
         pub fn get_encoded_call_param(
@@ -1043,10 +1041,10 @@ pub mod pallet {
                     &proof,
                     &signed_payload.as_slice(),
                 )
-                .is_ok();
+                .is_ok()
             }
 
-            return false;
+            return false
         }
     }
 }
