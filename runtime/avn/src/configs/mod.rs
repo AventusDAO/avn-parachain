@@ -40,11 +40,13 @@ use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
 use runtime_common::{
-    constants::{currency::*, time::*},
     OperationalFeeMultiplier,
 };
 
-use sp_avn_common::event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter};
+use sp_avn_common::{
+    constants::{currency::*, time::*},
+    event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter}
+};
 use sp_core::{ConstU128, H160};
 use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
 use sp_watchtower::NoopWatchtower;

@@ -5,7 +5,7 @@ use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_api::ApiExt;
 use sp_avn_common::{
-    primitives::AccountId
+    primitives::AccountId,
     eth::EthBridgeInstance,
     event_discovery::{
         encode_eth_event_submission_data, events_helpers::EthereumEventsPartitionFactory,

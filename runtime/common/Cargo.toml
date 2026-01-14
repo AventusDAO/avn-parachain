@@ -19,6 +19,7 @@ smallvec.workspace = true
 # Substrate
 frame-support = { features = ["experimental"], workspace = true }
 sp-runtime.workspace = true
+sp-avn-common.workspace = true
 
 [features]
 default = [
@@ -30,6 +31,7 @@ std = [
 	"log/std",
 	"scale-info/std",
 	"sp-runtime/std",
+	"sp-avn-common/std",
 	"frame-support/std",
 ]
 runtime-benchmarks = [

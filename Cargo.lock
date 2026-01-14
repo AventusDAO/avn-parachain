@@ -1309,6 +1309,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "smallvec",
+ "sp-avn-common",
  "sp-runtime",
 ]
 
