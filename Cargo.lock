@@ -1167,6 +1167,7 @@ dependencies = [
  "pallet-im-online",
  "pallet-message-queue",
  "pallet-nft-manager",
+ "pallet-node-manager",
  "pallet-offences",
  "pallet-parachain-staking",
  "pallet-preimage",

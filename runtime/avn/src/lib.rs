@@ -355,6 +355,9 @@ mod runtime {
     #[runtime::pallet_index(92)]
     pub type AvnAnchor = pallet_avn_anchor;
 
+    #[runtime::pallet_index(93)]
+    pub type NodeManager = pallet_node_manager;
+
     // OpenGov pallets
     #[runtime::pallet_index(97)]
     pub type Preimage = pallet_preimage;

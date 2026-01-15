@@ -125,6 +125,12 @@ pub(crate) fn testnet_genesis(
             "avtTokenContract": avt_token_contract,
             "lowerSchedulePeriod": 10,
             "balances": token_balances,
+        },
+        "node_manager": {
+            "reward_period": 30u32,
+            "max_batch_size": 10u32,
+            "heartbeat_period": 10u32,
+            "reward_amount": 20 * AVT,
         }
     })
 }

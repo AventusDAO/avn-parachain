@@ -106,6 +106,7 @@ pallet-eth-bridge.workspace = true
 pallet-eth-bridge-runtime-api.workspace = true
 pallet-parachain-staking.workspace = true
 pallet-avn-anchor.workspace = true
+pallet-node-manager.workspace = true
 
 # Common Runtime
 runtime-common.workspace = true
@@ -184,6 +185,7 @@ std = [
 	"pallet-validators-manager/std",
 	"pallet-avn-transaction-payment/std",
 	"pallet-parachain-staking/std",
+	"pallet-node-manager/std",
 	# Avn Common Runtime
 	"runtime-common/std",
 	# OpenGov
@@ -224,6 +226,7 @@ runtime-benchmarks = [
 	"pallet-token-manager/runtime-benchmarks",
 	"pallet-validators-manager/runtime-benchmarks",
 	"pallet-avn-transaction-payment/runtime-benchmarks",
+	"pallet-node-manager/runtime-benchmarks",
 	# Staking
 	"pallet-parachain-staking/runtime-benchmarks",
 	# Avn Common Runtime
@@ -266,6 +269,7 @@ try-runtime = [
 	"pallet-avn-proxy/try-runtime",
 	"pallet-avn-transaction-payment/try-runtime",
 	"pallet-parachain-staking/try-runtime",
+	"pallet-node-manager/try-runtime",
 	"pallet-eth-bridge/try-runtime",
 	"pallet-assets/try-runtime",
 	"pallet-authority-discovery/try-runtime",
