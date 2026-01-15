@@ -273,12 +273,17 @@ pub mod pallet {
         BurnPeriodUpdated {
             burn_period: u32,
         },
-        BurnRequested {
+        BurnFundsRequested {
+            burner: T::AccountId,
             amount: BalanceOf<T>,
+            tx_id: u32,
         },
         BurnConfirmed {
             tx_id: u32,
             amount: BalanceOf<T>,
+        },
+        BurnFailed {
+            tx_id: u32,
         },
         TreasuryExcessSentToBurnPot {
             amount: BalanceOf<T>,
@@ -379,7 +384,7 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn burn_submission)]
     pub type PendingBurnSubmission<T: Config> =
-        StorageMap<_, Blake2_128Concat, u32, BalanceOf<T>, OptionQuery>;
+        StorageMap<_, Blake2_128Concat, u32, (T::AccountId, BalanceOf<T>), OptionQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn burn_refresh_range)]
@@ -680,6 +685,20 @@ pub mod pallet {
             Self::deposit_event(Event::<T>::BurnPeriodUpdated { burn_period });
             Ok(())
         }
+
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_funds())]
+        pub fn burn_funds(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+            let burner = ensure_signed(origin)?;
+
+            ensure!(!amount.is_zero(), Error::<T>::AmountIsZero);
+
+            let free = T::Currency::free_balance(&burner);
+            ensure!(free >= amount, Error::<T>::InsufficientSenderBalance);
+
+            Self::publish_burn_tokens_on_t1(&burner, amount)?;
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
@@ -689,7 +708,8 @@ pub mod pallet {
                 return <T as Config>::WeightInfo::on_initialize_burn_not_due();
             }
 
-            return Self::burn(n);
+            Self::schedule_next_burn(n);
+            return Self::burn_from_pot();
         }
     }
 }
@@ -1222,20 +1242,20 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
             return Ok(()); // Ignore irrelevant transactions
         }
 
-        let amount = match PendingBurnSubmission::<T>::take(tx_id) {
-            Some(amount) => amount,
+        let (burner, amount) = match PendingBurnSubmission::<T>::take(tx_id) {
+            Some(entry) => entry,
             None => return Ok(()),
         };
 
-        let burn_pot = Self::burn_pot_account();
-        T::Currency::unreserve(&burn_pot, amount);
+        T::Currency::unreserve(&burner, amount);
 
         if succeeded {
-            let (imbalance, _) = T::Currency::slash(&burn_pot, amount);
+            let (imbalance, _) = T::Currency::slash(&burner, amount);
             drop(imbalance);
 
-            Self::deposit_event(Event::<T>::BurnConfirmed { amount, tx_id });
+            Self::deposit_event(Event::<T>::BurnConfirmed { tx_id, amount });
         } else {
+            Self::deposit_event(Event::<T>::BurnFailed { tx_id });
             log::error!("Transaction failed on Ethereum. TxId: {:?}", tx_id);
         }
 

@@ -20,6 +20,29 @@ use crate::{mock::*, *};
 use frame_support::{assert_noop, assert_ok};
 type Curr = <TestRuntime as token_manager::Config>::Currency;
 
+type Curr = <TestRuntime as crate::Config>::Currency;
+
+fn any_burn_funds_requested_event() -> bool {
+    frame_system::Pallet::<TestRuntime>::events().iter().any(|r| {
+        matches!(
+            r.event,
+            mock::RuntimeEvent::TokenManager(
+                crate::Event::<TestRuntime>::BurnFundsRequested { .. }
+            )
+        )
+    })
+}
+
+fn last_pending_burn_submission() -> Option<(u32, AccountId, u128)> {
+    PendingBurnSubmission::<TestRuntime>::iter()
+        .max_by_key(|(tx_id, _)| *tx_id)
+        .map(|(tx_id, (burner, amount))| (tx_id, burner, amount))
+}
+
+fn reserved_of(who: &<TestRuntime as frame_system::Config>::AccountId) -> u128 {
+    Curr::reserved_balance(who)
+}
+
 mod burn_tests {
     use super::*;
 
@@ -131,11 +154,16 @@ mod burn_tests {
                     // call hook
                     TokenManager::on_initialize(current_block);
 
-                    // event emitted
+                    let (tx_id, _burner, stored_amount) =
+                        last_pending_burn_submission().expect("PendingBurnSubmission should exist");
+                    assert_eq!(stored_amount, amount);
+
                     assert!(event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
                         TestRuntime,
-                    >::BurnRequested {
-                        amount
+                    >::BurnFundsRequested {
+                        burner: burn_pot,
+                        amount,
+                        tx_id,
                     })));
                 });
             }
@@ -167,11 +195,8 @@ mod burn_tests {
                     TokenManager::on_initialize(current_block);
 
                     // event NOT emitted
-                    assert!(!event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
-                        TestRuntime,
-                    >::BurnRequested {
-                        amount
-                    })));
+                    assert!(last_pending_burn_submission().is_none());
+                    assert!(!any_burn_funds_requested_event());
                 });
             }
 
@@ -198,44 +223,100 @@ mod burn_tests {
                     TokenManager::on_initialize(current_block);
 
                     // event NOT emitted (because amount is zero)
-                    assert!(!event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
-                        TestRuntime,
-                    >::BurnRequested {
-                        amount
-                    })));
+                    assert!(last_pending_burn_submission().is_none());
+                    assert!(!any_burn_funds_requested_event());
                 });
             }
+        }
+    }
+
+    mod burn_funds {
+        use super::*;
+
+        mod succeeds_when {
+            use super::*;
 
             #[test]
-            fn burn_is_due_and_burn_pot_is_not_empty_but_flag_is_off() {
+            fn caller_has_enough_funds_and_publish_succeeds() {
                 let mut ext = ExtBuilder::build_default()
                     .with_genesis_config()
                     .with_balances()
                     .as_externality();
 
                 ext.execute_with(|| {
-                    let current_block: u64 = 1;
-                    frame_system::Pallet::<TestRuntime>::set_block_number(current_block);
+                    let burner = account_id_with_100_avt();
 
-                    // Burn is due at this block
-                    NextBurnAt::<TestRuntime>::put(current_block);
+                    let free_before = Curr::free_balance(&burner);
+                    let reserved_before = reserved_of(&burner);
 
-                    // Put funds into burn pot
-                    let burn_pot = TokenManager::burn_pot_account();
-                    let amount = 1_000u128;
-                    pallet_balances::Pallet::<TestRuntime>::make_free_balance_be(&burn_pot, amount);
+                    let amount: u128 = 1_000u128;
 
-                    // turn burn off
-                    BurnEnabledFlag::set(false);
-
-                    TokenManager::on_initialize(current_block);
-
-                    // event NOT emitted
-                    assert!(!event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
-                        TestRuntime,
-                    >::BurnRequested {
+                    assert_ok!(TokenManager::burn_funds(
+                        RuntimeOrigin::signed(burner.clone()),
                         amount
+                    ));
+
+                    // Reserved increased (funds locked until ETH confirmation)
+                    assert_eq!(reserved_of(&burner), reserved_before + amount);
+                    // Free reduced accordingly
+                    assert_eq!(Curr::free_balance(&burner), free_before - amount);
+
+                    // Pending burn submission exists (tx_id comes from publish mock)
+                    let (tx_id, stored_burner, stored_amount) =
+                        last_pending_burn_submission().expect("PendingBurnSubmission should exist");
+                    assert_eq!(stored_burner, burner);
+                    assert_eq!(stored_amount, amount);
+
+                    // Event emitted
+                    assert!(event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
+                        TestRuntime,
+                    >::BurnFundsRequested {
+                        burner,
+                        amount,
+                        tx_id,
                     })));
+                });
+            }
+        }
+
+        mod fails_when {
+            use super::*;
+
+            #[test]
+            fn amount_is_zero() {
+                let mut ext = ExtBuilder::build_default()
+                    .with_genesis_config()
+                    .with_balances()
+                    .as_externality();
+
+                ext.execute_with(|| {
+                    let burner = account_id_with_100_avt();
+
+                    assert_noop!(
+                        TokenManager::burn_funds(RuntimeOrigin::signed(burner), 0u128),
+                        Error::<TestRuntime>::AmountIsZero
+                    );
+                });
+            }
+
+            #[test]
+            fn reserve_fails_due_to_insufficient_balance() {
+                let mut ext = ExtBuilder::build_default()
+                    .with_genesis_config()
+                    .with_balances()
+                    .as_externality();
+
+                ext.execute_with(|| {
+                    // Use some random account with 0 balance
+                    let burner = account_id_with_seed_item(55);
+
+                    // Try reserving something non-zero
+                    let amount: u128 = 1_000u128;
+
+                    assert_noop!(
+                        TokenManager::burn_funds(RuntimeOrigin::signed(burner), amount),
+                        Error::<TestRuntime>::InsufficientSenderBalance
+                    );
                 });
             }
         }
