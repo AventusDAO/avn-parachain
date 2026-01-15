@@ -341,7 +341,7 @@ mod treasury_tests {
                     .as_externality();
 
                 ext.execute_with(|| {
-                    // TotalSupply=10_000 => threshold=1_500 (if TreasuryBurnThreshold is set a 15%)
+                    // TotalSupply=10_000 => threshold=1_500 (if TreasuryBurnThreshold is set at 15%)
                     let total_supply = 10_000u128;
                     TotalSupply::<TestRuntime>::put(total_supply);
 

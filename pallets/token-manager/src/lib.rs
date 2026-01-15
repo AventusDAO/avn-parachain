@@ -168,7 +168,7 @@ pub mod pallet {
         /// Minimum Burn Refresh range
         #[pallet::constant]
         type MinBurnPeriod: Get<u32>;
-        /// Minimum allowed treasury burn threshold
+        /// Treasury burn threshold as percentage of total supply
         #[pallet::constant]
         type TreasuryBurnThreshold: Get<Perbill>;
         /// Flag to enable burn mechanism
@@ -224,7 +224,7 @@ pub mod pallet {
             t1_recipient: H160,
             lower_id: LowerId,
         },
-        AvtTransferredFromTreasury {
+        TransferFromTreasury {
             recipient: T::AccountId,
             amount: BalanceOf<T>,
         },
@@ -322,6 +322,8 @@ pub mod pallet {
         InvalidBurnPeriod,
         ErrorLockingTokens,
         FailedToSubmitBurnRequest,
+        TotalSupplyNotSet,
+        TotalSupplyZero,
     }
 
     #[pallet::storage]
@@ -392,7 +394,7 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn total_supply)]
-    pub type TotalSupply<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+    pub type TotalSupply<T: Config> = StorageValue<_, BalanceOf<T>, OptionQuery>;
 
     #[pallet::type_value]
     pub fn DefaultBurnRefreshRange<T: Config>() -> u32 {
@@ -512,7 +514,7 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_root(origin)?;
 
-            Self::transfer_from_treasury_to(&recipient, amount)
+            Self::transfer_treasury_funds(&recipient, amount)
         }
 
         /// Lower an amount of token from tier2 to tier1
@@ -704,7 +706,7 @@ pub mod pallet {
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
-            if !T::BurnEnabled::get() || !Self::is_burn_due(n) {
+            if !Self::is_burning_enabled() || !Self::is_burn_due(n) {
                 return <T as Config>::WeightInfo::on_initialize_burn_not_due();
             }
 
