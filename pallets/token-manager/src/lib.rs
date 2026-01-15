@@ -329,7 +329,7 @@ pub mod pallet {
         ErrorLockingTokens,
         FailedToSubmitBurnRequest,
         NoTier1EventForLogTotalSupplyUpdated,
-        InvalidAvtSupplyUpdate,
+        InvalidTotalSupplyUpdate,
         TotalSupplyNotSet,
         TotalSupplyZero,
     }
@@ -1121,24 +1121,24 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    fn process_avt_supply_updated(event: &EthEvent, data: &TotalSupplyUpdatedData) -> DispatchResult {
+    fn process_total_supply_update(event: &EthEvent, data: &TotalSupplyUpdatedData) -> DispatchResult {
         let event_id = &event.event_id;
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
         ensure!(event_validity, Error::<T>::NoTier1EventForLogTotalSupplyUpdated);
 
         let new_supply_u128: u128 =
-            data.new_supply.try_into().map_err(|_| Error::<T>::InvalidAvtSupplyUpdate)?;
+            data.new_supply.try_into().map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
 
         let new_supply_balance: BalanceOf<T> =
             <BalanceOf<T> as TryFrom<u128>>::try_from(new_supply_u128)
-                .map_err(|_| Error::<T>::InvalidAvtSupplyUpdate)?;
+                .map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
 
         let old_supply_u128: u128 =
-            data.old_supply.try_into().map_err(|_| Error::<T>::InvalidAvtSupplyUpdate)?;
+            data.old_supply.try_into().map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
 
         let old_supply_balance: BalanceOf<T> =
             <BalanceOf<T> as TryFrom<u128>>::try_from(old_supply_u128)
-                .map_err(|_| Error::<T>::InvalidAvtSupplyUpdate)?;
+                .map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
 
         // Determine supply change type based on event payload
         let change = if new_supply_u128 < old_supply_u128 {
@@ -1211,7 +1211,7 @@ impl<T: Config> Pallet<T> {
             EventData::LogLifted(d) => return Self::process_lift(event, d),
             EventData::LogAvtGrowthLifted(d) => return Self::process_avt_growth_lift(event, d),
             EventData::LogLowerClaimed(d) => return Self::process_lower_claim(event, d),
-            EventData::LogT1TotalSupplyUpdated(d) => Self::process_avt_supply_updated(event, d),
+            EventData::LogT1TotalSupplyUpdated(d) => Self::process_total_supply_update(event, d),
 
             // Event handled or it is not for us, in which case ignore it.
             _ => Ok(()),

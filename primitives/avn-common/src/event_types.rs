@@ -71,12 +71,12 @@ pub enum Error {
     LiftedToPredictionMarketEventWrongTopicCount,
     LiftedToPredictionMarketEventBadTopicLength,
 
-    AvtSupplyUpdatedEventShouldOnlyContainTopics,
-    AvtSupplyUpdatedEventWrongTopicCount,
-    AvtSupplyUpdatedEventBadTopicLength,
-    AvtSupplyUpdatedEventOldSupplyOverflow,
-    AvtSupplyUpdatedEventNewSupplyOverflow,
-    AvtSupplyUpdatedEventT2TxIdConversion,
+    TotalSupplyUpdatedEventShouldOnlyContainTopics,
+    TotalSupplyUpdatedEventWrongTopicCount,
+    TotalSupplyUpdatedEventBadTopicLength,
+    TotalSupplyUpdatedEventOldSupplyOverflow,
+    TotalSupplyUpdatedEventNewSupplyOverflow,
+    TotalSupplyUpdatedEventT2TxIdConversion,
 }
 
 #[derive(
@@ -759,26 +759,26 @@ impl TotalSupplyUpdatedData {
         // topics[3] -> t2TxId (uint32 encoded in uint256 slot)
 
         if data.is_some() {
-            return Err(Error::AvtSupplyUpdatedEventShouldOnlyContainTopics)
+            return Err(Error::TotalSupplyUpdatedEventShouldOnlyContainTopics)
         }
 
         if topics.len() != 4 {
-            return Err(Error::AvtSupplyUpdatedEventWrongTopicCount)
+            return Err(Error::TotalSupplyUpdatedEventWrongTopicCount)
         }
 
         if topics[Self::TOPIC_OLD_SUPPLY].len() != WORD_LENGTH ||
             topics[Self::TOPIC_NEW_SUPPLY].len() != WORD_LENGTH ||
             topics[Self::TOPIC_T2_TX_ID].len() != WORD_LENGTH
         {
-            return Err(Error::AvtSupplyUpdatedEventBadTopicLength)
+            return Err(Error::TotalSupplyUpdatedEventBadTopicLength)
         }
 
         // oldSupply and newSupply are uint256 → we only support up to u128 (like LiftedData)
         if topics[Self::TOPIC_OLD_SUPPLY][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::AvtSupplyUpdatedEventOldSupplyOverflow)
+            return Err(Error::TotalSupplyUpdatedEventOldSupplyOverflow)
         }
         if topics[Self::TOPIC_NEW_SUPPLY][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::AvtSupplyUpdatedEventNewSupplyOverflow)
+            return Err(Error::TotalSupplyUpdatedEventNewSupplyOverflow)
         }
 
         let old_supply = u128::from_be_bytes(
@@ -796,7 +796,7 @@ impl TotalSupplyUpdatedData {
         let t2_tx_id = u32::from_be_bytes(
             topics[Self::TOPIC_T2_TX_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
                 .try_into()
-                .map_err(|_| Error::AvtSupplyUpdatedEventT2TxIdConversion)?,
+                .map_err(|_| Error::TotalSupplyUpdatedEventT2TxIdConversion)?,
         );
 
         Ok(TotalSupplyUpdatedData { old_supply, new_supply, t2_tx_id })
