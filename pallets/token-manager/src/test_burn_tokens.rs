@@ -20,8 +20,6 @@ use crate::{mock::*, *};
 use frame_support::{assert_noop, assert_ok};
 type Curr = <TestRuntime as token_manager::Config>::Currency;
 
-type Curr = <TestRuntime as crate::Config>::Currency;
-
 fn any_burn_funds_requested_event() -> bool {
     frame_system::Pallet::<TestRuntime>::events().iter().any(|r| {
         matches!(
