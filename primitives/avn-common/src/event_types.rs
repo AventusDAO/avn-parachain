@@ -115,7 +115,7 @@ pub enum ValidEvents {
     /// Secondary event emitted by the ERC-20 token contract.
     Erc20DirectTransfer,
     // AVT Supply Updated event
-    AvtSupplyUpdated,
+    TotalSupplyUpdated,
 }
 
 impl ValidEvents {
@@ -166,8 +166,8 @@ impl ValidEvents {
             ValidEvents::Erc20DirectTransfer =>
                 H256(hex!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")),
 
-            // hex string of keccak256 for LogAvtSupplyUpdated(uint256,uint256,uint32)
-            ValidEvents::AvtSupplyUpdated =>
+            // hex string of keccak256 for LogAvtSupplyUpdated(uint256,uint256,uint32)      
+            ValidEvents::TotalSupplyUpdated =>
                 H256(hex!("4f329d0d0d89ca94365b34a2342dc677a3891e1cfe20e5fe9ed28e438649a540")),
         }
     }
@@ -732,16 +732,16 @@ impl AvtLowerClaimedData {
 }
 
 // T1 Event definition:
-// event LogAvtSupplyUpdated(uint256 indexed oldSupply, uint256 indexed newSupply, uint32 indexed
+// event LogT1TotalSupplyUpdated(uint256 indexed oldSupply, uint256 indexed newSupply, uint32 indexed
 // t2TxId);
 #[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
-pub struct AvtSupplyUpdatedData {
+pub struct TotalSupplyUpdatedData {
     pub old_supply: u128,
     pub new_supply: u128,
     pub t2_tx_id: u32,
 }
 
-impl AvtSupplyUpdatedData {
+impl TotalSupplyUpdatedData {
     const TOPIC_OLD_SUPPLY: usize = 1;
     const TOPIC_NEW_SUPPLY: usize = 2;
     const TOPIC_T2_TX_ID: usize = 3;
@@ -799,7 +799,7 @@ impl AvtSupplyUpdatedData {
                 .map_err(|_| Error::AvtSupplyUpdatedEventT2TxIdConversion)?,
         );
 
-        Ok(AvtSupplyUpdatedData { old_supply, new_supply, t2_tx_id })
+        Ok(TotalSupplyUpdatedData { old_supply, new_supply, t2_tx_id })
     }
 }
 
@@ -816,7 +816,7 @@ pub enum EventData {
     LogLowerClaimed(AvtLowerClaimedData),
     LogLiftedToPredictionMarket(LiftedData),
     LogErc20Transfer(LiftedData),
-    LogAvtSupplyUpdated(AvtSupplyUpdatedData),
+    LogT1TotalSupplyUpdated(TotalSupplyUpdatedData),
 }
 
 impl EventData {
@@ -833,7 +833,7 @@ impl EventData {
             EventData::LogAvtGrowthLifted(d) => d.is_valid(),
             EventData::LogLiftedToPredictionMarket(d) => d.is_valid(),
             EventData::LogErc20Transfer(d) => d.is_valid(),
-            EventData::LogAvtSupplyUpdated(d) => d.is_valid(),
+            EventData::LogT1TotalSupplyUpdated(d) => d.is_valid(),
             EventData::EmptyEvent => true,
             _ => false,
         }
