@@ -262,7 +262,7 @@ mod transfering_from_treasury_works {
             // Check expected event has been emitted
             assert!(System::events().iter().any(|a| a.event ==
                 RuntimeEvent::TokenManager(
-                    crate::Event::<TestRuntime>::AvtTransferredFromTreasury {
+                    crate::Event::<TestRuntime>::TransferFromTreasury {
                         recipient,
                         amount: transfer_amount,
                     }

@@ -168,7 +168,7 @@ pub mod pallet {
         /// Minimum Burn Refresh range
         #[pallet::constant]
         type MinBurnPeriod: Get<u32>;
-        /// Minimum allowed treasury burn threshold
+        /// Treasury burn threshold as percentage of total supply
         #[pallet::constant]
         type TreasuryBurnThreshold: Get<Perbill>;
         /// Flag to enable burn mechanism
@@ -224,7 +224,7 @@ pub mod pallet {
             t1_recipient: H160,
             lower_id: LowerId,
         },
-        AvtTransferredFromTreasury {
+        TransferFromTreasury {
             recipient: T::AccountId,
             amount: BalanceOf<T>,
         },
@@ -273,12 +273,17 @@ pub mod pallet {
         BurnPeriodUpdated {
             burn_period: u32,
         },
-        BurnRequested {
+        BurnFundsRequested {
+            burner: T::AccountId,
             amount: BalanceOf<T>,
+            tx_id: u32,
         },
         BurnConfirmed {
             tx_id: u32,
             amount: BalanceOf<T>,
+        },
+        BurnFailed {
+            tx_id: u32,
         },
         TreasuryExcessSentToBurnPot {
             amount: BalanceOf<T>,
@@ -325,6 +330,8 @@ pub mod pallet {
         FailedToSubmitBurnRequest,
         NoTier1EventForLogAvtSupplyUpdated,
         InvalidAvtSupplyUpdate,
+        TotalSupplyNotSet,
+        TotalSupplyZero,
     }
 
     #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
@@ -394,7 +401,7 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn burn_submission)]
     pub type PendingBurnSubmission<T: Config> =
-        StorageMap<_, Blake2_128Concat, u32, BalanceOf<T>, OptionQuery>;
+        StorageMap<_, Blake2_128Concat, u32, (T::AccountId, BalanceOf<T>), OptionQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn burn_refresh_range)]
@@ -402,7 +409,7 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn total_supply)]
-    pub type TotalSupply<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+    pub type TotalSupply<T: Config> = StorageValue<_, BalanceOf<T>, OptionQuery>;
 
     #[pallet::type_value]
     pub fn DefaultBurnRefreshRange<T: Config>() -> u32 {
@@ -522,7 +529,7 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_root(origin)?;
 
-            Self::transfer_from_treasury_to(&recipient, amount)
+            Self::transfer_treasury_funds(&recipient, amount)
         }
 
         /// Lower an amount of token from tier2 to tier1
@@ -695,16 +702,31 @@ pub mod pallet {
             Self::deposit_event(Event::<T>::BurnPeriodUpdated { burn_period });
             Ok(())
         }
+
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_funds())]
+        pub fn burn_funds(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+            let burner = ensure_signed(origin)?;
+
+            ensure!(!amount.is_zero(), Error::<T>::AmountIsZero);
+
+            let free = T::Currency::free_balance(&burner);
+            ensure!(free >= amount, Error::<T>::InsufficientSenderBalance);
+
+            Self::publish_burn_tokens_on_t1(&burner, amount)?;
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
-            if !T::BurnEnabled::get() || !Self::is_burn_due(n) {
+            if !Self::is_burning_enabled() || !Self::is_burn_due(n) {
                 return <T as Config>::WeightInfo::on_initialize_burn_not_due();
             }
 
-            return Self::burn(n);
+            Self::schedule_next_burn(n);
+            return Self::burn_from_pot();
         }
     }
 }
@@ -1278,20 +1300,20 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
             return Ok(()); // Ignore irrelevant transactions
         }
 
-        let amount = match PendingBurnSubmission::<T>::take(tx_id) {
-            Some(amount) => amount,
+        let (burner, amount) = match PendingBurnSubmission::<T>::take(tx_id) {
+            Some(entry) => entry,
             None => return Ok(()),
         };
 
-        let burn_pot = Self::burn_pot_account();
-        T::Currency::unreserve(&burn_pot, amount);
+        T::Currency::unreserve(&burner, amount);
 
         if succeeded {
-            let (imbalance, _) = T::Currency::slash(&burn_pot, amount);
+            let (imbalance, _) = T::Currency::slash(&burner, amount);
             drop(imbalance);
 
-            Self::deposit_event(Event::<T>::BurnConfirmed { amount, tx_id });
+            Self::deposit_event(Event::<T>::BurnConfirmed { tx_id, amount });
         } else {
+            Self::deposit_event(Event::<T>::BurnFailed { tx_id });
             log::error!("Transaction failed on Ethereum. TxId: {:?}", tx_id);
         }
 
