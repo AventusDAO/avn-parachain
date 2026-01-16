@@ -1,4 +1,4 @@
-// Copyright 2025 Truth Network.
+// Copyright 2026 Aventus DAO.
 
 #![cfg(test)]
 
