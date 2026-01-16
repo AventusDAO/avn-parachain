@@ -1,18 +1,21 @@
 use crate::{self as pallet_watchtower, *};
 pub use codec::alloc::sync::Arc;
 use frame_support::{
-    parameter_types,
+    derive_impl, parameter_types,
     traits::ConstU32,
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
 use frame_system::{self as system, EnsureRoot, EnsureSigned};
-pub use prediction_market_primitives::test_helper::{get_test_account_from_mnemonic, TestAccount};
+
+pub use sp_avn_common::avn_tests_helpers::utilities::{
+    get_test_account_from_mnemonic, TestAccount,
+};
 pub use sp_core::{crypto::DEV_PHRASE, sr25519, H256};
 
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 pub use sp_runtime::{
     testing::TestXt,
-    traits::{BlakeTwo256, IdentityLookup, Verify},
+    traits::{IdentityLookup, Verify},
     BuildStorage, Perbill,
 };
 use std::cell::RefCell;
@@ -77,50 +80,23 @@ parameter_types! {
         );
 }
 
+#[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl system::Config for TestRuntime {
-    type BaseCallFilter = frame_support::traits::Everything;
-    type BlockWeights = ();
-    type BlockLength = ();
-    type DbWeight = ();
-    type RuntimeOrigin = RuntimeOrigin;
-    type Nonce = u64;
-    type RuntimeCall = RuntimeCall;
-    type Hash = H256;
-    type Hashing = BlakeTwo256;
+    type Block = Block;
     type AccountId = AccountId;
     type Lookup = IdentityLookup<Self::AccountId>;
-    type Block = Block;
-    type RuntimeEvent = RuntimeEvent;
-    type BlockHashCount = BlockHashCount;
-    type Version = ();
-    type PalletInfo = PalletInfo;
     type AccountData = pallet_balances::AccountData<u128>;
-    type OnNewAccount = ();
-    type OnKilledAccount = ();
-    type SystemWeightInfo = ();
-    type SS58Prefix = ();
-    type OnSetCode = ();
-    type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
 parameter_types! {
     pub const ExistentialDeposit: u64 = 0u64;
 }
 
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
 impl pallet_balances::Config for TestRuntime {
-    type MaxLocks = ();
     type Balance = u128;
-    type DustRemoval = ();
-    type RuntimeEvent = RuntimeEvent;
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
-    type MaxReserves = ();
-    type ReserveIdentifier = [u8; 8];
-    type WeightInfo = ();
-    type RuntimeHoldReason = RuntimeHoldReason;
-    type FreezeIdentifier = ();
-    type MaxHolds = ConstU32<0>;
-    type MaxFreezes = ConstU32<0>;
 }
 
 impl pallet_timestamp::Config for TestRuntime {
