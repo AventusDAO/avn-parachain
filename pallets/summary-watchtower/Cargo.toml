@@ -1,0 +1,71 @@
+[package]
+name = "pallet-summary-watchtower"
+publish = false
+
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = "GPL-3.0"
+
+[dependencies]
+# Third-party
+codec = { workspace = true, features = ["derive", "max-encoded-len"] }
+log = { workspace = true }
+scale-info = { workspace = true, features = ["derive", "serde"]}
+hex = { workspace = true }
+
+# Substrate primitives
+sp-core = { workspace = true}
+sp-io = { workspace = true}
+sp-runtime = { workspace = true}
+sp-std = { workspace = true}
+sp-api = { workspace = true}
+
+frame-benchmarking = { workspace = true, optional = true }
+frame-support = { workspace = true }
+frame-system = { workspace = true }
+
+pallet-summary = { workspace = true }
+pallet-avn = { workspace = true }
+sp-avn-common = { workspace = true }
+sp-watchtower = { workspace = true }
+pallet-watchtower = { workspace = true }
+
+[dev-dependencies]
+sp-application-crypto = { workspace = true }
+sp-avn-common = { workspace = true, features=["test-utils"] }
+sp-keystore = { workspace = true, features = ["default"]}
+sp-state-machine = { workspace = true }
+pallet-timestamp = { workspace = true }
+parking_lot = {  workspace = true }
+pallet-balances = { workspace = true, features = ["default", "insecure_zero_ed"] }
+pallet-node-manager = { workspace = true, features = ["default"] }
+
+[features]
+default = ["std"]
+std = [
+    "codec/std",
+    "log/std",
+    "scale-info/std",
+    "sp-api/std",
+    "sp-core/std",
+    "sp-io/std",
+    "sp-runtime/std",
+    "sp-std/std",
+    "frame-benchmarking?/std",
+    "frame-support/std",
+    "frame-system/std",
+    "pallet-summary/std",
+    "pallet-avn/std",
+    "sp-avn-common/std",
+    "sp-watchtower/std",
+    "pallet-watchtower/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+]
+try-runtime = ["frame-support/try-runtime"]

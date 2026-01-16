@@ -167,6 +167,8 @@ pallet-eth-bridge-runtime-api = { path = "./pallets/eth-bridge/runtime-api", def
 pallet-parachain-staking = { path = "./pallets/parachain-staking", default-features = false }
 pallet-avn-anchor = { path = "./pallets/avn-anchor", default-features = false }
 pallet-node-manager = { path = "./pallets/node-manager", default-features = false }
+pallet-watchtower = { path = "./pallets/watchtower", default-features = false }
+pallet-summary-watchtower = { path = "./pallets/summary-watchtower", default-features = false }
 
 # Common Runtime
 runtime-common = { package = "avn-runtime-common", path = "./runtime/common", default-features = false }
