@@ -125,9 +125,7 @@ pub mod pallet {
             let maybe_node_info = T::Watchtowers::get_node_from_local_signing_keys();
             let (watchtower, signing_key) = match maybe_node_info {
                 Some(info) => info,
-                None => {
-                    return
-                },
+                None => return,
             };
 
             if let Some((proposal_id, root_data)) = RootInfo::<T>::get() {
@@ -246,9 +244,7 @@ pub mod pallet {
                 (WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &watchtower);
             let signature = match signing_key.sign(&data_to_sign.encode()) {
                 Some(sig) => sig,
-                None => {
-                    return Err("Failed to sign vote data")
-                },
+                None => return Err("Failed to sign vote data"),
             };
 
             let call = pallet_watchtower::Call::unsigned_vote {
