@@ -146,7 +146,7 @@ pub type LowerId = u32;
 
 pub const MAX_CONFIRMATIONS: u32 = 100u32;
 const PALLET_NAME: &'static [u8] = b"EthBridge";
-use sp_avn_common::context_constants::{
+use sp_avn_common::constants::context::{
     ADD_CONFIRMATION_CONTEXT, ADD_CORROBORATION_CONTEXT, ADD_ETH_TX_HASH_CONTEXT,
     SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT, SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
 };

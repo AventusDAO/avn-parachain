@@ -25,8 +25,10 @@ pub(crate) use sp_authority_discovery::AuthorityId as AuthorityDiscoveryId;
 pub(crate) use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 
 pub(crate) mod constants {
-    pub use node_primitives::{Balance, BlockNumber};
-    pub use runtime_common::constants::{currency::AVT, time::*};
+    pub use sp_avn_common::{
+        constants::{currency::AVT, time::*},
+        primitives::{Balance, BlockNumber},
+    };
 
     pub(crate) const SMALL_EVENT_CHALLENGE_PERIOD: BlockNumber = 5 * MINUTES;
     pub(crate) const NORMAL_EVENT_CHALLENGE_PERIOD: BlockNumber = 20 * MINUTES;
@@ -46,7 +48,7 @@ pub(crate) mod constants {
 pub(crate) mod helpers {
 
     use crate::chain_spec::{AuraId, AuthorityDiscoveryId, AvnId, ImOnlineId};
-    use node_primitives::{AccountId, Signature};
+    use sp_avn_common::primitives::{AccountId, Signature};
     use sp_core::{sr25519, Pair, Public};
     use sp_runtime::traits::{IdentifyAccount, Verify};
 

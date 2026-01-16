@@ -61,5 +61,4 @@ sc-client-api = { default-features = true, workspace = true }
 sc-client-db = { default-features = true, workspace = true }
 sc-transaction-pool-api = { default-features = true, workspace = true }
 
-node-primitives = { default-features = true, workspace = true }
 client-extrinsic-utils.workspace = true

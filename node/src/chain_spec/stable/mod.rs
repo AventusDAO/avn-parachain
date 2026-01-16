@@ -8,12 +8,11 @@ use crate::chain_spec::{
     constants::*, helpers::*, AuraId, AuthorityDiscoveryId, AvnId, EthPublicKey, ImOnlineId, ParaId,
 };
 use avn_parachain_runtime::{self as avn_runtime};
-use node_primitives::AccountId;
 
 use sp_core::{H160, H256};
 
 use hex_literal::hex;
-use sp_avn_common::eth::EthereumNetwork;
+use sp_avn_common::{eth::EthereumNetwork, primitives::AccountId};
 use sp_runtime::{traits::ConstU32, BoundedVec};
 
 /// Generate the session keys from individual elements.
@@ -126,6 +125,12 @@ pub(crate) fn testnet_genesis(
             "avtTokenContract": avt_token_contract,
             "lowerSchedulePeriod": 10,
             "balances": token_balances,
+        },
+        "node_manager": {
+            "reward_period": 30u32,
+            "max_batch_size": 10u32,
+            "heartbeat_period": 10u32,
+            "reward_amount": 20 * AVT,
         }
     })
 }

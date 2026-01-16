@@ -8,4 +8,5 @@ use clap::Parser;
 pub struct AvnCliConfiguration {
     pub avn_port: Option<String>,
     pub ethereum_node_urls: Vec<String>,
+    pub registered_node_id: Option<String>,
 }

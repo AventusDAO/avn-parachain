@@ -11,6 +11,7 @@ use alloc::{
 use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
+use frame_support::PalletId;
 use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
     crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed},
@@ -29,13 +30,14 @@ pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
 
 #[path = "tests/helpers.rs"]
 pub mod avn_tests_helpers;
-pub mod context_constants;
+pub mod constants;
 pub mod eth;
 pub mod eth_key_actions;
 pub mod event_discovery;
 pub mod event_types;
 pub mod http_data_codec;
 pub mod ocw_lock;
+pub mod primitives;
 #[cfg(test)]
 #[path = "tests/test_event_discovery.rs"]
 pub mod test_event_discovery;
@@ -56,6 +58,10 @@ pub const ETHEREUM_PREFIX_32_BYTES: &'static [u8] = b"\x19Ethereum Signed Messag
 pub const EXTERNAL_SERVICE_PORT_NUMBER_KEY: &'static [u8; 15] = b"avn_port_number";
 /// Default port number the external service runs on.
 pub const DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER: &str = "2020";
+// Offchain DB key for registered node
+pub const REGISTERED_NODE_KEY: &'static [u8; 18] = b"is_registered_node";
+// Pallet identifier for node manager
+pub const NODE_MANAGER_PALLET_ID: PalletId = PalletId(*b"node_mgr");
 
 // Ethereum param types
 pub const UINT256: &[u8] = b"uint256";

@@ -513,7 +513,6 @@ pub fn forward_to_next_block() {
 }
 
 pub fn fast_forward_to_block(n: u64) {
-    println!("fast_forward_to_block: {}", n);
     while System::block_number() < n {
         forward_to_next_block();
     }

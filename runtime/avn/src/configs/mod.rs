@@ -39,12 +39,14 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
-use runtime_common::{
-    constants::{currency::*, time::*},
-    OperationalFeeMultiplier,
-};
+use runtime_common::OperationalFeeMultiplier;
 
-use sp_avn_common::event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter};
+use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
+use sp_avn_common::{
+    constants::{currency::*, time::*},
+    event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
+    NODE_MANAGER_PALLET_ID,
+};
 use sp_core::{ConstU128, H160};
 use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
 use sp_watchtower::NoopWatchtower;
@@ -520,6 +522,22 @@ impl pallet_eth_bridge::Config for Runtime {
     type ProcessedEventsHandler = CorePrimaryEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
+}
+
+parameter_types! {
+    pub const NodeManagerPalletId: PalletId = NODE_MANAGER_PALLET_ID;
+}
+
+impl pallet_node_manager::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type SignerId = NodeManagerKeyId;
+    type Currency = Balances;
+    type RewardPotId = NodeManagerPalletId;
+    type Public = <Signature as sp_runtime::traits::Verify>::Signer;
+    type Signature = Signature;
+    type SignedTxLifetime = ConstU32<64>;
+    type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
 }
 
 // Other pallets

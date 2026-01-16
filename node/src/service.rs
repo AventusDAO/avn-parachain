@@ -6,6 +6,7 @@ use cumulus_client_cli::CollatorOptions;
 use futures::lock::Mutex;
 use runtime_common::opaque::{Block, Hash};
 use sc_client_api::Backend;
+use sp_avn_common::REGISTERED_NODE_KEY;
 use sp_core::offchain::OffchainStorage;
 use std::{sync::Arc, time::Duration};
 
@@ -288,6 +289,7 @@ pub async fn start_parachain_node(
     if parachain_config.offchain_worker.enabled {
         use futures::FutureExt;
 
+        let maybe_registered_node_id = avn_cli_config.registered_node_id.clone();
         let port_number = avn_port
             .clone()
             .unwrap_or_else(|| DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.to_string());
@@ -298,6 +300,20 @@ pub async fn start_parachain_node(
                 EXTERNAL_SERVICE_PORT_NUMBER_KEY,
                 &port_number.encode(),
             );
+
+            // If the node is run with the --registered-node-id flag,
+            // set the registered node key in the offchain storage
+            if let Some(registered_node_id) = maybe_registered_node_id {
+                if hex::decode(registered_node_id.clone()).is_ok() {
+                    local_db.set(
+                        sp_core::offchain::STORAGE_PREFIX,
+                        REGISTERED_NODE_KEY,
+                        &registered_node_id.encode(),
+                    );
+                } else {
+                    log::warn!("✋ Invalid nodeId: {:?} found. NodeId must be a hex public key without the 0x.", registered_node_id);
+                }
+            }
         }
 
         task_manager.spawn_handle().spawn(

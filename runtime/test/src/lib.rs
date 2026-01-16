@@ -57,19 +57,17 @@ pub use pallet_avn_proxy::{Event as AvnProxyEvent, ProvableProxy};
 use pallet_eth_bridge_runtime_api::InstanceId;
 use pallet_parachain_staking;
 use sp_avn_common::{
+    constants::{currency::*, time::*},
     eth::EthBridgeInstance,
     event_discovery::{AdditionalEvents, EthBlockRange, EthereumEventsPartition},
     InnerCallValidator, Proof,
 };
 
 use crate::apis::RUNTIME_API_VERSIONS;
-pub use node_primitives::{AccountId, Signature};
-pub(crate) use node_primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
+pub use sp_avn_common::primitives::{AccountId, Signature};
+pub(crate) use sp_avn_common::primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
 
-use runtime_common::{
-    constants::{currency::*, time::*},
-    weights, Address, Header, TransactionByteFee, WeightToFee,
-};
+use runtime_common::{weights, Address, Header, TransactionByteFee, WeightToFee};
 
 pub type NegativeImbalance<T> = <pallet_balances::Pallet<T> as Currency<
     <T as frame_system::Config>::AccountId,
@@ -136,7 +134,8 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 
 #[docify::export]
 mod block_times {
-    use runtime_common::constants::time::MILLISECS_PER_BLOCK;
+    use crate::MILLISECS_PER_BLOCK;
+
     /// This determines the average expected block time that we are targeting. Blocks will be
     /// produced at a minimum duration defined by `SLOT_DURATION`. `SLOT_DURATION` is picked up by
     /// `pallet_timestamp` which is in turn picked up by `pallet_aura` to implement `fn

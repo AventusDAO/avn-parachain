@@ -59,6 +59,10 @@ pub struct AvnRunCmd {
     /// URL for connecting with an ethereum node
     #[arg(long = "ethereum-node-url", value_name = "ETH URL", num_args = 0..=32)]
     pub eth_node_urls: Vec<String>,
+
+    /// Flag to specify the Id of a registered Aventus cloud node
+    #[arg(long = "registered-node-id", value_name = "Registered Node Id")]
+    pub registered_node_id: Option<String>,
 }
 
 impl std::ops::Deref for AvnRunCmd {
