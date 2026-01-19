@@ -152,6 +152,17 @@ impl ProvableProxy<RuntimeCall, Signature, AccountId> for AvnProxyConfig {
                 nodes_to_deregister: _,
                 block_number: _,
             }) => return Some(proof.clone()),
+            RuntimeCall::Watchtower(pallet_watchtower::Call::signed_submit_external_proposal {
+                proposal: _,
+                block_number: _,
+                proof,
+            }) => return Some(proof.clone()),
+            RuntimeCall::Watchtower(pallet_watchtower::Call::signed_vote {
+                proof,
+                proposal_id: _,
+                in_favor: _,
+                block_number: _,
+            }) => return Some(proof.clone()),
             _ => None,
         }
     }
@@ -174,6 +185,8 @@ impl InnerCallValidator for AvnProxyConfig {
                 return pallet_avn_anchor::Pallet::<Runtime>::signature_is_valid(call),
             RuntimeCall::NodeManager(..) =>
                 return pallet_node_manager::Pallet::<Runtime>::signature_is_valid(call),
+            RuntimeCall::Watchtower(..) =>
+                return pallet_watchtower::Pallet::<Runtime>::signature_is_valid(call),
             _ => false,
         }
     }

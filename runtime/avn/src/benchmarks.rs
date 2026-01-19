@@ -29,6 +29,7 @@ frame_benchmarking::define_benchmarks!(
     [pallet_validators_manager, ValidatorsManager]
     [pallet_avn_transaction_payment, AvnTransactionPayment]
     [pallet_node_manager, NodeManager]
+    [pallet_watchtower, Watchtower]
     [pallet_session, SessionBench::<Runtime>]
     [pallet_timestamp, Timestamp]
     [pallet_message_queue, MessageQueue]

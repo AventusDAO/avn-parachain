@@ -358,6 +358,9 @@ mod runtime {
     #[runtime::pallet_index(93)]
     pub type NodeManager = pallet_node_manager;
 
+    #[runtime::pallet_index(94)]
+    pub type Watchtower = pallet_watchtower;
+
     // OpenGov pallets
     #[runtime::pallet_index(97)]
     pub type Preimage = pallet_preimage;
