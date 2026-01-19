@@ -532,6 +532,8 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        // Make sure this function returns an error if admin account is not set
+        // If you change the return type, make sure to update `EnsureExternalProposerOrRoot`
         pub fn proposal_admin() -> Result<T::AccountId, Error<T>> {
             Ok(<AdminAccount<T>>::get().ok_or(Error::<T>::AdminAccountNotSet)?)
         }
