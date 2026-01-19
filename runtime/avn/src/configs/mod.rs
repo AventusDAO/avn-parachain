@@ -41,7 +41,7 @@ use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
 use runtime_common::OperationalFeeMultiplier;
-
+use code::{Decode, Encode};
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
 use sp_avn_common::{
     constants::{currency::*, time::*},
@@ -65,7 +65,7 @@ use crate::{
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary, System,
     TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee,
     XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, SummaryWatchtower, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -657,7 +657,7 @@ impl pallet_watchtower::Config for Runtime {
     type Watchtowers = RuntimeNodeManager;
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
-    type WatchtowerHooks = ();
+    type WatchtowerHooks = SummaryWatchtower;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
@@ -665,6 +665,12 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
+}
+
+impl pallet_summary_watchtower::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type WeightInfo = ();
 }
 
 pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
