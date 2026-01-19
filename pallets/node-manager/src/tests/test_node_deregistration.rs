@@ -4,7 +4,6 @@
 
 use crate::{mock::*, *};
 use frame_support::{assert_noop, assert_ok};
-//use prediction_market_primitives::{test_helper::TestAccount, types::SignatureTest};
 use sp_avn_common::{avn_tests_helpers::utilities::SignatureTest, Proof};
 use sp_core::Pair;
 

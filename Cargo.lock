@@ -8702,6 +8702,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-summary-watchtower"
+version = "8.5.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "log",
+ "pallet-avn",
+ "pallet-balances",
+ "pallet-node-manager",
+ "pallet-summary",
+ "pallet-timestamp",
+ "pallet-watchtower",
+ "parity-scale-codec",
+ "parking_lot 0.12.3",
+ "scale-info",
+ "sp-api",
+ "sp-application-crypto",
+ "sp-avn-common",
+ "sp-core",
+ "sp-io",
+ "sp-keystore",
+ "sp-runtime",
+ "sp-state-machine",
+ "sp-std",
+ "sp-watchtower",
+]
+
+[[package]]
 name = "pallet-timestamp"
 version = "37.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk?branch=stable2409#298f676c91d64f15f38ea7fd78f125c5889ab09c"
