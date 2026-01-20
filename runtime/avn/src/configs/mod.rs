@@ -723,7 +723,7 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
     fn get_node_signing_key(node: &AccountId) -> Option<NodeManagerKeyId> {
         #[cfg(feature = "runtime-benchmarks")]
         {
-            use codec::Decode;
+            use codec::{Decode, Encode};
             let bytes = node.encode();
             return NodeManagerKeyId::decode(&mut bytes.as_slice()).ok()
         }
