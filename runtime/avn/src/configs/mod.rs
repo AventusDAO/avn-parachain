@@ -22,6 +22,7 @@ use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 use frame_support::{
     derive_impl,
     dispatch::DispatchClass,
+    pallet_prelude::EnsureOrigin,
     parameter_types,
     traits::{ConstBool, ConstU32, ConstU64, TransformOrigin, VariantCountOf},
     weights::{ConstantMultiplier, Weight},
@@ -39,9 +40,8 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
-use runtime_common::OperationalFeeMultiplier;
-
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
+use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
@@ -49,7 +49,6 @@ use sp_avn_common::{
 };
 use sp_core::{ConstU128, H160};
 use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
-use sp_watchtower::NoopWatchtower;
 
 // Local module imports
 use crate::{
@@ -61,10 +60,11 @@ use crate::{
     NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
-    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary, System,
-    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee,
-    XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
+    SummaryWatchtower, System, TokenManager, TransactionByteFee, UncheckedExtrinsic,
+    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
+    EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
+    VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -426,7 +426,7 @@ parameter_types! {
     pub const TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub const EthAutoSubmitSummaries: bool = true;
     pub const EthereumInstanceId: u8 = 1u8;
-    pub const ExternalValidationEnabled: bool = false;
+    pub const ExternalValidationEnabled: bool = true;
 }
 
 impl pallet_summary::Config for Runtime {
@@ -440,7 +440,7 @@ impl pallet_summary::Config for Runtime {
     type AutoSubmitSummaries = EthAutoSubmitSummaries;
     type InstanceId = EthereumInstanceId;
     type ExternalValidationEnabled = ExternalValidationEnabled;
-    type ExternalValidator = NoopWatchtower<AccountId>;
+    type ExternalValidator = Watchtower;
 }
 
 pub type EthAddress = H160;
@@ -631,6 +631,57 @@ impl pallet_preimage::Config for Runtime {
     >;
 }
 
+pub struct EnsureExternalProposerOrRoot;
+impl EnsureOrigin<RuntimeOrigin> for EnsureExternalProposerOrRoot {
+    type Success = Option<AccountId>;
+    // If the config admin is not set, assume we can allow anyone to submit an external proposal
+    fn try_origin(o: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
+        if EnsureRoot::<AccountId>::try_origin(o.clone()).is_ok() {
+            return Ok(None)
+        }
+
+        match EnsureSigned::<AccountId>::try_origin(o) {
+            Ok(who) => {
+                match Watchtower::proposal_admin() {
+                    Ok(admin) if who == admin => Ok(Some(who)),
+                    Ok(_admin) => Err(RuntimeOrigin::signed(who)), // non-admin signer → reject
+                    Err(_) => Ok(Some(who)),                       // no admin → allow anyone
+                }
+            },
+            Err(o) => Err(o),
+        }
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin() -> Result<RuntimeOrigin, ()> {
+        use frame_benchmarking::whitelisted_caller;
+        Ok(RuntimeOrigin::signed(whitelisted_caller()))
+    }
+}
+
+impl pallet_watchtower::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type WeightInfo = pallet_watchtower::default_weights::SubstrateWeight<Runtime>;
+    type Watchtowers = RuntimeNodeManager;
+    type SignerId = NodeManagerKeyId;
+    type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
+    type WatchtowerHooks = (Summary, SummaryWatchtower);
+    type MaxTitleLen = ConstU32<512>;
+    type MaxInlineLen = ConstU32<8192>;
+    type MaxUriLen = ConstU32<2040>;
+    type Public = <Signature as sp_runtime::traits::Verify>::Signer;
+    type Signature = Signature;
+    type SignedTxLifetime = ConstU32<64>;
+    type MaxInternalProposalLen = ConstU32<4096>;
+}
+
+impl pallet_summary_watchtower::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type WeightInfo = ();
+}
+
 pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
 impl<R> OnUnbalanced<fungible::Credit<R::AccountId, pallet_balances::Pallet<R>>> for DealWithFees<R>
 where
@@ -650,5 +701,53 @@ where
             }
             ResolveTo::<StakingPotAccountId<R>, pallet_balances::Pallet<R>>::on_unbalanced(fees)
         }
+    }
+}
+
+pub struct RuntimeNodeManager;
+impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeNodeManager {
+    fn is_authorized_watchtower(node: &AccountId) -> bool {
+        #[cfg(feature = "runtime-benchmarks")]
+        {
+            return true
+        }
+
+        #[cfg(not(feature = "runtime-benchmarks"))]
+        pallet_node_manager::NodeRegistry::<Runtime>::contains_key(node)
+    }
+
+    fn is_watchtower_owner(who: &AccountId) -> bool {
+        pallet_node_manager::OwnedNodes::<Runtime>::iter_prefix(&who).next().is_some()
+    }
+
+    fn get_node_signing_key(node: &AccountId) -> Option<NodeManagerKeyId> {
+        #[cfg(feature = "runtime-benchmarks")]
+        {
+            use codec::{Decode, Encode};
+            let bytes = node.encode();
+            return NodeManagerKeyId::decode(&mut bytes.as_slice()).ok()
+        }
+
+        #[cfg(not(feature = "runtime-benchmarks"))]
+        pallet_node_manager::NodeRegistry::<Runtime>::get(node)
+            .map(|node_info| node_info.signing_key)
+    }
+
+    fn get_node_from_local_signing_keys() -> Option<(AccountId, NodeManagerKeyId)> {
+        pallet_node_manager::Pallet::<Runtime>::get_node_from_signing_key()
+    }
+
+    fn get_watchtower_voting_weight(owner: &AccountId) -> u32 {
+        pallet_node_manager::OwnedNodesCount::<Runtime>::get(owner)
+    }
+
+    fn get_authorized_watchtowers_count() -> u32 {
+        #[cfg(feature = "runtime-benchmarks")]
+        {
+            return 10u32
+        }
+
+        #[cfg(not(feature = "runtime-benchmarks"))]
+        pallet_node_manager::TotalRegisteredNodes::<Runtime>::get()
     }
 }

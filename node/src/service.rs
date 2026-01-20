@@ -267,7 +267,7 @@ pub async fn start_parachain_node(
     let validator = parachain_config.role.is_authority();
     let transaction_pool = params.transaction_pool.clone();
     let import_queue_service = params.import_queue.service();
-
+    let offchain_worker_enabled = parachain_config.offchain_worker.enabled;
     let avn_port = avn_cli_config.avn_port.clone();
 
     // NOTE: because we use Aura here explicitly, we can use `CollatorSybilResistance::Resistant`
@@ -286,7 +286,7 @@ pub async fn start_parachain_node(
         })
         .await?;
 
-    if parachain_config.offchain_worker.enabled {
+    if offchain_worker_enabled {
         use futures::FutureExt;
 
         let maybe_registered_node_id = avn_cli_config.registered_node_id.clone();
@@ -407,7 +407,7 @@ pub async fn start_parachain_node(
         sync_service: sync_service.clone(),
     })?;
 
-    if validator {
+    if validator || offchain_worker_enabled {
         let keystore_path = match parachain_config_keystore {
             KeystoreConfig::Path { path, password: _ } => Ok(path.clone()),
             _ => Err("Keystore must be local"),
@@ -418,6 +418,7 @@ pub async fn start_parachain_node(
             .first()
             .cloned()
             .unwrap_or_else(|| "".to_string());
+
         let avn_config = avn_service::Config::<Block, _> {
             keystore: params.keystore_container.local_keystore(),
             keystore_path: keystore_path.clone(),
@@ -428,46 +429,51 @@ pub async fn start_parachain_node(
             _block: Default::default(),
         };
 
-        let eth_event_handler_config =
-            avn_service::ethereum_events_handler::EthEventHandlerConfig::<Block, _> {
-                keystore: params.keystore_container.local_keystore(),
-                keystore_path: keystore_path.clone(),
-                avn_port: avn_port.clone(),
-                eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
-                web3_data_mutexes: Default::default(),
-                client: client.clone(),
-                offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
-                    transaction_pool.clone(),
-                ),
-            };
-
         task_manager.spawn_essential_handle().spawn(
             "avn-service",
             None,
             avn_service::start(avn_config),
         );
-        task_manager.spawn_essential_handle().spawn(
-            "eth-events-handler",
-            None,
-            avn_service::ethereum_events_handler::start_eth_event_handler(eth_event_handler_config),
-        );
 
-        start_consensus(
-            client.clone(),
-            backend,
-            block_import,
-            prometheus_registry.as_ref(),
-            telemetry.as_ref().map(|t| t.handle()),
-            &task_manager,
-            relay_chain_interface,
-            transaction_pool,
-            params.keystore_container.keystore(),
-            relay_chain_slot_duration,
-            para_id,
-            collator_key.expect("Command line arguments do not allow this. qed"),
-            overseer_handle,
-            announce_block,
-        )?;
+        if validator {
+            let eth_event_handler_config =
+                avn_service::ethereum_events_handler::EthEventHandlerConfig::<Block, _> {
+                    keystore: params.keystore_container.local_keystore(),
+                    keystore_path: keystore_path.clone(),
+                    avn_port: avn_port.clone(),
+                    eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
+                    web3_data_mutexes: Default::default(),
+                    client: client.clone(),
+                    offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
+                        transaction_pool.clone(),
+                    ),
+                };
+
+            task_manager.spawn_essential_handle().spawn(
+                "eth-events-handler",
+                None,
+                avn_service::ethereum_events_handler::start_eth_event_handler(
+                    eth_event_handler_config,
+                ),
+            );
+
+            start_consensus(
+                client.clone(),
+                backend,
+                block_import,
+                prometheus_registry.as_ref(),
+                telemetry.as_ref().map(|t| t.handle()),
+                &task_manager,
+                relay_chain_interface,
+                transaction_pool,
+                params.keystore_container.keystore(),
+                relay_chain_slot_duration,
+                para_id,
+                collator_key.expect("Command line arguments do not allow this. qed"),
+                overseer_handle,
+                announce_block,
+            )?;
+        }
     }
 
     start_network.start_network();

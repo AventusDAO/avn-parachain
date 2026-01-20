@@ -312,9 +312,19 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureExternalProposerOrRoot {
     type Success = Option<AccountId>;
 
     fn try_origin(o: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
+        if EnsureRoot::<AccountId>::try_origin(o.clone()).is_ok() {
+            return Ok(None)
+        }
+
         match EnsureSigned::<AccountId>::try_origin(o) {
-            Ok(who) => Ok(Some(who)),
-            Err(o) => EnsureRoot::<AccountId>::try_origin(o).map(|_| None),
+            Ok(who) => {
+                match Watchtower::proposal_admin() {
+                    Ok(admin) if who == admin => Ok(Some(who)),
+                    Ok(_admin) => Err(RuntimeOrigin::signed(who)), // non-admin signer → reject
+                    Err(_) => Ok(Some(who)),                       // no admin → allow anyone
+                }
+            },
+            Err(o) => Err(o),
         }
     }
 
