@@ -40,8 +40,8 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
-use runtime_common::OperationalFeeMultiplier;
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
+use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
