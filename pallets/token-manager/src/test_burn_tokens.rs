@@ -25,7 +25,7 @@ fn any_burn_funds_requested_event() -> bool {
         matches!(
             r.event,
             mock::RuntimeEvent::TokenManager(
-                crate::Event::<TestRuntime>::BurnFundsRequested { .. }
+                crate::Event::<TestRuntime>::BurnRequested { .. }
             )
         )
     })
@@ -158,7 +158,7 @@ mod burn_tests {
 
                     assert!(event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
                         TestRuntime,
-                    >::BurnFundsRequested {
+                    >::BurnRequested {
                         burner: burn_pot,
                         amount,
                         tx_id,
@@ -228,7 +228,7 @@ mod burn_tests {
         }
     }
 
-    mod burn_funds {
+    mod burn_native_token {
         use super::*;
 
         mod succeeds_when {
@@ -249,7 +249,7 @@ mod burn_tests {
 
                     let amount: u128 = 1_000u128;
 
-                    assert_ok!(TokenManager::burn_funds(
+                    assert_ok!(TokenManager::burn_native_token(
                         RuntimeOrigin::signed(burner.clone()),
                         amount
                     ));
@@ -268,7 +268,7 @@ mod burn_tests {
                     // Event emitted
                     assert!(event_emitted(&mock::RuntimeEvent::TokenManager(crate::Event::<
                         TestRuntime,
-                    >::BurnFundsRequested {
+                    >::BurnRequested {
                         burner,
                         amount,
                         tx_id,
@@ -291,7 +291,7 @@ mod burn_tests {
                     let burner = account_id_with_100_avt();
 
                     assert_noop!(
-                        TokenManager::burn_funds(RuntimeOrigin::signed(burner), 0u128),
+                        TokenManager::burn_native_token(RuntimeOrigin::signed(burner), 0u128),
                         Error::<TestRuntime>::AmountIsZero
                     );
                 });
@@ -312,7 +312,7 @@ mod burn_tests {
                     let amount: u128 = 1_000u128;
 
                     assert_noop!(
-                        TokenManager::burn_funds(RuntimeOrigin::signed(burner), amount),
+                        TokenManager::burn_native_token(RuntimeOrigin::signed(burner), amount),
                         Error::<TestRuntime>::InsufficientSenderBalance
                     );
                 });

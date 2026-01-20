@@ -33,7 +33,7 @@ impl<T: Config> Pallet<T> {
         NextBurnAt::<T>::put(next_burn);
     }
 
-    pub(crate) fn burn_from_pot() -> Weight {
+    pub(crate) fn burn_from_burn_pot() -> Weight {
         let burn_pot = Self::burn_pot_account();
         let amount: BalanceOf<T> = T::Currency::free_balance(&burn_pot);
 
@@ -59,7 +59,7 @@ impl<T: Config> Pallet<T> {
         match T::BridgeInterface::publish(function_name, &params, PALLET_ID.to_vec()) {
             Ok(tx_id) => {
                 PendingBurnSubmission::<T>::insert(tx_id, (burner.clone(), amount));
-                Self::deposit_event(Event::<T>::BurnFundsRequested {
+                Self::deposit_event(Event::<T>::BurnRequested {
                     burner: burner.clone(),
                     amount,
                     tx_id,
