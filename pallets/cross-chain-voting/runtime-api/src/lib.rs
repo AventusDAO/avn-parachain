@@ -1,8 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use node_primitives::{AccountId, Balance};
 use sp_core::H160;
 use sp_std::vec::Vec;
-use node_primitives::{AccountId, Balance};
 
 sp_api::decl_runtime_apis! {
     pub trait CrossChainVotingApi {

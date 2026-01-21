@@ -526,10 +526,11 @@ parameter_types! {
     pub const MaxLinkedAccounts: u32 = 10;
 }
 
-impl pallet_cross_chain_voting::pallet::Config for Runtime {
+impl pallet_cross_chain_voting::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type MaxLinkedAccounts = MaxLinkedAccounts;
+    type WeightInfo = pallet_cross_chain_voting::default_weights::SubstrateWeight<Runtime>;
 }
 
 // Other pallets

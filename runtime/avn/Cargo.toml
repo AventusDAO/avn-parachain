@@ -222,6 +222,7 @@ runtime-benchmarks = [
 	"pallet-avn-anchor/runtime-benchmarks",
 	"pallet-avn-proxy/runtime-benchmarks",
 	"pallet-avn-offence-handler/runtime-benchmarks",
+	"pallet-cross-chain-voting/runtime-benchmarks",
 	"pallet-eth-bridge/runtime-benchmarks",
 	"pallet-ethereum-events/runtime-benchmarks",
 	"pallet-avn/runtime-benchmarks",
@@ -283,4 +284,5 @@ try-runtime = [
 	"pallet-conviction-voting/try-runtime",
 	"pallet-referenda/try-runtime",
 	"pallet-whitelist/try-runtime",
+	"pallet-cross-chain-voting/try-runtime",
 ]

@@ -26,6 +26,18 @@ use sp_std::prelude::*;
 
 pub use pallet::*;
 
+#[cfg(test)]
+mod mock;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+
+pub mod default_weights;
+pub use default_weights::WeightInfo;
+
 pub const CONTEXT: &[u8] = b"avn:cross-chain-voting:v1";
 
 type BalanceOf<T> =
@@ -60,13 +72,12 @@ pub mod pallet {
     #[pallet::config]
     pub trait Config: frame_system::Config {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// Native currency for voting weight
         type Currency: Currency<Self::AccountId>;
-
         /// Max linked T2 accounts per T1 identity (set to 10 in runtime)
         #[pallet::constant]
         type MaxLinkedAccounts: Get<u32>;
+        type WeightInfo: WeightInfo;
     }
 
     #[pallet::pallet]
@@ -110,7 +121,7 @@ pub mod pallet {
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::link_account())]
         pub fn link_account(
             origin: OriginFor<T>,
             payload: LinkPayload<T::AccountId>,
@@ -157,14 +168,14 @@ pub mod pallet {
         }
 
         #[pallet::call_index(1)]
-        #[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::unlink_account())]
         pub fn unlink_account(
             origin: OriginFor<T>,
             payload: LinkPayload<T::AccountId>,
         ) -> DispatchResult {
             let signer = ensure_signed(origin)?;
             ensure!(signer == payload.t2_linked_account, Error::<T>::CallerMustBeLinkedAccount);
-            ensure!(payload.action == Action::Unlink, Error::<T>::AccountNotLinkedToIdentity);
+            ensure!(payload.action == Action::Unlink, Error::<T>::InvalidAction);
 
             let owner = LinkedAccountToIdentity::<T>::get(&payload.t2_linked_account)
                 .ok_or(Error::<T>::AccountNotLinkedToIdentity)?;
