@@ -294,6 +294,7 @@ pub mod pallet {
         },
         TreasuryFunded {
             from: T::AccountId,
+            amount: BalanceOf<T>,
         },
     }
 
