@@ -24,9 +24,7 @@ fn any_burn_funds_requested_event() -> bool {
     frame_system::Pallet::<TestRuntime>::events().iter().any(|r| {
         matches!(
             r.event,
-            mock::RuntimeEvent::TokenManager(
-                crate::Event::<TestRuntime>::BurnRequested { .. }
-            )
+            mock::RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::BurnRequested { .. })
         )
     })
 }

@@ -280,6 +280,10 @@ pub mod pallet {
         BurnFailed {
             tx_id: u32,
         },
+        BurnRequestFailed {
+            burner: T::AccountId,
+            amount: BalanceOf<T>,
+        },
     }
 
     #[pallet::error]
@@ -689,7 +693,7 @@ pub mod pallet {
             let free = T::Currency::free_balance(&burner);
             ensure!(free >= amount, Error::<T>::InsufficientSenderBalance);
 
-            Self::publish_burn_tokens_on_t1(&burner, amount)?;
+            Self::burn_from_user_pot(&burner, amount)?;
             Ok(())
         }
     }
