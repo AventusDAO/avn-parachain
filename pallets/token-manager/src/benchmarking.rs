@@ -24,7 +24,7 @@ use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite, whiteli
 use frame_system::{pallet_prelude::BlockNumberFor, EventRecord, RawOrigin};
 use hex_literal::hex;
 use sp_core::sr25519;
-use sp_runtime::RuntimeAppPublic;
+use sp_runtime::{RuntimeAppPublic, SaturatedConversion};
 
 use sp_application_crypto::KeyTypeId;
 pub const BENCH_KEY_TYPE_ID: KeyTypeId = KeyTypeId(*b"test");
@@ -48,6 +48,17 @@ fn assert_last_nth_event<T: Config>(generic_event: <T as Config>::RuntimeEvent, 
     // compare to the last event record
     let EventRecord { event, .. } = &events[events.len().saturating_sub(n as usize)];
     assert_eq!(event, &system_event);
+}
+
+fn assert_event_emitted<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
+    let events = frame_system::Pallet::<T>::events();
+    let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
+    assert!(
+        events
+            .iter()
+            .any(|frame_system::EventRecord { event, .. }| event == &system_event),
+        "Expected event was not emitted"
+    );
 }
 
 struct Transfer<T: Config> {
@@ -362,6 +373,130 @@ benchmarks! {
         assert_eq!(LowersDisabled::<T>::get(), true);
         assert_last_event::<T>(Event::<T>::LoweringDisabled.into());
     }
+
+    set_burn_period {
+        let min = T::MinBurnPeriod::get();
+        let burn_period: u32 = min.saturating_add(1);
+
+        frame_system::Pallet::<T>::set_block_number(1u32.into());
+        let now = frame_system::Pallet::<T>::block_number();
+    }: _(RawOrigin::Root, burn_period)
+    verify {
+        assert_eq!(BurnPeriod::<T>::get(), burn_period);
+
+        assert_last_event::<T>(
+            Event::<T>::BurnPeriodUpdated { burn_period }.into()
+        );
+    }
+
+    on_initialize_burn_due_and_pot_has_funds_to_burn {
+        let now: BlockNumberFor<T> = 10u32.into();
+        frame_system::Pallet::<T>::set_block_number(now);
+
+        // Due now
+        NextBurnAt::<T>::put(now);
+
+        let burn_pot = Pallet::<T>::burn_pot_account();
+        let amount: BalanceOf<T> = 1_000u128.saturated_into();
+        let _ = T::Currency::deposit_creating(&burn_pot, amount);
+
+        frame_system::Pallet::<T>::reset_events();
+    }: {
+        Pallet::<T>::on_initialize(now);
+    }
+    verify {
+        let (tx_id, (stored_burner, stored_amount)) =
+        PendingBurnSubmission::<T>::iter().next().expect("PendingBurnSubmission should exist");
+
+        assert_eq!(stored_burner, burn_pot);
+        assert_eq!(stored_amount, amount);
+
+        assert_event_emitted::<T>(
+            Event::<T>::BurnRequested {
+                burner: burn_pot,
+                amount,
+                tx_id,
+            }.into()
+        );
+    }
+
+    on_initialize_burn_not_due {
+        let now: BlockNumberFor<T> = 10u32.into();
+        frame_system::Pallet::<T>::set_block_number(now);
+
+        // Not due: next burn is in the future
+        NextBurnAt::<T>::put(now.saturating_add(100u32.into()));
+
+        let burn_pot = Pallet::<T>::burn_pot_account();
+        let amount: BalanceOf<T> = BalanceOf::<T>::saturated_from(1_000u128);
+        let _ = T::Currency::deposit_creating(&burn_pot, amount);
+
+        // Clear events so verify is clean
+        frame_system::Pallet::<T>::reset_events();
+    }: {
+        Pallet::<T>::on_initialize(now);
+    }
+    verify {
+        // No burn request should have been created
+        assert_eq!(PendingBurnSubmission::<T>::iter().count(), 0);
+
+        // Also reserve should still be 0 because publish/reserve was never called
+        assert_eq!(T::Currency::reserved_balance(&burn_pot), 0u32.into());
+    }
+
+    on_initialize_burn_due_but_pot_empty {
+        let now: BlockNumberFor<T> = 10u32.into();
+        frame_system::Pallet::<T>::set_block_number(now);
+
+        // Due now
+        NextBurnAt::<T>::put(now);
+
+        frame_system::Pallet::<T>::reset_events();
+
+        // dummy amount
+        let amount: BalanceOf<T> = 1u128.saturated_into();
+    }: {
+        Pallet::<T>::on_initialize(now);
+    }
+    verify {
+        // No burn request should have been created
+        assert_eq!(PendingBurnSubmission::<T>::iter().count(), 0);
+
+        let burn_pot = Pallet::<T>::burn_pot_account();
+        // No reserve either
+        assert_eq!(T::Currency::reserved_balance(&burn_pot), 0u32.into());
+    }
+
+    burn_native_token {
+        let burner: T::AccountId = whitelisted_caller();
+        let amount: BalanceOf<T> = 1_000u128.saturated_into();
+
+        // Ensure caller has enough free balance to pass:
+        let _ = T::Currency::deposit_creating(&burner, amount);
+
+        frame_system::Pallet::<T>::reset_events();
+
+    }: _(RawOrigin::<T::AccountId>::Signed(burner.clone()), amount)
+    verify {
+        // 1) Reserve happened (publish_burn_tokens_on_t1 reserves first)
+        assert_eq!(T::Currency::reserved_balance(&burner), amount);
+
+        // 2) Pending burn submission recorded (tx_id comes from BridgeInterface::publish mock)
+        let (tx_id, (stored_burner, stored_amount)) =
+            PendingBurnSubmission::<T>::iter().next().expect("PendingBurnSubmission should exist");
+
+        assert_eq!(stored_burner, burner.clone());
+        assert_eq!(stored_amount, amount);
+
+        assert_last_event::<T>(
+            Event::<T>::BurnRequested {
+                burner,
+                amount,
+                tx_id,
+            }.into()
+        );
+    }
+
 }
 
 impl_benchmark_test_suite!(

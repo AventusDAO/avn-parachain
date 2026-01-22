@@ -29,9 +29,6 @@ use sp_runtime::{
 };
 use sp_std::{marker::PhantomData, prelude::*};
 
-pub const FEE_POT_ID: PalletId = PalletId(*b"avn/fees");
-pub const BURN_POT_ID: PalletId = PalletId(*b"avn/burn");
-
 pub mod fee_adjustment_config;
 use fee_adjustment_config::{
     AdjustmentType::{TimeBased, TransactionBased},
@@ -44,6 +41,16 @@ pub const FALLBACK_MIN_FEE: u128 = 11_090_000u128;
 pub trait NativeRateProvider {
     /// Return price of 1 native token in USD (8 decimals), or None if unavailable
     fn native_rate_usd() -> Option<u128>;
+}
+
+/// Runtime-provided policy for distributing fees from the fee pot.
+pub trait FeeDistributor<T: Config> {
+    fn distribute_fees(
+        fee_pot: &T::AccountId,
+        total_fees: BalanceOf<T>,
+        used_weight_ref_time: u128,
+        max_weight_ref_time: u128,
+    );
 }
 
 #[frame_support::pallet]
@@ -77,6 +84,9 @@ pub mod pallet {
 
         /// Provider of the native token USD rate (8 decimals)
         type NativeRateProvider: NativeRateProvider;
+
+        /// Fee distribution strategy configured by the runtime (no default, must be provided).
+        type FeeDistributor: FeeDistributor<Self>;
     }
 
     #[pallet::pallet]
@@ -230,7 +240,7 @@ pub mod pallet {
 
         /// Set the base gas fee in usd (8 decimals)
         #[pallet::call_index(2)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::set_base_gas_fee_usd())]
         pub fn set_base_gas_fee_usd(origin: OriginFor<T>, base_fee: u128) -> DispatchResult {
             ensure_root(origin)?;
             ensure!(base_fee > 0u128, Error::<T>::BaseGasFeeZero);
@@ -246,53 +256,18 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_finalize(_n: BlockNumberFor<T>) {
             let fee_pot = Self::fee_pot_account();
-            let burn_pot = Self::burn_pot_account();
 
-            // total fees for this block
             let total_fees: BalanceOf<T> = T::Currency::free_balance(&fee_pot);
             if total_fees.is_zero() {
                 return;
             }
 
-            // final used block weight
             let used_weight: u128 = System::<T>::block_weight().total().ref_time() as u128;
+
             let max_weight: u128 =
                 <T as frame_system::Config>::BlockWeights::get().max_block.ref_time() as u128;
 
-            // use extracted formula
-            let collator_ratio = Self::collator_ratio_from_weights(used_weight, max_weight);
-
-            // split: collator vs burn_pot
-            let collator_share: BalanceOf<T> = collator_ratio.saturating_mul_int(total_fees);
-            let mut burn_share: BalanceOf<T> = total_fees.saturating_sub(collator_share);
-
-            // pay collator from fee_pot, or burn their share if there is no author
-            if !collator_share.is_zero() {
-                match pallet_authorship::Pallet::<T>::author() {
-                    Some(author) => {
-                        let _ = T::Currency::transfer(
-                            &fee_pot,
-                            &author,
-                            collator_share,
-                            ExistenceRequirement::KeepAlive,
-                        );
-                    },
-                    None => {
-                        // no author → collator share gets burned too
-                        burn_share = total_fees;
-                    },
-                }
-            }
-
-            // rest is burned
-            if !burn_share.is_zero() {
-                let _ = T::Currency::transfer(
-                    &fee_pot,
-                    &burn_pot,
-                    burn_share,
-                    ExistenceRequirement::AllowDeath,
-                );
-            }
+            T::FeeDistributor::distribute_fees(&fee_pot, total_fees, used_weight, max_weight);
         }
     }
 
@@ -314,11 +289,11 @@ pub mod pallet {
         }
 
         pub fn fee_pot_account() -> T::AccountId {
-            FEE_POT_ID.into_account_truncating()
+            PalletId(sp_avn_common::FEE_POT_ID).into_account_truncating()
         }
 
         pub fn burn_pot_account() -> T::AccountId {
-            BURN_POT_ID.into_account_truncating()
+            PalletId(sp_avn_common::BURN_POT_ID).into_account_truncating()
         }
 
         /// ```text
@@ -372,8 +347,9 @@ pub mod pallet {
     }
 }
 
-pub(crate) type BalanceOf<T> =
-    <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+pub type BalanceOf<T> = <<T as Config>::Currency as frame_support::traits::Currency<
+    <T as frame_system::Config>::AccountId,
+>>::Balance;
 
 type NegativeImbalanceOf<C, T> =
     <C as Currency<<T as frame_system::Config>::AccountId>>::NegativeImbalance;

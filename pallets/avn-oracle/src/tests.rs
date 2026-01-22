@@ -40,7 +40,7 @@ fn submit_different_rates_for_x_validators(num_validators: u64) {
         let currency = create_currency(currency_symbol.clone());
         register_currency(currency_symbol);
 
-        let rates = create_rates(vec![(currency, U256::from(i))]);
+        let rates = create_rates(vec![(currency, i as u128)]);
 
         assert_ok!(AvnOracle::submit_price(
             RuntimeOrigin::none(),
@@ -51,15 +51,15 @@ fn submit_different_rates_for_x_validators(num_validators: u64) {
     }
 }
 
-pub fn scale_rate(rate: f64) -> U256 {
-    U256::from((rate * 1e8) as u128)
+pub fn scale_rate(rate: f64) -> u128 {
+    (rate * 1e8) as u128
 }
 
 fn sort_rates(r: Rates) -> Rates {
-    let mut v: Vec<(Currency, U256)> = r.into_inner();
+    let mut v: Vec<(Currency, u128)> = r.into_inner();
     v.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-    <Rates as TryFrom<Vec<(Currency, U256)>>>::try_from(v).expect("bounds unchanged")
+    Rates::try_from(v).expect("bounds unchanged")
 }
 
 #[cfg(test)]
@@ -81,7 +81,7 @@ mod price_submission {
                 let currency = create_currency(currency_symbol.clone());
                 register_currency(currency_symbol);
 
-                let rates = create_rates(vec![(currency, U256::from(1000))]);
+                let rates = create_rates(vec![(currency, 1000 as u128)]);
 
                 let current_voting_id = VotingRoundId::<TestRuntime>::get();
 
@@ -114,7 +114,7 @@ mod price_submission {
                 let currency = create_currency(currency_symbol.clone());
                 register_currency(currency_symbol);
 
-                let rates = create_rates(vec![(currency, U256::from(1000))]);
+                let rates = create_rates(vec![(currency, 1000 as u128)]);
 
                 let current_voting_id = VotingRoundId::<TestRuntime>::get();
 
@@ -159,7 +159,7 @@ mod price_submission {
                 let eur = create_currency(eur_symbol.clone());
                 register_currency(eur_symbol);
 
-                let rates = create_rates(vec![(usd, U256::from(1000)), (eur, U256::from(1000))]);
+                let rates = create_rates(vec![(usd, 1000 as u128), (eur, 1000 as u128)]);
 
                 let current_voting_id = VotingRoundId::<TestRuntime>::get();
 
@@ -191,7 +191,7 @@ mod price_submission {
                 let submitter = create_validator(11);
                 let signature = generate_signature(&submitter, b"test context");
                 let currency = create_currency(b"usd".to_vec().clone());
-                let rates = create_rates(vec![(currency, U256::from(1000))]);
+                let rates = create_rates(vec![(currency, 1000 as u128)]);
 
                 assert_err!(
                     AvnOracle::submit_price(
@@ -216,7 +216,7 @@ mod price_submission {
                 let currency = create_currency(currency_symbol.clone());
                 register_currency(currency_symbol);
 
-                let rates = create_rates(vec![(currency, U256::from(1000))]);
+                let rates = create_rates(vec![(currency, 1000 as u128)]);
 
                 assert_ok!(AvnOracle::submit_price(
                     RuntimeOrigin::none(),
@@ -243,7 +243,7 @@ mod price_submission {
                 let submitter = create_validator(1);
                 let signature = generate_signature(&submitter, b"test context");
                 let currency = create_currency(b"usd".to_vec().clone());
-                let rates = create_rates(vec![(currency, U256::from(1000))]);
+                let rates = create_rates(vec![(currency, 1000 as u128)]);
 
                 assert_err!(
                     AvnOracle::submit_price(
@@ -272,7 +272,7 @@ mod price_submission {
                 let currency = create_currency(currency_symbol.clone());
                 register_currency(currency_symbol);
 
-                let rates = create_rates(vec![(currency, U256::from(1000))]);
+                let rates = create_rates(vec![(currency, 1000 as u128)]);
 
                 let current_voting_id = VotingRoundId::<TestRuntime>::get();
 

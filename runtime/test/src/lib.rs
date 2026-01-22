@@ -607,6 +607,8 @@ parameter_types! {
     pub const EthAutoSubmitSummaries: bool = true;
     pub const AvnAutoSubmitSummaries: bool = false;
     pub const AvnInstanceId: u8 = 2u8;
+    pub const MinBurnPeriod: u32 = 100;
+    pub const BurnEnabled: bool = false;
 }
 
 pub type EthSummary = pallet_summary::Instance1;
@@ -666,6 +668,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type Preimages = Preimage;
     type PalletsOrigin = OriginCaller;
     type BridgeInterface = EthBridge;
+    type MinBurnPeriod = MinBurnPeriod;
+    type BurnEnabled = BurnEnabled;
 }
 
 impl pallet_nft_manager::Config for Runtime {

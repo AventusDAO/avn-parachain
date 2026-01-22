@@ -7,15 +7,17 @@ use frame_support::{
     derive_impl,
     pallet_prelude::DispatchClass,
     parameter_types,
-    traits::{ConstU8, Currency, Imbalance, OnFinalize, OnInitialize},
+    traits::{ConstU8, Currency, ExistenceRequirement, Imbalance, OnFinalize, OnInitialize},
     weights::{Weight, WeightToFee as WeightToFeeT},
+    PalletId,
 };
 use frame_system::{self as system, DefaultConfig};
+use pallet_avn_transaction_payment::BalanceOf;
 use pallet_balances;
 use sp_core::{sr25519, Pair, U256};
 use sp_runtime::{
-    traits::{IdentityLookup, Verify},
-    BuildStorage, Perbill, SaturatedConversion,
+    traits::{AccountIdConversion, IdentityLookup, Verify, Zero},
+    BuildStorage, FixedPointNumber, Perbill, SaturatedConversion,
 };
 
 pub type AccountId = <Signature as Verify>::Signer;
@@ -78,6 +80,55 @@ impl NativeRateProvider for TestRateProvider {
     }
 }
 
+pub struct PayCollatorAndBurn;
+impl crate::FeeDistributor<TestRuntime> for PayCollatorAndBurn {
+    fn distribute_fees(
+        fee_pot: &AccountId,
+        total_fees: BalanceOf<TestRuntime>,
+        used_weight: u128,
+        max_weight: u128,
+    ) {
+        if total_fees.is_zero() {
+            return;
+        }
+
+        let burn_pot: AccountId = PalletId(sp_avn_common::BURN_POT_ID).into_account_truncating();
+
+        let collator_ratio =
+            crate::Pallet::<TestRuntime>::collator_ratio_from_weights(used_weight, max_weight);
+
+        let collator_share: BalanceOf<TestRuntime> = collator_ratio.saturating_mul_int(total_fees);
+        let mut burn_share: BalanceOf<TestRuntime> = total_fees.saturating_sub(collator_share);
+
+        // Pay collator; if no author, burn everything.
+        if !collator_share.is_zero() {
+            match pallet_authorship::Pallet::<TestRuntime>::author() {
+                Some(author) => {
+                    let _ = <Balances as Currency<AccountId>>::transfer(
+                        fee_pot,
+                        &author,
+                        collator_share,
+                        ExistenceRequirement::KeepAlive,
+                    );
+                },
+                None => {
+                    burn_share = total_fees;
+                },
+            }
+        }
+
+        // Send rest to burn pot
+        if !burn_share.is_zero() {
+            let _ = <Balances as Currency<AccountId>>::transfer(
+                fee_pot,
+                &burn_pot,
+                burn_share,
+                ExistenceRequirement::AllowDeath,
+            );
+        }
+    }
+}
+
 impl pallet_avn_transaction_payment::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -85,6 +136,7 @@ impl pallet_avn_transaction_payment::Config for TestRuntime {
     type KnownUserOrigin = frame_system::EnsureRoot<AccountId>;
     type WeightInfo = pallet_avn_transaction_payment::default_weights::SubstrateWeight<TestRuntime>;
     type NativeRateProvider = TestRateProvider;
+    type FeeDistributor = PayCollatorAndBurn;
 }
 
 impl WeightToFeeT for WeightToFee {

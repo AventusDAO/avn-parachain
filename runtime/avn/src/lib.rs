@@ -18,7 +18,7 @@ use scale_info::TypeInfo;
 use sp_runtime::RuntimeAppPublic;
 
 use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
-use frame_support::BoundedVec;
+use frame_support::{traits::ExistenceRequirement, BoundedVec};
 use pallet_avn_transaction_payment::NativeRateProvider;
 use pallet_transaction_payment::{ConstFeeMultiplier, Multiplier};
 use polkadot_runtime_common::xcm_sender::NoPriceForMessageDelivery;
@@ -30,7 +30,7 @@ use sp_avn_common::{
 use sp_core::{crypto::KeyTypeId, ConstU128, OpaqueMetadata, H160, U256};
 use sp_runtime::{
     create_runtime_str, generic, impl_opaque_keys,
-    traits::{Block as BlockT, ConvertInto, One},
+    traits::{AccountIdConversion, Block as BlockT, ConvertInto, One, Zero},
     transaction_validity::{TransactionPriority, TransactionSource, TransactionValidity},
     ApplyExtrinsicResult, FixedPointNumber,
 };
@@ -665,6 +665,8 @@ parameter_types! {
     pub const EthereumInstanceId: u8 = 1u8;
     pub const MinRatesRefreshRange: u32 = 5;
     pub const PriceRefreshRangeInBlocks: u32 = 50; // 10 minutes
+    pub const MinBurnPeriod: u32 = 7200;
+    pub const BurnEnabled: bool = false;
 }
 
 impl pallet_summary::Config for Runtime {
@@ -698,6 +700,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type Preimages = Preimage;
     type PalletsOrigin = OriginCaller;
     type BridgeInterface = EthBridge;
+    type MinBurnPeriod = MinBurnPeriod;
+    type BurnEnabled = BurnEnabled;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -730,6 +734,28 @@ impl NativeRateProvider for OracleNativeRateProvider {
     }
 }
 
+pub struct PayTreasury;
+impl pallet_avn_transaction_payment::FeeDistributor<Runtime> for PayTreasury {
+    fn distribute_fees(
+        fee_pot: &AccountId,
+        total_fees: pallet_avn_transaction_payment::BalanceOf<Runtime>,
+        _used_weight: u128,
+        _max_weight: u128,
+    ) {
+        if total_fees.is_zero() {
+            return;
+        }
+
+        let treasury_account: AccountId = AvnTreasuryPotId::get().into_account_truncating();
+        let _ = <Balances as Currency<AccountId>>::transfer(
+            fee_pot,
+            &treasury_account,
+            total_fees,
+            ExistenceRequirement::AllowDeath,
+        );
+    }
+}
+
 impl pallet_avn_transaction_payment::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -737,6 +763,7 @@ impl pallet_avn_transaction_payment::Config for Runtime {
     type KnownUserOrigin = EnsureRoot<AccountId>;
     type WeightInfo = pallet_avn_transaction_payment::default_weights::SubstrateWeight<Runtime>;
     type NativeRateProvider = OracleNativeRateProvider;
+    type FeeDistributor = PayTreasury;
 }
 
 impl pallet_avn_anchor::Config for Runtime {

@@ -135,13 +135,13 @@ mod base_fee_tests {
         mod succeeds_when {
             use super::*;
             #[test]
-            fn returns_zero_when_base_fee_is_zero() {
+            fn returns_fallback_fee_when_base_fee_is_zero() {
                 new_test_ext().execute_with(|| {
                     BaseGasFeeUsd::<TestRuntime>::put(0u128);
 
                     let min_fee = AvnTransactionPayment::get_min_avt_fee();
 
-                    assert_eq!(min_fee, 0u128);
+                    assert_eq!(min_fee, FALLBACK_MIN_FEE);
                 });
             }
 
