@@ -46,8 +46,8 @@ use pallet_avn::{
 };
 use sp_avn_common::{
     event_types::{
-        AvtGrowthLiftedData, AvtLowerClaimedData, TotalSupplyUpdatedData, EthEvent, EventData,
-        LiftedData, ProcessedEventHandler, TokenInterface,
+        AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
+        ProcessedEventHandler, TokenInterface, TotalSupplyUpdatedData,
     },
     verify_signature, CallDecoder, FeePaymentHandler, InnerCallValidator, Proof,
 };
@@ -1128,7 +1128,10 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    fn process_total_supply_update(event: &EthEvent, data: &TotalSupplyUpdatedData) -> DispatchResult {
+    fn process_total_supply_update(
+        event: &EthEvent,
+        data: &TotalSupplyUpdatedData,
+    ) -> DispatchResult {
         let event_id = &event.event_id;
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
         ensure!(event_validity, Error::<T>::NoTier1EventForLogTotalSupplyUpdated);
