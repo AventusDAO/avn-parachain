@@ -47,7 +47,7 @@ use pallet_avn::{
 use sp_avn_common::{
     event_types::{
         AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
-        ProcessedEventHandler, TokenInterface,
+        ProcessedEventHandler, TokenInterface, TotalSupplyUpdatedData,
     },
     verify_signature, CallDecoder, FeePaymentHandler, InnerCallValidator, Proof,
 };
@@ -296,6 +296,12 @@ pub mod pallet {
             from: T::AccountId,
             amount: BalanceOf<T>,
         },
+        TotalSupplyUpdated {
+            old_supply: BalanceOf<T>,
+            new_supply: BalanceOf<T>,
+            change: SupplyChangeType,
+            eth_tx_hash: H256,
+        },
     }
 
     #[pallet::error]
@@ -326,8 +332,17 @@ pub mod pallet {
         InvalidBurnPeriod,
         ErrorLockingTokens,
         FailedToSubmitBurnRequest,
+        NoTier1EventForLogTotalSupplyUpdated,
+        InvalidTotalSupplyUpdate,
         TotalSupplyNotSet,
         TotalSupplyZero,
+    }
+
+    #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
+    pub enum SupplyChangeType {
+        Burn,
+        Inflation,
+        NoChange,
     }
 
     #[pallet::storage]
@@ -1113,6 +1128,49 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
+    fn process_total_supply_update(
+        event: &EthEvent,
+        data: &TotalSupplyUpdatedData,
+    ) -> DispatchResult {
+        let event_id = &event.event_id;
+        let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
+        ensure!(event_validity, Error::<T>::NoTier1EventForLogTotalSupplyUpdated);
+
+        let new_supply_u128: u128 =
+            data.new_supply.try_into().map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        let new_supply_balance: BalanceOf<T> =
+            <BalanceOf<T> as TryFrom<u128>>::try_from(new_supply_u128)
+                .map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        let old_supply_u128: u128 =
+            data.old_supply.try_into().map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        let old_supply_balance: BalanceOf<T> =
+            <BalanceOf<T> as TryFrom<u128>>::try_from(old_supply_u128)
+                .map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        // Determine supply change type based on event payload
+        let change = if new_supply_u128 < old_supply_u128 {
+            SupplyChangeType::Burn
+        } else if new_supply_u128 > old_supply_u128 {
+            SupplyChangeType::Inflation
+        } else {
+            SupplyChangeType::NoChange
+        };
+
+        TotalSupply::<T>::put(new_supply_balance);
+
+        Self::deposit_event(Event::<T>::TotalSupplyUpdated {
+            old_supply: old_supply_balance,
+            new_supply: new_supply_balance,
+            change,
+            eth_tx_hash: event_id.transaction_hash,
+        });
+
+        Ok(())
+    }
+
     fn schedule_lower(
         from: &T::AccountId,
         to_account_id: T::AccountId,
@@ -1163,6 +1221,7 @@ impl<T: Config> Pallet<T> {
             EventData::LogLifted(d) => return Self::process_lift(event, d),
             EventData::LogAvtGrowthLifted(d) => return Self::process_avt_growth_lift(event, d),
             EventData::LogLowerClaimed(d) => return Self::process_lower_claim(event, d),
+            EventData::LogT1TotalSupplyUpdated(d) => Self::process_total_supply_update(event, d),
 
             // Event handled or it is not for us, in which case ignore it.
             _ => Ok(()),

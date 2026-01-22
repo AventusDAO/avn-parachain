@@ -40,8 +40,8 @@ use sp_avn_common::{
     event_types::{
         AddedValidatorData, AvtGrowthLiftedData, AvtLowerClaimedData, Challenge, ChallengeReason,
         CheckResult, EthEventCheckResult, EthEventId, EventData, LiftedData, NftCancelListingData,
-        NftEndBatchListingData, NftMintData, NftTransferToData, ProcessedEventHandler, ValidEvents,
-        Validator,
+        NftEndBatchListingData, NftMintData, NftTransferToData, ProcessedEventHandler,
+        TotalSupplyUpdatedData, ValidEvents, Validator,
     },
     verify_signature, EthQueryRequest, EthQueryResponse, EthQueryResponseType, EthTransaction,
     IngressCounter, InnerCallValidator, Proof,
@@ -1128,6 +1128,12 @@ impl<T: Config> Pallet<T> {
                 Error::<T>::EventParsingFailed
             })?;
             return Ok(EventData::LogLowerClaimed(event_data))
+        } else if event_id.signature == ValidEvents::TotalSupplyUpdated.signature() {
+            let event_data = <TotalSupplyUpdatedData>::parse_bytes(data, topics).map_err(|e| {
+                log::warn!("Error parsing T1 LogT1TotalSupplyUpdated Event: {:#?}", e);
+                Error::<T>::EventParsingFailed
+            })?;
+            return Ok(EventData::LogT1TotalSupplyUpdated(event_data))
         } else {
             return Err(Error::<T>::UnrecognizedEventSignature)
         }
