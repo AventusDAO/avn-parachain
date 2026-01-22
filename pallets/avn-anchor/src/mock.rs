@@ -198,6 +198,13 @@ impl pallet_scheduler::Config for TestRuntime {
     type Preimages = ();
 }
 
+parameter_types! {
+    pub const MinBurnPeriod: u32 = 7200;
+    pub const BurnEnabled: bool = false;
+    pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const TreasuryBurnCap: u128 = 10 * ONE_AVT;
+}
+
 impl pallet_token_manager::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -215,6 +222,10 @@ impl pallet_token_manager::Config for TestRuntime {
     type Preimages = ();
     type PalletsOrigin = OriginCaller;
     type BridgeInterface = EthBridge;
+    type MinBurnPeriod = MinBurnPeriod;
+    type BurnEnabled = BurnEnabled;
+    type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]

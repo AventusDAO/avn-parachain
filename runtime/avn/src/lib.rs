@@ -666,7 +666,7 @@ parameter_types! {
     pub const MinRatesRefreshRange: u32 = 5;
     pub const PriceRefreshRangeInBlocks: u32 = 50; // 10 minutes
     pub const MinBurnPeriod: u32 = 7200;
-    pub const BurnEnabled: bool = true;
+    pub const BurnEnabled: bool = false;
     pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
     pub const TreasuryBurnCap: u128 = 10 * AVT;
 }
@@ -738,57 +738,25 @@ impl NativeRateProvider for OracleNativeRateProvider {
     }
 }
 
-pub struct PayCollatorAndBurn;
-impl pallet_avn_transaction_payment::FeeDistributor<Runtime> for PayCollatorAndBurn {
+pub struct PayTreasury;
+impl pallet_avn_transaction_payment::FeeDistributor<Runtime> for PayTreasury {
     fn distribute_fees(
         fee_pot: &AccountId,
         total_fees: pallet_avn_transaction_payment::BalanceOf<Runtime>,
-        used_weight: u128,
-        max_weight: u128,
+        _used_weight: u128,
+        _max_weight: u128,
     ) {
         if total_fees.is_zero() {
             return;
         }
 
-        let burn_pot: AccountId = PalletId(sp_avn_common::BURN_POT_ID).into_account_truncating();
-
-        let collator_ratio =
-            pallet_avn_transaction_payment::Pallet::<Runtime>::collator_ratio_from_weights(
-                used_weight,
-                max_weight,
-            );
-
-        let collator_share: pallet_avn_transaction_payment::BalanceOf<Runtime> =
-            collator_ratio.saturating_mul_int(total_fees);
-        let mut burn_share: pallet_avn_transaction_payment::BalanceOf<Runtime> =
-            total_fees.saturating_sub(collator_share);
-
-        // Pay collator; if no author, burn everything.
-        if !collator_share.is_zero() {
-            match pallet_authorship::Pallet::<Runtime>::author() {
-                Some(author) => {
-                    let _ = <Balances as Currency<AccountId>>::transfer(
-                        fee_pot,
-                        &author,
-                        collator_share,
-                        ExistenceRequirement::KeepAlive,
-                    );
-                },
-                None => {
-                    burn_share = total_fees;
-                },
-            }
-        }
-
-        // Send rest to burn pot
-        if !burn_share.is_zero() {
-            let _ = <Balances as Currency<AccountId>>::transfer(
-                fee_pot,
-                &burn_pot,
-                burn_share,
-                ExistenceRequirement::AllowDeath,
-            );
-        }
+        let treasury_account: AccountId = AvnTreasuryPotId::get().into_account_truncating();
+        let _ = <Balances as Currency<AccountId>>::transfer(
+            fee_pot,
+            &treasury_account,
+            total_fees,
+            ExistenceRequirement::AllowDeath,
+        );
     }
 }
 
@@ -799,7 +767,7 @@ impl pallet_avn_transaction_payment::Config for Runtime {
     type KnownUserOrigin = EnsureRoot<AccountId>;
     type WeightInfo = pallet_avn_transaction_payment::default_weights::SubstrateWeight<Runtime>;
     type NativeRateProvider = OracleNativeRateProvider;
-    type FeeDistributor = PayCollatorAndBurn;
+    type FeeDistributor = PayTreasury;
 }
 
 impl pallet_avn_anchor::Config for Runtime {
