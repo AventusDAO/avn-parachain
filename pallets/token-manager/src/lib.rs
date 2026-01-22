@@ -273,10 +273,14 @@ pub mod pallet {
         BurnPeriodUpdated {
             burn_period: u32,
         },
-        BurnFundsRequested {
+        BurnRequested {
             burner: T::AccountId,
             amount: BalanceOf<T>,
             tx_id: u32,
+        },
+        BurnRequestFailed {
+            burner: T::AccountId,
+            amount: BalanceOf<T>,
         },
         BurnConfirmed {
             tx_id: u32,
@@ -290,7 +294,6 @@ pub mod pallet {
         },
         TreasuryFunded {
             from: T::AccountId,
-            amount: BalanceOf<T>,
         },
     }
 
@@ -389,15 +392,18 @@ pub mod pallet {
         StorageMap<_, Blake2_128Concat, u32, (T::AccountId, BalanceOf<T>), OptionQuery>;
 
     #[pallet::storage]
-    #[pallet::getter(fn burn_refresh_range)]
-    pub type BurnPeriod<T> = StorageValue<_, u32, ValueQuery, DefaultBurnRefreshRange<T>>;
+    #[pallet::getter(fn burn_period)]
+    pub type BurnPeriod<T> = StorageValue<_, u32, ValueQuery, DefaultBurnPeriod<T>>;
 
     #[pallet::storage]
     #[pallet::getter(fn total_supply)]
     pub type TotalSupply<T: Config> = StorageValue<_, BalanceOf<T>, OptionQuery>;
 
+    #[pallet::storage]
+    pub type BurnEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
+
     #[pallet::type_value]
-    pub fn DefaultBurnRefreshRange<T: Config>() -> u32 {
+    pub fn DefaultBurnPeriod<T: Config>() -> u32 {
         T::MinBurnPeriod::get()
     }
 
@@ -689,16 +695,16 @@ pub mod pallet {
         }
 
         #[pallet::call_index(12)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_funds())]
-        pub fn burn_funds(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_native_token())]
+        pub fn burn_native_token(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
             let burner = ensure_signed(origin)?;
 
-            ensure!(!amount.is_zero(), Error::<T>::AmountIsZero);
+            ensure!(amount > Zero::zero(), Error::<T>::AmountIsZero);
 
             let free = T::Currency::free_balance(&burner);
             ensure!(free >= amount, Error::<T>::InsufficientSenderBalance);
 
-            Self::publish_burn_tokens_on_t1(&burner, amount)?;
+            Self::burn_from_user_pot(&burner, amount)?;
             Ok(())
         }
     }
@@ -711,7 +717,7 @@ pub mod pallet {
             }
 
             Self::schedule_next_burn(n);
-            return Self::burn_from_pot();
+            return Self::burn_from_burn_pot();
         }
     }
 }

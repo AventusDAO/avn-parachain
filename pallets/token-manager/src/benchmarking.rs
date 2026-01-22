@@ -412,7 +412,7 @@ benchmarks! {
         assert_eq!(stored_amount, amount);
 
         assert_event_emitted::<T>(
-            Event::<T>::BurnFundsRequested {
+            Event::<T>::BurnRequested {
                 burner: burn_pot,
                 amount,
                 tx_id,
@@ -467,7 +467,7 @@ benchmarks! {
         assert_eq!(T::Currency::reserved_balance(&burn_pot), 0u32.into());
     }
 
-    burn_funds {
+    burn_native_token {
         let burner: T::AccountId = whitelisted_caller();
         let amount: BalanceOf<T> = 1_000u128.saturated_into();
 
@@ -489,7 +489,7 @@ benchmarks! {
         assert_eq!(stored_amount, amount);
 
         assert_last_event::<T>(
-            Event::<T>::BurnFundsRequested {
+            Event::<T>::BurnRequested {
                 burner,
                 amount,
                 tx_id,

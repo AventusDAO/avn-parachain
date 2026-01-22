@@ -51,7 +51,7 @@ pub trait WeightInfo {
 	fn on_initialize_burn_due_and_pot_has_funds_to_burn() -> Weight;
 	fn on_initialize_burn_not_due() -> Weight;
 	fn on_initialize_burn_due_but_pot_empty() -> Weight;
-	fn burn_funds() -> Weight;
+	fn burn_native_token() -> Weight;
 }
 
 /// Weights for pallet_token_manager using the Substrate node and recommended hardware.
@@ -293,7 +293,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Avn::PrimaryCollatorIndexForSending` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::PendingBurnSubmission` (r:0 w:1)
 	/// Proof: `TokenManager::PendingBurnSubmission` (`max_values`: None, `max_size`: Some(68), added: 2543, mode: `MaxEncodedLen`)
-	fn burn_funds() -> Weight {
+	fn burn_native_token() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `449`
 		//  Estimated: `22429`
@@ -542,7 +542,7 @@ impl WeightInfo for () {
 	/// Proof: `Avn::PrimaryCollatorIndexForSending` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::PendingBurnSubmission` (r:0 w:1)
 	/// Proof: `TokenManager::PendingBurnSubmission` (`max_values`: None, `max_size`: Some(68), added: 2543, mode: `MaxEncodedLen`)
-	fn burn_funds() -> Weight {
+	fn burn_native_token() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `449`
 		//  Estimated: `22429`

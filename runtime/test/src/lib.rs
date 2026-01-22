@@ -608,7 +608,7 @@ parameter_types! {
     pub const AvnAutoSubmitSummaries: bool = false;
     pub const AvnInstanceId: u8 = 2u8;
     pub const MinBurnPeriod: u32 = 100;
-    pub const BurnEnabled: bool = true;
+    pub const BurnEnabled: bool = false;
     pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
     pub const TreasuryBurnCap: u128 = 10 * AVT;
 }
