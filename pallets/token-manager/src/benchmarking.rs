@@ -24,7 +24,7 @@ use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite, whiteli
 use frame_system::{pallet_prelude::BlockNumberFor, EventRecord, RawOrigin};
 use hex_literal::hex;
 use sp_core::sr25519;
-use sp_runtime::{RuntimeAppPublic, SaturatedConversion};
+use sp_runtime::{traits::Saturating, RuntimeAppPublic, SaturatedConversion};
 
 use sp_application_crypto::KeyTypeId;
 pub const BENCH_KEY_TYPE_ID: KeyTypeId = KeyTypeId(*b"test");

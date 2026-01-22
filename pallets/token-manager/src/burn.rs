@@ -2,7 +2,7 @@ use super::pallet::*;
 use crate::{default_weights::WeightInfo, BalanceOf, PALLET_ID};
 use frame_support::{
     pallet_prelude::{DispatchResult, Weight},
-    traits::{Currency, ReservableCurrency},
+    traits::{Currency, Get, ReservableCurrency},
     PalletId,
 };
 use frame_system::pallet_prelude::BlockNumberFor;
@@ -22,6 +22,10 @@ use alloc::format;
 impl<T: Config> Pallet<T> {
     pub(crate) fn is_burn_due(now: BlockNumberFor<T>) -> bool {
         now >= NextBurnAt::<T>::get()
+    }
+
+    pub(crate) fn is_burning_enabled() -> bool {
+        T::BurnEnabled::get()
     }
 
     pub(crate) fn burn_pot_account() -> T::AccountId {

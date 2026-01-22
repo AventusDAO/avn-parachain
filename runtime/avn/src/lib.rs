@@ -667,6 +667,8 @@ parameter_types! {
     pub const PriceRefreshRangeInBlocks: u32 = 50; // 10 minutes
     pub const MinBurnPeriod: u32 = 7200;
     pub const BurnEnabled: bool = false;
+    pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const TreasuryBurnCap: u128 = 10 * AVT;
 }
 
 impl pallet_summary::Config for Runtime {
@@ -702,6 +704,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type MinBurnPeriod = MinBurnPeriod;
     type BurnEnabled = BurnEnabled;
+    type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 impl pallet_nft_manager::Config for Runtime {
