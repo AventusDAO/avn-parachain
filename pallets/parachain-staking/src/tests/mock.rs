@@ -43,7 +43,11 @@ use sp_core::{sr25519, ConstU64, Pair};
 use sp_io;
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
-    traits::{ConvertInto, IdentityLookup, SignedExtension, Verify},
+    traits::{
+        transaction_extension::TxBaseImplication, ConvertInto, IdentityLookup,
+        TransactionExtension, Verify,
+    },
+    transaction_validity::TransactionSource,
     BuildStorage, DispatchError, Perbill, SaturatedConversion,
 };
 
@@ -190,12 +194,21 @@ impl ValidatorRegistration<AccountId> for IsRegistered {
     }
 }
 
-impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for Test
+impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for Test
 where
     RuntimeCall: From<LocalCall>,
 {
-    type OverarchingCall = RuntimeCall;
     type Extrinsic = Extrinsic;
+    type RuntimeCall = RuntimeCall;
+}
+
+impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for Test
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+        Extrinsic::new_bare(call)
+    }
 }
 
 impl Config for Test {
@@ -280,6 +293,7 @@ impl pallet_transaction_payment::Config for Test {
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
     type OperationalFeeMultiplier = ConstU8<5>;
+    type WeightInfo = ();
 }
 
 impl WeightToFeeT for WeightToFee {
@@ -805,20 +819,23 @@ pub(crate) fn query_lock_amount(account_id: AccountId, id: LockIdentifier) -> Op
 }
 
 pub(crate) fn pay_gas_for_transaction(sender: &AccountId, tip: u128) {
-    let pre = ChargeTransactionPayment::<Test>::from(tip)
-        .pre_dispatch(
-            sender,
-            &RuntimeCall::System(frame_system::Call::remark { remark: vec![] }),
-            &DispatchInfo { weight: Weight::from_parts(1, 0), ..Default::default() },
-            TX_LEN,
-        )
-        .unwrap();
+    let call = RuntimeCall::System(frame_system::Call::remark { remark: vec![] });
+    let info = DispatchInfo { call_weight: Weight::from_parts(1, 0), ..Default::default() };
+    let len = TX_LEN;
+    let ext = ChargeTransactionPayment::<Test>::from(tip);
+    let implicit = ext.implicit().expect("implicit data available");
+    let implication = TxBaseImplication(call.clone());
+    let origin = RuntimeOrigin::signed(sender.clone());
+    let (_valid, val, origin) = ext
+        .validate(origin, &call, &info, len, implicit, &implication, TransactionSource::Local)
+        .expect("validation should succeed");
+    let pre = ext.prepare(val, &origin, &call, &info, len).expect("prepare should charge fee");
 
     assert_ok!(ChargeTransactionPayment::<Test>::post_dispatch(
-        Some(pre),
-        &DispatchInfo { weight: Weight::from_parts(1, 0), ..Default::default() },
-        &PostDispatchInfo { actual_weight: None, pays_fee: Default::default() },
-        TX_LEN,
+        pre,
+        &info,
+        &mut PostDispatchInfo { actual_weight: None, pays_fee: Default::default() },
+        len,
         &Ok(())
     ));
 }

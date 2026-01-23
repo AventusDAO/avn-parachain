@@ -321,7 +321,11 @@ fn get_proof<T: Config>(
     signer: &T::AccountId,
     signature: sp_core::sr25519::Signature,
 ) -> Proof<T::Signature, T::AccountId> {
-    return Proof { signer: signer.clone(), relayer: relayer.clone(), signature: signature.into() }
+    return Proof {
+        signer: signer.clone(),
+        relayer: relayer.clone(),
+        signature: T::Signature::decode(&mut &signature[..]).unwrap(),
+    }
 }
 
 fn get_caller<T: Config, F>(

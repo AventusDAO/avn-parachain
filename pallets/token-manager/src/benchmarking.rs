@@ -105,7 +105,7 @@ impl<T: Config> Transfer<T> {
         return Proof {
             signer: self.from.clone(),
             relayer: relayer.clone(),
-            signature: sr25519::Signature::from_slice(signature).unwrap().into(),
+            signature: T::Signature::decode(&mut &signature[..]).unwrap(),
         }
     }
 }
@@ -176,7 +176,7 @@ impl<T: Config> Lower<T> {
         return Proof {
             signer: self.from_account_id.clone(),
             relayer: relayer_account_id.clone(),
-            signature: sr25519::Signature::from_slice(signature).unwrap().into(),
+            signature: T::Signature::decode(&mut &signature[..]).unwrap(),
         }
     }
 }

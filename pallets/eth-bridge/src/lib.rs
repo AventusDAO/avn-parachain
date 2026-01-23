@@ -68,7 +68,7 @@ use frame_support::{
 };
 use frame_system::{
     ensure_none, ensure_root,
-    offchain::{SendTransactionTypes, SubmitTransaction},
+    offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::{BlockNumberFor, OriginFor},
 };
 use pallet_avn::{
@@ -174,8 +174,9 @@ pub mod pallet {
         frame_system::Config
         + avn::Config
         + scale_info::TypeInfo
-        + SendTransactionTypes<Call<Self, I>>
         + pallet_session::historical::Config
+        + CreateTransactionBase<Call<Self, I>>
+        + CreateInherent<Call<Self, I>>
     {
         type RuntimeEvent: From<Event<Self, I>>
             + Into<<Self as frame_system::Config>::RuntimeEvent>

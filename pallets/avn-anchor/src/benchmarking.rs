@@ -71,7 +71,7 @@ fn create_proof<T: Config>(
     signer: T::AccountId,
     relayer: T::AccountId,
 ) -> Proof<T::Signature, T::AccountId> {
-    Proof { signer, relayer, signature: signature.into() }
+    Proof { signer, relayer, signature: T::Signature::decode(&mut &signature[..]).unwrap() }
 }
 
 fn setup_chain<T: Config>(

@@ -14,7 +14,7 @@ codec = { workspace = true, default-features = true }
 log = { workspace = true,  default-features = true }
 serde_json = { workspace = true, default-features = true }
 serde = { workspace = true, default-features = true }
-tide = { version = "0.16.0" }
+tide = { version = "0.16.0", default-features = false, features = ["h1-server"] }
 web3 = { version = "0.19.0", default-features = false, features = [
     "http-tls",  # implies tls feature
     "signing",

@@ -192,7 +192,9 @@ benchmarks! {
         let proof: Proof<T::Signature, T::AccountId> = Proof {
             signer: signer.clone(),
             relayer: whitelisted_caller(),
-            signature: sr25519::Signature::from_slice(signature).unwrap().into()
+            signature: T::Signature::decode(&mut &signature[..])
+                .expect("signature bytes must decode into T::Signature"),
+
         };
     }: _ (RawOrigin::<T::AccountId>::Signed(signer.clone()), proof.clone(), event_type, tx_hash)
     verify {

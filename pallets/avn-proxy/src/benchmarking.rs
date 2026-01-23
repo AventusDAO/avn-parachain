@@ -16,7 +16,7 @@ fn get_proof<T: Config>(
     relayer: T::AccountId,
     signature: sr25519::Signature,
 ) -> Proof<T::Signature, T::AccountId> {
-    return Proof { signer, relayer, signature: signature.into() }
+    return Proof { signer, relayer, signature: T::Signature::decode(&mut &signature[..]).unwrap() }
 }
 
 fn get_payment_info<T: Config>(
@@ -63,7 +63,7 @@ fn get_inner_call_proof<T: Config>(
         signer.clone(),
         recipient.clone(),
         amount,
-        signature.into(),
+        T::Signature::decode(&mut &signature[..]).unwrap(),
         token.into(),
     );
 
