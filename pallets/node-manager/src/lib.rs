@@ -304,6 +304,8 @@ pub mod pallet {
         MinUptimeThresholdSet { threshold: Perbill },
         /// A node has been deregistered
         NodeDeregistered { owner: T::AccountId, node: NodeId<T> },
+        /// A node signing key has been updated
+        SigningKeyUpdated { owner: T::AccountId, node: NodeId<T> },
     }
 
     // Pallet Errors
@@ -361,6 +363,10 @@ pub mod pallet {
         UptimeThresholdZero,
         /// The specified node is not owned by the owner
         NodeNotOwnedByOwner,
+        /// The sender is not authorised to update the signing key
+        UnauthorizedSigningKeyUpdate,
+        /// The new signing key must be different from the current one
+        SigningKeyMustBeDifferent,
     }
 
     #[pallet::config]
@@ -731,6 +737,37 @@ pub mod pallet {
             );
 
             Self::do_deregister_nodes(&owner, &nodes_to_deregister)?;
+
+            Ok(())
+        }
+
+        /// Update signing key for a registered node
+        #[pallet::call_index(7)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_signing_key())]
+        pub fn update_signing_key(
+            origin: OriginFor<T>,
+            node: NodeId<T>,
+            new_signing_key: T::SignerId,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            let current_info =
+                NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
+            let owner = current_info.owner;
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(who == registrar || who == owner, Error::<T>::UnauthorizedSigningKeyUpdate);
+            ensure!(
+                current_info.signing_key != new_signing_key,
+                Error::<T>::SigningKeyMustBeDifferent
+            );
+
+            <NodeRegistry<T>>::mutate(&node, |maybe_info| {
+                if let Some(info) = maybe_info.as_mut() {
+                    info.signing_key = new_signing_key.clone();
+                }
+            });
+
+            Self::deposit_event(Event::SigningKeyUpdated { owner, node });
 
             Ok(())
         }

@@ -452,6 +452,20 @@ benchmarks! {
             owner,
             node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone()}.into());
     }
+    update_signing_key {
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+
+        let owner: T::AccountId = account("owner", 1, 1);
+        let node: NodeId<T> = account("node", 2, 2);
+        let current_signing_key: T::SignerId = register_new_node::<T>(node.clone(), owner.clone());
+        let new_signing_key: T::SignerId = account("new_signing_key", 3, 3);
+    }: update_signing_key(RawOrigin::Signed(owner.clone()), node.clone(), new_signing_key.clone())
+    verify {
+        let node_info = <NodeRegistry<T>>::get(&node).expect("Node must be registered");
+        assert!(node_info.signing_key == new_signing_key);
+        assert_last_event::<T>(Event::SigningKeyUpdated {owner, node}.into());
+    }
 }
 
 impl_benchmark_test_suite!(
