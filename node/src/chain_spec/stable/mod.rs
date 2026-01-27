@@ -126,11 +126,11 @@ pub(crate) fn testnet_genesis(
             "lowerSchedulePeriod": 10,
             "balances": token_balances,
         },
-        "node_manager": {
-            "reward_period": 30u32,
-            "max_batch_size": 10u32,
-            "heartbeat_period": 10u32,
-            "reward_amount": 20 * AVT,
+        "nodeManager": {
+            "rewardPeriod": 30u32,
+            "maxBatchSize": 10u32,
+            "heartbeatPeriod": 10u32,
+            "rewardAmount": 20 * AVT,
         }
     })
 }

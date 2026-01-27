@@ -308,6 +308,57 @@ mod given_a_reward_period {
             }
         });
     }
+
+    #[test]
+    fn signing_key_can_be_rotated() {
+        let (mut ext, pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let context = Context::default();
+            register_node(&context);
+
+            NodeManager::offchain_worker(System::block_number());
+            let tx = pop_tx_from_mempool(pool_state.clone());
+            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+
+            // Rotate signing key
+            let new_signing_key = UintAuthorityId(999);
+            assert_ok!(NodeManager::update_signing_key(
+                RuntimeOrigin::signed(context.owner.clone()),
+                context.node_id.clone(),
+                new_signing_key.clone(),
+            ));
+
+            // Move forward
+            System::set_block_number(
+                System::block_number() + <HeartbeatPeriod<TestRuntime>>::get() as u64 + 1u64,
+            );
+
+            NodeManager::offchain_worker(System::block_number());
+            // Ensure heartbeat is NOT submitted with old signing key
+            assert_eq!(true, pool_state.read().transactions.is_empty());
+
+            // Set the new key in OCW keystore
+            UintAuthorityId::set_all_keys(vec![new_signing_key]);
+
+            // Now we expect the heartbeat to be submitted successfully
+            NodeManager::offchain_worker(System::block_number());
+            assert_eq!(false, pool_state.read().transactions.is_empty());
+            let runtime_call = pop_tx_from_mempool(pool_state.clone());
+
+            match runtime_call.call {
+                RuntimeCall::NodeManager(call) => {
+                    assert_ok!(<NodeManager as ValidateUnsigned>::validate_unsigned(
+                        TransactionSource::External,
+                        &call
+                    ));
+                },
+                _ => assert!(false),
+            }
+        });
+    }
 }
 
 mod across_multiple_reward_periods {
