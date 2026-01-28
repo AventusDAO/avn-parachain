@@ -224,7 +224,7 @@ pub mod pallet {
         pub reward_period: u32,
         pub heartbeat_period: u32,
         pub reward_amount: BalanceOf<T>,
-        pub auto_stake_duration: u64,
+        pub auto_stake_duration_sec: u64,
     }
 
     impl<T: Config> Default for GenesisConfig<T> {
@@ -235,7 +235,7 @@ pub mod pallet {
                 reward_period: 2,
                 heartbeat_period: 1,
                 reward_amount: Default::default(),
-                auto_stake_duration: 1,
+                auto_stake_duration_sec: 1,
             }
         }
     }
@@ -250,7 +250,7 @@ pub mod pallet {
             MaxBatchSize::<T>::set(self.max_batch_size);
             HeartbeatPeriod::<T>::set(self.heartbeat_period);
             MinUptimeThreshold::<T>::set(Some(default_threshold));
-            AutoStakeDurationSec::<T>::set(self.auto_stake_duration);
+            AutoStakeDurationSec::<T>::set(self.auto_stake_duration_sec);
 
             let max_heartbeats = self.reward_period.saturating_div(self.heartbeat_period);
             let uptime_threshold = default_threshold * max_heartbeats;
