@@ -24,7 +24,6 @@ pub mod pallet {
     use scale_info::prelude::{format, string::String, vec, vec::Vec};
     use serde_json::Value;
     use sp_avn_common::event_types::Validator;
-    use sp_core::U256;
     use sp_runtime::{traits::Saturating, DispatchError, RuntimeAppPublic};
 
     const PALLET_NAME: &'static [u8] = b"AvnOracle";
