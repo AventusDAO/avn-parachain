@@ -234,8 +234,8 @@ impl ExtBuilder {
         ext.register_extension(KeystoreExt(Arc::new(keystore)));
         // Events do not get emitted on block 0, so we increment the block here
         ext.execute_with(|| {
-            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
             Timestamp::set_timestamp(1);
+            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
             RewardEnabled::<TestRuntime>::put(true);
         });
         ext
