@@ -206,6 +206,15 @@ benchmarks! {
         assert!(<MinUptimeThreshold<T>>::get() == Some(new_threshold));
     }
 
+    set_admin_config_auto_stake_duration {
+        let current_duration = <AutoStakeDurationSec<T>>::get();
+        let new_duration = current_duration + 60;
+        let config = AdminConfig::AutoStakeDuration(new_duration);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<AutoStakeDurationSec<T>>::get() == new_duration);
+    }
+
     on_initialise_with_new_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
         let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();

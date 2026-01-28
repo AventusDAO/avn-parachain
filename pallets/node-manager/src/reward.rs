@@ -134,4 +134,9 @@ impl<T: Config> Pallet<T> {
         let final_key = last_paid_pointer.get_final_key::<T>();
         Ok(NodeUptime::<T>::iter_prefix_from(oldest_period, final_key))
     }
+
+    /// Get the current time in seconds
+    pub fn time_now() -> u64 {
+        T::TimeProvider::now().as_secs()
+    }
 }
