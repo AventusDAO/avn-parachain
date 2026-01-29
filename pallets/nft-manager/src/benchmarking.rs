@@ -25,7 +25,8 @@ use frame_benchmarking::{benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
 use hex_literal::hex;
 use pallet_avn::{self as avn};
-use sp_core::{crypto::UncheckedInto, ByteArray, H256};
+use sp_avn_common::benchmarking::convert_sr25519_signature;
+use sp_core::{crypto::UncheckedInto, sr25519, ByteArray, H256};
 use sp_runtime::RuntimeAppPublic;
 
 #[cfg(not(feature = "std"))]
@@ -59,10 +60,11 @@ fn get_proof<T: Config>(
     relayer: T::AccountId,
     signature: &[u8],
 ) -> Proof<T::Signature, T::AccountId> {
+    let signature = sr25519::Signature::from_slice(signature).expect("valid sr25519 signature");
     return Proof {
         signer: signer.clone(),
         relayer: relayer.clone(),
-        signature: T::Signature::decode(&mut &signature[..]).unwrap(),
+        signature: convert_sr25519_signature::<T::Signature>(signature),
     }
 }
 

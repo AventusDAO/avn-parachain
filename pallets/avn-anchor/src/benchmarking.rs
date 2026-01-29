@@ -10,7 +10,7 @@ use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_support::{traits::Currency, BoundedVec};
 use frame_system::RawOrigin;
 use sp_application_crypto::KeyTypeId;
-use sp_avn_common::Proof;
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
 use sp_core::H256;
 use sp_runtime::{RuntimeAppPublic, Saturating};
 
@@ -71,7 +71,7 @@ fn create_proof<T: Config>(
     signer: T::AccountId,
     relayer: T::AccountId,
 ) -> Proof<T::Signature, T::AccountId> {
-    Proof { signer, relayer, signature: T::Signature::decode(&mut &signature[..]).unwrap() }
+    Proof { signer, relayer, signature: convert_sr25519_signature::<T::Signature>(signature) }
 }
 
 fn setup_chain<T: Config>(

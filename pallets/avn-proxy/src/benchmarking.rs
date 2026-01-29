@@ -9,6 +9,7 @@ use super::*;
 use crate::Pallet as AvnProxy;
 use frame_benchmarking::{benchmarks, impl_benchmark_test_suite, whitelisted_caller};
 use hex_literal::hex;
+use sp_avn_common::benchmarking::convert_sr25519_signature;
 use sp_core::{sr25519, ByteArray, H256};
 
 fn get_proof<T: Config>(
@@ -16,7 +17,8 @@ fn get_proof<T: Config>(
     relayer: T::AccountId,
     signature: sr25519::Signature,
 ) -> Proof<T::Signature, T::AccountId> {
-    return Proof { signer, relayer, signature: T::Signature::decode(&mut &signature[..]).unwrap() }
+    let signature = convert_sr25519_signature::<T::Signature>(signature);
+    return Proof { signer, relayer, signature }
 }
 
 fn get_payment_info<T: Config>(
@@ -59,11 +61,12 @@ fn get_inner_call_proof<T: Config>(
     let inner_call_signature: sr25519::Signature = sr25519::Signature::from_slice(&hex!("a6350211fcdf1d7f0c79bf0a9c296de17449ca88a899f0cd19a70b07513fc107b7d34249dba71d4761ceeec2ed6bc1305defeb96418e6869e6b6199ed0de558e")).unwrap().into();
     let proof = get_proof::<T>(signer.clone(), recipient.clone(), inner_call_signature);
 
+    let payment_signature = convert_sr25519_signature::<T::Signature>(signature);
     let payment_authorisation = get_payment_info::<T>(
         signer.clone(),
         recipient.clone(),
         amount,
-        T::Signature::decode(&mut &signature[..]).unwrap(),
+        payment_signature,
         token.into(),
     );
 

@@ -73,5 +73,8 @@ std = [
 	"substrate-fixed/std",
 	"rand/std",
 ]
-runtime-benchmarks = ["frame-benchmarking"]
+runtime-benchmarks = [
+	"frame-benchmarking",
+	"sp-avn-common/runtime-benchmarks",
+]
 try-runtime = ["frame-support/try-runtime"]
