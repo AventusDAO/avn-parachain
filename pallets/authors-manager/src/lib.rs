@@ -14,7 +14,7 @@ use alloc::string::String;
 
 use sp_avn_common::{eth::EthereumId, BridgeContractMethod};
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{dispatch::DispatchResult, ensure, transactional};
 use pallet_session::{self as session, Config as SessionConfig};
 use sp_core::{bounded::BoundedVec, ecdsa, Get};
@@ -327,13 +327,36 @@ pub mod pallet {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct ActionId<AccountId: Member> {
     pub action_account_id: AccountId,
     pub ingress_counter: IngressCounter,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Encode,
+    Decode,
+    Debug,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub enum AuthorsActionType {
     /// Author has asked to leave voluntarily
     Resignation,

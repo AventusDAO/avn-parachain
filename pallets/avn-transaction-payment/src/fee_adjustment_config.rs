@@ -1,10 +1,12 @@
 use crate::{BalanceOf, Config, Error};
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_system::pallet_prelude::BlockNumberFor;
 use sp_runtime::{scale_info::TypeInfo, traits::Zero, Perbill, Saturating};
 use sp_std::{fmt::Debug, marker::PhantomData};
 
-#[derive(Encode, Decode, MaxEncodedLen, Clone, PartialEq, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode, Decode, MaxEncodedLen, Clone, PartialEq, Eq, TypeInfo, Copy, DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub enum FeeType<T: Config> {
     FixedFee(FixedFeeConfig<T>),
@@ -12,7 +14,9 @@ pub enum FeeType<T: Config> {
     None,
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Clone, PartialEq, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode, Decode, MaxEncodedLen, Clone, PartialEq, Eq, TypeInfo, Copy, DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub enum AdjustmentType<T: Config> {
     TimeBased(Duration<T>),
@@ -20,7 +24,7 @@ pub enum AdjustmentType<T: Config> {
     None,
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Clone, PartialEq, Eq, TypeInfo)]
+#[derive(Encode, Decode, MaxEncodedLen, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 #[scale_info(skip_type_params(T))]
 pub enum FeeAdjustmentConfig<T: Config> {
     FixedFee(FixedFeeConfig<T>),
@@ -139,19 +143,55 @@ impl<T: Config> FeeAdjustmentConfig<T> {
 }
 
 // This is needed to have a named parameter when serialising these types in a UI (like PolkadotJS)
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Debug, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    Copy,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct Duration<T: Config> {
     pub duration: BlockNumberFor<T>,
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Debug, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    Copy,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct NumberOfTransactions<T: Config> {
     pub number_of_transactions: T::Nonce,
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Debug, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    Copy,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct FixedFeeConfig<T: Config> {
     pub fee: BalanceOf<T>,
@@ -176,7 +216,19 @@ impl<T: Config> FixedFeeConfig<T> {
     }
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Debug, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    Copy,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct PercentageFeeConfig<T: Config> {
     pub percentage: u32,
@@ -209,7 +261,18 @@ impl<T: Config> PercentageFeeConfig<T> {
     }
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Debug, Eq, TypeInfo)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct TimeBasedConfig<T: Config> {
     pub fee_type: FeeType<T>,
@@ -245,7 +308,18 @@ impl<T: Config> TimeBasedConfig<T> {
     }
 }
 
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Debug, Eq, TypeInfo)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct TransactionBasedConfig<T: Config> {
     pub fee_type: FeeType<T>,
@@ -278,7 +352,18 @@ impl<T: Config> TransactionBasedConfig<T> {
 }
 
 // This is used to define the user input when specifying a fee adjustment config
-#[derive(Encode, Decode, MaxEncodedLen, Default, Clone, PartialEq, Eq, TypeInfo, Copy)]
+#[derive(
+    Encode,
+    Decode,
+    MaxEncodedLen,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    Copy,
+    DecodeWithMemTracking,
+)]
 #[scale_info(skip_type_params(T))]
 pub struct AdjustmentInput<T: Config> {
     pub fee_type: FeeType<T>,

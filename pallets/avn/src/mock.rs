@@ -25,7 +25,7 @@ frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
     }
 );
@@ -56,6 +56,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = session::PeriodicSessions<Period, Offset>;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 thread_local! {

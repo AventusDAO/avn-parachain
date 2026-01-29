@@ -1,5 +1,6 @@
 use crate::*;
 
+use codec::DecodeWithMemTracking;
 pub use sp_runtime::{
     traits::{AtLeast32Bit, Hash},
     Perbill, SaturatedConversion,
@@ -56,7 +57,9 @@ impl Default for ExternalValidationEnum {
     }
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
 pub struct ExternalValidationData {
     pub proposal_id: ProposalId,
     pub external_ref: H256,
@@ -73,7 +76,7 @@ impl ExternalValidationData {
     }
 }
 
-#[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq, DecodeWithMemTracking)]
 pub enum AdminConfig<BlockNumber> {
     ExternalValidationThreshold(u32),
     SchedulePeriod(BlockNumber),

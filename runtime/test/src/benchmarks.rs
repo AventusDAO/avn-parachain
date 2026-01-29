@@ -35,4 +35,5 @@ frame_benchmarking::define_benchmarks!(
     [pallet_avn_anchor, AvnAnchor]
     [cumulus_pallet_parachain_system, ParachainSystem]
     [cumulus_pallet_xcmp_queue, XcmpQueue]
+    [cumulus_pallet_weight_reclaim, WeightReclaim]
 );
