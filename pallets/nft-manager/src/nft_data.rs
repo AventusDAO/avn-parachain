@@ -21,7 +21,9 @@ use sp_runtime::traits::Member;
 pub(crate) use sp_avn_common::bounds::NftExternalRefBound;
 pub const ROYALTY_RATE_DENOMINATOR: u32 = 1_000_000;
 
-#[derive(Encode, Decode, Default, Debug, Clone, PartialEq, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode, Decode, Default, Debug, Clone, PartialEq, MaxEncodedLen, TypeInfo, DecodeWithMemTracking,
+)]
 pub struct Royalty {
     pub recipient_t1_address: H160,
     pub rate: RoyaltyRate,
@@ -30,7 +32,9 @@ pub struct Royalty {
 /// Royalty Rate Examples:
 ///     - 1%: { parts_per_million = 10000 }
 ///     - 0.03%: { parts_per_million = 300 }
-#[derive(Encode, Decode, Default, Clone, Debug, PartialEq, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode, Decode, Default, Clone, Debug, PartialEq, MaxEncodedLen, TypeInfo, DecodeWithMemTracking,
+)]
 pub struct RoyaltyRate {
     pub parts_per_million: u32,
 }
@@ -131,7 +135,18 @@ impl<AccountId: Member> NftInfo<AccountId> {
     }
 }
 
-#[derive(Encode, Decode, Clone, Copy, Debug, PartialEq, Eq, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode,
+    Decode,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    MaxEncodedLen,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 pub enum NftSaleType {
     Unknown, // value used by Default interface. Needed for Maps default value.
     Ethereum,

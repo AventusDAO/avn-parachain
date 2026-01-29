@@ -1,5 +1,5 @@
 use crate::bounds::NftExternalRefBound;
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use hex_literal::hex;
 use sp_core::{bounded::BoundedVec, H160, H256, H512, U256};
 use sp_runtime::{scale_info::TypeInfo, traits::Member, DispatchError, DispatchResult};
@@ -80,7 +80,18 @@ pub enum Error {
 }
 
 #[derive(
-    Encode, Decode, Clone, PartialOrd, Ord, Debug, PartialEq, Eq, TypeInfo, MaxEncodedLen, EnumIter,
+    Encode,
+    Decode,
+    Clone,
+    PartialOrd,
+    Ord,
+    Debug,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    EnumIter,
+    DecodeWithMemTracking,
 )]
 
 /// Represents the set of valid events supported by the AvN.
@@ -206,7 +217,18 @@ impl TryFrom<&H256> for ValidEvents {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct AddedValidatorData {
     pub eth_public_key: H512,
     pub t2_address: H256,
@@ -271,7 +293,18 @@ impl AddedValidatorData {
 
 // T1 Event definition:
 // event LogLifted(address indexed token, bytes32 indexed t2PubKey, uint256 amount);
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct LiftedData {
     pub token_contract: H160,
     pub sender_address: H160,
@@ -415,7 +448,18 @@ impl LiftedData {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct NftMintData {
     pub batch_id: U256,
     pub t2_owner_public_key: H256,
@@ -497,7 +541,18 @@ impl NftMintData {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct NftTransferToData {
     pub nft_id: U256,
     pub t2_transfer_to_public_key: H256,
@@ -550,7 +605,18 @@ impl NftTransferToData {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct NftCancelListingData {
     pub nft_id: U256,
     pub op_id: u64,
@@ -602,7 +668,18 @@ impl NftCancelListingData {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct NftEndBatchListingData {
     pub batch_id: U256,
 }
@@ -641,7 +718,18 @@ impl NftEndBatchListingData {
 
 // T1 Event definition:
 // event LogGrowth(uint256 amount, uint32 period);
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct AvtGrowthLiftedData {
     pub amount: u128,
     pub period: u32,
@@ -699,7 +787,18 @@ impl AvtGrowthLiftedData {
 
 // T1 Event definition:
 // event LogLowerClaimed(uint32 lowerId);
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct AvtLowerClaimedData {
     pub lower_id: u32,
 }
@@ -730,7 +829,18 @@ impl AvtLowerClaimedData {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct LowerRevertedData {
     pub token_contract: H160,
     pub receiver_address: H256,
@@ -814,7 +924,9 @@ impl LowerRevertedData {
     }
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
 pub enum EventData {
     LogAddedValidator(AddedValidatorData),
     LogLifted(LiftedData),
@@ -859,7 +971,9 @@ impl Default for EventData {
 
 // ================================= Checking and Validating Events
 // ====================================
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
 pub enum CheckResult {
     /// Event exists on tier 1
     Ok,
@@ -889,7 +1003,18 @@ pub struct EthProcessedEvent {
     pub id: ValidEvents,
     pub accepted: bool,
 }
-#[derive(Encode, Decode, Default, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    Debug,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 // Note: strictly speaking, different contracts can have events with the same signature, which would
 // suggest that the contract should be part of the EventId.
 // But the expected communication framework is that all these events are generated by contracts we
@@ -908,13 +1033,26 @@ impl EthEventId {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct EthEvent {
     pub event_id: EthEventId,
     pub event_data: EventData,
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, Default, Clone, PartialEq, Debug, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
 pub struct EthEventCheckResult<BlockNumber: Member, AccountId: Member> {
     pub event: EthEvent,
     pub result: CheckResult,
@@ -948,7 +1086,7 @@ impl<BlockNumber: Member, AccountId: Member> EthEventCheckResult<BlockNumber, Ac
 
 // ================================= Challenges
 // =======================================================
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo)]
+#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum ChallengeReason {
     /// The result of the check is not correct
     IncorrectResult,
@@ -958,7 +1096,7 @@ pub enum ChallengeReason {
     Unknown,
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, TypeInfo)]
+#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, TypeInfo, DecodeWithMemTracking)]
 pub struct Challenge<AccountId: Member> {
     pub event_id: EthEventId,
     pub challenge_reason: ChallengeReason,
@@ -984,7 +1122,9 @@ impl Default for ChallengeReason {
 // ================================= Authorities and Validators
 // =======================================
 
-#[derive(Encode, Decode, Default, Clone, Debug, PartialEq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode, Decode, Default, Clone, Debug, PartialEq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
 pub struct Validator<AuthorityId: Member, AccountId: Member> {
     pub account_id: AccountId,
     pub key: AuthorityId,

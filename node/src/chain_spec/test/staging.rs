@@ -16,7 +16,7 @@ pub fn avn_garde_staging_config() -> ChainSpec {
     ChainSpec::builder(
         avn_test_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
         Extensions {
-            relay_chain: "rococo-local".into(),
+            relay_chain: RELAY_CHAIN.into(),
             // You MUST set this to the correct network!
             para_id: avn_garde_staging_parachain_id,
         },

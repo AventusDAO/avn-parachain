@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 
 use crate::{eth::EthBridgeInstance, event_types::EthTransactionId, *};
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use event_types::EthEvent;
 use sp_core::{bounded::BoundedBTreeSet, ConstU32};
 use sp_runtime::traits::Saturating;
@@ -14,7 +14,18 @@ pub const MAX_INCOMING_EVENTS_BATCH_SIZE: u32 = 32u32;
 pub type IncomingEventsBatchLimit = ConstU32<MAX_INCOMING_EVENTS_BATCH_SIZE>;
 
 #[derive(
-    Encode, Decode, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default, TypeInfo, MaxEncodedLen,
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Debug,
+    Default,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
 )]
 pub struct EthBlockRange {
     pub start_block: u32,
@@ -36,7 +47,18 @@ impl EthBlockRange {
     }
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, Default, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    Eq,
+    Debug,
+    Default,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct DiscoveredEvent {
     pub event: EthEvent,
     pub block: u64,
@@ -66,6 +88,9 @@ pub struct EthereumEventsPartition {
     is_last: bool,
     data: EthereumEventsSet,
 }
+
+// TODO review this
+impl DecodeWithMemTracking for EthereumEventsPartition {}
 
 impl EthereumEventsPartition {
     pub fn partition(&self) -> u16 {
