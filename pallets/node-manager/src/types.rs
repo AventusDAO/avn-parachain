@@ -112,6 +112,10 @@ pub struct NodeInfo<SignerId, AccountId> {
     pub owner: AccountId,
     /// The node signing key
     pub signing_key: SignerId,
+    /// serial number of the node
+    pub serial_number: u32,
+    /// Expiry block number for auto stake
+    pub auto_stake_expiry: u64,
 }
 
 impl<
@@ -119,8 +123,13 @@ impl<
         SignerId: Clone + FullCodec + MaxEncodedLen + TypeInfo,
     > NodeInfo<SignerId, AccountId>
 {
-    pub fn new(owner: AccountId, signing_key: SignerId) -> NodeInfo<SignerId, AccountId> {
-        NodeInfo { owner, signing_key }
+    pub fn new(
+        owner: AccountId,
+        signing_key: SignerId,
+        serial_number: u32,
+        auto_stake_expiry: u64,
+    ) -> NodeInfo<SignerId, AccountId> {
+        NodeInfo { owner, signing_key, serial_number, auto_stake_expiry }
     }
 }
 
@@ -133,4 +142,5 @@ pub enum AdminConfig<AccountId, Balance> {
     RewardAmount(Balance),
     RewardToggle(bool),
     MinUptimeThreshold(Perbill),
+    AutoStakeDuration(u64),
 }

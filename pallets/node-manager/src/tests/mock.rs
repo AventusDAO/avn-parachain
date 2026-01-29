@@ -59,6 +59,7 @@ impl Config for TestRuntime {
     type Public = AccountId;
     type Signature = Signature;
     type RewardPotId = RewardPotId;
+    type TimeProvider = pallet_timestamp::Pallet<TestRuntime>;
     type SignedTxLifetime = ConstU32<64>;
     type WeightInfo = ();
 }
@@ -187,6 +188,7 @@ impl ExtBuilder {
             max_batch_size: 10u32,
             heartbeat_period: 5u32,
             reward_amount: 20 * AVT,
+            auto_stake_duration_sec: 3600u64,
         }
         .assimilate_storage(&mut self.storage);
         self
@@ -232,6 +234,7 @@ impl ExtBuilder {
         ext.register_extension(KeystoreExt(Arc::new(keystore)));
         // Events do not get emitted on block 0, so we increment the block here
         ext.execute_with(|| {
+            Timestamp::set_timestamp(1);
             frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
             RewardEnabled::<TestRuntime>::put(true);
         });

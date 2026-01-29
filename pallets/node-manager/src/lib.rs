@@ -4,7 +4,7 @@ use frame_support::{
     dispatch::DispatchResult,
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
-    traits::{Currency, ExistenceRequirement, IsSubType, StorageVersion},
+    traits::{Currency, ExistenceRequirement, IsSubType, StorageVersion, UnixTime},
     PalletId,
 };
 use frame_system::{
@@ -213,6 +213,10 @@ pub mod pallet {
     #[pallet::storage]
     pub type MinUptimeThreshold<T: Config> = StorageValue<_, Perbill, OptionQuery>;
 
+    /// The auto staking duration in seconds
+    #[pallet::storage]
+    pub type AutoStakeDurationSec<T: Config> = StorageValue<_, u64, ValueQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -220,6 +224,7 @@ pub mod pallet {
         pub reward_period: u32,
         pub heartbeat_period: u32,
         pub reward_amount: BalanceOf<T>,
+        pub auto_stake_duration_sec: u64,
     }
 
     impl<T: Config> Default for GenesisConfig<T> {
@@ -230,6 +235,7 @@ pub mod pallet {
                 reward_period: 2,
                 heartbeat_period: 1,
                 reward_amount: Default::default(),
+                auto_stake_duration_sec: 1,
             }
         }
     }
@@ -243,7 +249,8 @@ pub mod pallet {
             RewardAmount::<T>::set(self.reward_amount);
             MaxBatchSize::<T>::set(self.max_batch_size);
             HeartbeatPeriod::<T>::set(self.heartbeat_period);
-            <MinUptimeThreshold<T>>::set(Some(default_threshold));
+            MinUptimeThreshold::<T>::set(Some(default_threshold));
+            AutoStakeDurationSec::<T>::set(self.auto_stake_duration_sec);
 
             let max_heartbeats = self.reward_period.saturating_div(self.heartbeat_period);
             let uptime_threshold = default_threshold * max_heartbeats;
@@ -306,6 +313,8 @@ pub mod pallet {
         NodeDeregistered { owner: T::AccountId, node: NodeId<T> },
         /// A node signing key has been updated
         SigningKeyUpdated { owner: T::AccountId, node: NodeId<T> },
+        /// Auto stake duration has been set
+        AutoStakeDurationSet { duration: u64 },
     }
 
     // Pallet Errors
@@ -393,6 +402,8 @@ pub mod pallet {
             + MaxEncodedLen;
         /// A type that can be used to verify signatures
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
+        /// Time provider
+        type TimeProvider: UnixTime;
         /// The signature type used by accounts/transactions.
         #[cfg(not(feature = "runtime-benchmarks"))]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
@@ -515,6 +526,14 @@ pub mod pallet {
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_min_threshold()).into()
                     )
+                },
+                AdminConfig::AutoStakeDuration(duration) => {
+                    <AutoStakeDurationSec<T>>::mutate(|d| *d = duration.clone());
+                    Self::deposit_event(Event::AutoStakeDurationSet { duration });
+                    return Ok(Some(
+                        <T as Config>::WeightInfo::set_admin_config_auto_stake_duration(),
+                    )
+                    .into())
                 },
             }
         }
@@ -986,14 +1005,25 @@ pub mod pallet {
             signing_key: T::SignerId,
         ) -> DispatchResult {
             ensure!(!<NodeRegistry<T>>::contains_key(&node), Error::<T>::DuplicateNode);
+            let auto_stake_expiry = Self::calculate_auto_stake_expiry();
 
             <OwnedNodes<T>>::insert(&owner, &node, ());
             <OwnedNodesCount<T>>::mutate(&owner, |count| *count = count.saturating_add(1));
+
+            let total_node_count = <TotalRegisteredNodes<T>>::mutate(|n| {
+                *n = n.saturating_add(1);
+                *n
+            });
+
             <NodeRegistry<T>>::insert(
                 &node,
-                NodeInfo::<T::SignerId, T::AccountId>::new(owner.clone(), signing_key),
+                NodeInfo::<T::SignerId, T::AccountId>::new(
+                    owner.clone(),
+                    signing_key,
+                    total_node_count as u32,
+                    auto_stake_expiry,
+                ),
             );
-            <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_add(1));
 
             Self::deposit_event(Event::NodeRegistered { owner, node });
 
@@ -1066,6 +1096,11 @@ pub mod pallet {
 
         pub fn get_default_threshold() -> Perbill {
             Perbill::from_percent(33)
+        }
+
+        pub fn calculate_auto_stake_expiry() -> u64 {
+            let current_time = T::TimeProvider::now().as_secs();
+            current_time.saturating_add(AutoStakeDurationSec::<T>::get())
         }
     }
 

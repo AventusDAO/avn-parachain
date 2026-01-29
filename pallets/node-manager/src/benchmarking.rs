@@ -42,7 +42,7 @@ fn set_registrar<T: Config>(registrar: T::AccountId) {
 
 fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::SignerId {
     let key = T::SignerId::generate_pair(None);
-    <NodeRegistry<T>>::insert(node.clone(), NodeInfo::new(owner.clone(), key.clone()));
+    <NodeRegistry<T>>::insert(node.clone(), NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64));
     <OwnedNodes<T>>::insert(owner, node, ());
 
     key
@@ -204,6 +204,15 @@ benchmarks! {
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
         assert!(<MinUptimeThreshold<T>>::get() == Some(new_threshold));
+    }
+
+    set_admin_config_auto_stake_duration {
+        let current_duration = <AutoStakeDurationSec<T>>::get();
+        let new_duration = current_duration + 60;
+        let config = AdminConfig::AutoStakeDuration(new_duration);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<AutoStakeDurationSec<T>>::get() == new_duration);
     }
 
     on_initialise_with_new_reward_period {

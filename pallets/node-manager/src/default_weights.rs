@@ -45,6 +45,7 @@ pub trait WeightInfo {
 	fn set_admin_config_reward_amount() -> Weight;
 	fn set_admin_config_reward_enabled() -> Weight;
 	fn set_admin_config_min_threshold() -> Weight;
+	fn set_admin_config_auto_stake_duration() -> Weight;
 	fn on_initialise_with_new_reward_period() -> Weight;
 	fn on_initialise_no_reward_period() -> Weight;
 	fn offchain_submit_heartbeat() -> Weight;
@@ -149,6 +150,17 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `NodeManager::MinUptimeThreshold` (r:1 w:1)
 	/// Proof: `NodeManager::MinUptimeThreshold` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	fn set_admin_config_min_threshold() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `159`
+		//  Estimated: `1489`
+		// Minimum execution time: 11_375_000 picoseconds.
+		Weight::from_parts(11_953_000, 1489)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// Storage: `NodeManager::AutoStakeDurationSec` (r:1 w:1)
+	/// Proof: `NodeManager::AutoStakeDurationSec` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_admin_config_auto_stake_duration() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `159`
 		//  Estimated: `1489`
@@ -446,6 +458,17 @@ impl WeightInfo for () {
 	/// Storage: `NodeManager::MinUptimeThreshold` (r:1 w:1)
 	/// Proof: `NodeManager::MinUptimeThreshold` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	fn set_admin_config_min_threshold() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `159`
+		//  Estimated: `1489`
+		// Minimum execution time: 11_375_000 picoseconds.
+		Weight::from_parts(11_953_000, 1489)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: `NodeManager::AutoStakeDurationSec` (r:1 w:1)
+	/// Proof: `NodeManager::AutoStakeDurationSec` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_admin_config_auto_stake_duration() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `159`
 		//  Estimated: `1489`

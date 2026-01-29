@@ -131,6 +131,7 @@ pub(crate) fn testnet_genesis(
             "maxBatchSize": 10u32,
             "heartbeatPeriod": 10u32,
             "rewardAmount": 20 * AVT,
+            "autoStakeDurationSec": 3600u64,
         }
     })
 }
