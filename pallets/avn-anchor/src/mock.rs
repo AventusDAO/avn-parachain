@@ -218,6 +218,7 @@ impl pallet_token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]

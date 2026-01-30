@@ -16,11 +16,12 @@
 
 use super::*;
 use crate::{self as token_manager, Balances as TokenManagerBalances};
+use core::time::Duration;
 use frame_support::{
     derive_impl,
     dispatch::{DispatchClass, DispatchInfo},
     parameter_types,
-    traits::{ConstU8, EqualPrivilegeOnly, Hooks},
+    traits::{ConstU8, EqualPrivilegeOnly, Hooks, UnixTime},
     weights::{Weight, WeightToFee as WeightToFeeT},
     PalletId,
 };
@@ -62,6 +63,14 @@ pub const AMOUNT_123_TOKEN: u128 = 123 * ONE_TOKEN;
 pub const EXISTENTIAL_DEPOSIT: u64 = 0;
 pub const NON_AVT_TOKEN_ID: H160 = H160(hex!("1414141414141414141414141414141414141414"));
 pub const NON_AVT_TOKEN_ID_2: H160 = H160(hex!("2020202020202020202020202020202020202020"));
+
+pub struct TestTimeProvider;
+
+impl UnixTime for TestTimeProvider {
+    fn now() -> Duration {
+        Duration::from_millis(pallet_timestamp::Pallet::<TestRuntime>::get())
+    }
+}
 
 const TOPIC_RECEIVER_INDEX: usize = 2;
 
@@ -109,6 +118,7 @@ impl token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = TestOnIdleHandler;
     type AccountToBytesConvert = Avn;
+    type TimeProvider = TestTimeProvider;
 }
 
 parameter_types! {

@@ -1,6 +1,6 @@
 use super::*;
 use crate::{offence::create_and_report_bridge_offence, Config};
-use frame_support::BoundedVec;
+use frame_support::{traits::UnixTime, BoundedVec};
 use sp_avn_common::eth::{create_function_confirmation_hash, EthereumId};
 
 pub fn is_active_request<T: Config<I>, I: 'static>(id: EthereumId) -> bool {
@@ -83,7 +83,8 @@ pub fn set_up_active_tx<T: Config<I>, I: 'static>(
     req: SendRequestData,
     replay_maybe: Option<u16>,
 ) -> Result<(), Error<T, I>> {
-    let expiry = util::time_now::<T, I>() + EthTxLifetimeSecs::<T, I>::get();
+    let now_secs: u64 = <T as pallet::Config<I>>::TimeProvider::now().as_secs();
+    let expiry = now_secs + EthTxLifetimeSecs::<T, I>::get();
     let extended_params: BoundedVec<
         (BoundedVec<u8, ConstU32<7>>, BoundedVec<u8, ConstU32<130>>),
         ConstU32<5>,
