@@ -4,9 +4,16 @@ use crate::mock::{
     RuntimeCall, RuntimeEvent, RuntimeOrigin, System, TestAccount, TestRuntime, BASE_FEE,
 };
 
-use frame_support::{dispatch::DispatchInfo, pallet_prelude::Weight, traits::Currency};
+use frame_support::{
+    dispatch::{DispatchInfo, PostDispatchInfo},
+    pallet_prelude::Weight,
+    traits::Currency,
+};
 use pallet_transaction_payment::ChargeTransactionPayment;
-use sp_runtime::traits::SignedExtension;
+use sp_runtime::{
+    traits::{transaction_extension::TxBaseImplication, TransactionExtension},
+    transaction_validity::TransactionSource,
+};
 
 use frame_support::assert_ok;
 
@@ -24,7 +31,7 @@ fn to_acc_id(id: u64) -> AccountId {
 
 /// create a transaction info struct from weight. Handy to avoid building the whole struct.
 pub fn info_from_weight(w: Weight) -> DispatchInfo {
-    DispatchInfo { weight: w, ..Default::default() }
+    DispatchInfo { call_weight: w, ..Default::default() }
 }
 
 fn pay_gas_and_call_remark_post_info(
@@ -32,15 +39,19 @@ fn pay_gas_and_call_remark_post_info(
     tip: u128,
     post_dispatch_weight: Option<Weight>,
 ) {
-    let pre = <ChargeTransactionPayment<TestRuntime> as SignedExtension>::pre_dispatch(
-        ChargeTransactionPayment::from(tip),
-        sender,
-        &RuntimeCall::System(frame_system::Call::remark { remark: vec![] }),
-        &info_from_weight(Weight::from_parts(WEIGHT_FEE, 0)),
-        TX_LEN,
-    );
-
-    assert_ok!(&pre);
+    let call = RuntimeCall::System(frame_system::Call::remark { remark: vec![] });
+    let info = info_from_weight(Weight::from_parts(WEIGHT_FEE, 0));
+    let len = TX_LEN;
+    let ext = ChargeTransactionPayment::<TestRuntime>::from(tip);
+    let implicit = ext.implicit().expect("implicit data available");
+    let implication = TxBaseImplication(call.clone());
+    let origin = RuntimeOrigin::signed(*sender);
+    let (_valid, val, origin) = ext
+        .validate(origin, &call, &info, len, implicit, &implication, TransactionSource::Local)
+        .expect("validation should succeed");
+    let pre = ext
+        .prepare(val, &origin, &call, &info, len)
+        .expect("prepare should charge the fee");
 
     System::inc_account_nonce(sender); // please don't move this line
 
@@ -48,9 +59,9 @@ fn pay_gas_and_call_remark_post_info(
         .map_err(|_e| Error::<TestRuntime>::InvalidFeeConfig));
 
     assert_ok!(ChargeTransactionPayment::<TestRuntime>::post_dispatch(
-        Some(pre.expect("Checked for error")),
-        &DispatchInfo { weight: Weight::from_parts(WEIGHT_FEE, 0), ..Default::default() },
-        &PostDispatchInfo { actual_weight: post_dispatch_weight, pays_fee: Default::default() },
+        pre,
+        &DispatchInfo { call_weight: Weight::from_parts(WEIGHT_FEE, 0), ..Default::default() },
+        &mut PostDispatchInfo { actual_weight: post_dispatch_weight, pays_fee: Default::default() },
         TX_LEN,
         &Ok(())
     ));

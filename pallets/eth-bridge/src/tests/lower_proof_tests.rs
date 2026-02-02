@@ -136,9 +136,10 @@ fn call_ocw_and_dispatch(
 ) {
     call_ocw(context, offchain_state, author, block_number);
     // Dispatch the transaction from the mempool
-    let tx = pool_state.write().transactions.pop().unwrap();
-    let tx = Extrinsic::decode(&mut &*tx).unwrap();
-    tx.call.dispatch(frame_system::RawOrigin::None.into()).map(|_| ()).unwrap();
+    let tx_bytes = pool_state.write().transactions.pop().unwrap();
+    let tx = Extrinsic::decode(&mut &*tx_bytes).unwrap();
+    assert!(tx.is_inherent());
+    tx.function.dispatch(frame_system::RawOrigin::None.into()).map(|_| ()).unwrap();
 }
 
 mod lower_proofs {
@@ -179,7 +180,7 @@ mod lower_proofs {
             let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
             assert!(matches!(
-                tx.call,
+                tx.function,
                 RuntimeCall::EthBridge(crate::Call::add_confirmation {
                     request_id: _,
                     confirmation: _,
@@ -226,7 +227,7 @@ mod lower_proofs {
 
             // Simulate sending the tx from the mem pool. Normally this would happen as
             // part of the ocw but in tests we have to dispatch it manually.
-            tx.call.dispatch(frame_system::RawOrigin::None.into()).map(|_| ()).unwrap();
+            tx.function.dispatch(frame_system::RawOrigin::None.into()).map(|_| ()).unwrap();
 
             // The proof should be generated now
             assert!(ActiveRequest::<TestRuntime>::get().is_none());
@@ -274,7 +275,7 @@ mod lower_proofs {
             let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
             // Simulate sending the tx from the mem pool
-            tx.call.dispatch(frame_system::RawOrigin::None.into()).map(|_| ()).unwrap();
+            tx.function.dispatch(frame_system::RawOrigin::None.into()).map(|_| ()).unwrap();
 
             // The proof should be generated now
             assert_eq!(true, lower_is_ready_to_be_claimed(&context.lower_id));

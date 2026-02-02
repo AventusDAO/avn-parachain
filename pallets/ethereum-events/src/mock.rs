@@ -136,12 +136,21 @@ impl Config for TestRuntime {
     type ProcessedEventsChecker = EthereumEvents;
 }
 
-impl<LocalCall> frame_system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    type OverarchingCall = RuntimeCall;
     type Extrinsic = Extrinsic;
+    type RuntimeCall = RuntimeCall;
+}
+
+impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+        Extrinsic::new_bare(call)
+    }
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]

@@ -537,7 +537,7 @@ struct MintBatchNftContext {
 impl Default for MintBatchNftContext {
     fn default() -> Self {
         // This is generated based on unique_id = 1 and index = 0
-        let nft_id = U256::from([
+        let nft_id = U256::from_big_endian(&[
             101, 94, 240, 118, 189, 202, 200, 247, 116, 145, 110, 133, 216, 128, 100, 172, 36, 189,
             18, 53, 164, 178, 200, 65, 155, 27, 180, 246, 23, 91, 12, 175,
         ]);
