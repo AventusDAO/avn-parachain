@@ -12,7 +12,7 @@ lto = "fat"
 codegen-units = 1
 
 [workspace.package]
-version = "8.4.1"
+version = "8.4.2"
 authors = ["Aventus systems team"]
 homepage = "https://www.aventus.io/"
 repository = "https://github.com/Aventus-Network-Services/avn-node-parachain/"
