@@ -10,7 +10,7 @@ pub mod governance;
 pub mod proxy_config;
 pub mod xcm_config;
 
-use core::{cmp::Ordering, time::Duration};
+use core::cmp::Ordering;
 
 use codec::{Decode, Encode};
 use scale_info::TypeInfo;
@@ -45,7 +45,7 @@ use frame_support::{
         fungible::{self as fungible, HoldConsideration},
         tokens::imbalance::ResolveTo,
         AsEnsureOriginWithArg, ConstBool, ConstU32, ConstU64, Contains, Currency, Imbalance,
-        LinearStoragePrice, OnUnbalanced, PrivilegeCmp, TransformOrigin, UnixTime,
+        LinearStoragePrice, OnUnbalanced, PrivilegeCmp, TransformOrigin,
     },
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, ConstantMultiplier, Weight},
     PalletId,
@@ -323,14 +323,6 @@ impl pallet_timestamp::Config for Runtime {
     type OnTimestampSet = Aura;
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
-}
-
-pub struct RuntimeTimeProvider;
-
-impl UnixTime for RuntimeTimeProvider {
-    fn now() -> Duration {
-        Duration::from_millis(pallet_timestamp::Pallet::<Runtime>::get())
-    }
 }
 
 impl pallet_authorship::Config for Runtime {
@@ -649,7 +641,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
-    type TimeProvider = RuntimeTimeProvider;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -701,7 +693,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type MinEthBlockConfirmation = MinEthBlockConfirmation;
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);
