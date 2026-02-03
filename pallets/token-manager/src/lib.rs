@@ -133,16 +133,7 @@ pub mod pallet {
         /// A type that can be used to verify signatures
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
         /// The signature type used by accounts/transactions.
-        #[cfg(not(feature = "runtime-benchmarks"))]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        type Signature: Verify<Signer = Self::Public>
-            + Member
-            + Decode
-            + Encode
-            + TypeInfo
-            + From<sp_core::sr25519::Signature>;
         /// Id of the account that will hold treasury funds
         type AvnTreasuryPotId: Get<PalletId>;
         /// Percentage of growth to store in the treasury
@@ -407,7 +398,7 @@ pub mod pallet {
         /// this convention:
         /// - its first argument (after origin) should be a public verification key and a signature
         #[pallet::call_index(0)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::proxy_with_non_avt_token().saturating_add(call.get_dispatch_info().weight))]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::proxy_with_non_avt_token().saturating_add(call.get_dispatch_info().call_weight))]
         pub fn proxy(
             origin: OriginFor<T>,
             call: Box<<T as Config>::RuntimeCall>,

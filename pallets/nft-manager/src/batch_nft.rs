@@ -36,13 +36,12 @@ pub const SIGNED_END_BATCH_SALE_CONTEXT: &'static [u8] =
 
 pub fn generate_batch_id<T: Config>(unique_id: NftUniqueId) -> U256 {
     let mut data_to_hash = BATCH_ID_CONTEXT.to_vec();
-    let mut unique_id_be = [0u8; 32];
-    unique_id.to_big_endian(&mut unique_id_be);
+    let unique_id_be = unique_id.to_big_endian();
     data_to_hash.append(&mut unique_id_be.to_vec());
 
     let hash = keccak_256(&data_to_hash);
 
-    return U256::from(hash)
+    return U256::from_big_endian(&hash)
 }
 
 /// The NftId for a Batch Sale is calculated by this formula: uint256(keccak256(“B”, batchId,
@@ -50,14 +49,13 @@ pub fn generate_batch_id<T: Config>(unique_id: NftUniqueId) -> U256 {
 pub fn generate_batch_nft_id<T: Config>(batch_id: &NftBatchId, sales_index: &u64) -> U256 {
     let mut data_to_hash = BATCH_NFT_ID_CONTEXT.to_vec();
 
-    let mut batch_id_be = [0u8; 32];
-    batch_id.to_big_endian(&mut batch_id_be);
+    let mut batch_id_be = batch_id.to_big_endian();
     data_to_hash.append(&mut batch_id_be.to_vec());
     data_to_hash.append(&mut sales_index.to_be_bytes().to_vec());
 
     let hash = keccak_256(&data_to_hash);
 
-    return U256::from(hash)
+    return U256::from_big_endian(&hash)
 }
 
 pub fn get_nft_info_for_batch<T: Config>(

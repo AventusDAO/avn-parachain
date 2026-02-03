@@ -3,7 +3,7 @@ use crate::{mock::*, Call, *};
 use codec::Decode;
 use frame_system::pallet_prelude::BlockNumberFor;
 use sp_avn_common::event_types::EthEvent;
-use sp_runtime::testing::UintAuthorityId;
+use sp_runtime::{generic::Preamble, testing::UintAuthorityId};
 
 fn mock_event() -> EthEvent {
     EthEvent {
@@ -143,8 +143,8 @@ fn check_event_and_submit_result(
                 // Only one Tx submitted
                 assert!(pool_state.read().transactions.is_empty());
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
-                assert_eq!(tx.signature, None);
-                match tx.call {
+                assert!(matches!(tx.preamble, Preamble::Bare(_)));
+                match tx.function {
                     mock::RuntimeCall::EthereumEvents(crate::Call::submit_checkevent_result {
                         result: check_result,
                         ingress_counter: call_counter,
@@ -207,8 +207,8 @@ fn test_check_event_and_submit_result_not_found() {
         // Only one Tx submitted
         assert!(pool_state.read().transactions.is_empty());
         let tx = Extrinsic::decode(&mut &*tx).unwrap();
-        assert_eq!(tx.signature, None);
-        match tx.call {
+        assert!(matches!(tx.preamble, Preamble::Bare(_)));
+        match tx.function {
             mock::RuntimeCall::EthereumEvents(crate::Call::submit_checkevent_result {
                 result,
                 ingress_counter: call_counter,
@@ -268,10 +268,10 @@ fn test_send_event_ok() {
         assert!(pool_state.read().transactions.is_empty());
 
         let tx = Extrinsic::decode(&mut &*tx).unwrap();
-        assert!(tx.signature.is_none());
+        assert!(matches!(tx.preamble, Preamble::Bare(_)));
 
         assert_eq!(
-            tx.call,
+            tx.function,
             mock::RuntimeCall::EthereumEvents(crate::Call::process_event {
                 event_id: event_result.event.event_id,
                 ingress_counter: DEFAULT_INGRESS_COUNTER,
@@ -357,10 +357,10 @@ fn test_validate_event_ok() {
         assert!(pool_state.read().transactions.is_empty());
         let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-        assert!(tx.signature.is_none());
+        assert!(matches!(tx.preamble, Preamble::Bare(_)));
 
         assert_eq!(
-            tx.call,
+            tx.function,
             mock::RuntimeCall::EthereumEvents(Call::challenge_event {
                 challenge: expected_challenge,
                 ingress_counter: DEFAULT_INGRESS_COUNTER,

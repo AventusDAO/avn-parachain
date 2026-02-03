@@ -5,7 +5,7 @@
 use crate::{mock::*, system};
 use frame_support::{assert_noop, assert_ok};
 use pallet_avn::Error as AvNError;
-use sp_runtime::{testing::UintAuthorityId, traits::BadOrigin};
+use sp_runtime::{generic::Preamble, testing::UintAuthorityId, traits::BadOrigin};
 use system::RawOrigin;
 
 fn setup_voting_for_root_id(context: &Context) {
@@ -817,10 +817,10 @@ mod cast_votes_if_required {
             let tx = pool_state.write().transactions.pop().unwrap();
             assert!(pool_state.read().transactions.is_empty());
             let tx = Extrinsic::decode(&mut &*tx).unwrap();
-            assert_eq!(tx.signature, None);
+            assert!(matches!(tx.preamble, Preamble::Bare(_)));
 
             assert_eq!(
-                tx.call,
+                tx.function,
                 mock::RuntimeCall::Summary(crate::Call::approve_root {
                     root_id: context.root_id,
                     validator: second_validator.clone(),
@@ -858,10 +858,10 @@ mod cast_votes_if_required {
             let tx = pool_state.write().transactions.pop().unwrap();
             assert!(pool_state.read().transactions.is_empty());
             let tx = Extrinsic::decode(&mut &*tx).unwrap();
-            assert_eq!(tx.signature, None);
+            assert!(matches!(tx.preamble, Preamble::Bare(_)));
 
             assert_eq!(
-                tx.call,
+                tx.function,
                 mock::RuntimeCall::Summary(crate::Call::reject_root {
                     root_id: context.root_id,
                     validator: second_validator.clone(),

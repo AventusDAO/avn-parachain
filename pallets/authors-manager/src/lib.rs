@@ -48,7 +48,7 @@ pub mod migration;
 pub mod pallet {
     use super::*;
     use frame_support::{assert_ok, pallet_prelude::*};
-    use frame_system::{offchain::SendTransactionTypes, pallet_prelude::*};
+    use frame_system::{offchain::CreateTransactionBase, pallet_prelude::*};
     pub use pallet_avn::{EthereumPublicKeyChecker, MAX_VALIDATOR_ACCOUNTS as MAX_AUTHOR_ACCOUNTS};
     use sp_core::ecdsa;
 
@@ -58,7 +58,7 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config:
-        SendTransactionTypes<Call<Self>>
+        CreateTransactionBase<Call<Self>>
         + frame_system::Config
         + session::Config
         + pallet_avn::Config

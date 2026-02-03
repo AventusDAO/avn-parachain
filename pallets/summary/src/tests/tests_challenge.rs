@@ -7,7 +7,10 @@ use frame_support::{assert_noop, assert_ok, unsigned::ValidateUnsigned};
 use frame_system::RawOrigin;
 use parking_lot::RwLock;
 use sp_core::offchain::testing::PoolState;
-use sp_runtime::testing::{TestSignature, UintAuthorityId};
+use sp_runtime::{
+    generic::Preamble,
+    testing::{TestSignature, UintAuthorityId},
+};
 
 type MockValidator = Validator<UintAuthorityId, u64>;
 
@@ -132,8 +135,8 @@ fn expected_transaction_was_called(
 pub fn take_transaction_from_pool(pool_state: &Arc<RwLock<PoolState>>) -> crate::Call<TestRuntime> {
     let tx = pool_state.write().transactions.pop().unwrap();
     let tx = Extrinsic::decode(&mut &*tx).unwrap();
-    assert_eq!(tx.signature, None);
-    match tx.call {
+    assert!(matches!(tx.preamble, Preamble::Bare(_)));
+    match tx.function {
         mock::RuntimeCall::Summary(inner_tx) => inner_tx,
         _ => unreachable!(),
     }
@@ -531,7 +534,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     mock::RuntimeCall::Summary(inner_tx) => {
                         assert_ok!(Summary::validate_unsigned(TransactionSource::Local, &inner_tx));
                     },
@@ -561,7 +564,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     mock::RuntimeCall::Summary(crate::Call::add_challenge {
                         challenge,
                         validator,
@@ -606,7 +609,7 @@ mod signature_in {
 
                     let non_validator = get_non_validator();
 
-                    match tx.call {
+                    match tx.function {
                         mock::RuntimeCall::Summary(crate::Call::add_challenge {
                             challenge,
                             validator: _,
@@ -648,7 +651,7 @@ mod signature_in {
 
                     let bad_context = "bad context";
 
-                    match tx.call {
+                    match tx.function {
                         mock::RuntimeCall::Summary(crate::Call::add_challenge {
                             challenge,
                             validator,

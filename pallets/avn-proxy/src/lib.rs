@@ -55,16 +55,7 @@ pub mod pallet {
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
 
         /// The signature type used by accounts/transactions.
-        #[cfg(not(feature = "runtime-benchmarks"))]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        type Signature: Verify<Signer = Self::Public>
-            + Member
-            + Decode
-            + Encode
-            + TypeInfo
-            + From<sp_core::sr25519::Signature>;
 
         type ProxyConfig: Parameter
             + Member
@@ -118,7 +109,7 @@ pub mod pallet {
         #[pallet::call_index(0)]
         #[pallet::weight(
             <T as pallet::Config>::WeightInfo::charge_fee()
-            .saturating_add(call.get_dispatch_info().weight)
+            .saturating_add(call.get_dispatch_info().call_weight)
             .saturating_add(Weight::from_parts(50_000 as u64, 0)))
         ]
         pub fn proxy(
@@ -131,7 +122,7 @@ pub mod pallet {
             let relayer = ensure_signed(origin)?;
             let mut final_weight = call
                 .get_dispatch_info()
-                .weight
+                .call_weight
                 .saturating_add(Weight::from_parts(50_000 as u64, 0));
 
             let proof = <T as Config>::ProxyConfig::get_proof(&call)
@@ -140,7 +131,7 @@ pub mod pallet {
 
             if let Some(payment_info) = payment_info {
                 final_weight = T::WeightInfo::charge_fee()
-                    .saturating_add(call.get_dispatch_info().weight)
+                    .saturating_add(call.get_dispatch_info().call_weight)
                     .saturating_add(Weight::from_parts(50_000 as u64, 0));
 
                 // Always try to charge a fee, regardless of the outcome of execution.

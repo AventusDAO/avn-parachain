@@ -153,14 +153,15 @@ fn send_challenge_transaction<T: Config<I>, I: 'static>(
         return Err(())
     };
 
-    if let Err(e) = SubmitTransaction::<T, Call<T, I>>::submit_unsigned_transaction(
+    let xt = T::create_inherent(
         Call::add_challenge {
             challenge: challenge.clone(),
             validator: this_validator.clone(),
             signature: signature.expect("We have a signature"),
         }
         .into(),
-    ) {
+    );
+    if let Err(e) = SubmitTransaction::<T, Call<T, I>>::submit_transaction(xt) {
         log::error!("💔 Error sending `challenge transaction`: {:?}. Error: {:?}", &challenge, e);
         return Err(())
     }

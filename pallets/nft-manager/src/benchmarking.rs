@@ -25,7 +25,8 @@ use frame_benchmarking::{benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
 use hex_literal::hex;
 use pallet_avn::{self as avn};
-use sp_core::{ByteArray, H256};
+use sp_avn_common::benchmarking::convert_sr25519_signature;
+use sp_core::{crypto::UncheckedInto, sr25519, ByteArray, H256};
 use sp_runtime::RuntimeAppPublic;
 
 #[cfg(not(feature = "std"))]
@@ -59,10 +60,11 @@ fn get_proof<T: Config>(
     relayer: T::AccountId,
     signature: &[u8],
 ) -> Proof<T::Signature, T::AccountId> {
+    let signature = sr25519::Signature::from_slice(signature).expect("valid sr25519 signature");
     return Proof {
         signer: signer.clone(),
         relayer: relayer.clone(),
-        signature: sp_core::sr25519::Signature::from_slice(signature).unwrap().into(),
+        signature: convert_sr25519_signature::<T::Signature>(signature),
     }
 }
 
@@ -105,7 +107,7 @@ impl<T: Config> MintSingleNft<T> {
         let relayer_account_id = get_relayer::<T>();
         let (nft_owner_key_pair, nft_owner_account_id) = get_user_account::<T>();
 
-        let nft_id = U256::from([
+        let nft_id = U256::from_big_endian(&[
             144, 32, 76, 127, 69, 26, 191, 42, 121, 72, 235, 94, 179, 147, 69, 29, 167, 189, 8, 44,
             104, 83, 241, 253, 146, 114, 166, 195, 200, 254, 120, 78,
         ]);
@@ -450,7 +452,7 @@ impl<T: Config> MintBatchNft<T> {
         // Copied from batch_nft_tests.rs
         // This value is generated from batch_id (generated itself with unique_id = 0) and index = 1
         // nft_id = toBigEndian(generate_batch_nft_id(generate_batch_id(0), 1))
-        let nft_id = U256::from([
+        let nft_id = U256::from_big_endian(&[
             101, 94, 240, 118, 189, 202, 200, 247, 116, 145, 110, 133, 216, 128, 100, 172, 36, 189,
             18, 53, 164, 178, 200, 65, 155, 27, 180, 246, 23, 91, 12, 175,
         ]);

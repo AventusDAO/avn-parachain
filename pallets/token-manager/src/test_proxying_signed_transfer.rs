@@ -26,8 +26,8 @@ use pallet_parachain_staking::Weight;
 use pallet_transaction_payment::ChargeTransactionPayment;
 use sp_core::{sr25519, Pair};
 use sp_runtime::{
-    traits::{Hash, SignedExtension},
-    transaction_validity::InvalidTransaction,
+    traits::{transaction_extension::TxBaseImplication, Hash, TransactionExtension},
+    transaction_validity::{InvalidTransaction, TransactionSource},
 };
 
 type AccountId = <TestRuntime as frame_system::Config>::AccountId;
@@ -60,17 +60,29 @@ fn pay_gas_and_proxy_call(
     outer_call: &<TestRuntime as frame_system::Config>::RuntimeCall,
     inner_call: Box<<TestRuntime as Config>::RuntimeCall>,
 ) -> DispatchResult {
-    // See: /primitives/runtime/src/traits.rs for more details
-    <ChargeTransactionPayment<TestRuntime> as SignedExtension>::pre_dispatch(
-        ChargeTransactionPayment::from(0), // we do not pay any tip
-        relayer,
-        outer_call,
-        &info_from_weight(Weight::from_parts(1 as u64, 0)),
-        TX_LEN,
+    let info = info_from_weight(Weight::from_parts(1 as u64, 0));
+    let len = TX_LEN;
+    let ext = ChargeTransactionPayment::<TestRuntime>::from(0);
+    let implicit = ext.implicit().map_err(|e| <&'static str>::from(e))?;
+    let implication = TxBaseImplication(outer_call.clone());
+    let origin = RuntimeOrigin::signed(*relayer);
+    let (_valid, val, origin) = ext
+        .validate(origin, outer_call, &info, len, implicit, &implication, TransactionSource::Local)
+        .map_err(|e| <&'static str>::from(e))?;
+    let pre = ext
+        .prepare(val, &origin, outer_call, &info, len)
+        .map_err(|e| <&'static str>::from(e))?;
+
+    let result = TokenManager::proxy(RuntimeOrigin::signed(*relayer), inner_call);
+    ChargeTransactionPayment::<TestRuntime>::post_dispatch(
+        pre,
+        &info,
+        &mut Default::default(),
+        len,
+        &result.map(|_| ()),
     )
     .map_err(|e| <&'static str>::from(e))?;
-
-    return TokenManager::proxy(RuntimeOrigin::signed(*relayer), inner_call)
+    return result
 }
 
 fn pay_gas_and_call_transfer_directly(
@@ -81,23 +93,36 @@ fn pay_gas_and_call_transfer_directly(
     proof: Proof<Signature, AccountId>,
     call: &<TestRuntime as frame_system::Config>::RuntimeCall,
 ) -> DispatchResult {
-    <ChargeTransactionPayment<TestRuntime> as SignedExtension>::pre_dispatch(
-        ChargeTransactionPayment::from(0),
-        sender,
-        call,
-        &info_from_weight(Weight::from_parts(1 as u64, 0)),
-        TX_LEN,
-    )
-    .map_err(|e| <&'static str>::from(e))?;
+    let info = info_from_weight(Weight::from_parts(1 as u64, 0));
+    let len = TX_LEN;
+    let ext = ChargeTransactionPayment::<TestRuntime>::from(0);
+    let implicit = ext.implicit().map_err(|e| <&'static str>::from(e))?;
+    let implication = TxBaseImplication(call.clone());
+    let origin = RuntimeOrigin::signed(*sender);
+    let (_valid, val, origin) = ext
+        .validate(origin, call, &info, len, implicit, &implication, TransactionSource::Local)
+        .map_err(|e| <&'static str>::from(e))?;
+    let pre = ext
+        .prepare(val, &origin, call, &info, len)
+        .map_err(|e| <&'static str>::from(e))?;
 
-    return TokenManager::signed_transfer(
+    let result = TokenManager::signed_transfer(
         RuntimeOrigin::signed(*sender),
         proof,
         *sender,
         *receiver,
         token_id,
         amount,
+    );
+    ChargeTransactionPayment::<TestRuntime>::post_dispatch(
+        pre,
+        &info,
+        &mut Default::default(),
+        len,
+        &result.map(|_| ()),
     )
+    .map_err(|e| <&'static str>::from(e))?;
+    return result
 }
 
 fn build_proof(
