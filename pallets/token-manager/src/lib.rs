@@ -33,7 +33,7 @@ use frame_support::{
             DispatchTime, HARD_DEADLINE,
         },
         Currency, ExistenceRequirement, Get, Imbalance, IsSubType, QueryPreimage, StorePreimage,
-        WithdrawReasons,
+        UnixTime, WithdrawReasons,
     },
     BoundedVec, PalletId, Parameter,
 };
@@ -57,7 +57,7 @@ use sp_runtime::{
     scale_info::TypeInfo,
     traits::{
         AccountIdConversion, AtLeast32Bit, CheckedAdd, Dispatchable, Hash, IdentifyAccount, Member,
-        SaturatedConversion, Saturating, Verify, Zero,
+        Saturating, Verify, Zero,
     },
     Perbill,
 };
@@ -110,7 +110,7 @@ pub mod pallet {
 
     // Public interface of this pallet
     #[pallet::config]
-    pub trait Config: frame_system::Config + avn::Config + pallet_timestamp::Config {
+    pub trait Config: frame_system::Config + avn::Config {
         /// The overarching event type.
         type RuntimeEvent: From<Event<Self>>
             + Into<<Self as frame_system::Config>::RuntimeEvent>
@@ -157,6 +157,7 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
         type OnIdleHandler: OnIdleHandler<BlockNumberFor<Self>, Weight>;
         type AccountToBytesConvert: pallet_avn::AccountToBytesConverter<Self::AccountId>;
+        type TimeProvider: UnixTime;
     }
 
     #[pallet::pallet]
@@ -770,7 +771,7 @@ impl<T: Config> Pallet<T> {
         }
 
         let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
-        let t2_timestamp: u64 = pallet_timestamp::Pallet::<T>::get().saturated_into::<u64>();
+        let t2_timestamp: u64 = T::TimeProvider::now().as_secs();
         let lower_params = concat_lower_data(
             lower_id,
             token_id.into(),
