@@ -57,7 +57,7 @@ use sp_runtime::{
     scale_info::TypeInfo,
     traits::{
         AccountIdConversion, AtLeast32Bit, CheckedAdd, Dispatchable, Hash, IdentifyAccount, Member,
-        SaturatedConversion, Saturating, Verify, Zero,
+        Saturating, Verify, Zero,
     },
     Perbill,
 };
@@ -105,12 +105,12 @@ const PALLET_ID: &'static [u8; 13] = b"token_manager";
 pub mod pallet {
 
     use super::*;
-    use frame_support::{pallet_prelude::*, Blake2_128Concat};
+    use frame_support::{pallet_prelude::*, traits::UnixTime, Blake2_128Concat};
     use frame_system::{ensure_root, pallet_prelude::*};
 
     // Public interface of this pallet
     #[pallet::config]
-    pub trait Config: frame_system::Config + avn::Config + pallet_timestamp::Config {
+    pub trait Config: frame_system::Config + avn::Config {
         /// The overarching event type.
         type RuntimeEvent: From<Event<Self>>
             + Into<<Self as frame_system::Config>::RuntimeEvent>
@@ -166,6 +166,7 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
         type OnIdleHandler: OnIdleHandler<BlockNumberFor<Self>, Weight>;
         type AccountToBytesConvert: pallet_avn::AccountToBytesConverter<Self::AccountId>;
+        type TimeProvider: UnixTime;
     }
 
     #[pallet::pallet]
@@ -779,7 +780,7 @@ impl<T: Config> Pallet<T> {
         }
 
         let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
-        let t2_timestamp: u64 = pallet_timestamp::Pallet::<T>::get().saturated_into::<u64>();
+        let t2_timestamp: u64 = T::TimeProvider::now().as_secs();
         let lower_params = concat_lower_data(
             lower_id,
             token_id.into(),

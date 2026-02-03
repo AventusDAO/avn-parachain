@@ -194,7 +194,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: create_runtime_str!("avn-parachain"),
     impl_name: create_runtime_str!("avn-parachain"),
     authoring_version: 1,
-    spec_version: 128,
+    spec_version: 129,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -641,6 +641,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -692,7 +693,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type MinEthBlockConfirmation = MinEthBlockConfirmation;
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);

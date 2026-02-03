@@ -109,6 +109,7 @@ impl token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = TestOnIdleHandler;
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 parameter_types! {

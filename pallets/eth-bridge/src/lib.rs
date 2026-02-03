@@ -911,7 +911,7 @@ pub mod pallet {
         tx_has_enough_confirmations: bool,
     ) -> Result<(), DispatchError> {
         let tx_is_sent = tx.data.eth_tx_hash != H256::zero();
-        let tx_is_past_expiry = util::time_now::<T, I>() > tx.data.expiry;
+        let tx_is_past_expiry = T::TimeProvider::now().as_secs() > tx.data.expiry;
 
         if self_is_sender && tx_has_enough_confirmations && !tx_is_sent {
             let lock_name =

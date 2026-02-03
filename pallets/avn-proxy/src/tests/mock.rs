@@ -160,6 +160,7 @@ impl pallet_token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 parameter_types! {

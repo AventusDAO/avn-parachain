@@ -83,7 +83,7 @@ pub fn set_up_active_tx<T: Config<I>, I: 'static>(
     req: SendRequestData,
     replay_maybe: Option<u16>,
 ) -> Result<(), Error<T, I>> {
-    let expiry = util::time_now::<T, I>() + EthTxLifetimeSecs::<T, I>::get();
+    let expiry = T::TimeProvider::now().as_secs() + EthTxLifetimeSecs::<T, I>::get();
     let extended_params: BoundedVec<
         (BoundedVec<u8, ConstU32<7>>, BoundedVec<u8, ConstU32<130>>),
         ConstU32<5>,
