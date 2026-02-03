@@ -37,9 +37,9 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.87.0
+          toolchain: 1.86.0
           components: rustfmt, clippy
-          target: wasm32v1-none
+          target: wasm32-unknown-unknown
           override: true
           default: true
 
