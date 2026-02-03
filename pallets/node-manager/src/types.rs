@@ -1,5 +1,6 @@
 use crate::*;
 use sp_runtime::Saturating;
+use sp_runtime::traits::{UniqueSaturatedInto, SaturatedConversion};
 
 #[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 /// The current era index and transition information
@@ -143,4 +144,23 @@ pub enum AdminConfig<AccountId, Balance> {
     RewardToggle(bool),
     MinUptimeThreshold(Perbill),
     AutoStakeDuration(u64),
+}
+
+#[derive(Clone, Copy)]
+pub struct Multiplier {
+    pub integer: u128,
+    pub fraction: Perbill,
+}
+
+impl Multiplier {
+    pub fn apply_to_balance<T: Config>(&self, amount: BalanceOf<T>) -> BalanceOf<T> {
+        let a: u128 = amount.unique_saturated_into();
+        let base = a.saturating_mul(self.integer);
+        let frac = self.fraction * a;
+        (base.saturating_add(frac)).saturated_into()
+    }
+
+    pub fn apply_to_u128(&self, amount: u128) -> u128 {
+        amount.saturating_mul(self.integer).saturating_add(self.fraction * amount)
+    }
 }

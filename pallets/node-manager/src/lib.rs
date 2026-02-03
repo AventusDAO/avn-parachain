@@ -422,6 +422,9 @@ pub mod pallet {
         /// The lifetime (in blocks) of a signed transaction.
         #[pallet::constant]
         type SignedTxLifetime: Get<u32>;
+        /// The amount of AVT required to stake to get a +1 virtual node weight bonus.
+        #[pallet::constant]
+        type VirtualNodeStake: Get<BalanceOf<Self>>;
         /// The weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
     }

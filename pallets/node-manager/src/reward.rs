@@ -1,5 +1,12 @@
 use crate::*;
 use sp_runtime::{ArithmeticError, SaturatedConversion};
+use sp_std::ops::RangeInclusive;
+
+// 50% bonus for serial number nodes starting from 2001 to 5000
+const FIFTY_PERCENT_SERIAL_BONUS: RangeInclusive<u64> = 2001..=5000;
+// 25% bonus for serial number nodes starting from 5001 to 10000
+const TWENTY_FIVE_PERCENT_SERIAL_BONUS: RangeInclusive<u64> = 5001..=10000;
+
 impl<T: Config> Pallet<T> {
     // Nodes should not be able to submit over the min uptime required.
     // but we still check it here to be sure.
@@ -138,5 +145,36 @@ impl<T: Config> Pallet<T> {
     /// Get the current time in seconds
     pub fn time_now() -> u64 {
         T::TimeProvider::now().as_secs()
+    }
+
+    fn calculate_serial_bonus(node_serial: u64) -> Multiplier {
+        if FIFTY_PERCENT_SERIAL_BONUS.contains(&node_serial) {
+            Multiplier { integer: 1, fraction: Perbill::from_percent(50) }
+        } else if TWENTY_FIVE_PERCENT_SERIAL_BONUS.contains(&node_serial) {
+            Multiplier { integer: 1, fraction: Perbill::from_percent(25) }
+        } else {
+            Multiplier { integer: 1, fraction: Perbill::zero() }
+        }
+    }
+
+    fn calculate_stake_bonus(node_stake: BalanceOf<T>) -> u128 {
+        let stake_step: BalanceOf<T> = T::VirtualNodeStake::get();
+        if stake_step.is_zero() {
+            return 1u128;
+        }
+
+        1u128.saturating_add( (node_stake / stake_step.into()).saturated_into::<u128>())
+    }
+
+    pub fn compute_factor(serial: u64, stake: BalanceOf<T>) -> Multiplier {
+        let serial_bonus = Self::calculate_serial_bonus(serial);
+        let stake_bonus: u128 = Self::calculate_stake_bonus(stake);
+
+        // (stake_bonus) * (serial integer + serial fraction)
+        // = (stake_bonus * serial integer) + (serial fraction * stake_bonus)
+        Multiplier {
+            integer: stake_bonus.saturating_mul(serial_bonus.integer),
+            fraction: serial_bonus.fraction, // fraction applies to the same base, stake_bonus handled in integer part
+        }
     }
 }
