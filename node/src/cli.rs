@@ -62,12 +62,20 @@ pub struct AvnRunCmd {
     pub avn_port: Option<String>,
 
     /// URL for connecting with an ethereum node
-    #[arg(long = "ethereum-node-url", value_name = "ETH URL")]
-    pub eth_node_url: Option<String>,
+    #[arg(long = "ethereum-node-url", value_name = "ETH URL", num_args = 0..=32)]
+    pub eth_node_urls: Vec<String>,
 
     /// Api key for the chosen finance provider
     #[arg(long = "finance-provider-api-key", value_name = "FINANCE API KEY")]
     pub finance_api_key: Option<String>,
+
+    /// Enable extrinsic filtering for public RPC nodes.
+    #[arg(long, env = "ENABLE_EXTRINSIC_FILTER")]
+    pub enable_extrinsic_filter: bool,
+
+    /// Log rejected extrinsics when filter is enabled.
+    #[arg(long, env = "LOG_FILTERED_EXTRINSICS", default_value = "true")]
+    pub log_filtered_extrinsics: bool,
 }
 
 impl std::ops::Deref for AvnRunCmd {

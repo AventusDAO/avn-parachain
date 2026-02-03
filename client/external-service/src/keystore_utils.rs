@@ -1,6 +1,8 @@
-use crate::server_error;
+use crate::{server_error, sr25519, LocalKeystore, SrPair};
 use sp_avn_common::ETHEREUM_SIGNING_KEY;
-use sp_core::crypto::KeyTypeId;
+use sp_core::{crypto::KeyTypeId, Pair};
+use sp_keystore::Keystore;
+
 use std::{
     fs::{self, File},
     path::PathBuf,
@@ -98,4 +100,20 @@ fn key_phrase_by_type(
             ETHEREUM_SIGNING_KEY
         )))?
     }
+}
+
+pub fn authenticate_token(
+    keystore: &LocalKeystore,
+    message_data: &Vec<u8>,
+    signature: sr25519::Signature,
+) -> bool {
+    return keystore.sr25519_public_keys(KeyTypeId(*b"avnk")).into_iter().any(|public| {
+        log::warn!(
+            "⛓️  avn-service: Authenticating msg: {:?}, sign_data: {:?}, public: {:?}",
+            message_data,
+            signature,
+            public
+        );
+        SrPair::verify(&signature, message_data, &public)
+    })
 }

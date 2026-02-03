@@ -107,6 +107,7 @@ pub async fn build_raw_transaction(
         gas: gas_estimate,
         gas_price: None,
         data: web3::types::Bytes(send_request.data.clone()),
+        chain_id: Some(get_chain_id(web3).await?),
         ..Default::default()
     })
 }
@@ -119,7 +120,6 @@ pub async fn build_call_request(view_request: &EthTransaction) -> anyhow::Result
     })
 }
 
-#[allow(dead_code)]
 pub async fn get_chain_id(web3: &Web3<Http>) -> anyhow::Result<u64> {
     Ok(web3
         .eth()

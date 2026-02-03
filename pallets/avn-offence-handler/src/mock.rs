@@ -20,7 +20,7 @@ frame_support::construct_runtime!(
     pub enum TestRuntime {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event},
+        Avn: pallet_avn::{Pallet, Storage, Event},
         AvnOffenceHandler: avn_offence_handler::{Pallet, Call, Storage, Event<T>},
     }
 );
@@ -71,7 +71,7 @@ impl session::Config for TestRuntime {
     type SessionManager = TestSessionManager;
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = u64;
     type ValidatorIdOf = ConvertInto;

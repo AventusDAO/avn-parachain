@@ -72,6 +72,15 @@ pub use types::*;
 pub type AVN<T> = pallet_avn::Pallet<T>;
 pub const PALLET_ID: &'static [u8; 17] = b"parachain_staking";
 pub const MAX_OFFENDERS: u32 = 2;
+
+fn is_staking_enabled() -> bool {
+    if cfg!(not(test)) {
+        false
+    } else {
+        true
+    }
+}
+
 #[pallet]
 pub mod pallet {
     #[cfg(not(feature = "std"))]
@@ -79,9 +88,8 @@ pub mod pallet {
     #[cfg(not(feature = "std"))]
     use alloc::{format, string::String};
 
-    use crate::set::BoundedOrderedSet;
+    use crate::{is_staking_enabled, set::BoundedOrderedSet};
     pub use crate::{
-        calls::*,
         nomination_requests::{CancelledScheduledRequest, NominationAction, ScheduledRequest},
         proxy_methods::*,
         set::OrderedSet,
@@ -120,6 +128,7 @@ pub mod pallet {
     };
     pub use sp_std::{collections::btree_map::BTreeMap, prelude::*};
     pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(3);
+    use sp_avn_common::eth::EthereumId;
 
     /// Pallet for parachain staking
     #[pallet::pallet]
@@ -129,7 +138,6 @@ pub mod pallet {
     pub type EraIndex = u32;
     pub type GrowthPeriodIndex = u32;
     pub type RewardPoint = u32;
-    pub type EthereumTransactionId = u32;
     pub type BalanceOf<T> =
         <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
     pub type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
@@ -289,6 +297,7 @@ pub mod pallet {
         ErrorConvertingBalance,
         Overflow,
         ErrorPublishingGrowth,
+        StakingNotAllowed,
     }
 
     #[pallet::event]
@@ -455,7 +464,9 @@ pub mod pallet {
                 weight = weight.saturating_add(start_new_era_weight);
             }
 
-            weight = weight.saturating_add(Self::handle_delayed_payouts(era.current));
+            if is_staking_enabled() {
+                weight = weight.saturating_add(Self::handle_delayed_payouts(era.current));
+            }
 
             // add on_finalize weight
             weight = weight.saturating_add(
@@ -654,7 +665,7 @@ pub mod pallet {
     #[pallet::getter(fn published_growth)]
     /// Map to keep track of growth we have published on Ethereum
     pub type PublishedGrowth<T: Config> =
-        StorageMap<_, Twox64Concat, EthereumTransactionId, GrowthPeriodIndex, ValueQuery>;
+        StorageMap<_, Twox64Concat, EthereumId, GrowthPeriodIndex, ValueQuery>;
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
@@ -1213,7 +1224,7 @@ pub mod pallet {
             nomination_count: u32,
         ) -> DispatchResultWithPostInfo {
             let nominator = ensure_signed(origin)?;
-
+            ensure!(is_staking_enabled(), Error::<T>::StakingNotAllowed);
             return Self::call_nominate(
                 &nominator,
                 candidate,
@@ -1235,6 +1246,7 @@ pub mod pallet {
             #[pallet::compact] amount: BalanceOf<T>,
         ) -> DispatchResultWithPostInfo {
             let nominator = ensure_signed(origin)?;
+            ensure!(is_staking_enabled(), Error::<T>::StakingNotAllowed);
             ensure!(nominator == proof.signer, Error::<T>::SenderIsNotSigner);
 
             let nominator_nonce = Self::proxy_nonce(&nominator);
@@ -1411,6 +1423,7 @@ pub mod pallet {
             more: BalanceOf<T>,
         ) -> DispatchResultWithPostInfo {
             let nominator = ensure_signed(origin)?;
+            ensure!(is_staking_enabled(), Error::<T>::StakingNotAllowed);
             return Self::call_bond_extra(&nominator, candidate, more)
         }
 
@@ -1424,6 +1437,7 @@ pub mod pallet {
             #[pallet::compact] extra_amount: BalanceOf<T>,
         ) -> DispatchResultWithPostInfo {
             let nominator = ensure_signed(origin)?;
+            ensure!(is_staking_enabled(), Error::<T>::StakingNotAllowed);
             ensure!(nominator == proof.signer, Error::<T>::SenderIsNotSigner);
 
             let nominator_nonce = Self::proxy_nonce(&nominator);
@@ -1669,8 +1683,10 @@ pub mod pallet {
             // mutate era
             era.update(block_number);
 
-            // pay all stakers for T::RewardPaymentDelay eras ago
-            Self::prepare_staking_payouts(era.current);
+            if is_staking_enabled() {
+                // pay all stakers for T::RewardPaymentDelay eras ago
+                Self::prepare_staking_payouts(era.current);
+            }
 
             // select top collator candidates for next era
             let (collator_count, nomination_count, total_staked) =
@@ -2417,11 +2433,11 @@ pub mod pallet {
             )
             .map_err(|_| DispatchError::Other(Error::<T>::ErrorConvertingBalance.into()))?;
 
-            let function_name: &[u8] = BridgeContractMethod::TriggerGrowth.as_bytes();
+            let function_name: &[u8] = BridgeContractMethod::TriggerGrowth.name_as_bytes();
             let params = vec![
-                (b"uint128".to_vec(), format!("{}", rewards_in_period_128).as_bytes().to_vec()),
+                (b"uint256".to_vec(), format!("{}", rewards_in_period_128).as_bytes().to_vec()),
                 (
-                    b"uint128".to_vec(),
+                    b"uint256".to_vec(),
                     format!("{}", average_staked_in_period_128).as_bytes().to_vec(),
                 ),
                 (b"uint32".to_vec(), format!("{}", growth_period).as_bytes().to_vec()),
@@ -2487,5 +2503,17 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
         }
 
         Ok(())
+    }
+}
+
+/// [`TypedGet`] implementaion to get the AccountId of the StakingPot.
+pub struct StakingPotAccountId<R>(PhantomData<R>);
+impl<R> TypedGet for StakingPotAccountId<R>
+where
+    R: crate::Config,
+{
+    type Type = <R as frame_system::Config>::AccountId;
+    fn get() -> Self::Type {
+        <crate::Pallet<R>>::compute_reward_pot_account_id()
     }
 }

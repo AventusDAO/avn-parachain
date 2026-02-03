@@ -3,7 +3,7 @@ use crate::{
     mock::{RuntimeEvent, *},
     Balances as TokenManagerBalances, *,
 };
-use frame_support::assert_ok;
+use frame_support::{assert_noop, assert_ok};
 
 fn schedule_lower(
     from: AccountId,
@@ -253,5 +253,39 @@ fn failed_proof_can_be_regenerated() {
                     requester: from,
                 }
             )));
+    });
+}
+
+#[test]
+fn proof_cannot_be_regenerated_if_lower_disabled() {
+    let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+    ext.execute_with(|| {
+        let (_, from, burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let pre_lower_balance = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+        let amount = pre_lower_balance;
+
+        let expected_lower_id = 0;
+        schedule_lower(from, amount, t1_recipient, expected_lower_id, burn_acc);
+        assert!(<LowersPendingProof<TestRuntime>>::get(expected_lower_id).is_some());
+
+        let test_proof_data: Vec<u8> = "lowerProofReady".to_string().into();
+        // Simulate the response from eth-bridge
+        assert_ok!(TokenManager::process_lower_proof_result(
+            expected_lower_id,
+            PALLET_ID.to_vec(),
+            Ok(test_proof_data.clone())
+        ));
+
+        // Pending lower should be empty
+        assert!(<LowersPendingProof<TestRuntime>>::get(expected_lower_id).is_none());
+
+        // Disable lowering
+        assert_ok!(TokenManager::toggle_lowering(RuntimeOrigin::root(), false));
+
+        assert_noop!(
+            TokenManager::regenerate_lower_proof(RuntimeOrigin::signed(from), expected_lower_id),
+            Error::<TestRuntime>::LoweringDisabled
+        );
     });
 }

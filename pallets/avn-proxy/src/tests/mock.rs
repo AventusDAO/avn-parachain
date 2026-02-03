@@ -16,7 +16,7 @@ use pallet_avn::BridgeInterfaceNotification;
 use pallet_balances;
 use pallet_nft_manager::nft_data::Royalty;
 use pallet_session as session;
-use sp_avn_common::hash_string_data_with_ethereum_prefix;
+use sp_avn_common::{eth::EthereumId, hash_string_data_with_ethereum_prefix};
 use sp_core::{keccak_256, sr25519, ConstU32, ConstU64, Pair, H160, H256};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{
@@ -25,7 +25,6 @@ use sp_runtime::{
     BuildStorage, MultiSignature, Perbill,
 };
 pub use std::sync::Arc;
-
 pub const BASE_FEE: u64 = 12;
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
@@ -65,7 +64,7 @@ frame_support::construct_runtime!(
         Balances: pallet_balances::{Pallet, Call, Storage, Event<T>},
         NftManager: pallet_nft_manager::{Pallet, Call, Storage, Event<T>},
         AvnProxy: avn_proxy::{Pallet, Call, Storage, Event<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event, Config<T>},
+        Avn: pallet_avn::{Pallet, Storage, Event, Config<T>},
         TokenManager: pallet_token_manager::{Pallet, Call, Storage, Event<T>},
         Scheduler: pallet_scheduler::{Pallet, Call, Storage, Event<T>},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
@@ -167,6 +166,8 @@ impl pallet_token_manager::Config for TestRuntime {
     type BurnEnabled = BurnEnabled;
     type TreasuryBurnThreshold = TreasuryBurnThreshold;
     type TreasuryBurnCap = TreasuryBurnCap;
+    type OnIdleHandler = ();
+    type AccountToBytesConvert = Avn;
 }
 
 parameter_types! {
@@ -209,11 +210,13 @@ impl pallet_eth_bridge::Config for TestRuntime {
     type MinEthBlockConfirmation = ConstU64<20>;
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterfaceNotification = Self;
     type ReportCorroborationOffence = ();
     type ProcessedEventsChecker = ();
     type ProcessedEventsHandler = ();
+    type EthereumEventsMigration = ();
+    type Quorum = Avn;
 }
 
 impl pallet_timestamp::Config for TestRuntime {
@@ -232,7 +235,7 @@ impl session::Config for TestRuntime {
     type SessionManager = ();
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = AccountId;
     type ValidatorIdOf = ConvertInto;
@@ -596,7 +599,7 @@ pub fn single_nft_minted_events_count() -> usize {
 
 impl BridgeInterfaceNotification for TestRuntime {
     fn process_result(
-        _tx_id: u32,
+        _tx_id: EthereumId,
         _caller_id: Vec<u8>,
         _tx_succeeded: bool,
     ) -> sp_runtime::DispatchResult {

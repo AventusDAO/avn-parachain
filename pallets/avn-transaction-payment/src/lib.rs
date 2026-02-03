@@ -1,5 +1,5 @@
 //! # Avn transaction payment
-// Copyright 2023 Aventus Network Services (UK) Ltd.
+// Copyright 2025 Aventus Network Services (UK) Ltd.
 
 //! This is a wrapper pallet for transaction payment that allows the customisation of chain fees
 //! based on defined adjustment configuration and a sender.
@@ -8,7 +8,11 @@
 
 use frame_support::{
     dispatch::{DispatchResult, GetDispatchInfo, PostDispatchInfo},
-    traits::{Currency, Imbalance, OnUnbalanced},
+    traits::{
+        fungible::{Balanced, Credit, Debt, Inspect},
+        tokens::Precision,
+        Imbalance, OnUnbalanced,
+    },
     unsigned::TransactionValidityError,
 };
 use frame_system::{self as system};
@@ -75,7 +79,7 @@ pub mod pallet {
             + From<frame_system::Call<Self>>;
 
         /// Currency type for processing fee payment
-        type Currency: Currency<Self::AccountId>;
+        type Currency: Inspect<Self::AccountId>;
 
         /// The origin that is allowed to set the known senders
         type KnownUserOrigin: EnsureOrigin<Self::RuntimeOrigin>;
@@ -387,34 +391,22 @@ impl<T: Config> Pallet<T> {
     }
 }
 
-/// Implements the transaction payment for a pallet implementing the `Currency`
-/// trait (eg. the pallet_balances) using an unbalance handler (implementing
-/// `OnUnbalanced`).
-///
-/// The unbalance handler is given 2 unbalanceds in [`OnUnbalanced::on_unbalanceds`]: fee and
-/// then tip.
-pub struct AvnCurrencyAdapter<C, OU>(PhantomData<(C, OU)>);
+// The fungible changes are copied from PolkadotSdk:
+// https://github.com/paritytech/polkadot-sdk/commit/bda4e75ac49786a7246531cf729b25c208cd38e6
+pub struct AvnGasFeeAdapter<F, OU>(PhantomData<(F, OU)>);
 
-/// Default implementation for a Currency and an OnUnbalanced handler.
+/// Default implementation for a Fungible and an OnUnbalanced handler.
 ///
 /// The unbalance handler is given 2 unbalanceds in [`OnUnbalanced::on_unbalanceds`]: fee and
 /// then tip.
-impl<T, C, OU> OnChargeTransaction<T> for AvnCurrencyAdapter<C, OU>
+impl<T, F, OU> OnChargeTransaction<T> for AvnGasFeeAdapter<F, OU>
 where
-    T: Config + pallet::Config<Currency = C>,
-    C: Currency<<T as frame_system::Config>::AccountId>,
-    C::PositiveImbalance: Imbalance<
-        <C as Currency<<T as frame_system::Config>::AccountId>>::Balance,
-        Opposite = C::NegativeImbalance,
-    >,
-    C::NegativeImbalance: Imbalance<
-        <C as Currency<<T as frame_system::Config>::AccountId>>::Balance,
-        Opposite = C::PositiveImbalance,
-    >,
-    OU: OnUnbalanced<NegativeImbalanceOf<C, T>>,
+    T: Config + pallet::Config<Currency = F>,
+    F: Balanced<T::AccountId>,
+    OU: OnUnbalanced<Credit<T::AccountId, F>>,
 {
-    type LiquidityInfo = Option<NegativeImbalanceOf<C, T>>;
-    type Balance = <C as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+    type LiquidityInfo = Option<Credit<T::AccountId, F>>;
+    type Balance = <F as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
 
     /// Withdraw the predicted fee from the transaction origin.
     ///
@@ -424,11 +416,22 @@ where
         _call: &<T as frame_system::Config>::RuntimeCall,
         _info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
         fee: Self::Balance,
-        tip: Self::Balance,
+        _tip: Self::Balance,
     ) -> Result<Self::LiquidityInfo, TransactionValidityError> {
-        return <CurrencyAdapter<C, OU> as OnChargeTransaction<T>>::withdraw_fee(
-            who, _call, _info, fee, tip,
-        )
+        if fee.is_zero() {
+            return Ok(None)
+        }
+
+        match F::withdraw(
+            who,
+            fee,
+            Precision::Exact,
+            frame_support::traits::tokens::Preservation::Preserve,
+            frame_support::traits::tokens::Fortitude::Polite,
+        ) {
+            Ok(imbalance) => Ok(Some(imbalance)),
+            Err(_) => Err(InvalidTransaction::Payment.into()),
+        }
     }
 
     /// Hand the fee and the tip over to the `[OnUnbalanced]` implementation.
@@ -453,10 +456,16 @@ where
             // refund to the account that paid the fees. If this fails, the
             // account might have dropped below the existential balance. In
             // that case we don't refund anything.
-            let refund_imbalance = C::deposit_into_existing(who, refund_amount)
-                .unwrap_or_else(|_| C::PositiveImbalance::zero());
+            let refund_imbalance =
+                if refund_amount > Zero::zero() && F::total_balance(who) > F::Balance::zero() {
+                    F::deposit(who, refund_amount, Precision::BestEffort)
+                        .unwrap_or_else(|_| Debt::<T::AccountId, F>::zero())
+                } else {
+                    Debt::<T::AccountId, F>::zero()
+                };
+
             // merge the imbalance caused by paying the fees and refunding parts of it again.
-            let adjusted_paid = paid
+            let adjusted_paid: Credit<T::AccountId, F> = paid
                 .offset(refund_imbalance)
                 .same()
                 .map_err(|_| TransactionValidityError::Invalid(InvalidTransaction::Payment))?;
@@ -472,6 +481,86 @@ where
                 });
             }
         }
+        Ok(())
+    }
+}
+
+// Vanilla fungible adapter from polkadot sdk without any discount logic
+pub struct FungibleAdapter<F, OU>(PhantomData<(F, OU)>);
+
+/// Default implementation for a Fungible and an OnUnbalanced handler.
+///
+/// The unbalance handler is given 2 unbalanceds in [`OnUnbalanced::on_unbalanceds`]: fee and
+/// then tip.
+impl<T, F, OU> OnChargeTransaction<T> for FungibleAdapter<F, OU>
+where
+    T: Config + pallet::Config<Currency = F>,
+    F: Balanced<T::AccountId>,
+    OU: OnUnbalanced<Credit<T::AccountId, F>>,
+{
+    type LiquidityInfo = Option<Credit<T::AccountId, F>>;
+    type Balance = <F as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
+
+    /// Withdraw the predicted fee from the transaction origin.
+    ///
+    /// Note: The `fee` already includes the `tip`.
+    fn withdraw_fee(
+        who: &<T as frame_system::Config>::AccountId,
+        _call: &<T as frame_system::Config>::RuntimeCall,
+        _info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
+        fee: Self::Balance,
+        _tip: Self::Balance,
+    ) -> Result<Self::LiquidityInfo, TransactionValidityError> {
+        if fee.is_zero() {
+            return Ok(None)
+        }
+
+        match F::withdraw(
+            who,
+            fee,
+            Precision::Exact,
+            frame_support::traits::tokens::Preservation::Preserve,
+            frame_support::traits::tokens::Fortitude::Polite,
+        ) {
+            Ok(imbalance) => Ok(Some(imbalance)),
+            Err(_) => Err(InvalidTransaction::Payment.into()),
+        }
+    }
+
+    /// Hand the fee and the tip over to the `[OnUnbalanced]` implementation.
+    /// Since the predicted fee might have been too high, parts of the fee may
+    /// be refunded.
+    ///
+    /// Note: The `corrected_fee` already includes the `tip`.
+    fn correct_and_deposit_fee(
+        who: &<T as frame_system::Config>::AccountId,
+        _dispatch_info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
+        _post_info: &PostDispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
+        corrected_fee: Self::Balance,
+        tip: Self::Balance,
+        already_withdrawn: Self::LiquidityInfo,
+    ) -> Result<(), TransactionValidityError> {
+        if let Some(paid) = already_withdrawn {
+            // Calculate how much refund we should return
+            let refund_amount = paid.peek().saturating_sub(corrected_fee);
+            // refund to the the account that paid the fees if it exists. otherwise, don't refind
+            // anything.
+            let refund_imbalance = if F::total_balance(who) > F::Balance::zero() {
+                F::deposit(who, refund_amount, Precision::BestEffort)
+                    .unwrap_or_else(|_| Debt::<T::AccountId, F>::zero())
+            } else {
+                Debt::<T::AccountId, F>::zero()
+            };
+            // merge the imbalance caused by paying the fees and refunding parts of it again.
+            let adjusted_paid: Credit<T::AccountId, F> = paid
+                .offset(refund_imbalance)
+                .same()
+                .map_err(|_| TransactionValidityError::Invalid(InvalidTransaction::Payment))?;
+            // Call someone else to handle the imbalance (fee and tip separately)
+            let (tip, fee) = adjusted_paid.split(tip);
+            OU::on_unbalanceds(Some(fee).into_iter().chain(Some(tip)));
+        }
+
         Ok(())
     }
 }

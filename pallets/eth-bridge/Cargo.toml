@@ -17,6 +17,7 @@ hex-literal = { version = "0.4.1", default-features = false }
 rand = { version = "0.8.5", default-features = false }
 scale-info = { version = "2.10.0", default-features = false, features = ["derive"] }
 log = { version = "0.4.20",  default-features = false }
+serde = { version = "1.0.195", optional = true }
 
 sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-core = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
@@ -24,7 +25,7 @@ sp-io = { default-features = false, git = "https://github.com/paritytech/polkado
 sp-runtime = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-staking = {default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-application-crypto = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-sp-avn-common =  { default-features = false, path = "../../primitives/avn-common" }
+sp-avn-common =  { default-features = false, path = "../../primitives/avn-common", features = ["serde"] }
 frame-support = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 frame-system = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
@@ -39,6 +40,8 @@ frame-benchmarking = {  default-features = false, git = "https://github.com/pari
 parking_lot = { version = "0.12.0" }
 sp-state-machine = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-avn-common = { features=["test-utils"], path = "../../primitives/avn-common" }
+alloy-sol-types = "*"
+alloy-primitives = "*"
 
 [features]
 migrate = []
@@ -60,6 +63,7 @@ std = [
 	"pallet-avn/std",
 	"pallet-session/std",
 	"pallet-timestamp/std",
+	"serde/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

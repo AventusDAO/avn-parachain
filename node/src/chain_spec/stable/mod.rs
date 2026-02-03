@@ -14,6 +14,8 @@ use node_primitives::AccountId;
 use sp_core::{H160, H256};
 
 use hex_literal::hex;
+use sp_avn_common::eth::EthereumNetwork;
+use sp_runtime::{traits::ConstU32, BoundedVec};
 
 /// Specialized `ChainSpec` for the normal parachain runtime.
 // TODO move this on shared module.
@@ -84,12 +86,18 @@ pub(crate) fn testnet_genesis(
         },
         "sudo": { "key": Some(sudo_account) },
         "avn":  {
-            "bridgeContractAddress": avn_eth_contract,
+            "bridgeContractAddress": avn_eth_contract.clone(),
         },
         "ethBridge": {
             "ethTxLifetimeSecs": 60 * 30 as u64, // 30 minutes
             "nextTxId": 1u32,
             "ethBlockRangeSize": 20u32,
+            "instance": {
+                "network": EthereumNetwork::Sepolia,
+                "bridge_contract": avn_eth_contract,
+                "name": BoundedVec::<u8, ConstU32<256>>::truncate_from("AVN Bridge".as_bytes().to_vec()),
+                "version": BoundedVec::<u8, ConstU32<256>>::truncate_from("1".as_bytes().to_vec().into()),
+            },
         },
         "ethereumEvents": {
             "nftT1Contracts": nft_eth_contracts,

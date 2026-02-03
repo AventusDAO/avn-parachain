@@ -49,9 +49,7 @@ pub(crate) type BalanceOf<T> =
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{
-        dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType, transactional,
-    };
+    use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType};
     use frame_system::pallet_prelude::*;
     use sp_avn_common::{verify_signature, FeePaymentHandler, InnerCallValidator, Proof};
     use sp_core::H160;

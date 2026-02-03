@@ -12,18 +12,18 @@ lto = "fat"
 codegen-units = 1
 
 [workspace.package]
-version = "6.11.1"
+version = "8.4.1"
 authors = ["Aventus systems team"]
 homepage = "https://www.aventus.io/"
 repository = "https://github.com/Aventus-Network-Services/avn-node-parachain/"
 edition = "2021"
-rust-version = "1.70.0"
+rust-version = "1.84.1"
 
 [workspace]
 resolver = "2"
 members = [
     "node",
-    "node/avn-service",
+    "client/*",
     "pallets/*",
     "pallets/*/runtime-api",
     "primitives/*",

@@ -1,8 +1,5 @@
-use crate::Error;
-use jsonrpsee::{
-    core::{error::Error as JsonRpseeError, RpcResult as Result},
-    types::error::{CallError, ErrorCode, ErrorObject},
-};
+use crate::error::TreeError;
+use anyhow::{Context, Result};
 
 use codec::Encode;
 use log::{debug, error};
@@ -101,55 +98,42 @@ where
         Ok(Some(hash)) => hash,
         Ok(None) => {
             // Handle the case where no hash was found
-            let error_message = "No hash found for the given block number";
-            error!("[RPC] {}", error_message);
-            return Err(JsonRpseeError::Call(CallError::Custom(ErrorObject::owned(
-                ErrorCode::ServerError(Error::ResponseError.into()).code(),
-                error_message.to_string(),
-                None::<()>,
-            ))))
+            Err(TreeError::ResponseError).with_context(|| {
+                let error_message = "No hash found for the given block number";
+                error!("[RPC] {}", error_message);
+                error_message.to_string()
+            })?
         },
         Err(e) => {
             // Handle the error case
-            let error_message = "Error getting block hash";
-            error!("[RPC] {}", error_message);
-            return Err(JsonRpseeError::Call(CallError::Custom(ErrorObject::owned(
-                ErrorCode::ServerError(Error::ResponseError.into()).code(),
-                error_message.to_string(),
-                Some(format!("{:?}", e)),
-            ))))
+            Err(TreeError::ResponseError).with_context(|| {
+                let error_message = "Error getting block hash";
+                error!("[RPC] {}", error_message);
+                format!("{:?}: {:?}", error_message, e).to_string()
+            })?
         },
     };
 
-    let maybe_block = client.block(block_hash).map_err(|e| {
-        const ERROR_MESSAGE: &str = "Error getting block data";
-        error!("[RPC] {}", ERROR_MESSAGE);
-        JsonRpseeError::Call(CallError::Custom(ErrorObject::owned(
-            ErrorCode::ServerError(Error::ErrorGettingBlockData.into()).code(),
-            ERROR_MESSAGE,
-            Some(format!("{:?}", e)),
-        )))
-    })?;
-    if maybe_block.is_none() {
-        let error_message = format!("Data for block #{:?} is not found", block_number);
+    let maybe_block = client.block(block_hash).map_err(|_| {
+        let error_message = "Error getting block data";
         error!("[RPC] {}", error_message);
-        return Err(JsonRpseeError::Call(CallError::Custom(ErrorObject::owned(
-            ErrorCode::ServerError(Error::BlockDataNotFound.into()).code(),
-            error_message,
-            None::<()>,
-        ))))
-    }
+        TreeError::ResponseError
+    })?;
 
-    let signed_block: SignedBlock<Block> = maybe_block.expect("Not empty");
+    let signed_block: SignedBlock<Block> = match maybe_block {
+        Some(block) => block,
+        None => {
+            let error_message = format!("Data for block #{:?} is not found", block_number);
+            error!("[RPC] {}", error_message);
+            Err(TreeError::ResponseError).with_context(|| error_message)?
+        },
+    };
+
     if get_latest_finalised_block(client) < block_number {
         let error_message = format!("Data for block #{:?} is not found", block_number);
         error!("[RPC] {}", error_message);
-        return Err(JsonRpseeError::Call(CallError::Custom(ErrorObject::owned(
-            ErrorCode::ServerError(Error::BlockNotFinalised.into()).code(),
-            error_message,
-            None::<()>,
-        ))))
-    }
+        Err(TreeError::BlockNotFinalised).with_context(|| error_message)?
+    };
 
     Ok(signed_block)
 }

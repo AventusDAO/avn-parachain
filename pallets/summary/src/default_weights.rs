@@ -48,11 +48,103 @@ pub trait WeightInfo {
 	fn advance_slot_with_offence(v: u32, ) -> Weight;
 	fn advance_slot_without_offence(v: u32, ) -> Weight;
 	fn add_challenge(v: u32, ) -> Weight;
+	fn set_external_validation_threshold() -> Weight;
+	fn set_schedule_period() -> Weight;
+	fn set_voting_period() -> Weight;
+	fn admin_resolve_challenge_rejected() -> Weight;
+	fn admin_resolve_challenge_accepted() -> Weight;
 }
 
 /// Weights for pallet_summary using the Substrate node and recommended hardware.
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
+	/// Storage: `Summary::NextBlockToProcess` (r:1 w:0)
+	/// Proof: `Summary::NextBlockToProcess` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::NextSlotAtBlock` (r:0 w:1)
+	/// Proof: `Summary::NextSlotAtBlock` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::SchedulePeriod` (r:0 w:1)
+	/// Proof: `Summary::SchedulePeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_schedule_period() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1489`
+		// Minimum execution time: 15_224_000 picoseconds.
+		Weight::from_parts(16_418_000, 1489)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Summary::SchedulePeriod` (r:1 w:0)
+	/// Proof: `Summary::SchedulePeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::VotingPeriod` (r:1 w:1)
+	/// Proof: `Summary::VotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_voting_period() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1489`
+		// Minimum execution time: 18_119_000 picoseconds.
+		Weight::from_parts(18_572_000, 1489)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// Storage: `Summary::PendingAdminReviews` (r:1 w:1)
+	/// Proof: `Summary::PendingAdminReviews` (`max_values`: None, `max_size`: Some(98), added: 2573, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::Roots` (r:1 w:0)
+	/// Proof: `Summary::Roots` (`max_values`: None, `max_size`: Some(120), added: 2595, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationStatus` (r:1 w:1)
+	/// Proof: `Summary::ExternalValidationStatus` (`max_values`: None, `max_size`: Some(33), added: 2508, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationRef` (r:0 w:1)
+	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	fn admin_resolve_challenge_rejected() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `557`
+		//  Estimated: `3585`
+		// Minimum execution time: 36_644_000 picoseconds.
+		Weight::from_parts(38_136_000, 3585)
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
+	}
+	/// Storage: `Summary::PendingAdminReviews` (r:1 w:1)
+	/// Proof: `Summary::PendingAdminReviews` (`max_values`: None, `max_size`: Some(98), added: 2573, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::Roots` (r:1 w:1)
+	/// Proof: `Summary::Roots` (`max_values`: None, `max_size`: Some(120), added: 2595, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationStatus` (r:1 w:1)
+	/// Proof: `Summary::ExternalValidationStatus` (`max_values`: None, `max_size`: Some(33), added: 2508, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::NextTxId` (r:1 w:1)
+	/// Proof: `EthBridge::NextTxId` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveRequest` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveRequest` (`max_values`: Some(1), `max_size`: Some(20944), added: 21439, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthTxLifetimeSecs` (r:1 w:0)
+	/// Proof: `EthBridge::EthTxLifetimeSecs` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::PrimaryCollatorIndexForSending` (r:1 w:1)
+	/// Proof: `Avn::PrimaryCollatorIndexForSending` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationRef` (r:0 w:1)
+	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::TxIdToRoot` (r:0 w:1)
+	/// Proof: `Summary::TxIdToRoot` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
+	fn admin_resolve_challenge_accepted() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `942`
+		//  Estimated: `22429`
+		// Minimum execution time: 84_225_000 picoseconds.
+		Weight::from_parts(93_273_000, 22429)
+			.saturating_add(T::DbWeight::get().reads(9_u64))
+			.saturating_add(T::DbWeight::get().writes(8_u64))
+	}
+	/// Storage: `Summary::ExternalValidationThreshold` (r:1 w:1)
+	/// Proof: `Summary::ExternalValidationThreshold` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_external_validation_threshold() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1489`
+		// Minimum execution time: 16_781_000 picoseconds.
+		Weight::from_parts(17_770_000, 1489)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 	/// Storage: `Summary::NextBlockToProcess` (r:1 w:0)
 	/// Proof: `Summary::NextBlockToProcess` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::VotingPeriod` (r:0 w:1)
@@ -395,6 +487,93 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests.
 impl WeightInfo for () {
+	/// Storage: `Summary::NextBlockToProcess` (r:1 w:0)
+	/// Proof: `Summary::NextBlockToProcess` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::NextSlotAtBlock` (r:0 w:1)
+	/// Proof: `Summary::NextSlotAtBlock` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::SchedulePeriod` (r:0 w:1)
+	/// Proof: `Summary::SchedulePeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_schedule_period() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1489`
+		// Minimum execution time: 15_224_000 picoseconds.
+		Weight::from_parts(16_418_000, 1489)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Summary::SchedulePeriod` (r:1 w:0)
+	/// Proof: `Summary::SchedulePeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::VotingPeriod` (r:1 w:1)
+	/// Proof: `Summary::VotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_voting_period() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1489`
+		// Minimum execution time: 18_119_000 picoseconds.
+		Weight::from_parts(18_572_000, 1489)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: `Summary::PendingAdminReviews` (r:1 w:1)
+	/// Proof: `Summary::PendingAdminReviews` (`max_values`: None, `max_size`: Some(98), added: 2573, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::Roots` (r:1 w:0)
+	/// Proof: `Summary::Roots` (`max_values`: None, `max_size`: Some(120), added: 2595, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationStatus` (r:1 w:1)
+	/// Proof: `Summary::ExternalValidationStatus` (`max_values`: None, `max_size`: Some(33), added: 2508, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationRef` (r:0 w:1)
+	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	fn admin_resolve_challenge_rejected() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `557`
+		//  Estimated: `3585`
+		// Minimum execution time: 36_644_000 picoseconds.
+		Weight::from_parts(38_136_000, 3585)
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(3_u64))
+	}
+	/// Storage: `Summary::PendingAdminReviews` (r:1 w:1)
+	/// Proof: `Summary::PendingAdminReviews` (`max_values`: None, `max_size`: Some(98), added: 2573, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::Roots` (r:1 w:1)
+	/// Proof: `Summary::Roots` (`max_values`: None, `max_size`: Some(120), added: 2595, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationStatus` (r:1 w:1)
+	/// Proof: `Summary::ExternalValidationStatus` (`max_values`: None, `max_size`: Some(33), added: 2508, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::NextTxId` (r:1 w:1)
+	/// Proof: `EthBridge::NextTxId` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveRequest` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveRequest` (`max_values`: Some(1), `max_size`: Some(20944), added: 21439, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthTxLifetimeSecs` (r:1 w:0)
+	/// Proof: `EthBridge::EthTxLifetimeSecs` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::PrimaryCollatorIndexForSending` (r:1 w:1)
+	/// Proof: `Avn::PrimaryCollatorIndexForSending` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationRef` (r:0 w:1)
+	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::TxIdToRoot` (r:0 w:1)
+	/// Proof: `Summary::TxIdToRoot` (`max_values`: None, `max_size`: Some(36), added: 2511, mode: `MaxEncodedLen`)
+	fn admin_resolve_challenge_accepted() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `942`
+		//  Estimated: `22429`
+		// Minimum execution time: 84_225_000 picoseconds.
+		Weight::from_parts(93_273_000, 22429)
+			.saturating_add(RocksDbWeight::get().reads(9_u64))
+			.saturating_add(RocksDbWeight::get().writes(8_u64))
+	}
+	/// Storage: `Summary::ExternalValidationThreshold` (r:1 w:1)
+	/// Proof: `Summary::ExternalValidationThreshold` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_external_validation_threshold() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1489`
+		// Minimum execution time: 16_781_000 picoseconds.
+		Weight::from_parts(17_770_000, 1489)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
 	/// Storage: `Summary::NextBlockToProcess` (r:1 w:0)
 	/// Proof: `Summary::NextBlockToProcess` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::VotingPeriod` (r:0 w:1)

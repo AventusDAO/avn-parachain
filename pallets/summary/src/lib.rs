@@ -7,21 +7,23 @@ use alloc::string::ToString;
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use sp_avn_common::{
-    bounds::VotingSessionIdBound,
     event_types::Validator,
     ocw_lock::{self as OcwLock},
     safe_add_block_numbers, safe_sub_block_numbers, BridgeContractMethod, IngressCounter,
 };
 use sp_runtime::{
     scale_info::TypeInfo,
-    traits::AtLeast32Bit,
     transaction_validity::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    BoundedVec, DispatchError,
+    DispatchError,
 };
 use sp_std::prelude::*;
+use sp_watchtower::{
+    DecisionRule, ProposalId, ProposalRequest, ProposalSource, ProposalStatusEnum, ProposalType,
+    RawPayload, WatchtowerHooks, WatchtowerInterface,
+};
 
 use avn::BridgeInterfaceNotification;
 use core::convert::TryInto;
@@ -50,7 +52,7 @@ use sp_staking::offence::ReportOffence;
 pub mod offence;
 use crate::offence::{create_and_report_summary_offence, SummaryOffence, SummaryOffenceType};
 
-pub type EthereumTransactionId = u32;
+pub use sp_avn_common::eth::EthereumId;
 
 const PALLET_ID: &'static [u8; 8] = b"summary-";
 const UPDATE_BLOCK_NUMBER_CONTEXT: &'static [u8] = b"update_last_processed_block_number";
@@ -60,9 +62,9 @@ const ADVANCE_SLOT_CONTEXT: &'static [u8] = b"advance_slot";
 const ERROR_CODE_VALIDATOR_IS_NOT_PRIMARY: u8 = 10;
 const ERROR_CODE_INVALID_ROOT_RANGE: u8 = 30;
 
-const MIN_SCHEDULE_PERIOD: u32 = 120; // 6 MINUTES
+const MIN_SCHEDULE_PERIOD: u32 = 30; // 6 MINUTES
 const DEFAULT_SCHEDULE_PERIOD: u32 = 28800; // 1 DAY
-const MIN_VOTING_PERIOD: u32 = 100; // 5 MINUTES
+const MIN_VOTING_PERIOD: u32 = 25; // 5 MINUTES
 const MAX_VOTING_PERIOD: u32 = 28800; // 1 DAY
 const DEFAULT_VOTING_PERIOD: u32 = 600; // 30 MINUTES
 
@@ -78,7 +80,12 @@ use crate::vote::*;
 pub mod challenge;
 use crate::challenge::*;
 
+pub mod types;
+pub mod utils;
+use crate::types::*;
+
 use pallet_avn::BridgeInterface;
+use sp_avn_common::{RootId, RootRange};
 
 mod benchmarking;
 pub mod default_weights;
@@ -133,6 +140,12 @@ pub mod pallet {
         type AutoSubmitSummaries: Get<bool>;
         /// A unique instance id to differentiate different instances
         type InstanceId: Get<u8>;
+        /// A flag to determine if external validation is enabled
+        type ExternalValidationEnabled: Get<bool>;
+        /// A type that provides external validation of summary roots. Use Noop implementation to
+        /// disable.
+        #[pallet::no_default_bounds]
+        type ExternalValidator: WatchtowerInterface;
     }
 
     #[pallet::pallet]
@@ -195,6 +208,23 @@ pub mod pallet {
             ingress_counter: IngressCounter,
             block_range: RootRange<BlockNumberFor<T>>,
         },
+        /// Root failed validation so admin review requested
+        AdminReviewRequested {
+            root_id: RootId<BlockNumberFor<T>>,
+            proposal_id: ProposalId,
+            external_ref: H256,
+            status: ProposalStatusEnum,
+        },
+        /// Root has been validated successfully
+        RootPassedValidation { root_id: RootId<BlockNumberFor<T>>, root_hash: H256 },
+        /// Root challenge has been resolved by an admin
+        RootChallengeResolved { root_id: RootId<BlockNumberFor<T>>, accepted: bool },
+        /// A new schedule period has been set
+        SchedulePeriodSet { new_period: BlockNumberFor<T> },
+        /// A new voting period has been set
+        VotingPeriodSet { new_period: BlockNumberFor<T> },
+        /// A new external validation threshold has been set
+        ExternalValidationThresholdSet { new_threshold: u32 },
     }
 
     #[pallet::error]
@@ -231,6 +261,16 @@ pub mod pallet {
         VotingPeriodIsEqualOrLongerThanSchedulePeriod,
         CurrentSlotValidatorNotFound,
         ErrorPublishingSummary,
+        /// There is no rootId for the given external reference
+        ExternalRefNotFound,
+        /// Threshold should be between 1 and 100
+        InvalidExternalValidationThreshold,
+        /// External validation threshold not set
+        ExternalValidationThresholdNotSet,
+        /// There is no external validation request for the given rootId
+        ExternalValidationRequestNotFound,
+        /// There is no external validation status for the given rootId
+        ExternalValidationStatusMissing,
     }
 
     // Note for SYS-152 (see notes in fn end_voting)):
@@ -249,13 +289,8 @@ pub mod pallet {
         StorageValue<_, BlockNumberFor<T>, ValueQuery>;
 
     #[pallet::storage]
-    pub type TxIdToRoot<T: Config<I>, I: 'static = ()> = StorageMap<
-        _,
-        Blake2_128Concat,
-        EthereumTransactionId,
-        RootId<BlockNumberFor<T>>,
-        ValueQuery,
-    >;
+    pub type TxIdToRoot<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, EthereumId, RootId<BlockNumberFor<T>>, ValueQuery>;
 
     #[pallet::storage]
     #[pallet::getter(fn block_number_for_next_slot)]
@@ -332,6 +367,36 @@ pub mod pallet {
     pub type AnchorRoots<T: Config<I>, I: 'static = ()> =
         StorageMap<_, Blake2_128Concat, u32, H256, ValueQuery>;
 
+    /// Map from RootId to the status of its external validation
+    #[pallet::storage]
+    pub type ExternalValidationStatus<T: Config<I>, I: 'static = ()> = StorageMap<
+        _,
+        Blake2_128Concat,
+        RootId<BlockNumberFor<T>>,
+        ExternalValidationEnum,
+        OptionQuery,
+    >;
+
+    /// Map from external reference (H256) to RootId
+    #[pallet::storage]
+    pub type ExternalValidationRef<T: Config<I>, I: 'static = ()> =
+        StorageMap<_, Blake2_128Concat, H256, RootId<BlockNumberFor<T>>, OptionQuery>;
+
+    /// Roots that failed external validation and are pending admin review
+    #[pallet::storage]
+    pub type PendingAdminReviews<T: Config<I>, I: 'static = ()> = StorageMap<
+        _,
+        Blake2_128Concat,
+        RootId<BlockNumberFor<T>>,
+        ExternalValidationData,
+        OptionQuery,
+    >;
+
+    /// The threshold required for external validation to pass (in percent, e.g. 51 means 51%)
+    #[pallet::storage]
+    pub type ExternalValidationThreshold<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, u32, OptionQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
         /// Dummy marker.
@@ -393,6 +458,8 @@ pub mod pallet {
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
     impl<T: Config<I>, I: 'static> Pallet<T, I> {
+        #[allow(deprecated)]
+        #[deprecated(note = "This extrinsic is deprecated, please use `set_admin_config` instead.")]
         #[pallet::weight(<T as pallet::Config<I>>::WeightInfo::set_periods())]
         #[pallet::call_index(0)]
         pub fn set_periods(
@@ -618,6 +685,102 @@ pub mod pallet {
             });
 
             Ok(())
+        }
+
+        /// Set admin configurations
+        #[pallet::call_index(7)]
+        #[pallet::weight(
+             <T as pallet::Config<I>>::WeightInfo::set_external_validation_threshold()
+            .max(<T as pallet::Config<I>>::WeightInfo::set_schedule_period())
+            .max(<T as pallet::Config<I>>::WeightInfo::set_voting_period())
+        )]
+        pub fn set_admin_config(
+            origin: OriginFor<T>,
+            config: AdminConfig<BlockNumberFor<T>>,
+        ) -> DispatchResultWithPostInfo {
+            ensure_root(origin)?;
+
+            match config {
+                AdminConfig::ExternalValidationThreshold(threshold) => {
+                    <ExternalValidationThreshold<T, I>>::mutate(|p| *p = Some(threshold));
+                    ensure!(
+                        threshold > 0 && threshold <= 100,
+                        Error::<T, I>::InvalidExternalValidationThreshold
+                    );
+                    <ExternalValidationThreshold<T, I>>::put(threshold);
+                    Self::deposit_event(Event::ExternalValidationThresholdSet {
+                        new_threshold: threshold,
+                    });
+                    return Ok(Some(
+                        <T as Config<I>>::WeightInfo::set_external_validation_threshold(),
+                    )
+                    .into())
+                },
+                AdminConfig::SchedulePeriod(period) => {
+                    Self::validate_schedule_period(period)?;
+                    let voting_period = <VotingPeriod<T, I>>::get();
+                    Self::validate_voting_period(voting_period, period)?;
+
+                    let next_block_to_process = <NextBlockToProcess<T, I>>::get();
+                    let new_slot_at_block = safe_add_block_numbers(next_block_to_process, period)
+                        .map_err(|_| Error::<T, I>::Overflow)?;
+
+                    <SchedulePeriod<T, I>>::put(period);
+                    <NextSlotAtBlock<T, I>>::put(new_slot_at_block);
+
+                    Self::deposit_event(Event::SchedulePeriodSet { new_period: period });
+                    return Ok(Some(<T as Config<I>>::WeightInfo::set_schedule_period()).into())
+                },
+                AdminConfig::VotingPeriod(period) => {
+                    let schedule_period = <SchedulePeriod<T, I>>::get();
+                    Self::validate_voting_period(period, schedule_period)?;
+
+                    <VotingPeriod<T, I>>::mutate(|p| *p = period);
+
+                    Self::deposit_event(Event::VotingPeriodSet { new_period: period });
+                    return Ok(Some(<T as Config<I>>::WeightInfo::set_voting_period()).into())
+                },
+            }
+        }
+
+        #[pallet::weight(
+             <T as pallet::Config<I>>::WeightInfo::admin_resolve_challenge_accepted()
+            .max(<T as pallet::Config<I>>::WeightInfo::admin_resolve_challenge_rejected())
+        )]
+        #[pallet::call_index(8)]
+        pub fn admin_resolve_challenge(
+            origin: OriginFor<T>,
+            root_id: RootId<BlockNumberFor<T>>,
+            accepted: bool,
+        ) -> DispatchResultWithPostInfo {
+            ensure_root(origin)?;
+
+            let pending_review = <PendingAdminReviews<T, I>>::get(&root_id)
+                .ok_or(Error::<T, I>::ExternalValidationRequestNotFound)?;
+
+            let root_data = Self::try_get_root_data(&root_id)?;
+            let external_validation_status = <ExternalValidationStatus<T, I>>::get(&root_id)
+                .ok_or(Error::<T, I>::ExternalValidationStatusMissing)?;
+
+            ensure!(
+                external_validation_status == ExternalValidationEnum::PendingAdminReview,
+                Error::<T, I>::InvalidRoot
+            );
+
+            if accepted {
+                Self::process_accepted_root(&root_id, root_data.root_hash)?;
+            }
+
+            Self::cleanup_external_validation_data(&root_id, &pending_review.external_ref);
+            Self::deposit_event(Event::<T, I>::RootChallengeResolved { root_id, accepted });
+
+            let weight = if accepted {
+                <T as Config<I>>::WeightInfo::admin_resolve_challenge_accepted()
+            } else {
+                <T as Config<I>>::WeightInfo::admin_resolve_challenge_rejected()
+            };
+
+            Ok(Some(weight).into())
         }
     }
 
@@ -1163,7 +1326,7 @@ pub mod pallet {
             return Ok(H256::from_slice(&data))
         }
 
-        fn send_root_to_ethereum(
+        pub fn send_root_to_ethereum(
             root_id: &RootId<BlockNumberFor<T>>,
             root_data: &RootData<T::AccountId>,
         ) -> DispatchResult {
@@ -1173,7 +1336,7 @@ pub mod pallet {
             // submitting it to T1, the tier2 session hasn't changed and with it
             // the quorum, making ethereum-transactions reject it
             // In either case, we should not slash anyone.
-            let function_name: &[u8] = BridgeContractMethod::PublishRoot.as_bytes();
+            let function_name: &[u8] = BridgeContractMethod::PublishRoot.name_as_bytes();
             let params = vec![(b"bytes32".to_vec(), root_data.root_hash.as_fixed_bytes().to_vec())];
             let tx_id = T::BridgeInterface::publish(function_name, &params, Self::pallet_id())
                 .map_err(|e| DispatchError::Other(e.into()))?;
@@ -1187,7 +1350,7 @@ pub mod pallet {
             Ok(())
         }
 
-        fn get_next_approved_root_id() -> Result<u32, DispatchError> {
+        pub fn get_next_approved_root_id() -> Result<u32, DispatchError> {
             AnchorRootsCounter::<T, I>::try_mutate(|counter| {
                 let current_counter = *counter;
                 *counter = counter.checked_add(1).ok_or(Error::<T, I>::Overflow)?;
@@ -1211,12 +1374,10 @@ pub mod pallet {
             let root_data = Self::try_get_root_data(&root_id)?;
             if root_is_approved {
                 if root_data.root_hash != Self::empty_root() {
-                    if T::AutoSubmitSummaries::get() {
-                        Self::send_root_to_ethereum(root_id, &root_data)?;
+                    if T::ExternalValidationEnabled::get() {
+                        Self::submit_root_for_external_validation(root_id, root_data.root_hash)?;
                     } else {
-                        // Add root to anchor storage
-                        let approved_root_id = Self::get_next_approved_root_id()?;
-                        <AnchorRoots<T, I>>::insert(approved_root_id, root_data.root_hash);
+                        Self::process_accepted_root(root_id, root_data.root_hash)?;
                     }
                 }
                 // If we get here, then we did not get an error when submitting to T1.
@@ -1370,7 +1531,7 @@ pub mod pallet {
             return InvalidTransaction::Call.into()
         }
 
-        fn empty_root() -> H256 {
+        pub fn empty_root() -> H256 {
             return H256::from_slice(&[0; 32])
         }
 
@@ -1398,72 +1559,66 @@ pub mod pallet {
             [PALLET_ID.to_vec(), vec![T::InstanceId::get()]].concat()
         }
     }
-}
 
-#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
-pub struct RootId<BlockNumber: AtLeast32Bit> {
-    pub range: RootRange<BlockNumber>,
-    pub ingress_counter: IngressCounter,
-}
-
-impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
-    fn new(range: RootRange<BlockNumber>, ingress_counter: IngressCounter) -> Self {
-        return RootId::<BlockNumber> { range, ingress_counter }
-    }
-
-    fn session_id(&self) -> BoundedVec<u8, VotingSessionIdBound> {
-        BoundedVec::truncate_from(self.encode())
-    }
-}
-
-#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
-pub struct RootRange<BlockNumber: AtLeast32Bit> {
-    pub from_block: BlockNumber,
-    pub to_block: BlockNumber,
-}
-
-impl<BlockNumber: AtLeast32Bit> RootRange<BlockNumber> {
-    fn new(from_block: BlockNumber, to_block: BlockNumber) -> Self {
-        return RootRange::<BlockNumber> { from_block, to_block }
-    }
-}
-
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
-pub struct RootData<AccountId> {
-    pub root_hash: H256,
-    pub added_by: Option<AccountId>,
-    pub is_validated: bool, // This is set to true when 2/3 of validators approve it
-    pub is_finalised: bool, /* This is set to true when EthEvents confirms Tier1 has received
-                             * the root */
-    pub tx_id: Option<EthereumTransactionId>, /* This is the TransacionId that will be used to
-                                               * submit
-                                               * the tx */
-}
-
-impl<AccountId> RootData<AccountId> {
-    fn new(
-        root_hash: H256,
-        added_by: AccountId,
-        transaction_id: Option<EthereumTransactionId>,
-    ) -> Self {
-        return RootData::<AccountId> {
-            root_hash,
-            added_by: Some(added_by),
-            is_validated: false,
-            is_finalised: false,
-            tx_id: transaction_id,
+    impl<T: Config<I>, I: 'static, P> WatchtowerHooks<P> for Pallet<T, I> {
+        fn on_proposal_submitted(_id: ProposalId, _p: P) -> DispatchResult {
+            Ok(())
         }
-    }
-}
 
-impl<AccountId> Default for RootData<AccountId> {
-    fn default() -> Self {
-        Self {
-            root_hash: H256::zero(),
-            added_by: None,
-            is_validated: false,
-            is_finalised: false,
-            tx_id: None,
+        fn on_voting_completed(
+            proposal_id: ProposalId,
+            external_ref: &H256,
+            result: &ProposalStatusEnum,
+        ) {
+            if let Ok(root_id) = Self::get_root_id_by_external_ref(external_ref) {
+                if matches!(result, ProposalStatusEnum::Expired) ||
+                    matches!(result, ProposalStatusEnum::Resolved { passed: true })
+                {
+                    let root_data = match Self::try_get_root_data(&root_id) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            log::error!(
+                                "💔 Root data not found. ProposalId {:?}. External ref {:?}. Err: {:?}",
+                                proposal_id,
+                                external_ref,
+                                e
+                            );
+                            return
+                        },
+                    };
+
+                    Self::set_summary_status(&root_id, ExternalValidationEnum::Accepted);
+
+                    if let Err(e) = Self::process_accepted_root(&root_id, root_data.root_hash) {
+                        log::error!("💔 Processing on_voting_completed error. ProposalId {:?}. External ref {:?}. Err: {:?}",
+                            proposal_id,
+                            external_ref,
+                            e
+                        );
+                        return
+                    };
+
+                    Self::cleanup_external_validation_data(&root_id, external_ref);
+                } else {
+                    Self::setup_root_for_admin_review(
+                        root_id,
+                        proposal_id,
+                        external_ref.clone(),
+                        result.clone(),
+                    );
+                }
+            }
+        }
+
+        fn on_cancelled(proposal_id: ProposalId, external_ref: &H256) {
+            if let Ok(root_id) = Self::get_root_id_by_external_ref(external_ref) {
+                Self::setup_root_for_admin_review(
+                    root_id,
+                    proposal_id,
+                    external_ref.clone(),
+                    ProposalStatusEnum::Cancelled,
+                );
+            }
         }
     }
 }
@@ -1535,5 +1690,3 @@ mod test_ocw_locks;
 #[cfg(test)]
 #[path = "tests/anchor_tests.rs"]
 mod anchor_tests;
-
-// TODO: Add unit tests for setting schedule period and voting period

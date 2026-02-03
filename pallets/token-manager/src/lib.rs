@@ -41,20 +41,25 @@ use frame_support::{
 use frame_system::{ensure_signed, pallet_prelude::BlockNumberFor};
 pub use pallet::*;
 use pallet_avn::{
-    self as avn, BridgeInterface, BridgeInterfaceNotification, CollatorPayoutDustHandler,
-    LowerParams, OnGrowthLiftedHandler, ProcessedEventsChecker, PACKED_LOWER_PARAM_SIZE,
+    self as avn, AccountToBytesConverter, BridgeInterface, BridgeInterfaceNotification,
+    CollatorPayoutDustHandler, OnGrowthLiftedHandler, ProcessedEventsChecker,
 };
+use sp_avn_common::eth::{concat_lower_data, LowerParams};
+
 use sp_avn_common::{
     event_types::{
         AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
-        ProcessedEventHandler, TokenInterface, TotalSupplyUpdatedData,
+        LowerRevertedData, ProcessedEventHandler, TokenInterface, TotalSupplyUpdatedData,
     },
-    verify_signature, CallDecoder, FeePaymentHandler, InnerCallValidator, Proof,
+    verify_signature, CallDecoder, FeePaymentHandler, InnerCallValidator, OnIdleHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
     scale_info::TypeInfo,
-    traits::{AtLeast32Bit, CheckedAdd, Dispatchable, Hash, IdentifyAccount, Member, Verify, Zero},
+    traits::{
+        AccountIdConversion, AtLeast32Bit, CheckedAdd, Dispatchable, Hash, IdentifyAccount, Member,
+        SaturatedConversion, Saturating, Verify, Zero,
+    },
     Perbill,
 };
 use sp_std::prelude::*;
@@ -111,7 +116,7 @@ pub mod pallet {
 
     // Public interface of this pallet
     #[pallet::config]
-    pub trait Config: frame_system::Config + avn::Config {
+    pub trait Config: frame_system::Config + avn::Config + pallet_timestamp::Config {
         /// The overarching event type.
         type RuntimeEvent: From<Event<Self>>
             + Into<<Self as frame_system::Config>::RuntimeEvent>
@@ -177,6 +182,8 @@ pub mod pallet {
         /// Max amount allowed to be burned at once
         #[pallet::constant]
         type TreasuryBurnCap: Get<BalanceOf<Self>>;
+        type OnIdleHandler: OnIdleHandler<BlockNumberFor<Self>, Weight>;
+        type AccountToBytesConvert: pallet_avn::AccountToBytesConverter<Self::AccountId>;
     }
 
     #[pallet::pallet]
@@ -223,6 +230,21 @@ pub mod pallet {
             amount: u128,
             t1_recipient: H160,
             lower_id: LowerId,
+        },
+        AVTLowerReverted {
+            t2_refunded_sender: T::AccountId,
+            amount: BalanceOf<T>,
+            eth_tx_hash: H256,
+            lower_id: LowerId,
+            t1_reverted_recipient: H160,
+        },
+        TokenLowerReverted {
+            token_id: T::TokenId,
+            t2_refunded_sender: T::AccountId,
+            amount: T::TokenBalance,
+            eth_tx_hash: H256,
+            lower_id: LowerId,
+            t1_reverted_recipient: H160,
         },
         TransferFromTreasury {
             recipient: T::AccountId,
@@ -302,12 +324,18 @@ pub mod pallet {
             change: SupplyChangeType,
             eth_tx_hash: H256,
         },
+        /// Event emitted when the native token's Ethereum address is updated
+        NativeTokenEthAddressUpdated {
+            old_address: H160,
+            new_address: H160,
+        },
     }
 
     #[pallet::error]
     pub enum Error<T> {
         NoTier1EventForLogLifted,
         NoTier1EventForLogLowerClaimed,
+        NoTier1EventForLogLowerReverted,
         AmountOverflow,
         DepositFailed,
         LowerFailed,
@@ -329,6 +357,7 @@ pub mod pallet {
         InvalidLowerId,
         LoweringDisabled,
         InvalidLiftRequest,
+        InvalidEthAddress,
         InvalidBurnPeriod,
         ErrorLockingTokens,
         FailedToSubmitBurnRequest,
@@ -646,6 +675,8 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             let requester = ensure_signed(origin)?;
 
+            ensure!(<LowersDisabled<T>>::get() == false, Error::<T>::LoweringDisabled);
+
             if <LowersReadyToClaim<T>>::contains_key(lower_id) {
                 let lower = <LowersReadyToClaim<T>>::take(lower_id).expect("lower exists");
                 Self::regenerate_proof(lower_id, lower.params)?;
@@ -699,6 +730,26 @@ pub mod pallet {
         }
 
         #[pallet::call_index(11)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::set_native_token_eth_address())]
+        pub fn set_native_token_eth_address(
+            origin: OriginFor<T>,
+            new_address: H160,
+        ) -> DispatchResult {
+            let _ = ensure_root(origin)?;
+            //ensure new_address is not 0
+            ensure!(new_address != H160::zero(), Error::<T>::InvalidEthAddress);
+
+            let old_address = <AVTTokenContract<T>>::get();
+            <AVTTokenContract<T>>::put(new_address);
+            Self::deposit_event(Event::<T>::NativeTokenEthAddressUpdated {
+                old_address,
+                new_address,
+            });
+
+            return Ok(())
+        }
+
+        #[pallet::call_index(12)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::set_burn_period())]
         pub fn set_burn_period(origin: OriginFor<T>, burn_period: u32) -> DispatchResult {
             ensure_root(origin)?;
@@ -710,7 +761,7 @@ pub mod pallet {
             Ok(())
         }
 
-        #[pallet::call_index(12)]
+        #[pallet::call_index(13)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_native_token())]
         pub fn burn_native_token(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
             let burner = ensure_signed(origin)?;
@@ -722,6 +773,7 @@ pub mod pallet {
 
             Self::burn_from_user_pot(&burner, amount)?;
             Ok(())
+
         }
     }
 
@@ -734,6 +786,10 @@ pub mod pallet {
 
             Self::schedule_next_burn(n);
             return Self::burn_from_burn_pot();
+        }
+
+        fn on_idle(n: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
+            T::OnIdleHandler::run_on_idle_process(n, remaining_weight)
         }
     }
 }
@@ -841,7 +897,16 @@ impl<T: Config> Pallet<T> {
             });
         }
 
-        let lower_params = Self::concat_lower_data(lower_id, token_id, &amount, &t1_recipient);
+        let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
+        let t2_timestamp: u64 = pallet_timestamp::Pallet::<T>::get().saturated_into::<u64>();
+        let lower_params = concat_lower_data(
+            lower_id,
+            token_id.into(),
+            &amount,
+            &t1_recipient,
+            t2_sender,
+            t2_timestamp,
+        );
 
         <LowersPendingProof<T>>::insert(lower_id, &lower_params);
         T::BridgeInterface::generate_lower_proof(lower_id, &lower_params, PALLET_ID.to_vec())?;
@@ -849,77 +914,37 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    fn update_token_balance(
-        transaction_hash: H256,
-        token_id: T::TokenId,
-        recipient_account_id: T::AccountId,
-        raw_amount: u128,
-    ) -> DispatchResult {
-        let amount =
-            Self::do_update_token_balance(token_id, recipient_account_id.clone(), raw_amount)?;
-        Self::deposit_event(Event::<T>::TokenLifted {
-            token_id,
-            recipient: recipient_account_id,
-            token_balance: amount,
-            eth_tx_hash: transaction_hash,
-        });
-
-        Ok(())
-    }
-
-    fn do_update_token_balance(
-        token_id: T::TokenId,
-        recipient_account_id: T::AccountId,
-        raw_amount: u128,
-    ) -> Result<T::TokenBalance, Error<T>> {
-        let amount = <T::TokenBalance as TryFrom<u128>>::try_from(raw_amount)
-            .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
-
-        if <Balances<T>>::contains_key((token_id, &recipient_account_id)) {
-            Self::increment_token_balance(token_id, &recipient_account_id, &amount)
-                .map_err(|_e| Error::<T>::AmountOverflow)?;
-        } else {
-            <Balances<T>>::insert((token_id, &recipient_account_id), amount);
-        }
-
-        Ok(amount)
-    }
-
-    fn update_avt_balance(
+    fn credit_avt_balance(
         recipient_account_id: &T::AccountId,
         raw_amount: u128,
     ) -> Result<BalanceOf<T>, Error<T>> {
         let amount = <BalanceOf<T> as TryFrom<u128>>::try_from(raw_amount)
-            .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
+            .or_else(|_| Err(Error::<T>::AmountOverflow))?;
 
-        // Drop the imbalance caused by depositing amount into the recipient account without a
-        // corresponding deduction.  If the recipient account does not exist,
-        // deposit_creating function will create a new one.
         let imbalance: PositiveImbalanceOf<T> =
             <T as pallet::Config>::Currency::deposit_creating(recipient_account_id, amount);
 
-        if imbalance.peek() == BalanceOf::<T>::zero() {
-            Err(Error::<T>::DepositFailed)?
-        }
+        ensure!(imbalance.peek() != BalanceOf::<T>::zero(), Error::<T>::DepositFailed);
 
-        // Increases the total issued AVT when this positive imbalance is dropped
-        // so that total issued AVT becomes equal to total supply once again.
         drop(imbalance);
 
         Ok(amount)
     }
 
-    fn increment_token_balance(
+    fn credit_token_balance(
         token_id: T::TokenId,
         recipient_account_id: &T::AccountId,
-        amount: &T::TokenBalance,
-    ) -> DispatchResult {
-        let current_balance = Self::balance((token_id, recipient_account_id));
-        let new_balance = current_balance.checked_add(amount).ok_or(Error::<T>::AmountOverflow)?;
+        raw_amount: u128,
+    ) -> Result<T::TokenBalance, Error<T>> {
+        let amount = <T::TokenBalance as TryFrom<u128>>::try_from(raw_amount)
+            .or_else(|_| Err(Error::<T>::AmountOverflow))?;
 
-        <Balances<T>>::mutate((token_id, recipient_account_id), |balance| *balance = new_balance);
+        <Balances<T>>::try_mutate((token_id, recipient_account_id.clone()), |balance| {
+            *balance = balance.checked_add(&amount).ok_or(Error::<T>::AmountOverflow)?;
+            Ok(())
+        })?;
 
-        Ok(())
+        Ok(amount)
     }
 
     fn process_token_deposit(
@@ -927,8 +952,7 @@ impl<T: Config> Pallet<T> {
         recipient_account_id: T::AccountId,
         raw_amount: u128,
     ) -> DispatchResult {
-        let amount =
-            Self::do_update_token_balance(token_id, recipient_account_id.clone(), raw_amount)?;
+        let amount = Self::credit_token_balance(token_id, &recipient_account_id, raw_amount)?;
 
         Self::deposit_event(Event::<T>::TokensDeposited {
             token_id,
@@ -944,26 +968,6 @@ impl<T: Config> Pallet<T> {
         T::BridgeInterface::generate_lower_proof(lower_id, &params, PALLET_ID.to_vec())?;
 
         Ok(())
-    }
-
-    pub fn concat_lower_data(
-        lower_id: LowerId,
-        token_id: T::TokenId,
-        amount: &u128,
-        t1_recipient: &H160,
-    ) -> LowerParams {
-        let mut lower_params: [u8; PACKED_LOWER_PARAM_SIZE] = [0u8; PACKED_LOWER_PARAM_SIZE];
-
-        // TokenId = 20 bytes
-        lower_params[0..20].copy_from_slice(&token_id.into().as_fixed_bytes()[0..20]);
-        // TokenBalance = 32 bytes
-        lower_params[36..52].copy_from_slice(&amount.to_be_bytes()[0..16]);
-        // T1Recipient = 20 bytes
-        lower_params[52..72].copy_from_slice(&t1_recipient.as_fixed_bytes()[0..20]);
-        // LowerId = 4 bytes
-        lower_params[72..PACKED_LOWER_PARAM_SIZE].copy_from_slice(&lower_id.to_be_bytes()[0..4]);
-
-        return lower_params
     }
 
     fn encode_signed_transfer_params(
@@ -1045,36 +1049,42 @@ impl<T: Config> Pallet<T> {
         }
     }
 
+    fn decode_recipient(receiver_address: &H256) -> Result<T::AccountId, Error<T>> {
+        Ok(T::AccountId::decode(&mut receiver_address.as_bytes())
+            .map_err(|_| Error::<T>::ErrorConvertingAccountId)?)
+    }
+
     fn process_lift(event: &EthEvent, data: &LiftedData) -> DispatchResult {
         let event_id = &event.event_id;
-        let recipient_account_id = T::AccountId::decode(&mut data.receiver_address.as_bytes())
-            .expect("32 bytes will always decode into an AccountId");
-
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
         ensure!(event_validity, Error::<T>::NoTier1EventForLogLifted);
 
-        if data.amount == 0 {
-            Err(Error::<T>::AmountIsZero)?
-        }
+        ensure!(data.amount != 0, Error::<T>::AmountIsZero);
+
+        let recipient_account_id = Self::decode_recipient(&data.receiver_address)?;
 
         if data.token_contract == Self::avt_token_contract() {
-            let updated_amount = Self::update_avt_balance(&recipient_account_id, data.amount)?;
+            let credited = Self::credit_avt_balance(&recipient_account_id, data.amount)?;
 
             Self::deposit_event(Event::<T>::AVTLifted {
-                recipient: recipient_account_id.clone(),
-                amount: updated_amount,
+                recipient: recipient_account_id,
+                amount: credited,
                 eth_tx_hash: event_id.transaction_hash,
             });
         } else {
-            Self::update_token_balance(
-                event_id.transaction_hash,
-                data.token_contract.into(),
-                recipient_account_id,
-                data.amount,
-            )?;
+            let token_id: T::TokenId = data.token_contract.into();
+            let credited =
+                Self::credit_token_balance(token_id, &recipient_account_id, data.amount)?;
+
+            Self::deposit_event(Event::<T>::TokenLifted {
+                token_id,
+                recipient: recipient_account_id,
+                token_balance: credited,
+                eth_tx_hash: event_id.transaction_hash,
+            });
         }
 
-        return Ok(())
+        Ok(())
     }
 
     fn process_avt_growth_lift(event: &EthEvent, data: &AvtGrowthLiftedData) -> DispatchResult {
@@ -1090,7 +1100,7 @@ impl<T: Config> Pallet<T> {
 
         // Send a portion of the funds to the treasury
         let treasury_amount =
-            Self::update_avt_balance(&Self::compute_treasury_account_id(), treasury_share)?;
+            Self::credit_avt_balance(&Self::compute_treasury_account_id(), treasury_share)?;
 
         // Now let the runtime know we have a lift so we can payout collators
         let remaining_amount =
@@ -1113,19 +1123,64 @@ impl<T: Config> Pallet<T> {
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
         ensure!(event_validity, Error::<T>::NoTier1EventForLogLowerClaimed);
 
-        ensure!(
-            LowersReadyToClaim::<T>::contains_key(data.lower_id) == true,
-            Error::<T>::InvalidLowerId
-        );
-        LowersReadyToClaim::<T>::remove(data.lower_id);
-        ensure!(
-            LowersReadyToClaim::<T>::contains_key(data.lower_id) == false,
-            Error::<T>::InvalidLowerId
-        );
-
+        Self::remove_used_lower(data.lower_id)?;
         Self::deposit_event(Event::<T>::AvtLowerClaimed { lower_id: data.lower_id });
 
         Ok(())
+    }
+
+    fn remove_used_lower(lower_id: LowerId) -> DispatchResult {
+        ensure!(
+            LowersReadyToClaim::<T>::contains_key(lower_id) == true,
+            Error::<T>::InvalidLowerId
+        );
+        LowersReadyToClaim::<T>::remove(lower_id);
+
+        Ok(())
+    }
+
+    fn process_lower_reverted(event: &EthEvent, data: &LowerRevertedData) -> DispatchResult {
+        let event_id = &event.event_id;
+        let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
+        ensure!(event_validity, Error::<T>::NoTier1EventForLogLowerReverted);
+
+        Self::remove_used_lower(data.lower_id)?;
+        let t2_refunded_sender = Self::decode_recipient(&data.receiver_address)?;
+
+        ensure!(data.amount != 0, Error::<T>::AmountIsZero);
+
+        if data.token_contract == Self::avt_token_contract() {
+            let amount = Self::credit_avt_balance(&t2_refunded_sender, data.amount)?;
+
+            Self::deposit_event(Event::<T>::AVTLowerReverted {
+                t2_refunded_sender,
+                amount,
+                eth_tx_hash: event_id.transaction_hash,
+                lower_id: data.lower_id,
+                t1_reverted_recipient: data.t1_recipient,
+            });
+        } else {
+            let token_id: T::TokenId = data.token_contract.into();
+            let amount = Self::credit_token_balance(token_id, &t2_refunded_sender, data.amount)?;
+
+            Self::deposit_event(Event::<T>::TokenLowerReverted {
+                token_id,
+                t2_refunded_sender,
+                amount,
+                eth_tx_hash: event_id.transaction_hash,
+                lower_id: data.lower_id,
+                t1_reverted_recipient: data.t1_recipient,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// The account ID of the AvN treasury.
+    /// This actually does computation. If you need to keep using it, then make sure you cache
+    /// the value and only call this once.
+    pub fn compute_treasury_account_id() -> T::AccountId {
+        T::AvnTreasuryPotId::get().into_account_truncating()
     }
 
     fn process_total_supply_update(
@@ -1222,6 +1277,7 @@ impl<T: Config> Pallet<T> {
             EventData::LogAvtGrowthLifted(d) => return Self::process_avt_growth_lift(event, d),
             EventData::LogLowerClaimed(d) => return Self::process_lower_claim(event, d),
             EventData::LogT1TotalSupplyUpdated(d) => Self::process_total_supply_update(event, d),
+            EventData::LogLowerReverted(d) => return Self::process_lower_reverted(event, d),
 
             // Event handled or it is not for us, in which case ignore it.
             _ => Ok(()),

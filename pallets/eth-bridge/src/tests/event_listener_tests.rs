@@ -120,6 +120,7 @@ impl DiscoveredEthContext {
         self.author
             .key
             .sign(&encode_eth_event_submission_data(
+                Some(&Instance::<TestRuntime, ()>::get()),
                 &SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT,
                 &self.author.account_id,
                 self.partitions().get(index).expect("Index should exist"),
@@ -146,7 +147,10 @@ mod submit_discovered_events {
 
     #[test]
     fn adds_vote_correctly() {
-        let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+        let mut ext = ExtBuilder::build_default()
+            .with_validators()
+            .with_genesis_config()
+            .as_externality();
         ext.execute_with(|| {
             init_active_range();
             let context: Context = Default::default();
@@ -163,7 +167,10 @@ mod submit_discovered_events {
 
     #[test]
     fn adds_empty_vote_correctly() {
-        let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+        let mut ext = ExtBuilder::build_default()
+            .with_validators()
+            .with_genesis_config()
+            .as_externality();
         ext.execute_with(|| {
             init_active_range();
             let context =
@@ -181,7 +188,10 @@ mod submit_discovered_events {
 
     #[test]
     fn finalises_vote() {
-        let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+        let mut ext = ExtBuilder::build_default()
+            .with_validators()
+            .with_genesis_config()
+            .as_externality();
         ext.execute_with(|| {
             // given
             init_active_range();
@@ -190,7 +200,7 @@ mod submit_discovered_events {
                     author: Author::<TestRuntime> { key: UintAuthorityId(id), account_id: id },
                     ..Default::default()
                 })
-                .take(AVN::<TestRuntime>::quorum() as usize)
+                .take(<TestRuntime as crate::Config>::Quorum::get_quorum() as usize)
                 .collect::<Vec<Context>>();
 
             let first_partition_index = 0usize;
@@ -221,7 +231,10 @@ mod submit_discovered_events {
 
         #[test]
         fn another_range_is_active() {
-            let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
             ext.execute_with(|| {
                 init_active_range();
                 let context: Context = Default::default();
@@ -236,7 +249,10 @@ mod submit_discovered_events {
 
         #[test]
         fn author_has_voted_the_partition() {
-            let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
             ext.execute_with(|| {
                 init_active_range();
                 let context: Context = Default::default();
@@ -253,7 +269,10 @@ mod submit_discovered_events {
 
         #[test]
         fn author_has_voted_another_partition() {
-            let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
             ext.execute_with(|| {
                 let context: Context = Default::default();
                 init_active_range();
@@ -313,6 +332,7 @@ impl LatestEthBlockContext {
         self.author
             .key
             .sign(&encode_eth_event_submission_data(
+                Some(&Instance::<TestRuntime, ()>::get()),
                 &SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
                 &self.author.account_id,
                 self.discovered_block,
@@ -369,7 +389,7 @@ mod initial_range_consensus {
                     discovered_block: id as u32 * 100,
                     eth_start_block: 1,
                 })
-                .take(AVN::<TestRuntime>::supermajority_quorum() as usize)
+                .take(<TestRuntime as crate::Config>::Quorum::get_supermajority_quorum() as usize)
                 .collect::<Vec<Context>>();
 
             // Cast all votes

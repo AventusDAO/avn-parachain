@@ -43,7 +43,7 @@ frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event},
+        Avn: pallet_avn::{Pallet, Storage, Event},
         NftManager: nft_manager::{Pallet, Call, Storage, Event<T>},
     }
 );

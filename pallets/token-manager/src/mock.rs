@@ -29,11 +29,16 @@ use frame_system::DefaultConfig;
 use frame_system::{self as system, limits, EnsureRoot};
 use sp_state_machine::BasicExternalities;
 
+use hex_literal::hex;
 use pallet_avn::BridgeInterfaceNotification;
+use pallet_parachain_staking::{self as parachain_staking};
+use pallet_session as session;
 use pallet_transaction_payment::CurrencyAdapter;
 use sp_avn_common::{
     avn_tests_helpers::ethereum_converters::*,
+    eth::EthereumId,
     event_types::{EthEventId, LiftedData, ValidEvents},
+    OnIdleHandler,
 };
 use sp_core::{sr25519, ConstU64, Pair, H256};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
@@ -42,10 +47,6 @@ use sp_runtime::{
     traits::{ConvertInto, IdentifyAccount, IdentityLookup, Verify},
     BuildStorage, Perbill, SaturatedConversion,
 };
-
-use hex_literal::hex;
-use pallet_parachain_staking::{self as parachain_staking};
-use pallet_session as session;
 use std::{cell::RefCell, sync::Arc};
 
 /// The signature type used by accounts/transactions.
@@ -71,7 +72,7 @@ frame_support::construct_runtime!(
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event},
+        Avn: pallet_avn::{Pallet, Storage, Event},
         TokenManager: token_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
         Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
@@ -176,6 +177,8 @@ impl token_manager::Config for TestRuntime {
     type MinBurnPeriod = MinBurnPeriod;
     type BurnEnabled = BurnEnabled;
     type TreasuryBurnCap = TreasuryBurnCap;
+    type OnIdleHandler = TestOnIdleHandler;
+    type AccountToBytesConvert = Avn;
 }
 
 parameter_types! {
@@ -286,7 +289,7 @@ impl session::Config for TestRuntime {
     type SessionManager = ParachainStaking;
     type Keys = UintAuthorityId;
     type ShouldEndSession = ParachainStaking;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = AccountId;
     type ValidatorIdOf = ConvertInto;
@@ -329,7 +332,7 @@ impl parachain_staking::Config for TestRuntime {
     type ProcessedEventsChecker = ();
     type WeightInfo = ();
     type MaxCandidates = MaxCandidates;
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterface = EthBridge;
     type GrowthEnabled = GrowthEnabled;
 }
@@ -346,11 +349,13 @@ impl pallet_eth_bridge::Config for TestRuntime {
     type RuntimeCall = RuntimeCall;
     type MinEthBlockConfirmation = ConstU64<20>;
     type WeightInfo = ();
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterfaceNotification = Self;
     type ReportCorroborationOffence = ();
     type ProcessedEventsChecker = ();
     type ProcessedEventsHandler = ();
+    type EthereumEventsMigration = ();
+    type Quorum = Avn;
 }
 
 impl pallet_timestamp::Config for TestRuntime {
@@ -362,7 +367,7 @@ impl pallet_timestamp::Config for TestRuntime {
 
 impl BridgeInterfaceNotification for TestRuntime {
     fn process_result(
-        _tx_id: u32,
+        _tx_id: EthereumId,
         _caller_id: Vec<u8>,
         _tx_succeeded: bool,
     ) -> sp_runtime::DispatchResult {
@@ -414,6 +419,15 @@ impl TestAccount {
 
 thread_local! {
     static PROCESSED_EVENTS: RefCell<Vec<EthEventId>> = RefCell::new(vec![]);
+    static ON_IDLE_RUN: RefCell<bool> = RefCell::new(false);
+}
+
+pub fn set_on_idle_run(run: bool) {
+    ON_IDLE_RUN.with(|f| *f.borrow_mut() = run);
+}
+
+pub fn on_idle_has_run() -> bool {
+    return ON_IDLE_RUN.with(|f| *f.borrow())
 }
 
 pub fn insert_to_mock_processed_events(event_id: &EthEventId) {
@@ -804,4 +818,13 @@ fn avn_test_log_parsing_logic() {
             assert!(false);
         }
     });
+}
+
+pub struct TestOnIdleHandler;
+
+impl OnIdleHandler<u64, Weight> for TestOnIdleHandler {
+    fn run_on_idle_process(_block_number: u64, remaining_weight: Weight) -> Weight {
+        set_on_idle_run(true);
+        remaining_weight
+    }
 }

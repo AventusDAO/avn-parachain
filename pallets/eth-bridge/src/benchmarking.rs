@@ -1,21 +1,26 @@
 //! # Eth bridge pallet
-// Copyright 2023 Aventus Network Services (UK) Ltd.
+// Copyright 2025 Aventus Network Services (UK) Ltd.
 
 //! eth-bridge pallet benchmarking.
 
 #![cfg(feature = "runtime-benchmarks")]
 use crate::{avn::MAX_VALIDATOR_ACCOUNTS, Pallet, *};
 
-use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
+use frame_benchmarking::{account, benchmarks_instance_pallet, impl_benchmark_test_suite};
 use frame_support::{ensure, traits::Hooks, BoundedVec};
 use frame_system::RawOrigin;
 use hex_literal::hex;
 use rand::{RngCore, SeedableRng};
-use sp_avn_common::event_types::{EthEvent, EthEventId, LiftedData, ValidEvents};
-use sp_core::{Get, H256, U256};
+use sp_avn_common::{
+    eth::EthereumId,
+    event_types::{EthEvent, EthEventId, LiftedData, ValidEvents},
+};
+use sp_core::{Get, H160, H256, U256};
 use sp_runtime::{traits::One, WeakBoundedVec};
 
-fn setup_authors<T: Config>(number_of_validator_account_ids: u32) -> Vec<crate::Author<T>> {
+fn setup_authors<T: Config<I>, I: 'static>(
+    number_of_validator_account_ids: u32,
+) -> Vec<crate::Author<T>> {
     let current_authors = avn::Validators::<T>::get();
 
     if number_of_validator_account_ids <= current_authors.len() as u32 {
@@ -27,7 +32,7 @@ fn setup_authors<T: Config>(number_of_validator_account_ids: u32) -> Vec<crate::
         let account = account("dummy_validator", i, i);
         let key =
             <T as avn::Config>::AuthorityId::generate_pair(Some("//Ferdie".as_bytes().to_vec()));
-        let _ = set_session_key::<T>(&account, current_authors.len() as u32 + i);
+        let _ = set_session_key::<T, I>(&account, current_authors.len() as u32 + i);
         new_authors.push(crate::Author::<T>::new(account, key));
     }
 
@@ -42,7 +47,7 @@ fn setup_authors<T: Config>(number_of_validator_account_ids: u32) -> Vec<crate::
     return total_authors
 }
 
-fn add_collator_to_avn<T: Config>(
+fn add_collator_to_avn<T: Config<I>, I: 'static>(
     collator: &T::AccountId,
     candidate_count: u32,
 ) -> Result<Validator<T::AuthorityId, T::AccountId>, &'static str> {
@@ -62,12 +67,15 @@ fn add_collator_to_avn<T: Config>(
         Some("Too many validators for session"),
     ));
 
-    set_session_key::<T>(collator, candidate_count)?;
+    set_session_key::<T, I>(collator, candidate_count)?;
 
     Ok(validator)
 }
 
-fn set_session_key<T: Config>(user: &T::AccountId, index: u32) -> Result<(), &'static str> {
+fn set_session_key<T: Config<I>, I: 'static>(
+    user: &T::AccountId,
+    index: u32,
+) -> Result<(), &'static str> {
     frame_system::Pallet::<T>::inc_providers(user);
 
     let keys = {
@@ -113,7 +121,7 @@ fn bound_params(
     BoundedVec::<_, crate::ParamsLimit>::try_from(intermediate).expect("crate::ParamsLimitExceeded")
 }
 
-fn setup_active_tx<T: Config>(
+fn setup_active_tx<T: Config<I>, I: 'static>(
     tx_id: EthereumId,
     num_confirmations: u32,
     sender: Validator<<T as pallet_avn::Config>::AuthorityId, T::AccountId>,
@@ -141,7 +149,7 @@ fn setup_active_tx<T: Config>(
         caller_id: BoundedVec::<_, CallerIdLimit>::try_from(vec![]).unwrap(),
     };
 
-    ActiveRequest::<T>::put(ActiveRequestData {
+    ActiveRequest::<T, I>::put(ActiveRequestData {
         request: Request::Send(request_data),
         confirmation: ActiveConfirmation {
             msg_hash: H256::repeat_byte(1),
@@ -165,17 +173,18 @@ fn setup_active_tx<T: Config>(
             valid_tx_hash_corroborations: BoundedVec::default(),
             invalid_tx_hash_corroborations: BoundedVec::default(),
             tx_succeeded: false,
+            replay_attempt: 0,
         }),
         last_updated: 0u32.into(),
     });
 }
 
-fn setup_new_active_tx<T: Config>(
+fn setup_new_active_tx<T: Config<I>, I: 'static>(
     tx_id: EthereumId,
     num_confirmations: u32,
     sender: Validator<<T as pallet_avn::Config>::AuthorityId, T::AccountId>,
 ) {
-    setup_active_tx::<T>(
+    setup_active_tx::<T, I>(
         tx_id,
         num_confirmations,
         sender,
@@ -184,7 +193,7 @@ fn setup_new_active_tx<T: Config>(
     );
 }
 
-fn setup_active_tx_with_failure_corroborations<T: Config>(
+fn setup_active_tx_with_failure_corroborations<T: Config<I>, I: 'static>(
     tx_id: EthereumId,
     num_confirmations: u32,
     sender: Author<T>,
@@ -196,7 +205,7 @@ fn setup_active_tx_with_failure_corroborations<T: Config>(
     local_authors.retain(|author_from_vec| author_from_vec.account_id != author.account_id);
 
     let (num_failure_corroborations, num_successful_corroborations) =
-        get_num_corroborations::<T>(authors.len());
+        get_num_corroborations::<T, I>(authors.len());
 
     let success_authors: Vec<T::AccountId> = local_authors
         .iter()
@@ -211,7 +220,7 @@ fn setup_active_tx_with_failure_corroborations<T: Config>(
         .map(|author| author.account_id.clone())
         .collect();
 
-    setup_active_tx::<T>(
+    setup_active_tx::<T, I>(
         tx_id,
         num_confirmations,
         sender,
@@ -220,22 +229,22 @@ fn setup_active_tx_with_failure_corroborations<T: Config>(
     );
 }
 
-fn get_num_corroborations<T: Config>(authors_count: usize) -> (usize, usize) {
-    let quorum = avn::Pallet::<T>::quorum() as usize;
+fn get_num_corroborations<T: Config<I>, I: 'static>(authors_count: usize) -> (usize, usize) {
+    let quorum = T::Quorum::get_quorum() as usize;
     let num_failure_corroborations = quorum - 1;
     let num_successful_corroborations = authors_count - num_failure_corroborations - 1; // because we are adding the last
     (num_failure_corroborations, num_successful_corroborations)
 }
 
 #[cfg(test)]
-fn set_recovered_account_for_tests<T: Config>(sender_account_id: &T::AccountId) {
+fn set_recovered_account_for_tests<T: Config<I>, I: 'static>(sender_account_id: &T::AccountId) {
     let bytes = sender_account_id.encode();
     let mut vector: [u8; 8] = Default::default();
     vector.copy_from_slice(&bytes[0..8]);
     mock::set_mock_recovered_account_id(vector);
 }
 
-fn setup_incoming_events<T: Config>(
+fn setup_incoming_events<T: Config<I>, I: 'static>(
     event_count: u32,
     partition_index: u16,
     range: EthBlockRange,
@@ -265,10 +274,10 @@ fn setup_incoming_events<T: Config>(
     EthereumEventsPartition::new(range, partition_index, false, partition)
 }
 
-fn setup_active_range<T: Config>(partition_index: u16) -> EthBlockRange {
+fn setup_active_range<T: Config<I>, I: 'static>(partition_index: u16) -> EthBlockRange {
     let range = EthBlockRange { start_block: 1, length: 100 };
 
-    ActiveEthereumRange::<T>::put(ActiveEthRange {
+    ActiveEthereumRange::<T, I>::put(ActiveEthRange {
         range: range.clone(),
         partition: partition_index,
         event_types_filter: T::ProcessedEventsHandler::get(),
@@ -278,217 +287,217 @@ fn setup_active_range<T: Config>(partition_index: u16) -> EthBlockRange {
     range
 }
 
-fn submit_votes_from_other_authors<T: Config>(
+fn submit_votes_from_other_authors<T: Config<I>, I: 'static>(
     num_votes_to_add: u32,
     events_data: &EthereumEventsPartition,
     authors: Vec<crate::Author<T>>,
 ) {
-    let mut votes = EthereumEvents::<T>::get(events_data);
+    let mut votes = EthereumEvents::<T, I>::get(events_data);
     for i in 0..num_votes_to_add {
         votes.try_insert(authors[i as usize].clone().account_id).unwrap();
     }
 
-    EthereumEvents::<T>::insert(events_data, votes);
+    EthereumEvents::<T, I>::insert(events_data, votes);
 }
 
-fn submit_latest_block_from_other_authors<T: Config>(
+fn submit_latest_block_from_other_authors<T: Config<I>, I: 'static>(
     num_votes_to_add: u32,
     latest_seen_block: &u32,
     authors: Vec<crate::Author<T>>,
 ) {
-    let eth_block_range_size = EthBlockRangeSize::<T>::get();
+    let eth_block_range_size = EthBlockRangeSize::<T, I>::get();
     let latest_finalised_block = events_helpers::compute_start_block_from_finalised_block_number(
         *latest_seen_block,
         eth_block_range_size,
     )
     .expect("set on genesis");
 
-    let mut votes = SubmittedEthBlocks::<T>::get(latest_finalised_block);
+    let mut votes = SubmittedEthBlocks::<T, I>::get(latest_finalised_block);
     for i in 0..num_votes_to_add {
         votes.try_insert(authors[i as usize].clone().account_id).unwrap();
     }
 
-    SubmittedEthBlocks::<T>::insert(latest_finalised_block, votes);
+    SubmittedEthBlocks::<T, I>::insert(latest_finalised_block, votes);
 }
 
-benchmarks! {
+benchmarks_instance_pallet! {
     add_confirmation {
         let v in 1 .. MAX_CONFIRMATIONS;
-        let authors = setup_authors::<T>(v + 4);
+        let authors = setup_authors::<T, I>(v + 4);
 
         let author: crate::Author<T> = authors[0].clone();
         let sender: crate::Author<T> = authors[1].clone();
 
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
 
-        let quorum = avn::Pallet::<T>::quorum();
+        let quorum = T::Quorum::get_quorum();
         let tx_id = 1u32;
-        setup_new_active_tx::<T>(tx_id, quorum.saturating_sub(2), sender.clone());
+        setup_new_active_tx::<T, I>(tx_id, quorum.saturating_sub(2), sender.clone());
 
-        let active_tx = ActiveRequest::<T>::get().expect("is active");
+        let active_tx = ActiveRequest::<T, I>::get().expect("is active");
 
         let new_confirmation: ecdsa::Signature = ecdsa::Signature::from_slice(&hex!("53ea27badd00d7b5e4d7e7eb2542ea3abfcd2d8014d2153719f3f00d4058c4027eac360877d5d191cbfdfe8cd72dfe82abc9192fc6c8dce21f3c6f23c43e053f1c")).unwrap().into();
-        let proof = (crate::ADD_CONFIRMATION_CONTEXT, tx_id, new_confirmation.clone(), author.account_id.clone()).encode();
+        let proof = (Instance::<T, I>::get(), crate::ADD_CONFIRMATION_CONTEXT, tx_id, new_confirmation.clone(), author.account_id.clone()).encode();
 
         let signature = author.key.sign(&proof).expect("Error signing proof");
 
         #[cfg(test)]
-        set_recovered_account_for_tests::<T>(&author.account_id);
+        set_recovered_account_for_tests::<T, I>(&author.account_id);
 
     }: _(RawOrigin::None, tx_id, new_confirmation.clone(), author.clone(), signature)
     verify {
-        let active_tx = ActiveRequest::<T>::get().expect("is active");
+        let active_tx = ActiveRequest::<T, I>::get().expect("is active");
         ensure!(active_tx.confirmation.confirmations.contains(&new_confirmation), "Confirmation not added");
     }
 
     set_admin_setting {
-        let authors = setup_authors::<T>(2);
+        let authors = setup_authors::<T, I>(2);
         let tx_id = 1u32;
-        setup_new_active_tx::<T>(tx_id, 1, authors[1].clone());
+        setup_new_active_tx::<T, I>(tx_id, 1, authors[1].clone());
         // Make sure there is an active request
-        let _ = ActiveRequest::<T>::get().expect("is active");
+        let _ = ActiveRequest::<T, I>::get().expect("is active");
     }: _(RawOrigin::Root, AdminSettings::RemoveActiveRequest)
     verify {
-        ensure!(ActiveRequest::<T>::get().is_none(), "Active request not removed");
+        ensure!(ActiveRequest::<T, I>::get().is_none(), "Active request not removed");
     }
 
     add_eth_tx_hash {
-        let authors = setup_authors::<T>(MAX_VALIDATOR_ACCOUNTS);
+        let authors = setup_authors::<T, I>(MAX_VALIDATOR_ACCOUNTS);
         let sender: crate::Author<T> = authors[0].clone();
         #[cfg(not(test))]
-        let sender = add_collator_to_avn::<T>(&sender.account_id, authors.len() as u32 + 1u32)?;
+        let sender = add_collator_to_avn::<T, I>(&sender.account_id, authors.len() as u32 + 1u32)?;
 
         let tx_id = 2u32;
-        setup_new_active_tx::<T>(tx_id, 1, sender.clone());
+        setup_new_active_tx::<T, I>(tx_id, 1, sender.clone());
         let eth_tx_hash = H256::repeat_byte(1);
-        let proof = (crate::ADD_ETH_TX_HASH_CONTEXT, tx_id, eth_tx_hash.clone(), sender.account_id.clone()).encode();
+        let proof = (Instance::<T, I>::get().hash(), crate::ADD_ETH_TX_HASH_CONTEXT, tx_id, eth_tx_hash.clone(), sender.account_id.clone()).encode();
         let signature = sender.key.sign(&proof).expect("Error signing proof");
     }: _(RawOrigin::None, tx_id, eth_tx_hash.clone(), sender.clone(), signature)
     verify {
-        let active_tx = ActiveRequest::<T>::get().expect("is active");
+        let active_tx = ActiveRequest::<T, I>::get().expect("is active");
         assert_eq!(active_tx.tx_data.unwrap().eth_tx_hash, eth_tx_hash, "Eth tx hash not added");
     }
 
     add_corroboration {
-        let authors = setup_authors::<T>(MAX_VALIDATOR_ACCOUNTS);
+        let authors = setup_authors::<T, I>(MAX_VALIDATOR_ACCOUNTS);
 
         let author: crate::Author<T> = authors[0].clone();
         let sender: crate::Author<T> = authors[1].clone();
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
 
         let tx_id = 3u32;
-        setup_new_active_tx::<T>(tx_id, 1, sender.clone());
+        setup_new_active_tx::<T, I>(tx_id, 1, sender.clone());
         let tx_succeeded = true;
         let tx_hash_valid = true;
-        let proof = (crate::ADD_CORROBORATION_CONTEXT, tx_id, tx_succeeded, author.account_id.clone()).encode();
+        let proof = (Instance::<T, I>::get().hash(), crate::ADD_CORROBORATION_CONTEXT, tx_id, tx_succeeded, author.account_id.clone()).encode();
         let signature = author.key.sign(&proof).expect("Error signing proof");
-    }: add_corroboration(RawOrigin::None, tx_id, tx_succeeded, tx_hash_valid, author.clone(), signature)
+    }: add_corroboration(RawOrigin::None, tx_id, tx_succeeded, tx_hash_valid, author.clone(), 0, signature)
     verify {
-        let active_tx = ActiveRequest::<T>::get().expect("is active");
+        let active_tx = ActiveRequest::<T, I>::get().expect("is active");
         ensure!(active_tx.tx_data.unwrap().success_corroborations.contains(&author.account_id), "Corroboration not added");
     }
 
     add_corroboration_with_challenge {
         let v in 4..MAX_VALIDATOR_ACCOUNTS;
 
-        let authors = setup_authors::<T>(v);
+        let authors = setup_authors::<T, I>(v);
 
         let author: crate::Author<T> = authors[0].clone();
         let sender: crate::Author<T> = authors[1].clone();
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
 
         let tx_id = 3u32;
-        setup_active_tx_with_failure_corroborations::<T>(tx_id, 1, sender.clone(), authors.clone(), &author);
+        setup_active_tx_with_failure_corroborations::<T, I>(tx_id, 1, sender.clone(), authors.clone(), &author);
         let tx_succeeded = true;
         let tx_hash_valid = true;
-        let proof = (crate::ADD_CORROBORATION_CONTEXT, tx_id, tx_succeeded, author.account_id.clone()).encode();
+        let proof = (Instance::<T, I>::get().hash(), crate::ADD_CORROBORATION_CONTEXT, tx_id, tx_succeeded, author.account_id.clone()).encode();
         let signature = author.key.sign(&proof).expect("Error signing proof");
-    }: add_corroboration(RawOrigin::None, tx_id, tx_succeeded, tx_hash_valid, author.clone(), signature)
+    }: add_corroboration(RawOrigin::None, tx_id, tx_succeeded, tx_hash_valid, author.clone(), 0, signature)
     verify {
-        ensure!(SettledTransactions::<T>::get(tx_id).is_some(), "Transaction is not settled");
+        ensure!(SettledTransactions::<T, I>::get(tx_id).is_some(), "Transaction is not settled");
     }
 
     submit_ethereum_events {
         let c in 4..MAX_VALIDATOR_ACCOUNTS;
         let e in 1..MAX_INCOMING_EVENTS_BATCH_SIZE;
 
-        let authors = setup_authors::<T>(c);
-        let range = setup_active_range::<T>(c.try_into().unwrap());
-        let events = setup_incoming_events::<T>(e, c.try_into().unwrap(), range);
+        let authors = setup_authors::<T, I>(c);
+        let range = setup_active_range::<T, I>(c.try_into().unwrap());
+        let events = setup_incoming_events::<T, I>(e, c.try_into().unwrap(), range);
 
         let author: crate::Author<T> = authors[0].clone();
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
 
         let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
     }: _(RawOrigin::None, author.clone(), events, signature )
     verify {
-        ensure!(author_has_cast_event_vote::<T>(&author.account_id) == true, "No votes found for author");
+        ensure!(Pallet::<T, I>::author_has_cast_event_vote(&author.account_id) == true, "No votes found for author");
     }
 
     submit_ethereum_events_and_process_batch {
         let c in 4..MAX_VALIDATOR_ACCOUNTS;
         let e in 1..MAX_INCOMING_EVENTS_BATCH_SIZE;
 
-        let authors = setup_authors::<T>(c);
-        let range = setup_active_range::<T>(c.try_into().unwrap());
-        let events = setup_incoming_events::<T>(e, c.try_into().unwrap(), range);
+        let authors = setup_authors::<T, I>(c);
+        let range = setup_active_range::<T, I>(c.try_into().unwrap());
+        let events = setup_incoming_events::<T, I>(e, c.try_into().unwrap(), range);
 
         let author: crate::Author<T> = authors[0].clone();
 
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
         let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
 
-        submit_votes_from_other_authors::<T>(AVN::<T>::quorum() - 1, &events, authors[1..].to_vec());
+        submit_votes_from_other_authors::<T, I>(T::Quorum::get_quorum() - 1, &events, authors[1..].to_vec());
     }: submit_ethereum_events(RawOrigin::None, author, events.clone(), signature )
     verify {
-        assert!(ActiveEthereumRange::<T>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
-        assert!(EthereumEvents::<T>::get(events).is_empty(), "Submitted events not cleared");
+        assert!(ActiveEthereumRange::<T, I>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
+        assert!(EthereumEvents::<T, I>::get(events).is_empty(), "Submitted events not cleared");
     }
 
     submit_latest_ethereum_block {
         let c in 4..MAX_VALIDATOR_ACCOUNTS;
 
-        let authors = setup_authors::<T>(c);
+        let authors = setup_authors::<T, I>(c);
         let author: crate::Author<T> = authors[0].clone();
         let latest_seen_block = 1000u32;
 
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
 
         let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
     }: _(RawOrigin::None, author.clone(), latest_seen_block, signature )
     verify {
-        let eth_block_range_size = EthBlockRangeSize::<T>::get();
+        let eth_block_range_size = EthBlockRangeSize::<T, I>::get();
         let latest_finalised_block = events_helpers::compute_start_block_from_finalised_block_number(
             latest_seen_block,
             eth_block_range_size,
         ).expect("set on genesis");
 
-        ensure!(author_has_submitted_latest_block::<T>(&author.account_id) == true, "No votes found for author");
-        ensure!(ActiveEthereumRange::<T>::get().is_none(), "Active range should be empty");
-        ensure!(!SubmittedEthBlocks::<T>::get(latest_finalised_block).is_empty(), "Submitted block data should not be empty");
+        ensure!(Pallet::<T, I>::author_has_submitted_latest_block(&author.account_id) == true, "No votes found for author");
+        ensure!(ActiveEthereumRange::<T, I>::get().is_none(), "Active range should be empty");
+        ensure!(!SubmittedEthBlocks::<T, I>::get(latest_finalised_block).is_empty(), "Submitted block data should not be empty");
     }
 
     submit_latest_ethereum_block_with_quorum {
         let c in 4..MAX_VALIDATOR_ACCOUNTS;
 
-        let authors = setup_authors::<T>(c);
+        let authors = setup_authors::<T, I>(c);
         let author: crate::Author<T> = authors[0].clone();
         let latest_seen_block = 1000u32;
 
         #[cfg(not(test))]
-        let author = add_collator_to_avn::<T>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
         let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
 
-        submit_latest_block_from_other_authors::<T>(AVN::<T>::supermajority_quorum() - 1, &latest_seen_block, authors[1..].to_vec());
+        submit_latest_block_from_other_authors::<T, I>(T::Quorum::get_supermajority_quorum() - 1, &latest_seen_block, authors[1..].to_vec());
     }: submit_latest_ethereum_block(RawOrigin::None, author.clone(), latest_seen_block, signature )
     verify {
-        let eth_block_range_size = EthBlockRangeSize::<T>::get();
+        let eth_block_range_size = EthBlockRangeSize::<T, I>::get();
         let latest_finalised_block = events_helpers::compute_start_block_from_finalised_block_number(
             latest_seen_block,
             eth_block_range_size,
@@ -504,16 +513,16 @@ benchmarks! {
             ..Default::default()
         };
 
-        ensure!(ActiveEthereumRange::<T>::get().is_some(), "Active range not set");
-        ensure!(ActiveEthereumRange::<T>::get() == Some(expected_active_range), "Active range not set correctly");
-        ensure!(SubmittedEthBlocks::<T>::iter().next().is_none(), "Block data should be removed");
+        ensure!(ActiveEthereumRange::<T, I>::get().is_some(), "Active range not set");
+        ensure!(ActiveEthereumRange::<T, I>::get() == Some(expected_active_range), "Active range not set correctly");
+        ensure!(SubmittedEthBlocks::<T, I>::iter().next().is_none(), "Block data should be removed");
     }
 
     // on_idle hook benchmarks
     base_on_idle {
         let remaining_weight = <T as frame_system::Config>::BlockWeights::get().max_block;
     }:
-    { Pallet::<T>::on_idle(BlockNumberFor::<T>::one(), remaining_weight); }
+    { Pallet::<T, I>::on_idle(BlockNumberFor::<T>::one(), remaining_weight); }
 
     migrate_events_batch {
         let n in 1..100;
@@ -531,8 +540,9 @@ benchmarks! {
             }
         ).collect();
         let events_migration_batch = BoundedVec::<EventMigration, ProcessingBatchBound>::truncate_from(events);
+        let instance = Instance::<T, I>::get();
     }:
-    { Pallet::<T>::migrate_events_batch(events_migration_batch); }
+    { Pallet::<T, I>::migrate_events_batch(&instance.network, events_migration_batch); }
 }
 
 impl_benchmark_test_suite!(

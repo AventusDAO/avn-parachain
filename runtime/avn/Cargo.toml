@@ -101,6 +101,7 @@ pallet-eth-bridge-runtime-api = { path = "../../pallets/eth-bridge/runtime-api",
 pallet-parachain-staking = { path = "../../pallets/parachain-staking", default-features = false }
 pallet-avn-anchor = { path = "../../pallets/avn-anchor", default-features = false }
 pallet-avn-oracle = { path = "../../pallets/avn-oracle", default-features = false }
+sp-watchtower = { path = "../../primitives/watchtower", default-features = false }
 
 # Common Runtime
 runtime-common = { package = "avn-runtime-common", path = "../common", default-features = false }
@@ -140,6 +141,7 @@ std = [
 	"pallet-xcm/std",
 	"pallet-authority-discovery/std",
 	"parachain-info/std",
+	"parachains-common/std",
 	"polkadot-parachain-primitives/std",
 	"polkadot-runtime-common/std",
 	"node-primitives/std",
@@ -147,6 +149,7 @@ std = [
 	"sp-block-builder/std",
 	"sp-consensus-aura/std",
 	"sp-core/std",
+	"sp-genesis-builder/std",
 	"sp-inherents/std",
 	"sp-offchain/std",
 	"sp-runtime/std",
@@ -160,6 +163,7 @@ std = [
 	"xcm/std",
 	# AvN pallets
 	"sp-avn-common/std",
+	"sp-watchtower/std",
 	"pallet-avn/std",
 	"pallet-avn-anchor/std",
 	"pallet-avn-oracle/std",

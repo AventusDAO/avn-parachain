@@ -28,9 +28,8 @@ use sp_runtime::{
     ApplyExtrinsicResult,
 };
 pub extern crate alloc;
-use alloc::collections::BTreeSet;
 
-use sp_std::prelude::*;
+use sp_std::{collections::btree_map::BTreeMap, prelude::*};
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
@@ -74,14 +73,16 @@ use sp_authority_discovery::AuthorityId as AuthorityDiscoveryId;
 use pallet_avn::sr25519::AuthorityId as AvnId;
 
 use pallet_avn_proxy::ProvableProxy;
+use pallet_eth_bridge_runtime_api::InstanceId;
 use sp_avn_common::{
+    eth::EthBridgeInstance,
     event_discovery::{
         filters::{AllEventsFilter, NoEventsFilter},
-        AdditionalEvents, EthBlockRange, EthBridgeEventsFilter, EthereumEventsPartition,
+        AdditionalEvents, EthBlockRange, EthereumEventsPartition,
     },
-    event_types::ValidEvents,
     InnerCallValidator, Proof,
 };
+use sp_watchtower::NoopWatchtower;
 
 use pallet_parachain_staking;
 pub type NegativeImbalance<T> = <pallet_balances::Pallet<T> as Currency<
@@ -163,7 +164,7 @@ pub type Executive = frame_executive::Executive<
     frame_system::ChainContext<Runtime>,
     Runtime,
     AllPalletsWithSystem,
-    (),
+    (pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,),
 >;
 
 impl_opaque_keys! {
@@ -180,7 +181,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: create_runtime_str!("avn-test-parachain"),
     impl_name: create_runtime_str!("avn-test-parachain"),
     authoring_version: 1,
-    spec_version: 105,
+    spec_version: 128,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -552,7 +553,7 @@ impl pallet_utility::Config for Runtime {
 // AvN pallets
 impl pallet_avn_offence_handler::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type Enforcer = ValidatorsManager;
+    type Enforcer = ();
     type WeightInfo = pallet_avn_offence_handler::default_weights::SubstrateWeight<Runtime>;
 }
 
@@ -561,7 +562,7 @@ impl pallet_avn::Config for Runtime {
     type AuthorityId = AvnId;
     type EthereumPublicKeyChecker = ValidatorsManager;
     type NewSessionHandler = ValidatorsManager;
-    type DisabledValidatorChecker = ValidatorsManager;
+    type DisabledValidatorChecker = ();
     type WeightInfo = pallet_avn::default_weights::SubstrateWeight<Runtime>;
 }
 
@@ -585,6 +586,8 @@ impl pallet_ethereum_events::Config for Runtime {
 
 parameter_types! {
     pub const ValidatorManagerVotingPeriod: BlockNumber = 30 * MINUTES;
+    // Minimum 2 validators must remain active
+    pub const MinimumValidatorCount: u32 = 2;
 }
 
 impl pallet_validators_manager::Config for Runtime {
@@ -595,6 +598,7 @@ impl pallet_validators_manager::Config for Runtime {
     type ValidatorRegistrationNotifier = AvnOffenceHandler;
     type WeightInfo = pallet_validators_manager::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterface = EthBridge;
+    type MinimumValidatorCount = MinimumValidatorCount;
 }
 
 parameter_types! {
@@ -611,6 +615,7 @@ parameter_types! {
     pub const BurnEnabled: bool = false;
     pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
     pub const TreasuryBurnCap: u128 = 10 * AVT;
+    pub const ExternalValidationEnabled: bool = false;
 }
 
 pub type EthSummary = pallet_summary::Instance1;
@@ -624,6 +629,8 @@ impl pallet_summary::Config<EthSummary> for Runtime {
     type BridgeInterface = EthBridge;
     type AutoSubmitSummaries = EthAutoSubmitSummaries;
     type InstanceId = EthereumInstanceId;
+    type ExternalValidationEnabled = ExternalValidationEnabled;
+    type ExternalValidator = NoopWatchtower<AccountId>;
 }
 
 pub type AvnAnchorSummary = pallet_summary::Instance2;
@@ -637,6 +644,8 @@ impl pallet_summary::Config<AvnAnchorSummary> for Runtime {
     type BridgeInterface = EthBridge;
     type AutoSubmitSummaries = AvnAutoSubmitSummaries;
     type InstanceId = AvnInstanceId;
+    type ExternalValidationEnabled = ExternalValidationEnabled;
+    type ExternalValidator = NoopWatchtower<AccountId>;
 }
 
 impl pallet_avn_anchor::Config for Runtime {
@@ -674,6 +683,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BurnEnabled = BurnEnabled;
     type TreasuryBurnThreshold = TreasuryBurnThreshold;
     type TreasuryBurnCap = TreasuryBurnCap;
+    type OnIdleHandler = ();
+    type AccountToBytesConvert = Avn;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -698,7 +709,23 @@ impl pallet_avn_proxy::Config for Runtime {
     type Token = EthAddress;
 }
 
-impl pallet_eth_bridge::Config for Runtime {
+impl pallet_eth_bridge::Config<MainEthBridge> for Runtime {
+    type MaxQueuedTxRequests = ConstU32<100>;
+    type RuntimeEvent = RuntimeEvent;
+    type RuntimeCall = RuntimeCall;
+    type MinEthBlockConfirmation = MinEthBlockConfirmation;
+    type ProcessedEventsChecker = EthBridge;
+    type AccountToBytesConvert = Avn;
+    type ReportCorroborationOffence = Offences;
+    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
+    type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);
+    type ProcessedEventsHandler = NoEventsFilter;
+    type EthereumEventsMigration = EthSecondBridge;
+    type Quorum = Avn;
+}
+
+impl pallet_eth_bridge::Config<SecondaryEthBridge> for Runtime {
     type MaxQueuedTxRequests = ConstU32<100>;
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -710,6 +737,8 @@ impl pallet_eth_bridge::Config for Runtime {
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification = (Summary, TokenManager, NftManager, ParachainStaking);
     type ProcessedEventsHandler = NoEventsFilter;
+    type EthereumEventsMigration = ();
+    type Quorum = Avn;
 }
 
 // Other pallets
@@ -803,6 +832,11 @@ impl pallet_preimage::Config for Runtime {
     >;
 }
 
+pub type MainEthBridge = pallet_eth_bridge::Instance1;
+pub type SecondaryEthBridge = pallet_eth_bridge::Instance2;
+const MAIN_ETH_BRIDGE_ID: u8 = 1u8;
+const SECONDARY_ETH_BRIDGE_ID: u8 = 2u8;
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
     pub struct Runtime
@@ -850,9 +884,10 @@ construct_runtime!(
         TokenManager: pallet_token_manager = 87,
         Summary: pallet_summary::<Instance1> = 88,
         AvnProxy: pallet_avn_proxy = 89,
-        EthBridge: pallet_eth_bridge = 91,
+        EthBridge: pallet_eth_bridge::<Instance1> = 91,
         AvnAnchor: pallet_avn_anchor = 92,
         AnchorSummary: pallet_summary::<Instance2> = 110,
+        EthSecondBridge: pallet_eth_bridge::<Instance2> = 111,
 
          // OpenGov pallets
         Preimage: pallet_preimage::{Pallet, Call, Storage, Event<T>, HoldReason} = 97,
@@ -1049,46 +1084,113 @@ impl_runtime_apis! {
             return res
         }
 
-        fn query_active_block_range()-> Option<(EthBlockRange, u16)> {
-            if let Some(active_eth_range) =  EthBridge::active_ethereum_range(){
-                Some((active_eth_range.range, active_eth_range.partition))
-            } else {
-                None
+        fn query_active_block_range(instance_id: InstanceId)-> Option<(EthBlockRange, u16)> {
+            match instance_id {
+                MAIN_ETH_BRIDGE_ID => {
+                    EthBridge::active_ethereum_range().map(|active_eth_range| {
+                        (active_eth_range.range, active_eth_range.partition)
+                    })
+                },
+                SECONDARY_ETH_BRIDGE_ID => {
+                    EthSecondBridge::active_ethereum_range().map(|active_eth_range| {
+                        (active_eth_range.range, active_eth_range.partition)
+                    })
+                }
+                _ => {
+                    None
+                }
             }
         }
-        fn query_has_author_casted_vote(account_id: AccountId) -> bool{
-           pallet_eth_bridge::author_has_cast_event_vote::<Runtime>(&account_id) ||
-           pallet_eth_bridge::author_has_submitted_latest_block::<Runtime>(&account_id)
+
+        fn query_has_author_casted_vote(instance_id: InstanceId, account_id: AccountId) -> bool{
+            match instance_id {
+                MAIN_ETH_BRIDGE_ID => {
+                    EthBridge::author_has_cast_event_vote(&account_id) ||
+                    EthBridge::author_has_submitted_latest_block(&account_id)
+                         },
+                SECONDARY_ETH_BRIDGE_ID => {
+                    EthSecondBridge::author_has_cast_event_vote(&account_id) ||
+                    EthSecondBridge::author_has_submitted_latest_block(&account_id)
+                         }
+                _ => false
+            }
         }
 
-        fn query_signatures() -> Vec<sp_core::H256> {
-            EthBridge::signatures()
+        fn query_signatures(instance_id: InstanceId) -> Vec<sp_core::H256> {
+            match instance_id {
+                MAIN_ETH_BRIDGE_ID => {
+                    EthBridge::signatures()
+                },
+                SECONDARY_ETH_BRIDGE_ID => {
+                    EthSecondBridge::signatures()
+                }
+                _ => Default::default()
+            }
         }
 
-        fn query_bridge_contract() -> H160 {
-            Avn::get_bridge_contract_address()
-        }
-
-        fn submit_vote(author: AccountId,
+        fn submit_vote(
+            instance_id: InstanceId,
+            author: AccountId,
             events_partition: EthereumEventsPartition,
             signature: sp_core::sr25519::Signature,
         ) -> Option<()>{
-            EthBridge::submit_vote(author, events_partition, signature.into()).ok()
+            match instance_id {
+                MAIN_ETH_BRIDGE_ID => {
+                    EthBridge::submit_vote(author, events_partition, signature.into()).ok()
+                },
+                SECONDARY_ETH_BRIDGE_ID => {
+                    EthSecondBridge::submit_vote(author, events_partition, signature.into()).ok()
+                }
+                _ => None
+            }
         }
 
         fn submit_latest_ethereum_block(
+            instance_id: InstanceId,
             author: AccountId,
             latest_seen_block: u32,
             signature: sp_core::sr25519::Signature
         ) -> Option<()>{
-            EthBridge::submit_latest_ethereum_block_vote(author, latest_seen_block, signature.into()).ok()
+            match instance_id {
+                MAIN_ETH_BRIDGE_ID => {
+                    EthBridge::submit_latest_ethereum_block_vote(author, latest_seen_block, signature.into()).ok()
+                },
+                SECONDARY_ETH_BRIDGE_ID => {
+                    EthSecondBridge::submit_latest_ethereum_block_vote(author, latest_seen_block, signature.into()).ok()
+                }
+                _ => None
+            }
         }
 
-        fn additional_transactions() -> Option<AdditionalEvents> {
-            if let Some(active_eth_range) =  EthBridge::active_ethereum_range(){
-                Some(active_eth_range.additional_transactions)
+        fn additional_transactions(instance_id: InstanceId) -> Option<AdditionalEvents> {
+            match instance_id {
+                MAIN_ETH_BRIDGE_ID => {
+                    EthBridge::active_ethereum_range().map(|active_eth_range| {
+                        active_eth_range.additional_transactions
+                    })
+                },
+                SECONDARY_ETH_BRIDGE_ID => {
+                    EthSecondBridge::active_ethereum_range().map(|active_eth_range| {
+                        active_eth_range.additional_transactions
+                    })
+                }
+                _ => {
+                    None
+                }
+            }
+        }
+
+        fn instances() -> BTreeMap<InstanceId, EthBridgeInstance> {
+            let main_instance = EthBridge::instance();
+            let secondary_instance = EthSecondBridge::instance();
+
+            if main_instance == secondary_instance {
+                return BTreeMap::from([(MAIN_ETH_BRIDGE_ID, main_instance)]);
             } else {
-                None
+                return BTreeMap::from([
+                    (MAIN_ETH_BRIDGE_ID, main_instance),
+                    (SECONDARY_ETH_BRIDGE_ID, secondary_instance),
+                ]);
             }
         }
     }
@@ -1186,6 +1288,7 @@ impl_runtime_apis! {
     }
 }
 
+#[allow(dead_code)]
 struct CheckInherents;
 
 impl cumulus_pallet_parachain_system::CheckInherents<Block> for CheckInherents {

@@ -17,11 +17,13 @@
 #![cfg(test)]
 use crate::{
     mock::{Balances, RuntimeEvent, *},
-    Balances as TokenManagerBalances, *,
+    *,
 };
 use frame_support::{assert_err, assert_noop, assert_ok};
+use frame_system::RawOrigin;
 use hex_literal::hex;
 use pallet_balances::Error as BalancesError;
+use sp_runtime::DispatchError;
 
 const USE_RECEIVER_WITH_EXISTING_AMOUNT: bool = true;
 const USE_RECEIVER_WITH_0_AMOUNT: bool = false;
@@ -57,7 +59,7 @@ fn schedule_lower(
 
 fn perform_lower_setup(lower_id: u32) {
     let (_, from, burn_acc, t1_recipient) = MockData::setup_lower_request_data();
-    let pre_lower_balance = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+    let pre_lower_balance = Balances::free_balance(from);
     let amount = pre_lower_balance;
 
     let expected_lower_id = lower_id;
@@ -283,6 +285,56 @@ fn avn_test_lower_some_avt_token_succeed() {
 }
 
 #[test]
+fn avn_test_reverted_avt_lower_refunds_sender_removes_claim_and_emits_event() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let (_, from, _burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
+
+        perform_lower_setup(lower_id);
+        assert!(LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+
+        let balance_before = Balances::free_balance(from);
+        let receiver_address = H256::from_slice(&receiver_topic_with_100_avt());
+
+        let mock_event = sp_avn_common::event_types::EthEvent {
+            event_id: sp_avn_common::event_types::EthEventId {
+                signature: sp_avn_common::event_types::ValidEvents::LowerReverted.signature(),
+                transaction_hash: H256::random(),
+            },
+            event_data: sp_avn_common::event_types::EventData::LogLowerReverted(
+                sp_avn_common::event_types::LowerRevertedData {
+                    token_contract: AVT_TOKEN_CONTRACT,
+                    receiver_address,
+                    amount,
+                    lower_id,
+                    t1_recipient,
+                },
+            ),
+        };
+
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert_eq!(Balances::free_balance(from), balance_before + amount);
+        assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+        assert!(System::events().iter().any(|a| a.event ==
+            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLowerReverted {
+                t2_refunded_sender: from,
+                amount,
+                eth_tx_hash: mock_event.event_id.transaction_hash,
+                lower_id,
+                t1_reverted_recipient: t1_recipient,
+            })));
+    });
+}
+
+#[test]
 fn avn_test_lower_avt_token_should_fail_when_sender_does_not_have_enough_avt_token() {
     let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
 
@@ -439,4 +491,93 @@ fn avt_lower_claimed_fails_due_with_invalid_lower_id() {
             Error::<TestRuntime>::InvalidLowerId
         );
     });
+}
+
+mod set_native_token_eth_address {
+    use super::*;
+
+    #[test]
+    fn works() {
+        let mut ext = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_balances()
+            .as_externality();
+
+        ext.execute_with(|| {
+            let old_address = <AVTTokenContract<TestRuntime>>::get();
+            let new_address = H160(hex_literal::hex!("dadB0d80178819F2319190D340ce9A924f783711"));
+
+            assert_ok!(TokenManager::set_native_token_eth_address(
+                RuntimeOrigin::root(),
+                new_address
+            ));
+
+            assert!(System::events().iter().any(|a| a.event ==
+                RuntimeEvent::TokenManager(
+                    crate::Event::<TestRuntime>::NativeTokenEthAddressUpdated {
+                        old_address,
+                        new_address
+                    }
+                )));
+        });
+    }
+
+    #[test]
+    fn fails_when_new_address_is_zero() {
+        let mut ext = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_balances()
+            .as_externality();
+        ext.execute_with(|| {
+            let new_token_address = H160::zero();
+
+            assert_noop!(
+                TokenManager::set_native_token_eth_address(
+                    RuntimeOrigin::root(),
+                    new_token_address
+                ),
+                Error::<TestRuntime>::InvalidEthAddress
+            );
+        });
+    }
+
+    #[test]
+    fn fails_for_non_root() {
+        let mut ext = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_balances()
+            .as_externality();
+        ext.execute_with(|| {
+            let new_token_address =
+                H160(hex_literal::hex!("dadB0d80178819F2319190D340ce9A924f783711"));
+            let random_signer = TestAccount::new([26u8; 32]).account_id();
+            assert_noop!(
+                TokenManager::set_native_token_eth_address(
+                    RuntimeOrigin::signed(random_signer),
+                    new_token_address
+                ),
+                DispatchError::BadOrigin
+            );
+        });
+    }
+
+    #[test]
+    fn fails_for_unsigned() {
+        let mut ext = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_balances()
+            .as_externality();
+        ext.execute_with(|| {
+            let new_token_address =
+                H160(hex_literal::hex!("dadB0d80178819F2319190D340ce9A924f783711"));
+
+            assert_noop!(
+                TokenManager::set_native_token_eth_address(
+                    RawOrigin::None.into(),
+                    new_token_address
+                ),
+                DispatchError::BadOrigin
+            );
+        });
+    }
 }

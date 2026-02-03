@@ -87,6 +87,7 @@ parachains-common = { git = "https://github.com/paritytech/polkadot-sdk", branch
 
 # AvN pallets
 sp-avn-common = { path = "../../primitives/avn-common", default-features = false }
+sp-watchtower = { path = "../../primitives/watchtower", default-features = false }
 pallet-avn-offence-handler = { path = "../../pallets/avn-offence-handler", default-features = false }
 pallet-validators-manager = { path = "../../pallets/validators-manager", default-features = false }
 pallet-ethereum-events = { path = "../../pallets/ethereum-events", default-features = false }
@@ -138,7 +139,6 @@ std = [
 	"pallet-utility/std",
 	"pallet-xcm/std",
 	"pallet-authority-discovery/std",
-	"parachains-common/std",
 	"parachain-info/std",
 	"polkadot-parachain-primitives/std",
 	"polkadot-runtime-common/std",
@@ -161,6 +161,7 @@ std = [
 	"xcm/std",
 	# AvN pallets
 	"sp-avn-common/std",
+	"sp-watchtower/std",
 	"pallet-avn/std",
 	"pallet-avn-anchor/std",
 	"pallet-avn-proxy/std",

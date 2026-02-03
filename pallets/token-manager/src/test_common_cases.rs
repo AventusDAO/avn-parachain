@@ -219,3 +219,22 @@ fn avn_test_lower_should_fail_when_amount_is_zero() {
         );
     });
 }
+
+mod on_idle {
+    use super::*;
+    use frame_support::traits::OnIdle;
+
+    #[test]
+    fn avn_test_on_idle_should_run() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+        ext.execute_with(|| {
+            set_on_idle_run(false);
+            assert!(!on_idle_has_run());
+
+            TokenManager::on_idle(System::block_number(), 1_000_000_000.into());
+
+            assert!(on_idle_has_run());
+        });
+    }
+}

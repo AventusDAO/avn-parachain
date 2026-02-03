@@ -10,7 +10,7 @@ use crate::chain_spec::{
 };
 use avn_test_runtime::{self as avn_test_runtime};
 use node_primitives::AccountId;
-
+use sp_avn_common::eth::EthereumNetwork;
 use sp_core::{H160, H256};
 
 use hex_literal::hex;
@@ -91,6 +91,23 @@ pub(crate) fn avn_test_runtime_genesis(
             "ethTxLifetimeSecs": 60 * 30 as u64, // 30 minutes
             "nextTxId": 1u32,
             "ethBlockRangeSize": 20u32,
+            "instance": {
+                "network": EthereumNetwork::Sepolia,
+                "bridge_contract": avn_eth_contract,
+                "name": BoundedVec::<u8, ConstU32<256>>::truncate_from("AVN Bridge".as_bytes().to_vec()),
+                "version": BoundedVec::<u8, ConstU32<256>>::truncate_from("1".as_bytes().to_vec().into()),
+            },
+        },
+        "ethSecondBridge": {
+            "ethTxLifetimeSecs": 60 * 30 as u64, // 30 minutes
+            "nextTxId": 1u32,
+            "ethBlockRangeSize": 20u32,
+            "instance": {
+                "network": EthereumNetwork::Sepolia,
+                "bridge_contract": avn_eth_contract,
+                "name": BoundedVec::<u8, ConstU32<256>>::truncate_from("AVN Bridge".as_bytes().to_vec()),
+                "version": BoundedVec::<u8, ConstU32<256>>::truncate_from("1".as_bytes().to_vec().into()),
+            },
         },
         "ethereumEvents": {
             "nftT1Contracts": nft_eth_contracts,

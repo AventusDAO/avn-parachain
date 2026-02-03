@@ -1134,6 +1134,12 @@ impl<T: Config> Pallet<T> {
                 Error::<T>::EventParsingFailed
             })?;
             return Ok(EventData::LogT1TotalSupplyUpdated(event_data))
+        } else if event_id.signature == ValidEvents::LowerReverted.signature() {
+            let event_data = <LowerRevertedData>::parse_bytes(data, topics).map_err(|e| {
+                log::warn!("Error parsing T1 LogLowerReverted Event: {:#?}", e);
+                Error::<T>::EventParsingFailed
+            })?;
+            return Ok(EventData::LogLowerReverted(event_data))
         } else {
             return Err(Error::<T>::UnrecognizedEventSignature)
         }
@@ -1507,7 +1513,7 @@ impl<T: Config> Pallet<T> {
         let contract_address = AVN::<T>::get_bridge_contract_address();
         let ethereum_call = EthTransaction::new(sender, contract_address, calldata.encode());
 
-        AVN::<T>::post_data_to_service("/eth/query".to_string(), ethereum_call.encode())
+        AVN::<T>::post_data_to_service("/eth/query".to_string(), ethereum_call.encode(), None)
     }
 
     fn event_exists_in_system(event_id: &EthEventId) -> bool {

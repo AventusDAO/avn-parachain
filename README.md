@@ -249,9 +249,9 @@ To generate the necessary chainspec files for your parachain, simply replace `<c
 To export the genesis state and wasm files, use the following commands:
 
 ```sh
-# Export the genesis wasm
+# Export the genesis wasm (example <chain_name>: avn_chain_plain.json)
 ./avn-parachain-collator export-genesis-wasm --chain <chain_name> --raw > genesis.wasm
 
-# Export the genesis state
+# Export the genesis state (example <chain_name>: avn_chain_plain.json)
 ./avn-parachain-collator export-genesis-state --chain <chain_name> --raw > genesis.state
 ```

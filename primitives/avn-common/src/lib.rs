@@ -8,8 +8,10 @@ use alloc::{
     string::{String, ToString},
 };
 
-use codec::{Codec, Decode, Encode};
-use sp_core::{crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
+use crate::bounds::VotingSessionIdBound;
+use codec::{Codec, Decode, Encode, MaxEncodedLen};
+pub use eth::{BridgeContractMethod, ECDSAVerificationError};
+use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
     crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed},
     hashing::{blake2_256, keccak_256},
@@ -17,7 +19,7 @@ use sp_io::{
 };
 use sp_runtime::{
     scale_info::TypeInfo,
-    traits::{AtLeast32Bit, Dispatchable, IdentifyAccount, Member, Verify},
+    traits::{AtLeast32Bit, Dispatchable, IdentifyAccount, Member, Verify, Zero},
     MultiSignature,
 };
 use sp_std::{boxed::Box, vec::Vec};
@@ -30,14 +32,18 @@ pub const FEE_POT_ID: [u8; 8] = *b"avn/fees";
 
 #[path = "tests/helpers.rs"]
 pub mod avn_tests_helpers;
+pub mod eth;
 pub mod eth_key_actions;
 pub mod event_discovery;
 pub mod event_types;
+pub mod http_data_codec;
 pub mod ocw_lock;
 #[cfg(test)]
 #[path = "tests/test_event_discovery.rs"]
 pub mod test_event_discovery;
 
+#[cfg(feature = "std")]
+pub mod transaction_filter;
 /// Ingress counter type for a counter that can sign the same message with a different signature
 /// each time
 pub type IngressCounter = u64;
@@ -257,12 +263,9 @@ pub fn recover_ethereum_address_from_ecdsa_signature(
 
 pub fn recover_public_key_from_ecdsa_signature(
     signature: &ecdsa::Signature,
-    message: &String,
+    hashed_message: &H256,
 ) -> Result<ecdsa::Public, ECDSAVerificationError> {
-    match secp256k1_ecdsa_recover_compressed(
-        signature.as_ref(),
-        &hash_with_ethereum_prefix(message)?,
-    ) {
+    match secp256k1_ecdsa_recover_compressed(signature.as_ref(), &hashed_message.to_fixed_bytes()) {
         Ok(pubkey) => return Ok(ecdsa::Public::from_raw(pubkey)),
         Err(EcdsaVerifyError::BadRS) => return Err(ECDSAVerificationError::InvalidValueForRS),
         Err(EcdsaVerifyError::BadV) => return Err(ECDSAVerificationError::InvalidValueForV),
@@ -435,4 +438,61 @@ pub enum HashMessageFormat {
 pub struct EthQueryResponse {
     pub data: Vec<u8>,
     pub num_confirmations: u64,
+}
+
+pub trait QuorumPolicy {
+    /// Percentage required for quorum.
+    const QUORUM_PERCENT: u32;
+
+    /// Percentage for supermajority quorum.
+    const SUPERMAJORITY_PERCENT: u32;
+
+    fn required_for(total: u32) -> u32 {
+        (total * Self::QUORUM_PERCENT + 99) / 100
+    }
+
+    fn required_for_supermajority(total: u32) -> u32 {
+        (total * Self::SUPERMAJORITY_PERCENT + 99) / 100
+    }
+
+    fn get_quorum() -> u32;
+    fn get_supermajority_quorum() -> u32;
+}
+
+pub trait OnIdleHandler<BlockNumber, Weight> {
+    fn run_on_idle_process(block_number: BlockNumber, weight: Weight) -> Weight;
+}
+
+impl<BlockNumber, Weight: Zero> OnIdleHandler<BlockNumber, Weight> for () {
+    fn run_on_idle_process(_block_number: BlockNumber, _remaining_weight: Weight) -> Weight {
+        Weight::zero()
+    }
+}
+
+#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+pub struct RootRange<BlockNumber: AtLeast32Bit> {
+    pub from_block: BlockNumber,
+    pub to_block: BlockNumber,
+}
+
+impl<BlockNumber: AtLeast32Bit> RootRange<BlockNumber> {
+    pub fn new(from_block: BlockNumber, to_block: BlockNumber) -> Self {
+        return RootRange::<BlockNumber> { from_block, to_block }
+    }
+}
+
+#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+pub struct RootId<BlockNumber: AtLeast32Bit> {
+    pub range: RootRange<BlockNumber>,
+    pub ingress_counter: IngressCounter,
+}
+
+impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
+    pub fn new(range: RootRange<BlockNumber>, ingress_counter: IngressCounter) -> Self {
+        return RootId::<BlockNumber> { range, ingress_counter }
+    }
+
+    pub fn session_id(&self) -> BoundedVec<u8, VotingSessionIdBound> {
+        BoundedVec::truncate_from(self.encode())
+    }
 }

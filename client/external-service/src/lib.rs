@@ -1,14 +1,19 @@
+use anyhow::Result;
 use codec::{Decode, Encode};
 use futures::lock::Mutex;
 use hex::FromHex;
 use jsonrpc_core::ErrorCode;
+
 use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
-    hash_with_ethereum_prefix, EthQueryRequest, EthQueryResponse, EthQueryResponseType,
-    EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
+    http_data_codec::decode_from_http_data, EthQueryRequest, EthQueryResponse,
+    EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
-use sp_core::ecdsa::Signature;
+use sp_core::{
+    ecdsa::Signature,
+    sr25519::{self, Pair as SrPair},
+};
 use sp_runtime::traits::Block as BlockT;
 use std::{marker::PhantomData, time::Instant};
 use web3::{transports::Http, types::TransactionReceipt, Web3};
@@ -24,53 +29,20 @@ pub mod ethereum_events_handler;
 pub mod extrinsic_utils;
 pub mod finance_provider_utils;
 pub mod keystore_utils;
-pub mod merkle_tree_utils;
-pub mod summary_utils;
+pub mod timer;
 pub mod web3_utils;
 
-use crate::{
-    extrinsic_utils::get_latest_finalised_block,
-    finance_provider_utils::{CoinGeckoFinance, FinanceProvider},
-    keystore_utils::*,
-    summary_utils::*,
-    web3_utils::*,
-};
+
+use crate::finance_provider_utils::{CoinGeckoFinance, FinanceProvider};
+use crate::{keystore_utils::*, timer::Web3Timer, web3_utils::*};
+use client_extrinsic_utils::{extrinsic_utils::get_latest_finalised_block, summary_utils::*};
+use tide::http::headers::HeaderValues;
 
 pub use crate::web3_utils::{public_key_address, secret_key_address};
 use jsonrpc_core::Error as RPCError;
 
 pub const ETH_FINALITY: u64 = 20u64;
 const MAX_BODY_SIZE: usize = 100_000; // 100 KB
-
-/// Error types for merkle tree and extrinsic utils.
-#[derive(Debug)]
-pub enum Error {
-    DecodeError = 1,
-    ResponseError = 2,
-    InvalidExtrinsicInLocalDB = 3,
-    ErrorGettingBlockData = 4,
-    BlockDataNotFound = 5,
-    BlockNotFinalised = 6,
-    ErrorGeneratingRoot = 7,
-    LeafDataEmpty = 8,
-    EmptyLeaves = 9,
-}
-
-impl From<Error> for i32 {
-    fn from(e: Error) -> i32 {
-        match e {
-            Error::DecodeError => 1_i32,
-            Error::ResponseError => 2_i32,
-            Error::InvalidExtrinsicInLocalDB => 3_i32,
-            Error::ErrorGettingBlockData => 4_i32,
-            Error::BlockDataNotFound => 5_i32,
-            Error::BlockNotFinalised => 6_i32,
-            Error::ErrorGeneratingRoot => 7_i32,
-            Error::LeafDataEmpty => 8_i32,
-            Error::EmptyLeaves => 9_i32,
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Config<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<Block>> {
@@ -94,10 +66,11 @@ impl<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<Block>> Config<
                 return Ok(())
             }
 
-            let web3_init_time = Instant::now();
+            let _web3_init_time = Web3Timer::new("avn-service Web3 initialisation");
             log::info!("⛓️  avn-service: web3 initialisation start");
 
             let web3 = setup_web3_connection(&self.eth_node_url);
+
             if web3.is_none() {
                 log::error!(
                     "💔 Error creating a web3 connection. URL is not valid {:?}",
@@ -106,7 +79,6 @@ impl<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<Block>> Config<
                 return Err(server_error("Error creating a web3 connection".to_string()))
             }
 
-            log::info!("⏲️  web3 init task completed in: {:?}", web3_init_time.elapsed());
             web3_data_mutex.web3 = web3;
             Ok(())
         } else {
@@ -270,8 +242,12 @@ where
     if post_body.len() > MAX_BODY_SIZE {
         return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())))
     }
+
     let send_request = &EthTransaction::decode(&mut &post_body[..])
         .map_err(|e| server_error(format!("Error decoding eth transaction data: {:?}", e)))?;
+
+    let proof_data = (&send_request.from, &send_request.to, &send_request.data).encode();
+    validate_authorisation_token(&req.state().keystore, req.header("X-Auth"), &proof_data)?;
 
     if let Some(mut mutex_web3_data) = req.state().web3_data_mutex.try_lock() {
         if mutex_web3_data.web3.is_none() {
@@ -500,31 +476,28 @@ where
 
     let mut app = tide::with_state(Arc::<Config<Block, ClientT>>::from(config));
 
-    app.at("/eth/sign/:data_to_sign").get(
-        |req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
-            log::info!("⛓️  avn-service: sign Request");
-            let secp = Secp256k1::new();
+    app.at("/eth/sign_hashed_data").post(
+        |mut req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
+            log::info!("⛓️  avn-service: pre-hashed sign Request");
+            let body_bytes = req.body_bytes().await?;
+            if body_bytes.len() > MAX_BODY_SIZE {
+                return Err(server_error(format!(
+                    "Request body too large. Size: {:?}",
+                    body_bytes.len()
+                )))
+            }
+            let msg_bytes = hex::decode(body_bytes).map_err(|e| {
+                server_error(format!("Error decoding signing message data from hex: {:?}", e))
+            })?;
+
             let keystore_path = &req.state().keystore_path;
 
-            let data_to_sign = req.param("data_to_sign")?;
-            let hashed_message =
-                hash_with_ethereum_prefix(&data_to_sign.to_string()).map_err(|e| {
-                    server_error(format!("Error converting data_to_sign into hex string {:?}", e))
-                })?;
+            let hashed_data = H256::from_slice(&msg_bytes);
+            log::info!("Recovering H256 to sign: {:?}", hashed_data);
 
-            log::info!(
-                "⛓️  avn-service: data to sign: {:?},\n hashed data to sign: {:?}",
-                data_to_sign,
-                hex::encode(hashed_message)
-            );
-            let my_eth_address = get_eth_address_bytes_from_keystore(keystore_path)?;
-            let my_priv_key = get_priv_key(keystore_path, &my_eth_address)?;
+            validate_authorisation_token(&req.state().keystore, req.header("X-Auth"), &msg_bytes)?;
 
-            let secret = SecretKey::from_slice(&my_priv_key)?;
-            let message = secp256k1::Message::from_digest_slice(&hashed_message)?;
-            let signature: Signature = secp.sign_ecdsa_recoverable(&message, &secret).into();
-
-            Ok(hex::encode(signature.encode()))
+            sign_digest_from_keystore(keystore_path, &hashed_data[..])
         },
     );
 
@@ -556,8 +529,12 @@ where
 
             let extrinsics_start_time = Instant::now();
 
-            let extrinsics =
-                get_extrinsics::<Block, ClientT>(&req, from_block_number, to_block_number)?;
+            let extrinsics = get_extrinsics::<Block, ClientT>(
+                &req.state().client,
+                from_block_number,
+                to_block_number,
+            )
+            .map_err(|e| server_error(format!("{:?}", e)))?;
             let extrinsics_duration = extrinsics_start_time.elapsed();
             log::info!(
                 "⏲️  get_extrinsics on block range [{:?}, {:?}] time: {:?}",
@@ -568,7 +545,8 @@ where
 
             if !extrinsics.is_empty() {
                 let root_hash_start_time = Instant::now();
-                let root_hash = generate_tree_root(extrinsics)?;
+                let root_hash =
+                    generate_tree_root(extrinsics).map_err(|e| server_error(format!("{:?}", e)))?;
                 let root_hash_duration = root_hash_start_time.elapsed();
                 log::info!(
                     "⏲️  generate_tree_root on block range [{:?}, {:?}] time: {:?}",
@@ -604,4 +582,45 @@ where
         .await
         .map_err(|e| log::error!("avn-service error: {}", e))
         .unwrap_or(());
+}
+
+fn sign_digest_from_keystore(keystore_path: &PathBuf, digest: &[u8]) -> Result<String, TideError> {
+    let secp = Secp256k1::new();
+    let my_eth_address = get_eth_address_bytes_from_keystore(keystore_path)?;
+    let my_priv_key = get_priv_key(keystore_path, &my_eth_address)?;
+
+    log::info!("⛓️  avn-service: digest to sign: {:?}", hex::encode(digest));
+
+    let secret = SecretKey::from_slice(&my_priv_key)?;
+    let message = secp256k1::Message::from_digest_slice(digest)?;
+    let signature: Signature = secp.sign_ecdsa_recoverable(&message, &secret).into();
+
+    Ok(hex::encode(signature.encode()))
+}
+
+fn validate_authorisation_token(
+    keystore: &LocalKeystore,
+    authorisation_header: Option<&HeaderValues>,
+    msg_bytes: &Vec<u8>,
+) -> Result<(), TideError> {
+    let signature_token = match authorisation_header {
+        Some(encoded_token) => {
+            let token_str = encoded_token.as_str().trim();
+            decode_from_http_data::<sr25519::Signature>(token_str).map_err(|e| {
+                log::error!("Error decoding X-Auth token: {:?}", token_str);
+                server_error(format!("Error decoding X-Auth token from hex: {:?}", e))
+            })?
+        },
+        None => {
+            log::error!("Missing X-Auth token");
+            return Err(server_error("Missing X-Auth token".to_string()))
+        },
+    };
+
+    log::debug!("X-Auth token received: {:?}", signature_token);
+    if !authenticate_token(keystore, msg_bytes, signature_token) {
+        log::error!("X-Auth token verification failed");
+        return Err(server_error("X-Auth token verification failed".to_string()))
+    };
+    Ok(())
 }

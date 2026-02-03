@@ -10,20 +10,21 @@ use sp_std::{prelude::*, vec};
 use crate::Event;
 
 #[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
-pub enum CorroborationOffenceType {
+pub enum EthBridgeOffenceType {
     ChallengeAttemptedOnSuccessfulTransaction,
     ChallengeAttemptedOnUnsuccessfulTransaction,
+    InvalidEthereumRangeData,
 }
 
 #[derive(PartialEq, Clone, Debug, Encode, Decode, TypeInfo)]
-pub struct CorroborationOffence<Offender> {
+pub struct EthBridgeOffence<Offender> {
     pub session_index: SessionIndex,
     pub offenders: Vec<Offender>,
-    pub offence_type: CorroborationOffenceType,
+    pub offence_type: EthBridgeOffenceType,
     pub validator_set_count: u32,
 }
 
-impl<Offender: Clone> Offence<Offender> for CorroborationOffence<Offender> {
+impl<Offender: Clone> Offence<Offender> for EthBridgeOffence<Offender> {
     const ID: Kind = *b"bridge:::offence";
     type TimeSlot = SessionIndex;
 
@@ -43,12 +44,12 @@ impl<Offender: Clone> Offence<Offender> for CorroborationOffence<Offender> {
         self.session_index
     }
 
-    fn slash_fraction(&self, _offenders_count: u32) -> Perbill {
-        Perbill::from_percent(100)
+    fn slash_fraction(&self, offenders_count: u32) -> Perbill {
+        Perbill::from_rational(3 * offenders_count, self.validator_set_count).square()
     }
 }
 
-pub fn create_offenders_identification<T: crate::Config>(
+pub fn create_offenders_identification<T: crate::Config<I>, I: 'static>(
     offenders_accounts: &Vec<T::AccountId>,
 ) -> Vec<IdentificationTuple<T>> {
     let offenders = offenders_accounts
@@ -59,15 +60,15 @@ pub fn create_offenders_identification<T: crate::Config>(
     return offenders
 }
 
-pub fn create_and_report_corroboration_offence<T: crate::Config>(
+pub fn create_and_report_bridge_offence<T: crate::Config<I>, I: 'static>(
     reporter: &T::AccountId,
     offenders_accounts: &Vec<T::AccountId>,
-    offence_type: CorroborationOffenceType,
+    offence_type: EthBridgeOffenceType,
 ) {
-    let offenders = create_offenders_identification::<T>(offenders_accounts);
+    let offenders = create_offenders_identification::<T, I>(offenders_accounts);
 
     if !offenders.is_empty() {
-        let invalid_event_offence = CorroborationOffence {
+        let invalid_event_offence = EthBridgeOffence {
             session_index: <pallet_session::Pallet<T>>::current_index(),
             validator_set_count: crate::AVN::<T>::validators().len() as u32,
             offenders: offenders.clone(),
@@ -85,7 +86,7 @@ pub fn create_and_report_corroboration_offence<T: crate::Config>(
                 log::info!(target: "pallet-eth-bridge", "ℹ️ Error while reporting offence: {:?}. Stored in deferred",e);
             }
 
-            <crate::Pallet<T>>::deposit_event(Event::<T>::CorroborationOffenceReported {
+            <crate::Pallet<T, I>>::deposit_event(Event::<T, I>::CorroborationOffenceReported {
                 offence_type,
                 offenders,
             });

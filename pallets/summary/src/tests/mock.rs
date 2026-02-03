@@ -7,12 +7,11 @@ use sp_state_machine::BasicExternalities;
 use frame_system::{self as system, DefaultConfig};
 use pallet_avn::{
     self as avn, testing::U64To32BytesConverter, vote::VotingSessionData, EthereumPublicKeyChecker,
-    LowerParams,
 };
-use pallet_eth_bridge::offence::CorroborationOffence;
+use pallet_eth_bridge::offence::EthBridgeOffence;
 use pallet_session as session;
 use parking_lot::RwLock;
-use sp_avn_common::{safe_add_block_numbers, safe_sub_block_numbers};
+use sp_avn_common::{eth::LowerParams, safe_add_block_numbers, safe_sub_block_numbers};
 use sp_core::{
     ecdsa,
     offchain::{
@@ -32,6 +31,7 @@ use sp_staking::{
     offence::{OffenceError, ReportOffence},
     SessionIndex,
 };
+use sp_watchtower::NoopWatchtower;
 use std::{cell::RefCell, convert::From, sync::Arc};
 use system::pallet_prelude::BlockNumberFor;
 
@@ -52,7 +52,7 @@ impl Summary {
         root_id: &RootId<BlockNumber>,
         root_hash: H256,
         account_id: AccountId,
-        tx_id: EthereumTransactionId,
+        tx_id: EthereumId,
     ) {
         Roots::<TestRuntime>::insert(
             root_id.range,
@@ -252,7 +252,7 @@ impl AnchorSummary {
         root_id: &RootId<BlockNumber>,
         root_hash: H256,
         account_id: AccountId,
-        tx_id: EthereumTransactionId,
+        tx_id: EthereumId,
     ) {
         Roots::<TestRuntime, Instance1>::insert(
             root_id.range,
@@ -337,7 +337,7 @@ frame_support::construct_runtime!(
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event},
+        Avn: pallet_avn::{Pallet, Storage, Event},
         Summary: summary::{Pallet, Call, Storage, Event<T>, Config<T>},
         Historical: pallet_session::historical::{Pallet, Storage},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
@@ -346,15 +346,10 @@ frame_support::construct_runtime!(
     }
 );
 
-parameter_types! {
-    pub const AdvanceSlotGracePeriod: u64 = 5;
-    pub const MinBlockAge: u64 = 5;
-}
-
 pub type ValidatorId = u64;
 type FullIdentification = u64;
 
-pub const INITIAL_TRANSACTION_ID: EthereumTransactionId = 0;
+pub const INITIAL_TRANSACTION_ID: EthereumId = 0;
 pub const VALIDATOR_COUNT: u32 = 7;
 thread_local! {
     // validator accounts (aka public addresses, public keys-ish)
@@ -368,11 +363,22 @@ thread_local! {
         SEVENTH_VALIDATOR_INDEX
     ]));
 
-    static MOCK_TX_ID: RefCell<EthereumTransactionId> = RefCell::new(INITIAL_TRANSACTION_ID);
+    static MOCK_TX_ID: RefCell<EthereumId> = RefCell::new(INITIAL_TRANSACTION_ID);
 
     static ETH_PUBLIC_KEY_VALID: RefCell<bool> = RefCell::new(true);
 
     static MOCK_RECOVERED_ACCOUNT_ID: RefCell<AccountId> = RefCell::new(FIRST_VALIDATOR_INDEX);
+}
+
+parameter_types! {
+    pub const AdvanceSlotGracePeriod: u64 = 5;
+    pub const MinBlockAge: u64 = 5;
+    pub const ExternalValidationEnabled: bool = true;
+    pub const BlockHashCount: u64 = 250;
+    pub const AutoSubmitSummaries: bool = true;
+    pub const DoNotAutoSubmitAnchor: bool = false;
+    pub const InstanceId: u8 = 1u8;
+    pub const AnchorInstanceId: u8 = 2u8;
 }
 
 impl Config for TestRuntime {
@@ -385,6 +391,8 @@ impl Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type AutoSubmitSummaries = AutoSubmitSummaries;
     type InstanceId = InstanceId;
+    type ExternalValidator = NoopWatchtower<AccountId>;
+    type ExternalValidationEnabled = ExternalValidationEnabled;
 }
 
 type AvnAnchorSummary = summary::Instance1;
@@ -396,8 +404,10 @@ impl Config<AvnAnchorSummary> for TestRuntime {
     type ReportSummaryOffence = OffenceHandler;
     type WeightInfo = ();
     type BridgeInterface = EthBridge;
-    type AutoSubmitSummaries = DoNotSubmit;
+    type AutoSubmitSummaries = DoNotAutoSubmitAnchor;
     type InstanceId = AnchorInstanceId;
+    type ExternalValidator = NoopWatchtower<AccountId>;
+    type ExternalValidationEnabled = ExternalValidationEnabled;
 }
 
 impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
@@ -406,13 +416,6 @@ where
 {
     type OverarchingCall = RuntimeCall;
     type Extrinsic = Extrinsic;
-}
-
-parameter_types! {
-    pub const AutoSubmitSummaries: bool = true;
-    pub const InstanceId: u8 = 1u8;
-    pub const DoNotSubmit: bool = false;
-    pub const AnchorInstanceId: u8 = 2u8;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
@@ -433,11 +436,13 @@ impl pallet_eth_bridge::Config for TestRuntime {
     type RuntimeCall = RuntimeCall;
     type MinEthBlockConfirmation = ConstU64<20>;
     type WeightInfo = ();
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterfaceNotification = Self;
     type ReportCorroborationOffence = OffenceHandler;
     type ProcessedEventsChecker = ();
     type ProcessedEventsHandler = ();
+    type EthereumEventsMigration = ();
+    type Quorum = Avn;
 }
 
 impl pallet_timestamp::Config for TestRuntime {
@@ -449,7 +454,7 @@ impl pallet_timestamp::Config for TestRuntime {
 
 impl BridgeInterfaceNotification for TestRuntime {
     fn process_result(
-        _tx_id: u32,
+        _tx_id: EthereumId,
         _caller_id: Vec<u8>,
         _tx_succeeded: bool,
     ) -> sp_runtime::DispatchResult {
@@ -466,8 +471,8 @@ impl BridgeInterface for TestRuntime {
         function_name: &[u8],
         _params: &[(Vec<u8>, Vec<u8>)],
         _caller_id: Vec<u8>,
-    ) -> Result<u32, DispatchError> {
-        if function_name == BridgeContractMethod::PublishRoot.as_bytes() {
+    ) -> Result<EthereumId, DispatchError> {
+        if function_name == BridgeContractMethod::PublishRoot.name_as_bytes() {
             return Ok(INITIAL_TRANSACTION_ID)
         }
         Err(Error::<TestRuntime>::ErrorPublishingSummary.into())
@@ -526,7 +531,7 @@ type Offence = crate::SummaryOffence<IdentificationTuple>;
 
 thread_local! {
     pub static OFFENCES: RefCell<Vec<(Vec<ValidatorId>, Offence)>> = RefCell::new(vec![]);
-    pub static ETH_BRIDGE_OFFENCES: RefCell<Vec<(Vec<ValidatorId>, CorroborationOffence<IdentificationTuple>)>> = RefCell::new(vec![]);
+    pub static ETH_BRIDGE_OFFENCES: RefCell<Vec<(Vec<ValidatorId>, EthBridgeOffence<IdentificationTuple>)>> = RefCell::new(vec![]);
 }
 
 /// A mock offence report handler.
@@ -542,12 +547,12 @@ impl ReportOffence<AccountId, IdentificationTuple, Offence> for OffenceHandler {
     }
 }
 
-impl ReportOffence<AccountId, IdentificationTuple, CorroborationOffence<IdentificationTuple>>
+impl ReportOffence<AccountId, IdentificationTuple, EthBridgeOffence<IdentificationTuple>>
     for OffenceHandler
 {
     fn report_offence(
         reporters: Vec<AccountId>,
-        offence: CorroborationOffence<IdentificationTuple>,
+        offence: EthBridgeOffence<IdentificationTuple>,
     ) -> Result<(), OffenceError> {
         ETH_BRIDGE_OFFENCES.with(|l| l.borrow_mut().push((reporters, offence)));
         Ok(())
@@ -563,7 +568,7 @@ impl session::Config for TestRuntime {
         pallet_session::historical::NoteHistoricalRoot<TestRuntime, TestSessionManager>;
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = u64;
     type ValidatorIdOf = ConvertInto;
@@ -599,7 +604,8 @@ impl ExtBuilder {
         // Events do not get emitted on block 0, so we increment the block here
         ext.execute_with(|| {
             Timestamp::set_timestamp(1);
-            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into())
+            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
+            ExternalValidationThreshold::<TestRuntime>::put(51u32);
         });
         ext
     }
@@ -665,7 +671,8 @@ impl ExtBuilder {
         assert!(self.offchain_state.is_some());
         ext.execute_with(|| {
             Timestamp::set_timestamp(1);
-            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into())
+            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
+            ExternalValidationThreshold::<TestRuntime>::put(51u32);
         });
         (ext, self.pool_state.unwrap(), self.offchain_state.unwrap())
     }
@@ -725,7 +732,7 @@ pub struct Context {
     pub url_param: String,
     pub record_summary_calculation_signature: TestSignature,
     pub root_id: RootId<BlockNumber>,
-    pub tx_id: EthereumTransactionId,
+    pub tx_id: EthereumId,
     pub current_slot: BlockNumber,
     pub finalised_block_vec: Option<Vec<u8>>,
 }
@@ -787,7 +794,7 @@ pub fn setup_voting(
     root_hash_h256: H256,
     validator: &Validator<UintAuthorityId, u64>,
 ) {
-    let tx_id: EthereumTransactionId = INITIAL_TRANSACTION_ID;
+    let tx_id: EthereumId = INITIAL_TRANSACTION_ID;
     Summary::insert_root_hash(root_id, root_hash_h256, validator.account_id.clone(), tx_id);
     Summary::insert_pending_approval(root_id);
     Summary::register_root_for_voting(root_id, QUORUM, VOTING_PERIOD_END);

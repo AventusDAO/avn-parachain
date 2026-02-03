@@ -20,9 +20,7 @@ use sp_avn_common::{
 use sp_core::{
     ecdsa::Public,
     offchain::{
-        testing::{
-            OffchainState, PendingRequest, PoolState, TestOffchainExt, TestTransactionPoolExt,
-        },
+        testing::{OffchainState, PoolState, TestOffchainExt, TestTransactionPoolExt},
         OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
     },
     sr25519, ByteArray, ConstU64, Pair, H256,
@@ -72,7 +70,6 @@ pub type Signature = sr25519::Signature;
 /// An identifier for an account on this system.
 pub type AccountId = <Signature as Verify>::Signer;
 
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<TestRuntime>;
 type Block = frame_system::mocking::MockBlock<TestRuntime>;
 // TODO: Refactor this struct to be reused in all tests
 #[derive(Clone)]
@@ -107,7 +104,7 @@ frame_support::construct_runtime!(
         ValidatorManager: validators_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
         Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event},
+        Avn: pallet_avn::{Pallet, Storage, Event},
         ParachainStaking: parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
@@ -138,16 +135,18 @@ impl ValidatorManager {
 
 parameter_types! {
     pub const VotingPeriod: u64 = 2;
+    pub const MinimumValidatorCount: u32 = 2;
 }
 
 impl Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type ProcessedEventsChecker = Self;
     type VotingPeriod = VotingPeriod;
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type ValidatorRegistrationNotifier = Self;
     type WeightInfo = ();
     type BridgeInterface = EthBridge;
+    type MinimumValidatorCount = MinimumValidatorCount;
 }
 
 impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
@@ -176,7 +175,7 @@ impl avn::Config for TestRuntime {
     type AuthorityId = UintAuthorityId;
     type EthereumPublicKeyChecker = Self;
     type NewSessionHandler = ValidatorManager;
-    type DisabledValidatorChecker = ValidatorManager;
+    type DisabledValidatorChecker = ();
 }
 
 parameter_types! {
@@ -208,16 +207,18 @@ impl pallet_eth_bridge::Config for TestRuntime {
     type MinEthBlockConfirmation = ConstU64<20>;
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterfaceNotification = Self;
     type ReportCorroborationOffence = ();
     type ProcessedEventsChecker = ();
     type ProcessedEventsHandler = ();
+    type EthereumEventsMigration = ();
+    type Quorum = Avn;
 }
 
 impl BridgeInterfaceNotification for TestRuntime {
     fn process_result(
-        _tx_id: u32,
+        _tx_id: EthereumId,
         _caller_id: Vec<u8>,
         _tx_succeeded: bool,
     ) -> sp_runtime::DispatchResult {
@@ -234,7 +235,7 @@ impl session::Config for TestRuntime {
     type SessionManager = ParachainStaking;
     type Keys = UintAuthorityId;
     type ShouldEndSession = ParachainStaking;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = AccountId;
     type ValidatorIdOf = ConvertInto;
@@ -282,15 +283,12 @@ impl parachain_staking::Config for TestRuntime {
     type ProcessedEventsChecker = ();
     type WeightInfo = ();
     type MaxCandidates = MaxCandidates;
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterface = EthBridge;
     type GrowthEnabled = GrowthEnabled;
 }
 
-/// An extrinsic type used for tests.
-type IdentificationTuple = (AccountId, AccountId);
-
-pub const INITIAL_TRANSACTION_ID: EthereumTransactionId = 0;
+pub const INITIAL_TRANSACTION_ID: EthereumId = 0;
 
 thread_local! {
     static PROCESSED_EVENTS: RefCell<Vec<(H256,H256)>> = RefCell::new(vec![]);
@@ -303,7 +301,7 @@ thread_local! {
         validator_id_5(),
     ]));
 
-    static MOCK_TX_ID: RefCell<EthereumTransactionId> = RefCell::new(INITIAL_TRANSACTION_ID);
+    static MOCK_TX_ID: RefCell<EthereumId> = RefCell::new(INITIAL_TRANSACTION_ID);
 }
 
 impl ProcessedEventsChecker for TestRuntime {
@@ -602,21 +600,4 @@ pub fn advance_session() {
     Balances::on_initialize(System::block_number());
     Session::on_initialize(System::block_number());
     ParachainStaking::on_initialize(System::block_number());
-}
-
-pub fn mock_response_of_get_ecdsa_signature(
-    state: &mut OffchainState,
-    data_to_sign: String,
-    response: Option<Vec<u8>>,
-) {
-    let mut url = "http://127.0.0.1:2020/eth/sign/".to_string();
-    url.push_str(&data_to_sign);
-
-    state.expect_request(PendingRequest {
-        method: "GET".into(),
-        uri: url.into(),
-        response,
-        sent: true,
-        ..Default::default()
-    });
 }

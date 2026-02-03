@@ -1,5 +1,5 @@
 [package]
-name = "avn-service"
+name = "external-service"
 license = "GPL-3.0"
 
 version = { workspace = true }
@@ -32,39 +32,37 @@ tokio = { version = "1.19", features = ["sync"] }
 reqwest = { version = "0.11", features = ["json"] }
 chrono = { version = "0.4", features = ["clock", "serde"] }
 hex = "0.4"
+hex-literal = "0.4.1"
 # Ensure compatibility by matching sp-core's secp256k1 version. Let cargo handle exact version matching.
-secp256k1 = { version = ">0.26.0", default-features = false, features = [
+secp256k1 = { version = ">0.26.0", features = [
     "recovery",
     "alloc",
 ] }
-web3Secp256k1 = { package = "secp256k1", version = "0.21.2", default-features = false, features = [
+web3Secp256k1 = { package = "secp256k1", version = "0.21.2", features = [
     "recovery",
     "alloc",
 ] }
 # This needs to be the same version as the one used in web3, parity-scale-codec and ethereum-transactions pallet
 ethereum-types = "0.11.0"
 
-pallet-eth-bridge = { path = "../../pallets/eth-bridge", default-features = false }
-pallet-eth-bridge-runtime-api = { path = "../../pallets/eth-bridge/runtime-api", default-features = false }
+pallet-eth-bridge = { path = "../../pallets/eth-bridge"}
+pallet-eth-bridge-runtime-api = { path = "../../pallets/eth-bridge/runtime-api"}
 sp-block-builder = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-blockchain = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
 # primitives
 sp-core = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-runtime = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-sp-avn-common = { path = "../../primitives/avn-common", default-features = false }
+sp-avn-common = { path = "../../primitives/avn-common"}
 sp-keystore = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sp-api = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-sp-state-machine = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
 # client dependencies
 sc-keystore = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-sc-service = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sc-client-api = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sc-client-db = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-sc-transaction-pool = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 sc-transaction-pool-api = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
-frame-system = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-node-primitives = { version = "2.0.0", default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
+node-primitives = { version = "2.0.0", git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
+client-extrinsic-utils = { path = "../extrinsic-utils" }

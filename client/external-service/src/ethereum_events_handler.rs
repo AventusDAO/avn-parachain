@@ -1,4 +1,4 @@
-use crate::{web3_utils, BlockT, ETH_FINALITY};
+use crate::{timer::Web3Timer, web3_utils, BlockT, ETH_FINALITY};
 use futures::{future::try_join_all, lock::Mutex};
 use node_primitives::AccountId;
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
@@ -6,14 +6,15 @@ use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_api::ApiExt;
 use sp_avn_common::{
+    eth::EthBridgeInstance,
     event_discovery::{
         encode_eth_event_submission_data, events_helpers::EthereumEventsPartitionFactory,
         DiscoveredEvent, EthBlockRange, EthereumEventsPartition,
     },
     event_types::{
         AddedValidatorData, AvtGrowthLiftedData, AvtLowerClaimedData, Error, EthEvent, EthEventId,
-        EthTransactionId, EventData, LiftedData, NftCancelListingData, NftEndBatchListingData,
-        NftMintData, NftTransferToData, ValidEvents,
+        EthTransactionId, EventData, LiftedData, LowerRevertedData, NftCancelListingData,
+        NftEndBatchListingData, NftMintData, NftTransferToData, ValidEvents,
     },
     AVN_KEY_ID,
 };
@@ -22,7 +23,7 @@ use sp_blockchain::HeaderBackend;
 use sp_core::{sr25519::Public, H256 as SpH256};
 use sp_keystore::Keystore;
 use sp_runtime::SaturatedConversion;
-use std::{collections::HashMap, marker::PhantomData, time::Instant};
+use std::collections::HashMap;
 pub use std::{path::PathBuf, sync::Arc};
 use tide::Error as TideError;
 use tokio::time::{sleep, Duration};
@@ -33,8 +34,9 @@ use web3::{
 };
 
 use pallet_eth_bridge::{SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT, SUBMIT_LATEST_ETH_BLOCK_CONTEXT};
+use pallet_eth_bridge_runtime_api::InstanceId;
 
-use crate::{server_error, setup_web3_connection, Web3Data};
+use crate::{get_chain_id, server_error, setup_web3_connection, Web3Data};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 
 pub struct EventInfo {
@@ -137,6 +139,16 @@ impl EventRegistry {
                     AvtLowerClaimedData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
                         .map(|data| EventData::LogLowerClaimed(data))
+                },
+            },
+        );
+        m.insert(
+            ValidEvents::LowerReverted.signature(),
+            EventInfo {
+                parser: |data, topics| {
+                    LowerRevertedData::parse_bytes(data, topics)
+                        .map_err(|err| AppError::ParsingError(err.into()))
+                        .map(EventData::LogLowerReverted)
                 },
             },
         );
@@ -451,10 +463,9 @@ where
     pub keystore: Arc<LocalKeystore>,
     pub keystore_path: PathBuf,
     pub avn_port: Option<String>,
-    pub eth_node_url: String,
-    pub web3_data_mutex: Arc<Mutex<Web3Data>>,
+    pub eth_node_urls: Vec<String>,
+    pub web3_data_mutexes: HashMap<u64, Arc<Mutex<Web3Data>>>,
     pub client: Arc<ClientT>,
-    pub _block: PhantomData<Block>,
     pub offchain_transaction_pool_factory: OffchainTransactionPoolFactory<Block>,
 }
 
@@ -470,33 +481,61 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
-    pub async fn initialise_web3(&self) -> Result<(), TideError> {
-        if let Some(mut web3_data_mutex) = self.web3_data_mutex.try_lock() {
-            if web3_data_mutex.web3.is_some() {
+    pub async fn initialise_web3(
+        &mut self,
+        chain_id: u64,
+    ) -> Result<Arc<Mutex<Web3Data>>, TideError> {
+        let _web3_init_time = Web3Timer::new("ethereum-event-handler Web3 Initialization");
+        log::info!("⛓️  avn-events-handler: web3 initialisation start");
+
+        // No web3 connection found for network_id, try the rest of the URLs
+        let web3_connection_locks = Mutex::new(());
+        for eth_node_url in self.eth_node_urls.iter() {
+            log::debug!("⛓️  Attempting to connect to Ethereum node: {}", eth_node_url);
+            let web3 = setup_web3_connection(eth_node_url);
+            if let Some(web3) = web3 {
+                let web3_chain_id = get_chain_id(&web3)
+                    .await
+                    .map_err(|_e| server_error("Error getting chain ID from web3".to_string()))?;
+
                 log::info!(
-                    "⛓️  avn-service: web3 connection has already been initialised, skipping"
+                    "⛓️  Successfully connected to node: {} with chain ID: {}",
+                    eth_node_url,
+                    web3_chain_id
                 );
-                return Ok(())
+
+                {
+                    // Lock the mutex to ensure only one thread can alter the web3 connection
+                    let _lock = web3_connection_locks.lock();
+
+                    if self.web3_data_mutexes.get(&web3_chain_id).is_some() {
+                        log::debug!(
+                            "⛓️  Web3 connection for chain ID {} already exists, skipping creation.",
+                            web3_chain_id
+                        );
+                        continue
+                    }
+
+                    // Create a new mutex for the web3 data and store it in the map
+                    let mut web3_data = Web3Data::new();
+                    web3_data.web3 = Some(web3);
+                    let web3_data_mutex = Arc::new(Mutex::new(web3_data));
+                    self.web3_data_mutexes.insert(web3_chain_id, Arc::clone(&web3_data_mutex));
+
+                    if web3_chain_id == chain_id {
+                        log::info!(
+                            "⛓️  Web3 connection for chain ID {} successfully created.",
+                            web3_chain_id
+                        );
+                        return Ok(web3_data_mutex)
+                    }
+                }
+            } else {
+                log::error!("💔 Error creating a web3 connection for URL: {}", eth_node_url);
             }
-
-            let web3_init_time = Instant::now();
-            log::info!("⛓️  avn-service: web3 initialisation start");
-
-            let web3 = setup_web3_connection(&self.eth_node_url);
-            if web3.is_none() {
-                log::error!(
-                    "💔 Error creating a web3 connection. URL is not valid {:?}",
-                    &self.eth_node_url
-                );
-                return Err(server_error("Error creating a web3 connection".to_string()))
-            }
-
-            log::info!("⏲️  web3 init task completed in: {:?}", web3_init_time.elapsed());
-            web3_data_mutex.web3 = web3;
-            Ok(())
-        } else {
-            Err(server_error("Failed to acquire web3 data mutex.".to_string()))
         }
+
+        Err(server_error("Failed to acquire a valid web3 connection for the instance.".to_string()))
     }
 }
 
@@ -504,9 +543,10 @@ pub const SLEEP_TIME: u64 = 60;
 pub const RETRY_LIMIT: usize = 3;
 pub const RETRY_DELAY: u64 = 5;
 
-async fn initialize_web3_with_retries<Block, ClientT>(
-    config: &EthEventHandlerConfig<Block, ClientT>,
-) -> Result<(), AppError>
+async fn get_web3_connection_for_instance<Block, ClientT>(
+    config: &mut EthEventHandlerConfig<Block, ClientT>,
+    instance: &EthBridgeInstance,
+) -> Result<Arc<Mutex<Web3Data>>, AppError>
 where
     Block: BlockT,
     ClientT: BlockBackend<Block>
@@ -517,13 +557,26 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
+    let chain_id = instance.network.chain_id();
+    // See if we have an existing web3 data mutex for the chain_id
+    match config.web3_data_mutexes.get(&chain_id) {
+        Some(web3_data_pointer) => {
+            log::debug!("⛓️  Found existing web3 connection for network: {}", chain_id);
+            return Ok(Arc::clone(&web3_data_pointer))
+        },
+        None => log::debug!(
+            "⛓️  No existing web3 connection found for network: {}. Initialising new...",
+            chain_id
+        ),
+    };
+
     let mut attempts = 0;
 
     while attempts < RETRY_LIMIT {
-        match config.initialise_web3().await {
-            Ok(_) => {
+        match config.initialise_web3(chain_id).await {
+            Ok(web3_lock) => {
                 log::info!("Successfully initialized web3 connection.");
-                return Ok(())
+                return Ok(web3_lock)
             },
             Err(e) => {
                 attempts += 1;
@@ -573,10 +626,7 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
-    if let Err(e) = initialize_web3_with_retries(&config).await {
-        log::error!("Web3 initialization ultimately failed: {:?}", e);
-        return
-    }
+    let mut config = config;
 
     let events_registry = EventRegistry::new();
 
@@ -611,7 +661,7 @@ where
     log::info!("Current node author address set: {:?}", current_node_author);
 
     loop {
-        match query_runtime_and_process(&config, &current_node_author, &events_registry).await {
+        match query_runtime_and_process(&mut config, &current_node_author, &events_registry).await {
             Ok(_) => (),
             Err(e) => log::error!("{}", e),
         }
@@ -622,7 +672,7 @@ where
 }
 
 async fn query_runtime_and_process<Block, ClientT>(
-    config: &EthEventHandlerConfig<Block, ClientT>,
+    config: &mut EthEventHandlerConfig<Block, ClientT>,
     current_node_author: &CurrentNodeAuthor,
     events_registry: &EventRegistry,
 ) -> Result<(), String>
@@ -636,43 +686,86 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
-    let result = &config
+    let instances = if config
         .client
         .runtime_api()
-        .query_active_block_range(config.client.info().best_hash)
-        .map_err(|err| format!("Failed to query bridge contract: {:?}", err))?;
+        .has_api_with::<dyn EthEventHandlerApi<Block, AccountId>, _>(
+            config.client.info().best_hash,
+            |v| v >= 3,
+        )
+        .unwrap_or(false)
+    {
+        log::debug!("Querying eth-bridge instances...");
 
-    let web3_data_mutex = config.web3_data_mutex.lock().await;
-    let web3_ref = match web3_data_mutex.web3.as_ref() {
-        Some(web3) => web3,
-        None => return Err("Web3 connection not set up".into()),
+        config
+            .client
+            .runtime_api()
+            .instances(config.client.info().best_hash)
+            .map_err(|err| format!("Failed to get instances: {:?}", err))?
+    } else {
+        Default::default()
     };
+    log::debug!("Eth-bridge instances found: {:?}", &instances);
+    for (instance_id, instance) in instances {
+        let result = &config
+            .client
+            .runtime_api()
+            .query_active_block_range(config.client.info().best_hash, instance_id)
+            .map_err(|err| format!("Failed to query bridge contract: {:?}", err))?;
 
-    match result {
-        // A range is active, attempt processing
-        Some((range, partition_id)) => {
-            log::info!("Getting events for range starting at: {:?}", range.start_block);
+        let web3_data_lock = match get_web3_connection_for_instance(config, &instance).await {
+            Ok(web3_data) => web3_data,
+            Err(e) => {
+                log::error!("Failed to initialize web3 connection for instance: {:?}", e);
+                continue
+            },
+        };
 
-            if web3_utils::is_eth_block_finalised(&web3_ref, range.end_block() as u64, ETH_FINALITY)
+        let web3_data_mutex = web3_data_lock.lock().await;
+        let web3_ref = match web3_data_mutex.web3.as_ref() {
+            Some(web3) => web3,
+            None => return Err("Web3 connection not set up".into()),
+        };
+
+        match result {
+            // A range is active, attempt processing
+            Some((range, partition_id)) => {
+                log::info!("Getting events for range starting at: {:?}", range.start_block);
+
+                if web3_utils::is_eth_block_finalised(
+                    &web3_ref,
+                    range.end_block() as u64,
+                    ETH_FINALITY,
+                )
                 .await?
-            {
-                process_events(
+                {
+                    process_events(
+                        &web3_ref,
+                        &config,
+                        instance_id,
+                        &instance,
+                        range.clone(),
+                        *partition_id,
+                        &current_node_author,
+                        &events_registry,
+                    )
+                    .await?;
+                }
+            },
+            // There is no active range, attempt initial range voting.
+            None => {
+                log::info!("Active range setup - Submitting latest block");
+                submit_latest_ethereum_block(
                     &web3_ref,
                     &config,
-                    range.clone(),
-                    *partition_id,
+                    instance_id,
+                    &instance,
                     &current_node_author,
-                    &events_registry,
                 )
                 .await?;
-            }
-        },
-        // There is no active range, attempt initial range voting.
-        None => {
-            log::info!("Active range setup - Submitting latest block");
-            submit_latest_ethereum_block(&web3_ref, &config, &current_node_author).await?;
-        },
-    };
+            },
+        };
+    }
 
     Ok(())
 }
@@ -680,6 +773,8 @@ where
 async fn submit_latest_ethereum_block<Block, ClientT>(
     web3: &Web3<Http>,
     config: &EthEventHandlerConfig<Block, ClientT>,
+    instance_id: InstanceId,
+    eth_bridge_instance: &EthBridgeInstance,
     current_node_author: &CurrentNodeAuthor,
 ) -> Result<(), String>
 where
@@ -697,9 +792,10 @@ where
         .runtime_api()
         .query_has_author_casted_vote(
             config.client.info().best_hash,
+            instance_id,
             current_node_author.address.0.into(),
         )
-        .map_err(|err| format!("Failed to check if author has casted latest  vote: {:?}", err))?;
+        .map_err(|err| format!("Failed to check if author has cast latest vote: {:?}", err))?;
 
     log::debug!("Checking if vote has been cast already. Result: {:?}", has_casted_vote);
 
@@ -712,12 +808,12 @@ where
 
         log::debug!("Encoding proof for latest block: {:?}", latest_seen_ethereum_block);
         let proof = encode_eth_event_submission_data::<AccountId, u32>(
+            Some(eth_bridge_instance),
             &SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
             &((*current_node_author).address).into(),
             latest_seen_ethereum_block,
         );
 
-        log::debug!("Encoding proof for latest block: {:?}", latest_seen_ethereum_block);
         let signature = config
             .keystore
             .sr25519_sign(
@@ -740,6 +836,7 @@ where
         runtime_api
             .submit_latest_ethereum_block(
                 config.client.info().best_hash,
+                instance_id,
                 (*current_node_author).address.into(),
                 latest_seen_ethereum_block,
                 signature,
@@ -759,6 +856,8 @@ where
 async fn process_events<Block, ClientT>(
     web3: &Web3<Http>,
     config: &EthEventHandlerConfig<Block, ClientT>,
+    instance_id: InstanceId,
+    eth_bridge_instance: &EthBridgeInstance,
     range: EthBlockRange,
     partition_id: u16,
     current_node_author: &CurrentNodeAuthor,
@@ -774,18 +873,14 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
-    let contract_address = config
-        .client
-        .runtime_api()
-        .query_bridge_contract(config.client.info().best_hash)
-        .map_err(|err| format!("Failed to query bridge contract: {:?}", err))?;
-    let contract_address_web3 = web3::types::H160::from_slice(&contract_address.to_fixed_bytes());
+    let contract_address_web3 =
+        web3::types::H160::from_slice(&eth_bridge_instance.bridge_contract.to_fixed_bytes());
     let contract_addresses = vec![contract_address_web3];
 
     let event_signatures = config
         .client
         .runtime_api()
-        .query_signatures(config.client.info().best_hash)
+        .query_signatures(config.client.info().best_hash, instance_id)
         .map_err(|err| format!("Failed to query event signatures: {:?}", err))?;
 
     let has_casted_vote = config
@@ -793,37 +888,28 @@ where
         .runtime_api()
         .query_has_author_casted_vote(
             config.client.info().best_hash,
+            instance_id,
             current_node_author.address.0.into(),
         )
         .map_err(|err| format!("Failed to check if author has casted event vote: {:?}", err))?;
 
-    let additional_transactions: Vec<_> = if config
+    let additional_transactions: Vec<_> = config
         .client
         .runtime_api()
-        .has_api_with::<dyn EthEventHandlerApi<Block, AccountId>, _>(
-            config.client.info().best_hash,
-            |v| v == 2,
-        )
-        .unwrap_or(false)
-    {
-        config
-            .client
-            .runtime_api()
-            .additional_transactions(config.client.info().best_hash)
-            .map_err(|err| format!("Failed to query additional transactions: {:?}", err))?
-            .iter()
-            .flat_map(|events_set| events_set.iter())
-            .cloned()
-            .collect()
-    } else {
-        vec![]
-    };
+        .additional_transactions(config.client.info().best_hash, instance_id)
+        .map_err(|err| format!("Failed to query additional transactions: {:?}", err))?
+        .iter()
+        .flat_map(|events_set| events_set.iter())
+        .cloned()
+        .collect();
 
     if !has_casted_vote {
         execute_event_processing(
             web3,
             config,
             event_signatures,
+            instance_id,
+            eth_bridge_instance,
             contract_addresses,
             partition_id,
             current_node_author,
@@ -841,6 +927,8 @@ async fn execute_event_processing<Block, ClientT>(
     web3: &Web3<Http>,
     config: &EthEventHandlerConfig<Block, ClientT>,
     event_signatures: Vec<SpH256>,
+    instance_id: InstanceId,
+    eth_bridge_instance: &EthBridgeInstance,
     contract_addresses: Vec<H160>,
     partition_id: u16,
     current_node_author: &CurrentNodeAuthor,
@@ -889,6 +977,7 @@ where
         .ok_or_else(|| format!("Partition with ID {} not found", partition_id))?;
 
     let proof = encode_eth_event_submission_data::<AccountId, &EthereumEventsPartition>(
+        Some(eth_bridge_instance),
         &SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT,
         &((*current_node_author).address).into(),
         &partition.clone(),
@@ -914,6 +1003,7 @@ where
     runtime_api
         .submit_vote(
             config.client.info().best_hash,
+            instance_id,
             (*current_node_author).address.into(),
             partition.clone(),
             signature,

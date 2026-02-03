@@ -7,8 +7,8 @@ use crate::{
     system,
 };
 use codec::alloc::sync::Arc;
+use frame_support::assert_ok;
 use parking_lot::RwLock;
-
 use sp_core::offchain::testing::PoolState;
 use sp_runtime::testing::UintAuthorityId;
 use system::RawOrigin;
@@ -94,13 +94,12 @@ fn vote_and_end_summary(context: &Context) {
         AnchorSummary::record_approve_vote(&context.root_id, validator.account_id);
     });
 
-    assert!(AnchorSummary::end_voting_period(
+    assert_ok!(AnchorSummary::end_voting_period(
         RawOrigin::None.into(),
         context.root_id,
         context.validator.clone(),
         context.record_summary_calculation_signature.clone(),
-    )
-    .is_ok());
+    ));
 }
 
 pub fn update_context_to_anchor_summary(context: &mut Context) {
@@ -117,6 +116,8 @@ pub fn update_context_to_anchor_summary(context: &mut Context) {
         context.root_id.ingress_counter,
         context.last_block_in_range,
     );
+
+    ExternalValidationThreshold::<TestRuntime, Instance1>::set(Some(51));
 }
 
 pub fn setup_total_ingresses(context: &Context) {
@@ -163,6 +164,21 @@ mod on_successful_summary_approval {
 
             // Approve the summary
             approve_summary(&context);
+
+            // No root hash created yet because we are waiting for external validation
+            let root_counter = AnchorRootsCounter::<TestRuntime, Instance1>::get();
+
+            // Since external validation is enabled, root counter should not increase until we
+            // complete external validation
+            assert_eq!(
+                root_counter, 0,
+                "Root counter should not increase because external validation is enabled"
+            );
+
+            assert_ok!(AnchorSummary::process_accepted_root(
+                &context.root_id,
+                context.root_hash_h256
+            ));
 
             // Root hash is recorded and ready for anchoring.
             // We -1 root_counter because it is incremented after a root is approved.

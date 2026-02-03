@@ -24,8 +24,6 @@ sp-core = { git = "https://github.com/paritytech/polkadot-sdk", default-features
 sp-avn-common =  { default-features = false, path = "../../../primitives/avn-common" }
 sp-application-crypto = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
-
-
 [features]
 default = ["std"]
 std = [

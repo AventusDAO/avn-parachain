@@ -83,7 +83,9 @@ impl sc_executor::NativeExecutionDispatch for TestParachainExecutor {
 }
 
 pub trait AvnRuntimeIdentity {
+    #[allow(dead_code)]
     fn is_test_runtime(&self) -> bool;
+    #[allow(dead_code)]
     fn is_production(&self) -> bool;
 }
 

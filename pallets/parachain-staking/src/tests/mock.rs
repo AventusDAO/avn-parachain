@@ -38,7 +38,7 @@ use pallet_avn_proxy::{self as avn_proxy, ProvableProxy};
 use pallet_eth_bridge;
 use pallet_session as session;
 use pallet_transaction_payment::{ChargeTransactionPayment, CurrencyAdapter};
-use sp_avn_common::{FeePaymentHandler, InnerCallValidator};
+use sp_avn_common::{eth::EthereumId, FeePaymentHandler, InnerCallValidator};
 use sp_core::{sr25519, ConstU64, Pair};
 use sp_io;
 use sp_runtime::{
@@ -64,7 +64,7 @@ construct_runtime!(
         ParachainStaking: pallet_parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
         Authorship: pallet_authorship::{Pallet, Storage},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event},
+        Avn: pallet_avn::{Pallet, Storage, Event},
         Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
         AvnProxy: avn_proxy::{Pallet, Call, Storage, Event<T>},
         Historical: pallet_session::historical::{Pallet, Storage},
@@ -218,7 +218,7 @@ impl Config for Test {
     type CollatorPayoutDustHandler = TestCollatorPayoutDustHandler;
     type WeightInfo = ();
     type MaxCandidates = MaxCandidates;
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterface = EthBridge;
     type GrowthEnabled = TestGrowthEnabled;
 }
@@ -309,7 +309,7 @@ impl session::Config for Test {
     type SessionManager = ParachainStaking;
     type Keys = UintAuthorityId;
     type ShouldEndSession = ParachainStaking;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = AccountId;
     type ValidatorIdOf = ConvertInto;
@@ -336,11 +336,13 @@ impl pallet_eth_bridge::Config for Test {
     type RuntimeCall = RuntimeCall;
     type MinEthBlockConfirmation = ConstU64<20>;
     type WeightInfo = ();
-    type AccountToBytesConvert = AVN;
+    type AccountToBytesConvert = Avn;
     type BridgeInterfaceNotification = Self;
     type ReportCorroborationOffence = ();
     type ProcessedEventsChecker = ();
     type ProcessedEventsHandler = ();
+    type EthereumEventsMigration = ();
+    type Quorum = Avn;
 }
 
 impl pallet_timestamp::Config for Test {
@@ -352,7 +354,7 @@ impl pallet_timestamp::Config for Test {
 
 impl BridgeInterfaceNotification for Test {
     fn process_result(
-        _tx_id: u32,
+        _tx_id: EthereumId,
         _caller_id: Vec<u8>,
         _tx_succeeded: bool,
     ) -> sp_runtime::DispatchResult {

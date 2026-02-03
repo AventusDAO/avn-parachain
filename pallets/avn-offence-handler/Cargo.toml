@@ -43,7 +43,6 @@ std = [
     "frame-system/std",
     "sp-core/std",
     "sp-std/std",
-    "sp-io/std",
     "sp-runtime/std",
     "sp-staking/std",
     "pallet-session/std",

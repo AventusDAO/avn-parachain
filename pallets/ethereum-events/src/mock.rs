@@ -52,7 +52,7 @@ frame_support::construct_runtime!(
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
-        AVN: pallet_avn::{Pallet, Storage, Event, Config<T>},
+        Avn: pallet_avn::{Pallet, Storage, Event, Config<T>},
         AvnProxy: pallet_avn_proxy::{Pallet, Call, Storage, Event<T>},
         EthereumEvents: pallet_ethereum_events::{Pallet, Call, Storage, Event<T>, Config<T>},
         Historical: pallet_session::historical::{Pallet, Storage},
@@ -188,7 +188,7 @@ impl session::Config for TestRuntime {
         pallet_session::historical::NoteHistoricalRoot<TestRuntime, TestSessionManager>;
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
-    type SessionHandler = (AVN,);
+    type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = AccountId;
     type ValidatorIdOf = ConvertInto;
@@ -380,18 +380,18 @@ impl EthereumEvents {
 
     pub fn validators() -> WeakBoundedVec<Validator<AuthorityId, AccountId>, MaximumValidatorsBound>
     {
-        return AVN::active_validators()
+        return Avn::active_validators()
     }
 
     pub fn is_primary_validator_for_block(
         block_number: BlockNumberFor<TestRuntime>,
         validator: &AccountId,
     ) -> Result<bool, avn_error<TestRuntime>> {
-        return AVN::is_primary_for_block(block_number, validator)
+        return Avn::is_primary_for_block(block_number, validator)
     }
 
     pub fn get_validator_for_current_node() -> Option<Validator<AuthorityId, AccountId>> {
-        return AVN::get_validator_for_current_node()
+        return Avn::get_validator_for_current_node()
     }
 
     pub fn event_emitted(event: &RuntimeEvent) -> bool {
@@ -571,7 +571,7 @@ pub fn inject_ethereum_node_response(
         response_type: EthQueryResponseType::TransactionReceipt,
     };
     let sender = [0; 32];
-    let contract_address = AVN::get_bridge_contract_address();
+    let contract_address = Avn::get_bridge_contract_address();
     let ethereum_call = EthTransaction::new(sender, contract_address, calldata.encode());
 
     state.expect_request(PendingRequest {
@@ -601,7 +601,7 @@ pub fn simulate_http_response(
         Some(test_json(
             &unchecked_event.transaction_hash,
             &unchecked_event.signature,
-            &AVN::get_bridge_contract_address(),
+            &Avn::get_bridge_contract_address(),
             log_data,
             event_topics,
             status,

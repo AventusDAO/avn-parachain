@@ -24,6 +24,51 @@ use frame_support::{assert_err, assert_noop, assert_ok};
 const USE_RECEIVER_WITH_EXISTING_AMOUNT: bool = true;
 const USE_RECEIVER_WITH_0_AMOUNT: bool = false;
 
+fn schedule_lower_token(
+    from: AccountId,
+    amount: u128,
+    t1_recipient: H160,
+    expected_lower_id: u32,
+    burn_acc: AccountId,
+) {
+    assert_ok!(TokenManager::schedule_direct_lower(
+        RuntimeOrigin::signed(from),
+        from,
+        NON_AVT_TOKEN_ID,
+        amount,
+        t1_recipient
+    ));
+
+    fast_forward_to_block(get_expected_execution_block());
+
+    assert!(System::events().iter().any(|a| a.event ==
+        RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+            token_id: NON_AVT_TOKEN_ID,
+            sender: from,
+            recipient: burn_acc,
+            amount,
+            t1_recipient,
+            lower_id: expected_lower_id
+        })));
+}
+
+fn perform_lower_setup_token(lower_id: u32) {
+    let (_, from, burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+    let amount = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+
+    schedule_lower_token(from, amount, t1_recipient, lower_id, burn_acc);
+    assert!(LowersPendingProof::<TestRuntime>::get(lower_id).is_some());
+
+    let proof: Vec<u8> = b"lowerProofReady".to_vec();
+    assert_ok!(TokenManager::process_lower_proof_result(
+        lower_id,
+        PALLET_ID.to_vec(),
+        Ok(proof.clone())
+    ));
+
+    assert_eq!(LowersReadyToClaim::<TestRuntime>::get(lower_id).unwrap().encoded_lower_data, proof);
+}
+
 #[test]
 fn avn_test_lift_to_zero_balance_account_should_succeed() {
     let mut ext = ExtBuilder::build_default().as_externality();
@@ -813,6 +858,58 @@ fn avn_test_lower_some_non_avt_token_succeed() {
                 amount,
                 t1_recipient,
                 lower_id: 0
+            })));
+    });
+}
+
+#[test]
+fn avn_test_reverted_non_avt_token_lower_refunds_sender_removes_claim_and_emits_event() {
+    let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+
+        let (_, from, _burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+
+        perform_lower_setup_token(lower_id);
+        assert!(LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+
+        let balance_before = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+        let receiver_address = H256::from_slice(&receiver_topic_with_100_avt());
+
+        let mock_event = sp_avn_common::event_types::EthEvent {
+            event_id: sp_avn_common::event_types::EthEventId {
+                signature: sp_avn_common::event_types::ValidEvents::LowerReverted.signature(),
+                transaction_hash: H256::random(),
+            },
+            event_data: sp_avn_common::event_types::EventData::LogLowerReverted(
+                sp_avn_common::event_types::LowerRevertedData {
+                    token_contract: NON_AVT_TOKEN_ID,
+                    receiver_address,
+                    amount,
+                    lower_id,
+                    t1_recipient,
+                },
+            ),
+        };
+
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert_eq!(
+            TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from)),
+            balance_before + amount
+        );
+        assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+        assert!(System::events().iter().any(|a| a.event ==
+            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowerReverted {
+                token_id: NON_AVT_TOKEN_ID,
+                t2_refunded_sender: from,
+                amount,
+                eth_tx_hash: mock_event.event_id.transaction_hash,
+                lower_id,
+                t1_reverted_recipient: t1_recipient,
             })));
     });
 }

@@ -23,7 +23,7 @@ jobs:
         uses: baptiste0928/cargo-install@v2
         with:
           crate: cargo-edit
-          version: '0.13.1'
+          version: "0.12.3"
       - name: Check if Release
         id: release_type_check
         env:
@@ -39,17 +39,16 @@ jobs:
       - name: Get latest repo tag
         if: env.RELEASE == 'true'
         id: latest_repo_tag
-        run: |
-          LATEST_MAIN_TAG=$(git describe origin/main --tags --abbrev=0 --match "v[0-9]*")
-          echo "Latest main tag: $LATEST_MAIN_TAG"
-          echo "LATEST_MAIN_TAG=$LATEST_MAIN_TAG" >> "$GITHUB_OUTPUT"
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get next repo tags
         if: env.RELEASE == 'true'
         id: new_repo_tag
         uses: WyriHaximus/github-action-next-semvers@v1
         with:
-          version: ${{ steps.latest_repo_tag.outputs.LATEST_MAIN_TAG }}
+          version: ${{ steps.latest_repo_tag.outputs.previous_tag }}
 
       - name: choose next repo tag
         if: env.RELEASE == 'true'
@@ -74,14 +73,14 @@ jobs:
     uses: ./.github/workflows/cargo-test.yml
 
   build-code:
-    needs: [ set-up-job ]
+    needs: [set-up-job]
     uses: ./.github/workflows/cargo-build.yml
     with:
       upload_artifacts: true
     secrets: inherit
 
   build-docker:
-    needs: [ set-up-job, build-code, test-code ]
+    needs: [set-up-job, build-code, test-code]
     if: |
       always() &&
       (needs.build-code.result == 'success') &&
@@ -93,7 +92,7 @@ jobs:
     secrets: inherit
 
   release:
-    needs: [ set-up-job, build-code, build-docker ]
+    needs: [set-up-job, build-code, build-docker]
     if: ${{ needs.set-up-job.outputs.RELEASE == 'true' }}
     uses: ./.github/workflows/gh-release.yml
     with:
@@ -101,7 +100,7 @@ jobs:
     secrets: inherit
 
   upload-assets-internal-tools:
-    needs: [ set-up-job, build-code, build-docker ]
+    needs: [set-up-job, build-code, build-docker]
     if: ${{ needs.set-up-job.outputs.RELEASE == 'true' }}
     uses: ./.github/workflows/s3-upload.yml
     with:

@@ -73,7 +73,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.81.0
+          toolchain: 1.84.1
           components: rustfmt, clippy
           target: wasm32-unknown-unknown
           override: true
@@ -116,7 +116,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.81.0
+          toolchain: 1.84.1
           components: rustfmt, clippy
           target: wasm32-unknown-unknown
           override: true
@@ -141,4 +141,4 @@ jobs:
           key: ${{ inputs.runs_on }}-runtime-benchmarks-${{ hashFiles('**/Cargo.lock') }}      
 
       - name: Runtime Benchmarks
-        run: cargo test  --features runtime-benchmarks -- benchmarks
+        run: cargo test --features runtime-benchmarks -- benchmarks

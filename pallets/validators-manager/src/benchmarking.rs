@@ -102,7 +102,7 @@ fn setup_resignation_action_data<T: Config>(sender: T::AccountId, ingress_counte
     let (action_account_id, _, t1_eth_public_key) =
         generate_resigning_collator_account_details::<T>();
 
-    let eth_transaction_id: EthereumTransactionId = 0;
+    let eth_transaction_id: EthereumId = 0;
     let decompressed_eth_public_key = decompress_eth_public_key(t1_eth_public_key)
         .map_err(|_| Error::<T>::InvalidPublicKey)
         .unwrap();
@@ -190,6 +190,21 @@ fn generate_collator_eth_public_key_from_seed<T: Config>(seed: u64) -> Public {
     ))
 }
 
+fn simulate_t1_callback_success<T: Config>(tx_id: EthereumId) {
+    const PALLET_ID: &[u8; 14] = b"author_manager";
+    ValidatorManager::<T>::process_result(tx_id, PALLET_ID.to_vec(), true).unwrap();
+}
+
+fn get_tx_id_for_validator<T: Config>(account_id: &T::AccountId) -> Option<EthereumId> {
+    // Find the ValidatorActions entry for this validator
+    for (acc_id, _ingress_counter, validators_action_data) in <ValidatorActions<T>>::iter() {
+        if &acc_id == account_id {
+            return Some(validators_action_data.eth_transaction_id)
+        }
+    }
+    None
+}
+
 fn force_add_collator<T: Config>(collator_id: &T::AccountId, index: u64, eth_public_key: &Public) {
     set_session_keys::<T>(collator_id, index);
     <T as pallet_parachain_staking::Config>::Currency::make_free_balance_be(
@@ -204,9 +219,17 @@ fn force_add_collator<T: Config>(collator_id: &T::AccountId, index: u64, eth_pub
     )
     .unwrap();
 
+    // Simulate T1 callback to complete registration
+    let tx_id = get_tx_id_for_validator::<T>(collator_id).unwrap();
+    simulate_t1_callback_success::<T>(tx_id);
+
     //Advance 2 session to add the collator to the session
     advance_session::<T>();
     advance_session::<T>();
+
+    // Clean up the action entry to prevent interference with subsequent operations
+    let ingress_counter = <TotalIngresses<T>>::get();
+    <ValidatorActions<T>>::remove(collator_id, ingress_counter);
 }
 
 benchmarks! {
@@ -219,7 +242,15 @@ benchmarks! {
         assert_eq!(false, pallet_parachain_staking::CandidateInfo::<T>::contains_key(&candidate));
     }: _(RawOrigin::Root, candidate.clone(), eth_public_key, None)
     verify {
+        // After extrinsic, ValidatorActions entry is created but candidate not yet joined
+        // Need to simulate T1 callback to complete
+        let tx_id = get_tx_id_for_validator::<T>(&candidate).unwrap();
+        simulate_t1_callback_success::<T>(tx_id);
         assert!(pallet_parachain_staking::CandidateInfo::<T>::contains_key(&candidate));
+
+        // Clean up action to allow subsequent benchmarks to run
+        let ingress_counter = <TotalIngresses<T>>::get();
+        <ValidatorActions<T>>::remove(&candidate, ingress_counter);
     }
 
     remove_validator {
@@ -231,9 +262,15 @@ benchmarks! {
 
     }: remove_validator(RawOrigin::Root, caller_account.clone())
     verify {
-        assert_eq!(ValidatorAccountIds::<T>::get().unwrap().iter().position(|validator_account_id| *validator_account_id == caller_account), None);
-        assert_last_event::<T>(Event::<T>::ValidatorDeregistered{ validator_id: caller_account.clone() }.into());
-        assert_eq!(true, ValidatorActions::<T>::contains_key(caller_account, <TotalIngresses<T>>::get()));
+        // Verify ValidatorActions entry was created with Resignation type
+        let ingress_counter = <TotalIngresses<T>>::get();
+        assert_eq!(true, ValidatorActions::<T>::contains_key(&caller_account, ingress_counter));
+
+        // After extrinsic, validator is still in ValidatorAccountIds (removed by session handler later)
+        assert!(ValidatorAccountIds::<T>::get().unwrap().contains(&caller_account));
+
+        // Clean up action to allow subsequent benchmarks to run
+        <ValidatorActions<T>>::remove(&caller_account, ingress_counter);
     }
 
     rotate_validator_ethereum_key {

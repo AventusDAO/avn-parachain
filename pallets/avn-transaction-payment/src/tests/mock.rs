@@ -1,5 +1,5 @@
 use crate::{
-    self as pallet_avn_transaction_payment, system::limits, AvnCurrencyAdapter, KnownSenders,
+    self as pallet_avn_transaction_payment, system::limits, AvnGasFeeAdapter, AvnCurrencyAdapter, KnownSenders,
     NativeRateProvider,
 };
 use codec::{Decode, Encode};
@@ -167,7 +167,12 @@ impl frame_support::traits::OnUnbalanced<pallet_balances::NegativeImbalance<Test
     for DealWithFeesForTest
 {
     fn on_unbalanceds<B>(
-        mut fees_then_tips: impl Iterator<Item = pallet_balances::NegativeImbalance<TestRuntime>>,
+        mut fees_then_tips: impl Iterator<
+            Item = frame_support::traits::fungible::Credit<
+                AccountId,
+                pallet_balances::Pallet<TestRuntime>,
+            >,
+        >,
     ) {
         if let Some(mut fees) = fees_then_tips.next() {
             if let Some(tips) = fees_then_tips.next() {

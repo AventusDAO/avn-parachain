@@ -16,7 +16,7 @@ name = "avn-parachain-collator"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.4.14", features = ["derive"] }
+clap = { version = "4.4.14", features = ["derive", "env"] }
 log = "0.4.20"
 codec = { package = "parity-scale-codec", version = "3.6.1" }
 serde = { version = "1.0.195", features = ["derive"] }
@@ -27,6 +27,7 @@ serde_json = { version = "1.0.111", features = ["arbitrary_precision"] }
 
 futures = "0.3.21"
 cfg-if = "0.1"
+async-trait = "0.1.57"
 
 # Local
 runtime-common = { package = "avn-runtime-common", path = "../runtime/common" }
@@ -70,12 +71,12 @@ sp-transaction-pool = { git = "https://github.com/paritytech/polkadot-sdk", bran
 substrate-frame-rpc-system = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 substrate-prometheus-endpoint = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 try-runtime-cli = { git = "https://github.com/paritytech/polkadot-sdk", optional = true, branch = "release-polkadot-v1.6.0" }
-node-primitives = { version = "2.0.0", default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
+node-primitives = { version = "2.0.0", git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
 # AvN dependencies
-sp-authority-discovery = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-pallet-im-online = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-sp-avn-common = { path = "../primitives/avn-common", default-features = false }
+sp-authority-discovery = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
+pallet-im-online = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
+sp-avn-common = { path = "../primitives/avn-common"}
 
 # Polkadot
 polkadot-cli = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
@@ -96,14 +97,12 @@ cumulus-primitives-parachain-inherent = { git = "https://github.com/paritytech/p
 cumulus-relay-chain-interface = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 
 # AvN
-avn-service = { path = "avn-service" }
-pallet-eth-bridge = { default-features = false, path = "../pallets/eth-bridge" }
-pallet-eth-bridge-runtime-api = { path = "../pallets/eth-bridge/runtime-api", default-features = false }
+avn-service = { package = "external-service", path = "../client/external-service" }
+pallet-eth-bridge = { path = "../pallets/eth-bridge" }
+pallet-eth-bridge-runtime-api = { path = "../pallets/eth-bridge/runtime-api" }
 
 pallet-avn = { path = "../pallets/avn", default-features = false }
-tiny-bip39 = "0.8.2"
-libp2p = { version = "0.51.3", default-features = false}
-web3 = { version = "0.18.0", default-features = false, features = ["signing"] }
+web3 = { version = "0.18.0", features = ["signing"] }
 
 [build-dependencies]
 substrate-build-script-utils = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
@@ -120,7 +119,6 @@ runtime-benchmarks = [
     "sp-runtime/runtime-benchmarks",
     "avn-parachain-runtime?/runtime-benchmarks",
     "avn-test-runtime?/runtime-benchmarks",
-    "polkadot-cli/runtime-benchmarks",
 ]
 try-runtime = [
     "try-runtime-cli/try-runtime",

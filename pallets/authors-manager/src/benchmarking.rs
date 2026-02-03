@@ -105,7 +105,7 @@ fn setup_resignation_action_data<T: Config>(sender: T::AccountId, ingress_counte
     let (action_account_id, _, t1_eth_public_key) =
         generate_resigning_author_account_details::<T>();
 
-    let eth_transaction_id: EthereumTransactionId = 0;
+    let eth_transaction_id: EthereumId = 0;
     let decompressed_eth_public_key = decompress_eth_public_key(t1_eth_public_key)
         .map_err(|_| Error::<T>::InvalidPublicKey)
         .unwrap();
@@ -135,14 +135,10 @@ fn generate_mock_ecdsa_signature<T: pallet_avn::Config>(msg: u8) -> ecdsa::Signa
 }
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
-    assert_last_nth_event::<T>(generic_event, 1);
-}
-
-fn assert_last_nth_event<T: Config>(generic_event: <T as Config>::RuntimeEvent, n: u32) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
-    // Compare to the last event record
-    let EventRecord { event, .. } = &events[events.len().saturating_sub(n as usize)];
+    // compare to the last event record
+    let EventRecord { event, .. } = &events[events.len().saturating_sub(1 as usize)];
     assert_eq!(event, &system_event);
 }
 
@@ -218,7 +214,14 @@ fn force_add_author<T: Config>(author_id: &T::AccountId, index: u64, eth_public_
     )
     .unwrap();
 
-    //Advance 2 session to add the author to the session
+    let tx_id = AuthorActions::<T>::iter()
+        .find(|(account_id, _, _)| account_id == author_id)
+        .map(|(_, _, data)| data.eth_transaction_id)
+        .expect("Action should exist");
+
+    AuthorsManager::<T>::process_result(tx_id, PALLET_ID.to_vec(), true).unwrap();
+
+    //Advance 2 sessions to add the author to the session
     advance_session::<T>();
     advance_session::<T>();
 }
@@ -230,12 +233,13 @@ benchmarks! {
         let eth_public_key: ecdsa::Public = Public::from_raw(NEW_AUTHOR_ETHEREUM_PUBLIC_KEY);
         set_session_keys::<T>(&candidate, 20u64);
         assert_eq!(false, Session::<T>::validators().contains(&candidate_id));
-            //Advance 2 session to add the author to the session
-    advance_session::<T>();
-    advance_session::<T>();
     }: _(RawOrigin::Root, candidate.clone(), eth_public_key)
     verify {
-        assert_last_event::<T>(Event::<T>::AuthorRegistered{ author_id: candidate.clone(), eth_key: eth_public_key.clone() }.into());
+        assert_last_event::<T>(Event::<T>::AuthorActionPublished{
+            author_id: candidate.clone(),
+            action_type: AuthorsActionType::Registration,
+            tx_id: 0
+        }.into());
     }
 
     remove_author {
@@ -247,9 +251,18 @@ benchmarks! {
 
     }: remove_author(RawOrigin::Root, caller_account.clone())
     verify {
-        assert_eq!(AuthorAccountIds::<T>::get().unwrap().iter().position(|author_account_id| *author_account_id == caller_account), None);
-        assert_last_event::<T>(Event::<T>::AuthorDeregistered{ author_id: caller_account.clone() }.into());
-        assert_eq!(true, AuthorActions::<T>::contains_key(caller_account, <TotalIngresses<T>>::get()));
+        // Author is not removed yet (only after T1 confirmation)
+        assert_eq!(AuthorAccountIds::<T>::get().unwrap().iter().position(|author_account_id| *author_account_id == caller_account).is_some(), true);
+        // Extract the actual tx_id from storage
+        let ingress_counter = AuthorsManager::<T>::get_ingress_counter();
+        let action_data = AuthorActions::<T>::get(&caller_account, ingress_counter)
+            .expect("Author action should exist");
+        let actual_tx_id = action_data.eth_transaction_id;
+        assert_last_event::<T>(Event::<T>::AuthorActionPublished{
+            author_id: caller_account.clone(),
+            action_type: AuthorsActionType::Resignation,
+            tx_id: actual_tx_id
+        }.into());
     }
 
     rotate_author_ethereum_key {

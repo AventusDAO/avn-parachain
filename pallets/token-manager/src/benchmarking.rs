@@ -23,8 +23,8 @@ use codec::{Decode, Encode};
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite, whitelisted_caller};
 use frame_system::{pallet_prelude::BlockNumberFor, EventRecord, RawOrigin};
 use hex_literal::hex;
-use sp_core::sr25519;
 use sp_runtime::{traits::Saturating, RuntimeAppPublic, SaturatedConversion};
+use sp_core::{sr25519, H256};
 
 use sp_application_crypto::KeyTypeId;
 pub const BENCH_KEY_TYPE_ID: KeyTypeId = KeyTypeId(*b"test");
@@ -33,6 +33,7 @@ mod app_sr25519 {
     use sp_application_crypto::{app_crypto, sr25519};
     app_crypto!(sr25519, BENCH_KEY_TYPE_ID);
 }
+use sp_avn_common::eth::concat_lower_data;
 
 type SignerId = app_sr25519::Public;
 
@@ -192,6 +193,9 @@ impl<T: Config> Lower<T> {
 }
 
 benchmarks! {
+    where_clause {
+        where T: pallet_timestamp::Config
+    }
     proxy_with_non_avt_token {
         let signature = &hex!("a6350211fcdf1d7f0c79bf0a9c296de17449ca88a899f0cd19a70b07513fc107b7d34249dba71d4761ceeec2ed6bc1305defeb96418e6869e6b6199ed0de558e");
         let token_id = H160(hex!("1414141414141414141414141414141414141414"));
@@ -343,7 +347,16 @@ benchmarks! {
     regenerate_lower_proof {
         let lower: Lower<T> = Lower::new().setup();
         let token_id = H160(hex_literal::hex!("97d9b397189e8b771ffac3cb04cf26c780a93431"));
-        let params = crate::Pallet::<T>::concat_lower_data(lower.lower_id, token_id.into(), &lower.amount.into(), &token_id);
+        let t2_sender: H256 = H256::from(T::AccountToBytesConvert::into_bytes(&lower.from_account_id));
+        let t2_timestamp: u64 = pallet_timestamp::Pallet::<T>::get().saturated_into::<u64>();
+        let params = concat_lower_data(
+            lower.lower_id,
+            token_id.into(),
+            &lower.amount.into(),
+            &lower.t1_recipient,
+            t2_sender,
+            t2_timestamp,
+        );
 
         let lower_data = vec![0u8; 32];
 
@@ -497,6 +510,12 @@ benchmarks! {
         );
     }
 
+    set_native_token_eth_address {
+        let new_address = H160(hex_literal::hex!("dadB0d80178819F2319190D340ce9A924f783711"));
+    }: _(RawOrigin::Root, new_address)
+    verify {
+        assert_eq!(AVTTokenContract::<T>::get(), new_address);
+    }
 }
 
 impl_benchmark_test_suite!(

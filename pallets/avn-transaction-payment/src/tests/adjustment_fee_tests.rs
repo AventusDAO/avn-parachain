@@ -4,7 +4,7 @@ use crate::mock::{
     RuntimeCall, RuntimeEvent, RuntimeOrigin, System, TestAccount, TestRuntime, BASE_FEE,
 };
 
-use frame_support::{dispatch::DispatchInfo, pallet_prelude::Weight};
+use frame_support::{dispatch::DispatchInfo, pallet_prelude::Weight, traits::Currency};
 use pallet_transaction_payment::ChargeTransactionPayment;
 use sp_runtime::traits::SignedExtension;
 

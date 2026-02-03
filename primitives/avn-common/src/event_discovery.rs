@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::{event_types::EthTransactionId, *};
+use crate::{eth::EthBridgeInstance, event_types::EthTransactionId, *};
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use event_types::EthEvent;
@@ -180,17 +180,23 @@ pub mod filters {
 }
 
 pub fn encode_eth_event_submission_data<AccountId: Encode, Data: Encode>(
+    instance: Option<&EthBridgeInstance>,
     context: &[u8],
     account_id: &AccountId,
     data: Data,
 ) -> Vec<u8> {
     log::debug!(
-        "🪲 Encoding submission data: [ context {:?} - account {:?} - data {:?} ]",
+        "🪲 Encoding submission data: [ context {:?}-{:?} - account {:?} - data {:?} ]",
+        instance,
         context,
         account_id.encode(),
         &data.encode()
     );
-    (context, &account_id, data).encode()
+    if let Some(instance) = instance {
+        (instance.hash(), context, &account_id, data).encode()
+    } else {
+        (context, &account_id, data).encode()
+    }
 }
 
 pub type AdditionalEvents = BoundedBTreeSet<EthTransactionId, ConstU32<16>>;

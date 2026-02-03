@@ -377,7 +377,7 @@ mod process_summary_if_required {
                 setup_blocks(&context);
                 setup_total_ingresses(&context);
                 let root_lock_name = Summary::create_root_lock_name(context.last_block_in_range);
-                let mut lock = AVN::get_ocw_locker(&root_lock_name);
+                let mut lock = Avn::get_ocw_locker(&root_lock_name);
                 if let Ok(_guard) = lock.try_lock() {
                     assert!(pool_state.read().transactions.is_empty());
 

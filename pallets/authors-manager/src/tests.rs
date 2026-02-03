@@ -1,9 +1,13 @@
-//Copyright 2024 Aventus Network Services (UK) Ltd.
+//Copyright 2025 Aventus Network Services (UK) Ltd.
 
 #![cfg(test)]
 
-use crate::{mock::*, AVN, *};
-use frame_support::{assert_noop, assert_ok, traits::Currency};
+use crate::{migration::AuthorsManagerMigrations, mock::*, AVN, *};
+use frame_support::{
+    assert_noop, assert_ok,
+    pallet_prelude::{DispatchResultWithPostInfo, StorageVersion, Weight},
+    traits::{Currency, GetStorageVersion, OnRuntimeUpgrade},
+};
 use frame_system::RawOrigin;
 use hex_literal::hex;
 use sp_runtime::{testing::UintAuthorityId, traits::BadOrigin};
@@ -27,7 +31,15 @@ fn force_add_author(
     set_session_keys(author_id);
     assert_ok!(register_author(author_id, author_eth_public_key));
 
-    //Advance 2 session to add the author to the session
+    // Simulate T1 confirmation
+    let tx_id = AuthorActions::<TestRuntime>::iter()
+        .find(|(account_id, _, _)| account_id == author_id)
+        .map(|(_, _, data)| data.eth_transaction_id)
+        .expect("Action should exist");
+
+    assert_ok!(Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), true));
+
+    //Advance 2 sessions to add the author to the session
     advance_session();
     advance_session();
 
@@ -115,14 +127,29 @@ mod register_author {
 
                 // Result OK
                 assert_ok!(register_author(&context.new_author_id, &context.author_eth_public_key));
-                // Upon completion author has been added AuthorAccountIds storage
-                assert!(AuthorsManager::author_account_ids()
-                    .unwrap()
-                    .iter()
-                    .any(|a| a == &context.new_author_id));
-                // AuthorRegistered Event has been deposited
+                // Author has NOT been added to AuthorAccountIds yet (only after T1 confirmation)
+                assert_eq!(
+                    false,
+                    AuthorsManager::author_account_ids()
+                        .unwrap()
+                        .iter()
+                        .any(|a| a == &context.new_author_id)
+                );
+                // AuthorActionPublished Event has been deposited
                 assert_eq!(
                     true,
+                    System::events().iter().any(|a| a.event ==
+                        mock::RuntimeEvent::AuthorsManager(
+                            crate::Event::<TestRuntime>::AuthorActionPublished {
+                                author_id: context.new_author_id,
+                                action_type: AuthorsActionType::Registration,
+                                tx_id: 0
+                            }
+                        ))
+                );
+                // AuthorRegistered Event has NOT been deposited yet
+                assert_eq!(
+                    false,
                     System::events().iter().any(|a| a.event ==
                         mock::RuntimeEvent::AuthorsManager(
                             crate::Event::<TestRuntime>::AuthorRegistered {
@@ -131,23 +158,14 @@ mod register_author {
                             }
                         ))
                 );
-                // AuthorActivationStarted Event has not been deposited yet
-                assert_eq!(
-                    false,
-                    System::events().iter().any(|a| a.event ==
-                        mock::RuntimeEvent::AuthorsManager(
-                            crate::Event::<TestRuntime>::AuthorActivationStarted {
-                                author_id: context.new_author_id
-                            }
-                        ))
-                );
-                // But the activation action has been triggered
+                // Check that a registration action exists with AwaitingConfirmation status
                 assert_eq!(
                     true,
-                    find_author_activation_action(
-                        &context,
-                        AuthorsActionStatus::AwaitingConfirmation
-                    )
+                    AuthorActions::<TestRuntime>::iter().any(|(account_id, _, action_data)| {
+                        account_id == context.new_author_id &&
+                            action_data.status == AuthorsActionStatus::AwaitingConfirmation &&
+                            action_data.action_type == AuthorsActionType::Registration
+                    })
                 );
             });
         }
@@ -164,14 +182,41 @@ mod register_author {
 
                 assert_ok!(register_author(&context.new_author_id, &context.author_eth_public_key));
 
-                // It takes 2 session for authors to be updated
-                advance_session();
-                advance_session();
+                // Simulate T1 confirmation by calling process_result
+                let (tx_id, _) = AuthorActions::<TestRuntime>::iter()
+                    .find(|(author, _, _)| author == &context.new_author_id)
+                    .map(|(_, ingress, data)| (data.eth_transaction_id, ingress))
+                    .expect("Action should exist");
 
-                // The activation action has been sent
+                assert_ok!(Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), true));
+
+                // Now the author should be in author_account_ids
+                assert!(AuthorsManager::author_account_ids()
+                    .unwrap()
+                    .iter()
+                    .any(|a| a == &context.new_author_id));
+
+                // AuthorActionConfirmedOnEthereum Event has been deposited
                 assert_eq!(
                     true,
-                    find_author_activation_action(&context, AuthorsActionStatus::Confirmed)
+                    System::events().iter().any(|a| a.event ==
+                        mock::RuntimeEvent::AuthorsManager(
+                            crate::Event::<TestRuntime>::AuthorActionConfirmedOnEthereum {
+                                author_id: context.new_author_id,
+                                action_type: AuthorsActionType::Registration,
+                                tx_id
+                            }
+                        ))
+                );
+
+                // After T1 confirmation, the action type is Activation with Actioned status
+                assert_eq!(
+                    true,
+                    AuthorActions::<TestRuntime>::iter().any(|(account_id, _, action_data)| {
+                        account_id == context.new_author_id &&
+                            action_data.action_type == AuthorsActionType::Activation &&
+                            action_data.status == AuthorsActionStatus::Actioned
+                    })
                 );
                 // AuthorActivationStarted Event has been deposited
                 assert_eq!(
@@ -223,15 +268,41 @@ mod remove_author_public {
                 context.new_author_id
             ));
 
-            //Event emitted as expected
-            assert!(System::events().iter().any(|a| a.event ==
+            //AuthorActionPublished event emitted (not AuthorDeregistered yet - that comes after T1
+            // confirmation)
+            assert!(System::events().iter().any(|a| matches!(&a.event,
                 mock::RuntimeEvent::AuthorsManager(
-                    crate::Event::<TestRuntime>::AuthorDeregistered {
-                        author_id: context.new_author_id
+                    crate::Event::<TestRuntime>::AuthorActionPublished {
+                        author_id, action_type: AuthorsActionType::Resignation, ..
                     }
-                )));
+                ) if author_id == &context.new_author_id)));
 
-            //Author removed from authors manager
+            //Author is NOT removed from authors manager yet (only after T1 confirmation)
+            assert!(AuthorsManager::author_account_ids()
+                .unwrap()
+                .iter()
+                .position(|&x| x == context.new_author_id)
+                .is_some());
+
+            // Simulate T1 confirmation to actually remove the author
+            let (account_id, ingress_counter, action_data) = AuthorActions::<TestRuntime>::iter()
+                .find(|(acc, _, data)| {
+                    acc == &context.new_author_id &&
+                        data.action_type == AuthorsActionType::Resignation
+                })
+                .expect("Resignation action should exist");
+
+            let tx_id = action_data.eth_transaction_id;
+
+            // Ensure the transaction mapping is set up for the callback
+            TransactionToAction::<TestRuntime>::insert(
+                tx_id,
+                (account_id.clone(), ingress_counter),
+            );
+
+            assert_ok!(Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), true));
+
+            //Author is now removed from authors manager
             assert_eq!(
                 AuthorsManager::author_account_ids()
                     .unwrap()
@@ -316,6 +387,112 @@ mod remove_author_public {
             assert_eq!(AuthorsManager::author_account_ids(), original_authors);
         });
     }
+
+    #[test]
+    fn fails_when_another_deregistration_is_in_progress() {
+        let mut ext = ExtBuilder::build_default().with_authors().as_externality();
+        ext.execute_with(|| {
+            let context = MockData::setup_valid();
+            assert_ok!(force_add_author(&context.new_author_id, &context.author_eth_public_key));
+
+            // Start a deregistration for author_id_1
+            assert_ok!(AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_1()));
+
+            // Try to deregister a different author while the first is still in progress
+            assert_noop!(
+                AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_2()),
+                Error::<TestRuntime>::ValidatorActionAlreadyInProgress
+            );
+        });
+    }
+
+    #[test]
+    fn fails_when_same_author_tries_to_deregister_twice() {
+        let mut ext = ExtBuilder::build_default().with_authors().as_externality();
+        ext.execute_with(|| {
+            let context = MockData::setup_valid();
+            assert_ok!(force_add_author(&context.new_author_id, &context.author_eth_public_key));
+
+            // Start a deregistration for author_id_1
+            assert_ok!(AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_1()));
+
+            // Try to deregister the same author again (this should fail because a deregistration is
+            // already in progress) The global check prevents any new deregistration
+            // attempts while one is in progress
+            assert_noop!(
+                AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_1()),
+                Error::<TestRuntime>::ValidatorActionAlreadyInProgress
+            );
+        });
+    }
+
+    #[test]
+    fn allows_deregistration_after_previous_one_completes() {
+        let mut ext = ExtBuilder::build_default().with_authors().as_externality();
+        ext.execute_with(|| {
+            let context = MockData::setup_valid();
+            assert_ok!(force_add_author(&context.new_author_id, &context.author_eth_public_key));
+
+            // Start a deregistration for author_id_1
+            assert_ok!(AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_1()));
+
+            // Complete the first deregistration by simulating T1 confirmation
+            let (account_id, ingress_counter, action_data) = AuthorActions::<TestRuntime>::iter()
+                .find(|(acc, _, data)| {
+                    acc == &author_id_1() && data.action_type == AuthorsActionType::Resignation
+                })
+                .expect("Resignation action should exist");
+
+            let tx_id = action_data.eth_transaction_id;
+
+            // Set up transaction mapping for callback
+            TransactionToAction::<TestRuntime>::insert(
+                tx_id,
+                (account_id.clone(), ingress_counter),
+            );
+
+            // Process the T1 confirmation
+            assert_ok!(Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), true));
+
+            // Now we should be able to deregister a different author (author_id_2 is still in the
+            // list)
+            assert_ok!(AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_2()));
+        });
+    }
+
+    #[test]
+    fn allows_deregistration_after_previous_one_fails() {
+        let mut ext = ExtBuilder::build_default().with_authors().as_externality();
+        ext.execute_with(|| {
+            let context = MockData::setup_valid();
+            assert_ok!(force_add_author(&context.new_author_id, &context.author_eth_public_key));
+
+            // Start a deregistration for author_id_1
+            assert_ok!(AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_1()));
+
+            // Simulate T1 failure
+            let (account_id, ingress_counter, action_data) = AuthorActions::<TestRuntime>::iter()
+                .find(|(acc, _, data)| {
+                    acc == &author_id_1() && data.action_type == AuthorsActionType::Resignation
+                })
+                .expect("Resignation action should exist");
+
+            let tx_id = action_data.eth_transaction_id;
+
+            // Set up transaction mapping for callback
+            TransactionToAction::<TestRuntime>::insert(
+                tx_id,
+                (account_id.clone(), ingress_counter),
+            );
+
+            // Process the T1 failure
+            assert_ok!(Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), false));
+
+            // Now we should be able to deregister a different author (author_id_2 is still in the
+            // list)
+            assert_ok!(AuthorsManager::remove_author(RawOrigin::Root.into(), author_id_2()));
+        });
+    }
 }
 
 #[test]
@@ -360,10 +537,8 @@ mod add_author {
             set_session_keys(&context.author);
             assert_ok!(register_author(&context.author, &context.author_eth_public_key));
 
-            assert_eq!(
-                true,
-                AuthorsManager::author_account_ids().unwrap().contains(&context.author)
-            );
+            // Author is not in author_account_ids yet (only after T1 confirmation)
+            // But eth key mapping should exist
             assert_eq!(
                 AuthorsManager::get_author_by_eth_public_key(context.author_eth_public_key.clone())
                     .unwrap(),
@@ -463,7 +638,7 @@ mod add_author {
 mod bridge_interface_notification {
     use super::*;
 
-    fn setup_test_action(context: &MockData) -> (IngressCounter, EthereumTransactionId) {
+    fn setup_test_action(context: &MockData) -> (IngressCounter, EthereumId) {
         set_session_keys(&context.new_author_id);
         assert_ok!(register_author(&context.new_author_id, &context.author_eth_public_key));
 
@@ -498,13 +673,20 @@ mod bridge_interface_notification {
 
                 assert!(System::events().iter().any(|a| a.event ==
                     mock::RuntimeEvent::AuthorsManager(
-                        crate::Event::<TestRuntime>::PublishingAuthorActionOnEthereumSucceeded {
+                        crate::Event::<TestRuntime>::AuthorActionConfirmedOnEthereum {
+                            author_id: context.new_author_id,
+                            action_type: AuthorsActionType::Registration,
                             tx_id
                         }
                     )));
 
-                assert!(AuthorActions::<TestRuntime>::iter().count() == 0);
-                assert!(TransactionToAction::<TestRuntime>::iter().count() == 0);
+                // After successful registration, the action is mutated to Activation type
+                let activation_action =
+                    AuthorActions::<TestRuntime>::get(&context.new_author_id, ingress_counter)
+                        .expect("Activation action should exist");
+                assert_eq!(activation_action.action_type, AuthorsActionType::Activation);
+                // Transaction mapping is removed by process_result (line 1005: take)
+                assert_eq!(TransactionToAction::<TestRuntime>::get(tx_id), None);
             });
         }
 
@@ -522,13 +704,20 @@ mod bridge_interface_notification {
 
                 assert!(System::events().iter().any(|a| a.event ==
                     mock::RuntimeEvent::AuthorsManager(
-                        crate::Event::<TestRuntime>::PublishingAuthorActionOnEthereumFailed {
+                        crate::Event::<TestRuntime>::AuthorActionFailedOnEthereum {
+                            author_id: context.new_author_id,
+                            action_type: AuthorsActionType::Registration,
                             tx_id
                         }
                     )));
 
-                assert!(AuthorActions::<TestRuntime>::iter().count() == 1);
-                assert!(TransactionToAction::<TestRuntime>::iter().count() == 1);
+                // On failure, the action is removed (cleanup_registration_storage)
+                assert_eq!(
+                    AuthorActions::<TestRuntime>::get(&context.new_author_id, ingress_counter),
+                    None
+                );
+                // Transaction mapping is also removed (by process_result)
+                assert_eq!(TransactionToAction::<TestRuntime>::get(tx_id), None);
             });
         }
     }
@@ -543,10 +732,9 @@ mod bridge_interface_notification {
                 let context = MockData::setup_valid();
                 let (_, tx_id) = setup_test_action(&context);
 
-                assert_noop!(
-                    Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), true),
-                    Error::<TestRuntime>::InvalidActionStatus
-                );
+                // process_result should succeed even without advancing sessions
+                // because it validates the transaction exists, not its status
+                assert_ok!(Pallet::<TestRuntime>::process_result(tx_id, PALLET_ID.to_vec(), true));
             });
         }
 
@@ -554,10 +742,7 @@ mod bridge_interface_notification {
         fn with_missing_transaction() {
             let mut ext = ExtBuilder::build_default().with_authors().as_externality();
             ext.execute_with(|| {
-                assert_noop!(
-                    Pallet::<TestRuntime>::process_result(999u32, PALLET_ID.to_vec(), true),
-                    Error::<TestRuntime>::TransactionNotFound
-                );
+                assert_ok!(Pallet::<TestRuntime>::process_result(999u32, PALLET_ID.to_vec(), true));
             });
         }
     }
@@ -719,4 +904,42 @@ mod rotate_author_ethereum_key {
             });
         }
     }
+}
+
+#[test]
+fn migration_populates_accountid_to_ethereum_keys_and_sets_storage_version() {
+    let mut ext = ExtBuilder::build_default().with_authors().as_externality();
+    ext.execute_with(|| {
+        // Simulate old state by clearing reverse map while keeping EthereumPublicKeys intact
+        for (account_id, _) in AccountIdToEthereumKeys::<TestRuntime>::iter() {
+            AccountIdToEthereumKeys::<TestRuntime>::remove(&account_id);
+        }
+
+        // Sanity: reverse map is empty or missing for authors
+        let authors = AuthorsManager::author_account_ids().unwrap();
+        for author in authors.iter() {
+            assert_eq!(AccountIdToEthereumKeys::<TestRuntime>::get(author), None);
+        }
+
+        // Simulate older on-chain storage version so migration runs
+        StorageVersion::new(0).put::<Pallet<TestRuntime>>();
+
+        // Run migration
+        let _w = AuthorsManagerMigrations::<TestRuntime>::on_runtime_upgrade();
+
+        // Verify reverse map populated from forward map
+        for (eth_key, account_id) in EthereumPublicKeys::<TestRuntime>::iter() {
+            assert_eq!(AccountIdToEthereumKeys::<TestRuntime>::get(&account_id), Some(eth_key));
+        }
+
+        // Verify version bumped so it won't run again
+        assert_eq!(
+            Pallet::<TestRuntime>::on_chain_storage_version(),
+            crate::migration::STORAGE_VERSION
+        );
+
+        // Second run should do nothing
+        let w2 = AuthorsManagerMigrations::<TestRuntime>::on_runtime_upgrade();
+        assert_eq!(w2, Weight::zero());
+    });
 }

@@ -42,7 +42,6 @@ frame-benchmarking = { default-features = false, git = "https://github.com/parit
 
 [dev-dependencies]
 pallet-timestamp = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
-substrate-test-utils = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 pallet-balances = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0", features=["insecure_zero_ed"] }
 sp-state-machine = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.6.0" }
 pallet-avn-proxy = { default-features = false, path = "../avn-proxy" }

@@ -22,12 +22,12 @@ jobs:
           fetch-depth: 0
           ref: ${{github.event.pull_request.head.ref}}
           repository: ${{github.event.pull_request.head.repo.full_name}}
-      
+
       - name: Install cargo-edit
         uses: baptiste0928/cargo-install@v2
         with:
           crate: cargo-edit
-          version: '0.13.1'
+          version: "0.12.3"
       - name: Verify PR type
         env:
           description: ${{ github.event.pull_request.body }}
@@ -48,17 +48,16 @@ jobs:
       - name: Get latest repo tag
         if: env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
         id: latest_repo_tag
-        run: |
-          LATEST_MAIN_TAG=$(git describe origin/main --tags --abbrev=0 --match "v[0-9]*")
-          echo "Latest main tag: $LATEST_MAIN_TAG"
-          echo "LATEST_MAIN_TAG=$LATEST_MAIN_TAG" >> "$GITHUB_OUTPUT"
+        uses: WyriHaximus/github-action-get-previous-tag@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get next repo tag
         if: env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
         id: new_repo_tag
         uses: WyriHaximus/github-action-next-semvers@v1
         with:
-          version: ${{ steps.latest_repo_tag.outputs.LATEST_MAIN_TAG }}
+          version: ${{ steps.latest_repo_tag.outputs.tag }}
 
       - name: update Versions
         if: env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
@@ -77,7 +76,7 @@ jobs:
       SKIP_TESTS: ${{ steps.skip_tests.outputs.SKIP_TESTS }}
 
   check-code:
-    needs: [ set-up-job ]
+    needs: [set-up-job]
     if: |
       ( !github.event.pull_request.draft ) &&
       ( needs.set-up-job.outputs.SKIP_TESTS != 'true' )
@@ -88,7 +87,7 @@ jobs:
       repository: ${{ github.event.pull_request.head.repo.full_name }}
 
   test-code:
-    needs: [ set-up-job ]
+    needs: [set-up-job]
     if: |
       ( !github.event.pull_request.draft ) &&
       ( needs.set-up-job.outputs.SKIP_TESTS != 'true' )

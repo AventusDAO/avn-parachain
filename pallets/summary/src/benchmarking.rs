@@ -140,11 +140,12 @@ fn setup_roots<T: Config<I>, I: 'static>(
     account_id: T::AccountId,
     start_ingress_counter: IngressCounter,
 ) {
+    ExternalValidationThreshold::<T, I>::put(50u32);
     for i in 0..number_of_roots + 1 {
         Roots::<T, I>::insert(
             RootRange::new(0u32.into(), 60u32.into()),
             start_ingress_counter + i as IngressCounter,
-            RootData::new(H256::from([0u8; 32]), account_id.clone(), None),
+            RootData::new(H256::from([1u8; 32]), account_id.clone(), None),
         );
     }
 }
@@ -194,6 +195,24 @@ fn assert_event_exists<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>
 
     assert_eq!(
         true,
+        all_emitted_events
+            .into_iter()
+            .find(|e| {
+                let EventRecord { event, .. } = &e;
+                event == &summary_event
+            })
+            .is_some()
+    );
+}
+
+fn assert_event_not_emitted<T: Config<I>, I: 'static>(
+    generic_event: <T as Config<I>>::RuntimeEvent,
+) {
+    let all_emitted_events = frame_system::Pallet::<T>::events();
+    let summary_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
+
+    assert_eq!(
+        false,
         all_emitted_events
             .into_iter()
             .find(|e| {
@@ -295,7 +314,8 @@ benchmarks_instance_pallet! {
             4
         );
         let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
-            assert_last_nth_event::<T, I>(Event::<T, I>::SummaryRootValidated {
+        assert_last_nth_event::<T, I>(
+            Event::<T, I>::SummaryRootValidated {
                 root_hash: root_data.root_hash,
                 ingress_counter: root_id.ingress_counter,
                 block_range: root_id.range
@@ -624,6 +644,92 @@ benchmarks_instance_pallet! {
                 challengee: challenge.challengee
             }.into()
         );
+    }
+
+    admin_resolve_challenge_accepted {
+        let validators = setup_validators::<T, I>(3u32);
+        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
+        let passed = true;
+
+        let external_validation_status = ExternalValidationEnum::PendingAdminReview;
+        let external_validation_data = ExternalValidationData {
+            proposal_id: ProposalId::from_slice(&[5u8; 32]),
+            external_ref: H256::from_slice(&[2u8; 32]),
+            proposal_status: ProposalStatusEnum::Resolved { passed },
+        };
+
+        PendingAdminReviews::<T, I>::insert(root_id, external_validation_data);
+        ExternalValidationStatus::<T, I>::insert(root_id, external_validation_status);
+
+    }: admin_resolve_challenge(RawOrigin::Root, root_id, passed)
+    verify {
+        assert_eq!(false, PendingAdminReviews::<T, I>::contains_key(&root_id));
+        assert_eq!(false, ExternalValidationStatus::<T, I>::contains_key(&root_id));
+
+        let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
+        assert_event_exists::<T, I>(
+            Event::<T, I>::RootPassedValidation {root_id, root_hash: root_data.root_hash}.into()
+        );
+
+        assert_last_event::<T, I>(
+            Event::<T, I>::RootChallengeResolved {root_id, accepted: passed}.into()
+        );
+    }
+
+    admin_resolve_challenge_rejected {
+        let validators = setup_validators::<T, I>(3u32);
+        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
+        let passed = false;
+
+        let external_validation_status = ExternalValidationEnum::PendingAdminReview;
+        let external_validation_data = ExternalValidationData {
+            proposal_id: ProposalId::from_slice(&[5u8; 32]),
+            external_ref: H256::from_slice(&[2u8; 32]),
+            proposal_status: ProposalStatusEnum::Resolved { passed },
+        };
+
+        PendingAdminReviews::<T, I>::insert(root_id, external_validation_data);
+        ExternalValidationStatus::<T, I>::insert(root_id, external_validation_status);
+
+    }: admin_resolve_challenge(RawOrigin::Root, root_id, passed)
+    verify {
+        assert_eq!(false, PendingAdminReviews::<T, I>::contains_key(&root_id));
+        assert_eq!(false, ExternalValidationStatus::<T, I>::contains_key(&root_id));
+
+        let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
+        assert_event_not_emitted::<T, I>(
+            Event::<T, I>::RootPassedValidation {root_id, root_hash: root_data.root_hash}.into()
+        );
+
+        assert_last_event::<T, I>(
+            Event::<T, I>::RootChallengeResolved {root_id, accepted: passed}.into()
+        );
+    }
+
+    set_external_validation_threshold {
+        let new_threshold = 51u32;
+        let config = AdminConfig::ExternalValidationThreshold(new_threshold);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<ExternalValidationThreshold<T, I>>::get() == Some(new_threshold));
+    }
+
+    set_schedule_period {
+        let new_period: BlockNumberFor<T> = 106u32.into();
+        let config = AdminConfig::SchedulePeriod(new_period);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<SchedulePeriod<T, I>>::get() == new_period);
+    }
+
+    set_voting_period {
+        let new_period: BlockNumberFor<T> = 101u32.into();
+        let config = AdminConfig::VotingPeriod(new_period);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<VotingPeriod<T, I>>::get() == new_period);
     }
 }
 

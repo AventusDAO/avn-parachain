@@ -31,6 +31,7 @@ mod test_set_periods {
 
     impl Context {
         fn dispatch_set_schedule_period(&self) -> DispatchResult {
+            #[allow(deprecated)]
             return Summary::set_periods(
                 self.origin.clone(),
                 self.new_schedule_period.clone(),
@@ -39,6 +40,7 @@ mod test_set_periods {
         }
 
         fn dispatch_set_voting_period(&self) -> DispatchResult {
+            #[allow(deprecated)]
             return Summary::set_periods(
                 self.origin.clone(),
                 self.schedule_period.clone(),
@@ -71,6 +73,25 @@ mod test_set_periods {
         }
 
         #[test]
+        fn schedule_period_can_be_set_via_admin_config() {
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
+            ext.execute_with(|| {
+                let current_period: BlockNumber = <SchedulePeriod<TestRuntime, Instance1>>::get();
+                let new_period = current_period + 100;
+
+                let config = AdminConfig::SchedulePeriod(new_period);
+                assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config,));
+
+                System::assert_last_event(
+                    crate::Event::<TestRuntime>::SchedulePeriodSet { new_period }.into(),
+                );
+            });
+        }
+
+        #[test]
         fn update_voting_period() {
             let mut ext = ExtBuilder::build_default()
                 .with_validators()
@@ -89,10 +110,64 @@ mod test_set_periods {
                 assert_eq!(context.new_voting_period, Summary::voting_period());
             });
         }
+
+        #[test]
+        fn voting_period_can_be_set_via_admin_config() {
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
+            ext.execute_with(|| {
+                let current_period: BlockNumber = <VotingPeriod<TestRuntime, Instance1>>::get();
+                let new_period = current_period + 1;
+
+                let config = AdminConfig::VotingPeriod(new_period);
+                assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config,));
+
+                System::assert_last_event(
+                    crate::Event::<TestRuntime>::VotingPeriodSet { new_period }.into(),
+                );
+            });
+        }
+
+        #[test]
+        fn threshold_can_be_set_via_admin_config() {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                let new_threshold = 76;
+                let config = AdminConfig::ExternalValidationThreshold(new_threshold);
+                assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config));
+
+                System::assert_last_event(
+                    crate::Event::<TestRuntime>::ExternalValidationThresholdSet { new_threshold }
+                        .into(),
+                );
+            });
+        }
     }
 
     mod fails_when {
         use super::*;
+
+        #[test]
+        fn threshold_is_wrong() {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                let new_threshold = 0;
+                let config = AdminConfig::ExternalValidationThreshold(new_threshold);
+                assert_noop!(
+                    Summary::set_admin_config(RawOrigin::Root.into(), config),
+                    Error::<TestRuntime>::InvalidExternalValidationThreshold
+                );
+
+                let new_threshold = 101;
+                let config = AdminConfig::ExternalValidationThreshold(new_threshold);
+                assert_noop!(
+                    Summary::set_admin_config(RawOrigin::Root.into(), config),
+                    Error::<TestRuntime>::InvalidExternalValidationThreshold
+                );
+            });
+        }
 
         mod set_schedule_period {
             use super::*;
@@ -111,6 +186,15 @@ mod test_set_periods {
 
                     assert_noop!(context.dispatch_set_schedule_period(), BadOrigin);
                     assert_ne!(context.new_schedule_period, Summary::schedule_period());
+
+                    let config = AdminConfig::SchedulePeriod(100);
+                    assert_noop!(
+                        Summary::set_admin_config(
+                            RuntimeOrigin::signed(Default::default()),
+                            config
+                        ),
+                        BadOrigin
+                    );
                 });
             }
 
@@ -126,6 +210,12 @@ mod test_set_periods {
 
                     assert_noop!(context.dispatch_set_schedule_period(), BadOrigin);
                     assert_ne!(context.new_schedule_period, Summary::schedule_period());
+
+                    let config = AdminConfig::SchedulePeriod(100);
+                    assert_noop!(
+                        Summary::set_admin_config(RawOrigin::None.into(), config),
+                        BadOrigin
+                    );
                 });
             }
 
@@ -146,6 +236,12 @@ mod test_set_periods {
                         Error::<TestRuntime>::SchedulePeriodIsTooShort
                     );
                     assert_ne!(context.new_schedule_period, Summary::schedule_period());
+
+                    let config = AdminConfig::SchedulePeriod(1);
+                    assert_noop!(
+                        Summary::set_admin_config(RawOrigin::Root.into(), config),
+                        Error::<TestRuntime>::SchedulePeriodIsTooShort
+                    );
                 });
             }
         }
@@ -167,6 +263,15 @@ mod test_set_periods {
 
                     assert_noop!(context.dispatch_set_voting_period(), BadOrigin);
                     assert_ne!(context.new_voting_period, Summary::voting_period());
+
+                    let config = AdminConfig::VotingPeriod(99);
+                    assert_noop!(
+                        Summary::set_admin_config(
+                            RuntimeOrigin::signed(Default::default()),
+                            config
+                        ),
+                        BadOrigin
+                    );
                 });
             }
 
@@ -182,6 +287,12 @@ mod test_set_periods {
 
                     assert_noop!(context.dispatch_set_voting_period(), BadOrigin);
                     assert_ne!(context.new_voting_period, Summary::voting_period());
+
+                    let config = AdminConfig::VotingPeriod(99);
+                    assert_noop!(
+                        Summary::set_admin_config(RawOrigin::None.into(), config),
+                        BadOrigin
+                    );
                 });
             }
 
@@ -202,6 +313,12 @@ mod test_set_periods {
                         Error::<TestRuntime>::VotingPeriodIsTooShort
                     );
                     assert_ne!(context.new_voting_period, Summary::voting_period());
+
+                    let config = AdminConfig::VotingPeriod(1);
+                    assert_noop!(
+                        Summary::set_admin_config(RawOrigin::Root.into(), config),
+                        Error::<TestRuntime>::VotingPeriodIsTooShort
+                    );
                 });
             }
 
@@ -212,8 +329,9 @@ mod test_set_periods {
                     .with_genesis_config()
                     .as_externality();
                 ext.execute_with(|| {
+                    let schedule_period = Summary::schedule_period();
                     let context: Context = Context {
-                        new_voting_period: (Summary::schedule_period()).into(),
+                        new_voting_period: (schedule_period).into(),
                         ..Default::default()
                     };
 
@@ -222,6 +340,12 @@ mod test_set_periods {
                         Error::<TestRuntime>::VotingPeriodIsEqualOrLongerThanSchedulePeriod
                     );
                     assert_ne!(context.new_voting_period, Summary::voting_period());
+
+                    let config = AdminConfig::VotingPeriod(schedule_period);
+                    assert_noop!(
+                        Summary::set_admin_config(RawOrigin::Root.into(), config),
+                        Error::<TestRuntime>::VotingPeriodIsEqualOrLongerThanSchedulePeriod
+                    );
                 });
             }
 
@@ -232,8 +356,9 @@ mod test_set_periods {
                     .with_genesis_config()
                     .as_externality();
                 ext.execute_with(|| {
+                    let schedule_period = Summary::schedule_period();
                     let context: Context = Context {
-                        new_voting_period: (Summary::schedule_period() + 1).into(),
+                        new_voting_period: (schedule_period + 1).into(),
                         ..Default::default()
                     };
 
@@ -242,6 +367,12 @@ mod test_set_periods {
                         Error::<TestRuntime>::VotingPeriodIsEqualOrLongerThanSchedulePeriod
                     );
                     assert_ne!(context.new_voting_period, Summary::voting_period());
+
+                    let config = AdminConfig::VotingPeriod(schedule_period + 1);
+                    assert_noop!(
+                        Summary::set_admin_config(RawOrigin::Root.into(), config),
+                        Error::<TestRuntime>::VotingPeriodIsEqualOrLongerThanSchedulePeriod
+                    );
                 });
             }
         }

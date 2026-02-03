@@ -18,15 +18,15 @@
 
 use crate::{
     set::BoundedOrderedSet, BalanceOf, BottomNominations, CandidateInfo, Config, Delay, Era,
-    EraIndex, Error, EthereumTransactionId, Event, GrowthPeriodIndex, MinCollatorStake,
-    NominatorState, Pallet, RewardPoint, TopNominations, Total, COLLATOR_LOCK_ID,
-    NOMINATOR_LOCK_ID,
+    EraIndex, Error, Event, GrowthPeriodIndex, MinCollatorStake, NominatorState, Pallet,
+    RewardPoint, TopNominations, Total, COLLATOR_LOCK_ID, NOMINATOR_LOCK_ID,
 };
 use codec::{Decode, Encode};
 use frame_support::{
     pallet_prelude::*,
     traits::{tokens::WithdrawReasons, LockableCurrency},
 };
+use sp_avn_common::eth::EthereumId;
 use sp_runtime::{
     traits::{Saturating, Zero},
     RuntimeDebug,
@@ -1368,7 +1368,7 @@ pub struct GrowthInfo<AccountId, Balance> {
     pub total_staker_reward: Balance,
     pub total_points: RewardPoint,
     pub collator_scores: BoundedVec<CollatorScore<AccountId>, ConstU32<10000>>,
-    pub tx_id: Option<EthereumTransactionId>,
+    pub tx_id: Option<EthereumId>,
     pub triggered: Option<bool>,
 }
 

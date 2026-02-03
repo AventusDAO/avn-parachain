@@ -1,14 +1,15 @@
-//Copyright 2024 Aventus Network Services (UK) Ltd.
+//Copyright 2025 Aventus Network Services (UK) Ltd.
 
 use crate::{self as authors_manager, *};
 use frame_support::{
-    derive_impl, parameter_types,
+    parameter_types,
     traits::{Currency, OnFinalize, OnInitialize},
 };
 use sp_state_machine::BasicExternalities;
 
 use hex_literal::hex;
 use pallet_avn::{BridgeInterfaceNotification, EthereumPublicKeyChecker, ProcessedEventsChecker};
+use pallet_balances as balances;
 use pallet_timestamp as timestamp;
 use sp_avn_common::{
     avn_tests_helpers::ethereum_converters::*,
@@ -17,12 +18,9 @@ use sp_avn_common::{
 use sp_core::{ecdsa::Public, sr25519, ByteArray, ConstU64, Get, Pair, H256};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
-    traits::{ConvertInto, IdentityLookup, Verify},
+    traits::{BlakeTwo256, ConvertInto, IdentityLookup, Verify},
     BuildStorage,
 };
-
-use frame_system::{self as system, DefaultConfig};
-use pallet_session as session;
 
 use std::cell::RefCell;
 
@@ -100,6 +98,10 @@ frame_support::construct_runtime!(
     }
 );
 
+use frame_support::derive_impl;
+use frame_system::{self as system};
+use pallet_session as session;
+
 impl AuthorsManager {
     pub fn insert_authors_action_data(action_id: &ActionId<AccountId>) {
         <AuthorActions<TestRuntime>>::insert(
@@ -124,6 +126,7 @@ impl AuthorsManager {
 
 parameter_types! {
     pub const VotingPeriod: u64 = 2;
+    pub const MinimumAuthorsCount: u32 = 2;
 }
 
 impl Config for TestRuntime {
@@ -132,6 +135,7 @@ impl Config for TestRuntime {
     type ValidatorRegistrationNotifier = Self;
     type WeightInfo = default_weights::SubstrateWeight<TestRuntime>;
     type BridgeInterface = EthBridge;
+    type MinimumAuthorsCount = MinimumAuthorsCount;
 }
 
 impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
@@ -148,29 +152,60 @@ parameter_types! {
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl system::Config for TestRuntime {
+    type BaseCallFilter = frame_support::traits::Everything;
+    type BlockWeights = ();
+    type BlockLength = ();
+    type DbWeight = ();
+    type RuntimeOrigin = RuntimeOrigin;
+    type RuntimeCall = RuntimeCall;
     type Nonce = u64;
-    type Block = Block;
-    type AccountData = pallet_balances::AccountData<u128>;
+    type Hash = H256;
+    type Hashing = BlakeTwo256;
     type AccountId = AccountId;
     type Lookup = IdentityLookup<Self::AccountId>;
+    type Block = Block;
+    type RuntimeEvent = RuntimeEvent;
+    type BlockHashCount = BlockHashCount;
+    type Version = ();
+    type PalletInfo = PalletInfo;
+    type AccountData = balances::AccountData<u128>;
+    type OnNewAccount = ();
+    type OnKilledAccount = ();
+    type SystemWeightInfo = ();
+    type SS58Prefix = ();
+    type OnSetCode = ();
+    type MaxConsumers = frame_support::traits::ConstU32<16>;
+    type RuntimeTask = ();
 }
 
-#[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
 impl avn::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type AuthorityId = UintAuthorityId;
     type EthereumPublicKeyChecker = Self;
     type NewSessionHandler = AuthorsManager;
+    type DisabledValidatorChecker = ();
+    type WeightInfo = ();
 }
 
 parameter_types! {
     pub const ExistentialDeposit: u64 = EXISTENTIAL_DEPOSIT;
 }
 
-#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
 impl pallet_balances::Config for TestRuntime {
+    type MaxLocks = frame_support::traits::ConstU32<1024>;
+    type MaxReserves = ();
+    type ReserveIdentifier = [u8; 8];
     type Balance = u128;
+    type RuntimeEvent = RuntimeEvent;
+    type DustRemoval = ();
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
+    type WeightInfo = ();
+    type RuntimeHoldReason = ();
+    type FreezeIdentifier = ();
+    type MaxHolds = ();
+    type MaxFreezes = ();
+    type RuntimeFreezeReason = ();
 }
 
 parameter_types! {
@@ -196,6 +231,8 @@ impl pallet_eth_bridge::Config for TestRuntime {
     type ReportCorroborationOffence = ();
     type ProcessedEventsChecker = ();
     type ProcessedEventsHandler = ();
+    type EthereumEventsMigration = ();
+    type Quorum = AVN;
 }
 
 impl BridgeInterfaceNotification for TestRuntime {
@@ -233,7 +270,7 @@ impl pallet_session::historical::Config for TestRuntime {
 /// An extrinsic type used for tests.
 //type IdentificationTuple = (AccountId, AccountId);
 
-pub const INITIAL_TRANSACTION_ID: EthereumTransactionId = 0;
+pub const INITIAL_TRANSACTION_ID: EthereumId = 0;
 
 thread_local! {
     static PROCESSED_EVENTS: RefCell<Vec<(H256,H256)>> = RefCell::new(vec![]);
@@ -246,7 +283,7 @@ thread_local! {
         author_id_5(),
     ]));
 
-    static MOCK_TX_ID: RefCell<EthereumTransactionId> = RefCell::new(INITIAL_TRANSACTION_ID);
+    static MOCK_TX_ID: RefCell<EthereumId> = RefCell::new(INITIAL_TRANSACTION_ID);
 }
 
 impl ProcessedEventsChecker for TestRuntime {
