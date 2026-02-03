@@ -33,7 +33,7 @@ use frame_support::{
             DispatchTime, HARD_DEADLINE,
         },
         Currency, ExistenceRequirement, Get, Imbalance, IsSubType, QueryPreimage, StorePreimage,
-        WithdrawReasons,
+        UnixTime, WithdrawReasons,
     },
     BoundedVec, PalletId, Parameter,
 };
@@ -105,7 +105,7 @@ const PALLET_ID: &'static [u8; 13] = b"token_manager";
 pub mod pallet {
 
     use super::*;
-    use frame_support::{pallet_prelude::*, traits::UnixTime, Blake2_128Concat};
+    use frame_support::{pallet_prelude::*, Blake2_128Concat};
     use frame_system::{ensure_root, pallet_prelude::*};
 
     // Public interface of this pallet
