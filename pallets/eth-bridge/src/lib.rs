@@ -62,7 +62,7 @@ use frame_support::{
     dispatch::DispatchResultWithPostInfo,
     ensure,
     pallet_prelude::{StorageVersion, Weight},
-    traits::{Get, IsSubType},
+    traits::{Get, IsSubType, UnixTime},
     weights::WeightMeter,
     BoundedBTreeSet, BoundedVec,
 };
@@ -162,7 +162,6 @@ pub mod pallet {
     use super::*;
     use frame_support::{
         pallet_prelude::{ValueQuery, *},
-        traits::UnixTime,
         Blake2_128Concat,
     };
     use sp_avn_common::{
