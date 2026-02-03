@@ -672,7 +672,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     Call::EthereumEvents(inner_tx) => {
                         assert_ok!(EthereumEvents::validate_unsigned(
                             TransactionSource::Local,
@@ -717,20 +717,16 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     Call::EthereumEvents(crate::Call::submit_checkevent_result {
                         result,
                         ingress_counter: counter,
                         signature,
                         validator,
                     }) => {
-                        let data = &(SUBMIT_CHECKEVENT_RESULT_CONTEXT, result, counter);
-
-                        let signature_is_valid = data.using_encoded(|encoded_data| {
-                            validator.key.verify(&encoded_data, &signature)
-                        });
-
-                        assert!(signature_is_valid);
+                        let data: &[u8] = &(SUBMIT_CHECKEVENT_RESULT_CONTEXT, result, counter)
+                            .using_encoded(|encoded_data| encoded_data.to_vec());
+                        assert!(signature.verify(data, &validator.key.0));
                     },
                     _ => assert!(false),
                 };
@@ -837,7 +833,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     Call::EthereumEvents(inner_tx) => {
                         assert_ok!(EthereumEvents::validate_unsigned(
                             TransactionSource::Local,
@@ -882,20 +878,16 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     Call::EthereumEvents(crate::Call::challenge_event {
                         challenge,
                         ingress_counter: counter,
                         signature,
                         validator,
                     }) => {
-                        let data = &(CHALLENGE_EVENT_CONTEXT, challenge, counter);
-
-                        let signature_is_valid = data.using_encoded(|encoded_data| {
-                            validator.key.verify(&encoded_data, &signature)
-                        });
-
-                        assert!(signature_is_valid);
+                        let data: &[u8] = &(CHALLENGE_EVENT_CONTEXT, challenge, counter)
+                            .using_encoded(|encoded_data| encoded_data.to_vec());
+                        assert!(signature.verify(data, &validator.key.0));
                     },
                     _ => assert!(false),
                 };
@@ -985,7 +977,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     Call::EthereumEvents(inner_tx) => {
                         assert_ok!(EthereumEvents::validate_unsigned(
                             TransactionSource::Local,
@@ -1022,20 +1014,16 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     Call::EthereumEvents(crate::Call::process_event {
                         event_id,
                         ingress_counter: counter,
                         validator,
                         signature,
                     }) => {
-                        let data = &(PROCESS_EVENT_CONTEXT, event_id, counter);
-
-                        let signature_is_valid = data.using_encoded(|encoded_data| {
-                            validator.key.verify(&encoded_data, &signature)
-                        });
-
-                        assert!(signature_is_valid);
+                        let data: &[u8] = &(PROCESS_EVENT_CONTEXT, event_id, counter)
+                            .using_encoded(|encoded_data| encoded_data.to_vec());
+                        assert!(signature.verify(data, &validator.key.0));
                     },
                     _ => assert!(false),
                 };

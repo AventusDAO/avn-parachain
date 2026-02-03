@@ -12,7 +12,10 @@ use pallet_avn::vote::VotingSessionData;
 use parking_lot::RwLock;
 
 use sp_core::{offchain::testing::PoolState, H256};
-use sp_runtime::{offchain::storage::StorageValueRef, testing::UintAuthorityId, traits::BadOrigin};
+use sp_runtime::{
+    generic::Preamble, offchain::storage::StorageValueRef, testing::UintAuthorityId,
+    traits::BadOrigin,
+};
 use system::RawOrigin;
 
 fn record_summary_calculation_is_called(
@@ -30,8 +33,8 @@ fn get_unsigned_record_summary_calculation_call_from_chain(
 ) -> crate::Call<TestRuntime> {
     let tx = pool_state.write().transactions.pop().unwrap();
     let tx = Extrinsic::decode(&mut &*tx).unwrap();
-    assert_eq!(tx.signature, None);
-    match tx.call {
+    assert!(matches!(tx.preamble, Preamble::Bare(_)));
+    match tx.function {
         mock::RuntimeCall::Summary(inner_tx) => inner_tx,
         _ => unreachable!(),
     }
@@ -528,7 +531,7 @@ mod process_summary {
             let tx = pool_state.write().transactions.pop().unwrap();
             assert!(pool_state.read().transactions.is_empty());
             let tx = Extrinsic::decode(&mut &*tx).unwrap();
-            assert_eq!(tx.signature, None);
+            assert!(matches!(tx.preamble, Preamble::Bare(_)));
 
             // Setup total ingresses will store ingress_counter - 1,
             // and calling process_summary increases the ingress counter by 1.
@@ -548,7 +551,7 @@ mod process_summary {
                 .expect("Signature is signed");
 
             assert_eq!(
-                tx.call,
+                tx.function,
                 mock::RuntimeCall::Summary(crate::Call::record_summary_calculation {
                     new_block_number: context.last_block_in_range,
                     root_hash: context.root_hash_h256,
@@ -798,7 +801,7 @@ mod process_summary {
                 setup_blocks(&context);
                 setup_total_ingresses(&context);
 
-                // TODO [TYPE: test][PRI: medium][JIRA: 321]: Mock a submit_unsigned_transaction
+                // TODO [TYPE: test][PRI: medium][JIRA: 321]: Mock a submit_transaction
                 // with error
                 assert_noop!(
                     Summary::process_summary(context.last_block_in_range, &context.validator),

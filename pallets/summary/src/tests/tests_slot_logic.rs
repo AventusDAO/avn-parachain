@@ -8,6 +8,7 @@ use frame_support::{assert_noop, assert_ok};
 use parking_lot::RwLock;
 use sp_core::offchain::testing::PoolState;
 use sp_runtime::{
+    generic::Preamble,
     testing::{TestSignature, UintAuthorityId},
     traits::BadOrigin,
 };
@@ -107,8 +108,8 @@ mod advance_slot {
         ) -> crate::Call<TestRuntime> {
             let tx = pool_state.write().transactions.pop().unwrap();
             let tx = Extrinsic::decode(&mut &*tx).unwrap();
-            assert_eq!(tx.signature, None);
-            match tx.call {
+            assert!(matches!(tx.preamble, Preamble::Bare(_)));
+            match tx.function {
                 mock::RuntimeCall::Summary(inner_tx) => inner_tx,
                 _ => unreachable!(),
             }
@@ -549,7 +550,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     mock::RuntimeCall::Summary(inner_tx) => {
                         assert_ok!(Summary::validate_unsigned(TransactionSource::Local, &inner_tx));
                     },
@@ -580,7 +581,7 @@ mod signature_in {
                 let tx = pool_state.write().transactions.pop().unwrap();
                 let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                match tx.call {
+                match tx.function {
                     mock::RuntimeCall::Summary(crate::Call::advance_slot {
                         validator,
                         signature,
@@ -623,7 +624,7 @@ mod signature_in {
                     let tx = pool_state.write().transactions.pop().unwrap();
                     let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                    match tx.call {
+                    match tx.function {
                         mock::RuntimeCall::Summary(crate::Call::advance_slot {
                             validator: _,
                             signature,
@@ -663,7 +664,7 @@ mod signature_in {
                     let tx = pool_state.write().transactions.pop().unwrap();
                     let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                    match tx.call {
+                    match tx.function {
                         mock::RuntimeCall::Summary(crate::Call::advance_slot {
                             validator,
                             signature,
@@ -703,7 +704,7 @@ mod signature_in {
                     let tx = pool_state.write().transactions.pop().unwrap();
                     let tx = Extrinsic::decode(&mut &*tx).unwrap();
 
-                    match tx.call {
+                    match tx.function {
                         mock::RuntimeCall::Summary(crate::Call::advance_slot {
                             validator,
                             signature,

@@ -20,9 +20,7 @@ use core::cmp::Ordering;
 use codec::{Decode, Encode};
 use scale_info::TypeInfo;
 
-#[cfg(any(feature = "std", test))]
-pub use sp_runtime::BuildStorage;
-use sp_runtime::{create_runtime_str, generic, impl_opaque_keys};
+use sp_runtime::{generic, impl_opaque_keys};
 pub use sp_runtime::{MultiAddress, Perbill, Permill, RuntimeDebug};
 
 use sp_std::{prelude::*, vec::Vec};
@@ -87,9 +85,9 @@ pub type SignedBlock = generic::SignedBlock<Block>;
 /// BlockId type as expected by this runtime.
 pub type BlockId = generic::BlockId<Block>;
 
-/// The SignedExtension to the basic transaction logic.
+/// The extension to the basic transaction logic.
 #[docify::export(template_signed_extra)]
-pub type SignedExtra = (
+pub type TxExtension = (
     frame_system::CheckNonZeroSender<Runtime>,
     frame_system::CheckSpecVersion<Runtime>,
     frame_system::CheckTxVersion<Runtime>,
@@ -104,7 +102,7 @@ pub type SignedExtra = (
 
 /// Unchecked extrinsic type as expected by this runtime.
 pub type UncheckedExtrinsic =
-    generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, SignedExtra>;
+    generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
 
 /// Executive: handles dispatch to the various modules.
 pub type Executive = frame_executive::Executive<
@@ -131,14 +129,14 @@ impl_opaque_keys! {
 
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-    spec_name: create_runtime_str!("avn-parachain"),
-    impl_name: create_runtime_str!("avn-parachain"),
+    spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
+    impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
     spec_version: 134,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
-    state_version: 1,
+    system_version: 1,
 };
 
 #[docify::export]

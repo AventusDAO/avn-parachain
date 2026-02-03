@@ -7,7 +7,7 @@ use codec::alloc::sync::Arc;
 use frame_support::traits::Hooks;
 use parking_lot::RwLock;
 use sp_core::offchain::testing::PoolState;
-use sp_runtime::{offchain::storage::StorageValueRef, testing::UintAuthorityId};
+use sp_runtime::{generic::Preamble, offchain::storage::StorageValueRef, testing::UintAuthorityId};
 
 type MockValidator = Validator<UintAuthorityId, u64>;
 
@@ -163,8 +163,8 @@ mod record_summary_locks {
     fn get_call_from_mem_pool(pool_state: &Arc<RwLock<PoolState>>) -> crate::Call<TestRuntime> {
         let tx = pool_state.write().transactions.pop().unwrap();
         let tx = Extrinsic::decode(&mut &*tx).unwrap();
-        assert_eq!(tx.signature, None);
-        match tx.call {
+        assert!(matches!(tx.preamble, Preamble::Bare(_)));
+        match tx.function {
             mock::RuntimeCall::Summary(inner_tx) => inner_tx,
             _ => unreachable!(),
         }

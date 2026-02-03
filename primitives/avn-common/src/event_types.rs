@@ -260,7 +260,7 @@ impl AddedValidatorData {
         let eth_public_key = H512::from_slice(eth_public_key_full.as_slice());
 
         let t2_address = H256::from_slice(&topics[Self::TOPIC_INDEX_T2_ADDRESS]);
-        let validator_id = <U256 as From<&[u8]>>::from(&data);
+        let validator_id = U256::from_big_endian(&data);
         return Ok(AddedValidatorData {
             eth_public_key,
             t2_address,
@@ -467,7 +467,7 @@ impl NftMintData {
             return Err(Error::NftMintedEventBadTopicLength)
         }
 
-        let batch_id = <U256 as From<&[u8]>>::from(&topics[Self::TOPIC_INDEX_BATCH_ID]);
+        let batch_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_BATCH_ID]);
         let sale_index = u64::from_be_bytes(
             topics[Self::TOPIC_INDEX_SALE_INDEX][TWENTY_FOUR_BYTES..WORD_LENGTH]
                 .try_into()
@@ -537,7 +537,7 @@ impl NftTransferToData {
             return Err(Error::NftTransferToEventBadTopicLength)
         }
 
-        let nft_id = <U256 as From<&[u8]>>::from(&topics[Self::TOPIC_INDEX_NFT_ID]);
+        let nft_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_NFT_ID]);
         let t2_transfer_to_public_key =
             H256::from_slice(&topics[Self::TOPIC_INDEX_T2_TRANSFER_TO_PUBLIC_KEY]);
         let op_id = u64::from_be_bytes(
@@ -591,7 +591,7 @@ impl NftCancelListingData {
             return Err(Error::NftCancelListingEventDataOverflow)
         }
 
-        let nft_id = <U256 as From<&[u8]>>::from(&topics[Self::TOPIC_INDEX_NFT_ID]);
+        let nft_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_NFT_ID]);
         let op_id = u64::from_be_bytes(
             topics[Self::TOPIC_INDEX_OP_ID][TWENTY_FOUR_BYTES..WORD_LENGTH]
                 .try_into()
@@ -633,7 +633,7 @@ impl NftEndBatchListingData {
             return Err(Error::NftEndBatchListingEventBadTopicLength)
         }
 
-        let batch_id = <U256 as From<&[u8]>>::from(&topics[Self::TOPIC_INDEX_BATCH_ID]);
+        let batch_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_BATCH_ID]);
 
         return Ok(NftEndBatchListingData { batch_id })
     }

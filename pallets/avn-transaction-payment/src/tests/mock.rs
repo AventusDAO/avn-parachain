@@ -129,6 +129,7 @@ impl pallet_transaction_payment::Config for TestRuntime {
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
     type OperationalFeeMultiplier = ConstU8<5>;
+    type WeightInfo = pallet_transaction_payment::weights::SubstrateWeight<TestRuntime>;
 }
 
 parameter_types! {

@@ -45,12 +45,12 @@ frame-benchmarking = { optional = true, workspace = true }
 [dev-dependencies]
 frame-election-provider-support = { default-features = true, workspace = true }
 pallet-timestamp = { default-features = true, workspace = true }
-parking_lot.workspace = true
-pallet-balances = { workspace = true, features=["insecure_zero_ed"] }
+pallet-balances = { default-features = true, workspace = true, features=["insecure_zero_ed"] }
 sp-state-machine = { default-features = true, workspace = true }
-pallet-avn-proxy = { workspace = true, default-features = true }
+pallet-avn-proxy = { default-features = true, workspace = true }
 pallet-eth-bridge = { default-features = true, workspace = true }
-sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
+sp-avn-common = { default-features = true, workspace = true, features=["test-utils"] }
+parking_lot.workspace = true
 
 [features]
 migrate = []

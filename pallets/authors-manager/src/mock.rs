@@ -138,12 +138,21 @@ impl Config for TestRuntime {
     type MinimumAuthorsCount = MinimumAuthorsCount;
 }
 
-impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    type OverarchingCall = RuntimeCall;
     type Extrinsic = Extrinsic;
+    type RuntimeCall = RuntimeCall;
+}
+
+impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+        Extrinsic::new_bare(call)
+    }
 }
 
 parameter_types! {
@@ -205,6 +214,7 @@ impl pallet_balances::Config for TestRuntime {
     type FreezeIdentifier = ();
     type MaxFreezes = ();
     type RuntimeFreezeReason = ();
+    type DoneSlashHandler = ();
 }
 
 parameter_types! {

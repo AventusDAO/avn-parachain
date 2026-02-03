@@ -16,7 +16,7 @@ use frame_support::{
     traits::{Get, IsSubType},
 };
 use frame_system::{
-    offchain::{SendTransactionTypes, SubmitTransaction},
+    offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::BlockNumberFor,
 };
 use sp_core::{ConstU32, H160, H256};
@@ -153,10 +153,11 @@ pub mod pallet {
     // Public interface of this pallet
     #[pallet::config(with_default)]
     pub trait Config:
-        SendTransactionTypes<Call<Self>>
-        + frame_system::Config
+        frame_system::Config
         + avn::Config
         + pallet_session::historical::Config
+        + CreateTransactionBase<Call<Self>>
+        + CreateInherent<Call<Self>>
     {
         #[pallet::no_default_bounds]
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -185,18 +186,8 @@ pub mod pallet {
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
 
         /// The signature type used by accounts/transactions.
-        #[cfg(not(feature = "runtime-benchmarks"))]
         #[pallet::no_default]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        #[pallet::no_default]
-        type Signature: Verify<Signer = Self::Public>
-            + Member
-            + Decode
-            + Encode
-            + TypeInfo
-            + From<sp_core::sr25519::Signature>;
 
         /// Weight information for the extrinsics in this pallet.
         type WeightInfo: WeightInfo;
@@ -1233,7 +1224,7 @@ impl<T: Config> Pallet<T> {
             .sign(&(PROCESS_EVENT_CONTEXT, &checked.event.event_id, ingress_counter).encode())
             .ok_or(Error::<T>::ErrorSigning)?;
 
-        SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(
+        let xt = T::create_inherent(
             Call::process_event {
                 event_id: checked.event.event_id,
                 ingress_counter,
@@ -1241,8 +1232,9 @@ impl<T: Config> Pallet<T> {
                 signature,
             }
             .into(),
-        )
-        .map_err(|_| Error::<T>::ErrorSubmittingTransaction)?;
+        );
+        SubmitTransaction::<T, Call<T>>::submit_transaction(xt)
+            .map_err(|_| Error::<T>::ErrorSubmittingTransaction)?;
 
         Ok(())
     }
@@ -1271,7 +1263,7 @@ impl<T: Config> Pallet<T> {
             .key
             .sign(&(SUBMIT_CHECKEVENT_RESULT_CONTEXT, &result, ingress_counter).encode())
             .ok_or(Error::<T>::ErrorSigning)?;
-        SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(
+        let xt = T::create_inherent(
             Call::submit_checkevent_result {
                 result,
                 ingress_counter,
@@ -1279,8 +1271,10 @@ impl<T: Config> Pallet<T> {
                 validator: validator.clone(),
             }
             .into(),
-        )
-        .map_err(|_| Error::<T>::ErrorSubmittingTransaction)?;
+        );
+
+        SubmitTransaction::<T, Call<T>>::submit_transaction(xt)
+            .map_err(|_| Error::<T>::ErrorSubmittingTransaction)?;
 
         log::info!("Check result submitted successfully");
         Ok(())
@@ -1312,7 +1306,7 @@ impl<T: Config> Pallet<T> {
                 .ok_or(Error::<T>::ErrorSigning)?;
             // TODO [TYPE: business logic][PRI: medium][CRITICAL][JIRA: 349]: Allow for this event
             // to be resubmitted if it fails here
-            SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(
+            let xt = T::create_inherent(
                 Call::challenge_event {
                     challenge,
                     ingress_counter,
@@ -1320,8 +1314,9 @@ impl<T: Config> Pallet<T> {
                     validator: validator.clone(),
                 }
                 .into(),
-            )
-            .map_err(|_| Error::<T>::ErrorSubmittingTransaction)?;
+            );
+            SubmitTransaction::<T, Call<T>>::submit_transaction(xt)
+                .map_err(|_| Error::<T>::ErrorSubmittingTransaction)?;
 
             log::info!("Validation result submitted successfully");
         }

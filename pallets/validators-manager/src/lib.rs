@@ -21,7 +21,11 @@ use frame_support::{
     traits::{Currency, Get},
     transactional,
 };
-use frame_system::{offchain::SendTransactionTypes, pallet_prelude::BlockNumberFor, RawOrigin};
+use frame_system::{
+    offchain::{CreateInherent, CreateTransactionBase},
+    pallet_prelude::BlockNumberFor,
+    RawOrigin,
+};
 use pallet_session::{self as session, Config as SessionConfig};
 use sp_runtime::{
     scale_info::TypeInfo,
@@ -70,12 +74,13 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config:
-        SendTransactionTypes<Call<Self>>
-        + frame_system::Config
+        frame_system::Config
         + session::Config
         + avn::Config
         + parachain_staking::Config
         + pallet_session::historical::Config
+        + CreateTransactionBase<Call<Self>>
+        + CreateInherent<Call<Self>>
     {
         /// Overarching event type
         type RuntimeEvent: From<Event<Self>>

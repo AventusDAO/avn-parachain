@@ -140,12 +140,21 @@ impl sp_runtime::BoundToRuntimeAppPublic for TestRuntime {
     type Public = <mock::TestRuntime as avn::Config>::AuthorityId;
 }
 
-impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    type OverarchingCall = RuntimeCall;
     type Extrinsic = Extrinsic;
+    type RuntimeCall = RuntimeCall;
+}
+
+impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+        Extrinsic::new_bare(call)
+    }
 }
 
 pub const BASE_FEE: u64 = 12;
@@ -213,6 +222,7 @@ impl pallet_transaction_payment::Config for TestRuntime {
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
     type OperationalFeeMultiplier = ConstU8<5>;
+    type WeightInfo = ();
 }
 
 impl session::Config for TestRuntime {
@@ -325,7 +335,7 @@ impl WeightToFeeT for TransactionByteFee {
 
 /// create a transaction info struct from weight. Handy to avoid building the whole struct.
 pub fn info_from_weight(w: Weight) -> DispatchInfo {
-    DispatchInfo { weight: w, ..Default::default() }
+    DispatchInfo { call_weight: w, ..Default::default() }
 }
 
 #[derive(Clone)]

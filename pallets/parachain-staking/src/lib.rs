@@ -106,7 +106,7 @@ pub mod pallet {
         transactional, PalletId,
     };
     pub use frame_system::{
-        offchain::{SendTransactionTypes, SubmitTransaction},
+        offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
         pallet_prelude::*,
     };
     pub use pallet_avn::{
@@ -154,11 +154,12 @@ pub mod pallet {
     /// Configuration trait of this pallet.
     #[pallet::config]
     pub trait Config:
-        SendTransactionTypes<Call<Self>>
-        + frame_system::Config
+        frame_system::Config
         + pallet_session::Config
         + pallet_avn::Config
         + pallet_session::historical::Config
+        + CreateTransactionBase<Call<Self>>
+        + CreateInherent<Call<Self>>
     {
         /// The overarching call type.
         type RuntimeCall: Parameter
@@ -204,16 +205,7 @@ pub mod pallet {
         /// A type that can be used to verify signatures
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
         /// The signature type used by accounts/transactions.
-        #[cfg(not(feature = "runtime-benchmarks"))]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        type Signature: Verify<Signer = Self::Public>
-            + Member
-            + Decode
-            + Encode
-            + TypeInfo
-            + From<sp_core::sr25519::Signature>;
         /// A hook to verify if a collator is registed as a validator (with keys) in the session
         /// pallet
         type CollatorSessionRegistration: ValidatorRegistration<Self::AccountId>;

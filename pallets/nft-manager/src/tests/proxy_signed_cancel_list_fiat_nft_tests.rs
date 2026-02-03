@@ -43,7 +43,7 @@ struct Context {
 
 impl Default for Context {
     fn default() -> Self {
-        let nft_id = U256::from([
+        let nft_id = U256::from_big_endian(&[
             144, 32, 76, 127, 69, 26, 191, 42, 121, 72, 235, 94, 179, 147, 69, 29, 167, 189, 8, 44,
             104, 83, 241, 253, 146, 114, 166, 195, 200, 254, 120, 78,
         ]);
@@ -362,7 +362,7 @@ mod proxy_signed_cancel_list_fiat_nft {
                 let context = Context::default();
                 context.setup();
 
-                let other_nft_id = U256::from([1u8; 32]);
+                let other_nft_id = U256::from_big_endian(&[1u8; 32]);
                 let proof = create_proof_for_signed_cancel_list_fiat_nft(
                     &context.relayer,
                     &context.nft_owner_account,
@@ -699,7 +699,7 @@ mod signed_cancel_list_fiat_nft {
                 let context = Context::default();
                 context.setup();
 
-                let other_nft_id = U256::from([1u8; 32]);
+                let other_nft_id = U256::from_big_endian(&[1u8; 32]);
                 let proof = create_proof_for_signed_cancel_list_fiat_nft(
                     &context.relayer,
                     &context.nft_owner_account,
