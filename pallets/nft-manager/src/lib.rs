@@ -109,16 +109,7 @@ pub mod pallet {
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
 
         /// The signature type used by accounts/transactions.
-        #[cfg(not(feature = "runtime-benchmarks"))]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        type Signature: Verify<Signer = Self::Public>
-            + Member
-            + Decode
-            + Encode
-            + TypeInfo
-            + From<sp_core::sr25519::Signature>;
 
         type WeightInfo: WeightInfo;
 
@@ -904,13 +895,12 @@ impl<T: Config> Pallet<T> {
 
         data_to_hash.append(&mut contract[..].to_vec());
 
-        let mut unique_id_be = [0u8; 32];
-        unique_id.to_big_endian(&mut unique_id_be);
+        let unique_id_be = unique_id.to_big_endian();
         data_to_hash.append(&mut unique_id_be.to_vec());
 
         let hash = keccak_256(&data_to_hash);
 
-        return U256::from(hash)
+        return U256::from_big_endian(&hash)
     }
 
     fn remove_listing_from_open_for_sale(nft_id: &NftId) -> DispatchResult {

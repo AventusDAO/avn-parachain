@@ -38,6 +38,7 @@ use hex_literal::hex;
 use pallet_authorship::EventHandler;
 use rand::{RngCore, SeedableRng};
 use sp_application_crypto::KeyTypeId;
+use sp_avn_common::benchmarking::convert_sr25519_signature;
 use sp_core::{bounded::BoundedVec, ecdsa, ConstU32};
 use sp_runtime::{traits::StaticLookup, RuntimeAppPublic, WeakBoundedVec};
 use sp_std::{collections::btree_map::BTreeMap, vec, vec::Vec};
@@ -321,7 +322,11 @@ fn get_proof<T: Config>(
     signer: &T::AccountId,
     signature: sp_core::sr25519::Signature,
 ) -> Proof<T::Signature, T::AccountId> {
-    return Proof { signer: signer.clone(), relayer: relayer.clone(), signature: signature.into() }
+    return Proof {
+        signer: signer.clone(),
+        relayer: relayer.clone(),
+        signature: convert_sr25519_signature::<T::Signature>(signature),
+    }
 }
 
 fn get_caller<T: Config, F>(

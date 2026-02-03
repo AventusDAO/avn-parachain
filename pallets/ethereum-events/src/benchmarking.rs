@@ -11,6 +11,7 @@ use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite, whiteli
 use frame_system::{EventRecord, RawOrigin};
 use hex_literal::hex;
 use pallet_avn::{self as avn};
+use sp_avn_common::benchmarking::convert_sr25519_signature;
 use sp_core::{sr25519, ByteArray};
 use sp_runtime::WeakBoundedVec;
 
@@ -187,12 +188,13 @@ benchmarks! {
 
         // Signature is generated using the script in `scripts/benchmarking`.
         let signature = &hex!("a644590556915ea752559d52aded20e0fb2c586d478717f075d938fb18462373677042b0a202e048069b24ac76c9115e0222411d72da11a92337c5d67ec7d085");
+        let signature: sr25519::Signature = sr25519::Signature::from_slice(signature).expect("valid sr25519 signature");
         let tx_hash = H256::from([1; 32]);
 
         let proof: Proof<T::Signature, T::AccountId> = Proof {
             signer: signer.clone(),
             relayer: whitelisted_caller(),
-            signature: sr25519::Signature::from_slice(signature).unwrap().into()
+            signature: convert_sr25519_signature::<T::Signature>(signature),
         };
     }: _ (RawOrigin::<T::AccountId>::Signed(signer.clone()), proof.clone(), event_type, tx_hash)
     verify {

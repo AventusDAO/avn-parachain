@@ -33,7 +33,7 @@ mod app_sr25519 {
     use sp_application_crypto::{app_crypto, sr25519};
     app_crypto!(sr25519, BENCH_KEY_TYPE_ID);
 }
-use sp_avn_common::eth::concat_lower_data;
+use sp_avn_common::{benchmarking::convert_sr25519_signature, eth::concat_lower_data};
 
 type SignerId = app_sr25519::Public;
 
@@ -102,10 +102,11 @@ impl<T: Config> Transfer<T> {
         relayer: &T::AccountId,
         signature: &[u8],
     ) -> Proof<T::Signature, T::AccountId> {
+        let signature = sr25519::Signature::from_slice(signature).expect("valid sr25519 signature");
         return Proof {
             signer: self.from.clone(),
             relayer: relayer.clone(),
-            signature: sr25519::Signature::from_slice(signature).unwrap().into(),
+            signature: convert_sr25519_signature::<T::Signature>(signature),
         }
     }
 }
@@ -176,7 +177,7 @@ impl<T: Config> Lower<T> {
         return Proof {
             signer: self.from_account_id.clone(),
             relayer: relayer_account_id.clone(),
-            signature: sr25519::Signature::from_slice(signature).unwrap().into(),
+            signature: T::Signature::decode(&mut &signature[..]).unwrap(),
         }
     }
 }

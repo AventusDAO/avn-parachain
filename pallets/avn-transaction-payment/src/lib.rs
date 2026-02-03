@@ -10,7 +10,7 @@ use frame_support::{
     dispatch::{DispatchResult, GetDispatchInfo, PostDispatchInfo},
     traits::{
         fungible::{Balanced, Credit, Debt, Inspect},
-        tokens::Precision,
+        tokens::{Precision, WithdrawConsequence},
         Imbalance, OnUnbalanced,
     },
     unsigned::TransactionValidityError,
@@ -263,6 +263,26 @@ where
         }
     }
 
+    /// Check if the predicted fee from the transaction origin can be withdrawn.
+    ///
+    /// Note: The `fee` already includes the `tip`.
+    fn can_withdraw_fee(
+        who: &<T as frame_system::Config>::AccountId,
+        _call: &<T as frame_system::Config>::RuntimeCall,
+        _dispatch_info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
+        fee: Self::Balance,
+        _tip: Self::Balance,
+    ) -> Result<(), TransactionValidityError> {
+        if fee.is_zero() {
+            return Ok(())
+        }
+
+        match F::can_withdraw(who, fee) {
+            WithdrawConsequence::Success => Ok(()),
+            _ => Err(InvalidTransaction::Payment.into()),
+        }
+    }
+
     /// Hand the fee and the tip over to the `[OnUnbalanced]` implementation.
     /// Since the predicted fee might have been too high, parts of the fee may
     /// be refunded.
@@ -312,6 +332,15 @@ where
         }
         Ok(())
     }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn endow_account(_who: &T::AccountId, _amount: Self::Balance) {
+        unimplemented!()
+    }
+    #[cfg(feature = "runtime-benchmarks")]
+    fn minimum_balance() -> Self::Balance {
+        unimplemented!()
+    }
 }
 
 // Vanilla fungible adapter from polkadot sdk without any discount logic
@@ -356,6 +385,26 @@ where
         }
     }
 
+    /// Check if the predicted fee from the transaction origin can be withdrawn.
+    ///
+    /// Note: The `fee` already includes the `tip`.
+    fn can_withdraw_fee(
+        who: &<T as frame_system::Config>::AccountId,
+        _call: &<T as frame_system::Config>::RuntimeCall,
+        _dispatch_info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
+        fee: Self::Balance,
+        _tip: Self::Balance,
+    ) -> Result<(), TransactionValidityError> {
+        if fee.is_zero() {
+            return Ok(())
+        }
+
+        match F::can_withdraw(who, fee) {
+            WithdrawConsequence::Success => Ok(()),
+            _ => Err(InvalidTransaction::Payment.into()),
+        }
+    }
+
     /// Hand the fee and the tip over to the `[OnUnbalanced]` implementation.
     /// Since the predicted fee might have been too high, parts of the fee may
     /// be refunded.
@@ -391,6 +440,14 @@ where
         }
 
         Ok(())
+    }
+    #[cfg(feature = "runtime-benchmarks")]
+    fn endow_account(_who: &T::AccountId, _amount: Self::Balance) {
+        unimplemented!()
+    }
+    #[cfg(feature = "runtime-benchmarks")]
+    fn minimum_balance() -> Self::Balance {
+        unimplemented!()
     }
 }
 
