@@ -120,6 +120,7 @@ pub enum BridgeContractMethod {
     TriggerGrowth,
     AddAuthor,
     RemoveAuthor,
+    BurnFees,
 }
 
 impl BridgeContractMethod {
@@ -132,6 +133,7 @@ impl BridgeContractMethod {
             BridgeContractMethod::TriggerGrowth => b"triggerGrowth",
             BridgeContractMethod::AddAuthor => b"addAuthor",
             BridgeContractMethod::RemoveAuthor => b"removeAuthor",
+            BridgeContractMethod::BurnFees => b"burnFees",
         }
     }
 }
@@ -148,6 +150,7 @@ impl TryFrom<&[u8]> for BridgeContractMethod {
             b"triggerGrowth" => Ok(BridgeContractMethod::TriggerGrowth),
             b"addAuthor" => Ok(BridgeContractMethod::AddAuthor),
             b"removeAuthor" => Ok(BridgeContractMethod::RemoveAuthor),
+            b"burnFees" => Ok(BridgeContractMethod::BurnFees),
             _ => Err(()),
         }
     }

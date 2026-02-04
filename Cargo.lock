@@ -4047,6 +4047,8 @@ name = "external-service"
 version = "8.4.1"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "chrono",
  "client-extrinsic-utils",
  "ethereum-types 0.11.0",
  "futures",
@@ -4059,6 +4061,7 @@ dependencies = [
  "pallet-eth-bridge",
  "pallet-eth-bridge-runtime-api",
  "parity-scale-codec 3.6.11",
+ "reqwest",
  "sc-client-api",
  "sc-client-db",
  "sc-keystore",
@@ -7651,7 +7654,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-oracle"
-version = "6.11.1"
+version = "8.4.1"
 dependencies = [
  "frame-benchmarking",
  "frame-support",

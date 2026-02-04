@@ -82,43 +82,6 @@ pub mod bounds {
     pub type ProcessingBatchBound = ConstU32<64>;
 }
 
-#[derive(Debug)]
-pub enum ECDSAVerificationError {
-    InvalidSignature,
-    InvalidValueForV,
-    InvalidValueForRS,
-    InvalidMessageFormat,
-    BadSignature,
-    FailedToHashStringData,
-    FailedToHash32BytesHexData,
-}
-
-pub enum BridgeContractMethod {
-    ReferenceRateUpdatedAt,
-    CheckReferenceRate,
-    UpdateReferenceRate,
-    PublishRoot,
-    TriggerGrowth,
-    AddAuthor,
-    RemoveAuthor,
-    BurnFees,
-}
-
-impl BridgeContractMethod {
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            BridgeContractMethod::ReferenceRateUpdatedAt => b"referenceRateUpdatedAt",
-            BridgeContractMethod::CheckReferenceRate => b"checkReferenceRate",
-            BridgeContractMethod::UpdateReferenceRate => b"updateReferenceRate",
-            BridgeContractMethod::PublishRoot => b"publishRoot",
-            BridgeContractMethod::TriggerGrowth => b"triggerGrowth",
-            BridgeContractMethod::AddAuthor => b"addAuthor",
-            BridgeContractMethod::RemoveAuthor => b"removeAuthor",
-            BridgeContractMethod::BurnFees => b"burnFees",
-        }
-    }
-}
-
 // Struct that holds the information about an Ethereum transaction
 // See https://github.com/ethereum/wiki/wiki/JSON-RPC#parameters-22
 #[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, Default)]

@@ -19,6 +19,7 @@ use frame_system::{self as system};
 
 use core::convert::TryInto;
 use frame_support::{traits::ExistenceRequirement, PalletId};
+use frame_support::traits::Currency;
 use frame_system::Pallet as System;
 pub use pallet::*;
 use pallet_authorship;
