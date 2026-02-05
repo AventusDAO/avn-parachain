@@ -60,9 +60,9 @@ use crate::{
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary, System,
-    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee,
-    XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager,
+    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;

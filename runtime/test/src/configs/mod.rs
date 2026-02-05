@@ -58,7 +58,7 @@ use crate::{
     Moment, NftManager, Nonce, Offences, Ordering, OriginCaller, PalletInfo, ParachainStaking,
     ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime, RuntimeCall,
     RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler,
-    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, TokenManager,
+    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, Timestamp, TokenManager,
     TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee, XcmpQueue,
     AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
     NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
