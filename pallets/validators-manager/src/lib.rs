@@ -909,7 +909,7 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
         }
 
         let Some((account_id, ingress_counter)) = TransactionIdToAction::<T>::take(tx_id) else {
-            return Ok(())
+            return Ok(());
         };
         let action_data = <ValidatorActions<T>>::get(&account_id, ingress_counter)
             .ok_or(Error::<T>::ValidatorsActionDataNotFound)?;

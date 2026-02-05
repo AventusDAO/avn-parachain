@@ -49,6 +49,7 @@ frame_support::construct_runtime!(
 
 parameter_types! {
     pub const RewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
+    pub const VirtualNodeStake: u128 = 2000 * AVT;
 }
 
 impl Config for TestRuntime {
@@ -61,6 +62,7 @@ impl Config for TestRuntime {
     type RewardPotId = RewardPotId;
     type TimeProvider = pallet_timestamp::Pallet<TestRuntime>;
     type SignedTxLifetime = ConstU32<64>;
+    type VirtualNodeStake = VirtualNodeStake;
     type WeightInfo = ();
 }
 
@@ -90,12 +92,21 @@ impl session::Config for TestRuntime {
     type WeightInfo = ();
 }
 
-impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    type OverarchingCall = RuntimeCall;
+    type RuntimeCall = RuntimeCall;
     type Extrinsic = Extrinsic;
+}
+
+impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+        Extrinsic::new_bare(call)
+    }
 }
 
 parameter_types! {

@@ -844,7 +844,7 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
         }
 
         let Some((account_id, ingress_counter)) = TransactionToAction::<T>::take(tx_id) else {
-            return Ok(())
+            return Ok(());
         };
         let action_data = <AuthorActions<T>>::get(&account_id, ingress_counter)
             .ok_or(Error::<T>::AuthorsActionDataNotFound)?;

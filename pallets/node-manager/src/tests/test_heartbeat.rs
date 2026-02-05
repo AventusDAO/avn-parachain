@@ -71,7 +71,7 @@ fn submit_multiple_heartbeats(n: u64, pool_state: Arc<RwLock<PoolState>>) {
     for _ in 0..n {
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state.clone());
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // Move forward
         System::set_block_number(
@@ -96,11 +96,11 @@ mod given_a_reward_period {
             NodeManager::offchain_worker(System::block_number());
 
             let tx = pop_tx_from_mempool(pool_state);
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Check if the transaction from the mempool is what we expected
             assert!(matches!(
-                tx.call,
+                tx.function,
                 RuntimeCall::NodeManager(crate::Call::offchain_submit_heartbeat {
                     node: _,
                     reward_period_index: _,
@@ -145,7 +145,7 @@ mod given_a_reward_period {
 
             // Check if the transaction from the mempool is what we expected
             assert!(matches!(
-                tx.call,
+                tx.function,
                 RuntimeCall::NodeManager(crate::Call::offchain_submit_heartbeat {
                     node: _,
                     reward_period_index: _,
@@ -216,7 +216,7 @@ mod given_a_reward_period {
 
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state.clone());
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Ensure the tx has executed successfully
             let reward_period = <RewardPeriod<TestRuntime>>::get().current;
@@ -229,7 +229,7 @@ mod given_a_reward_period {
             // Call OCW and send transactions
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state);
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             let uptime_info =
                 <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
@@ -321,7 +321,7 @@ mod given_a_reward_period {
 
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state.clone());
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Rotate signing key
             let new_signing_key = UintAuthorityId(999);
@@ -431,7 +431,7 @@ mod fails_when {
             let reward_period = <RewardPeriod<TestRuntime>>::get().current;
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state.clone());
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             let signature =
                 context.signing_key.sign(&("DummyProof").encode()).expect("Error signing");

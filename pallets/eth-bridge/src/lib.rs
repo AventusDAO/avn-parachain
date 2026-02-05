@@ -1112,7 +1112,7 @@ pub mod pallet {
                     author,
                     replay_attempt,
                     signature,
-                } =>
+                } => {
                     if AVN::<T>::signature_is_valid(
                         &(
                             Instance::<T, I>::get().hash(),
@@ -1134,7 +1134,8 @@ pub mod pallet {
                             .build()
                     } else {
                         InvalidTransaction::Custom(3u8).into()
-                    },
+                    }
+                },
                 Call::submit_ethereum_events { author, events_partition, signature } =>
                     if Self::does_range_matches_active(&events_partition) &&
                         AVN::<T>::signature_is_valid(
