@@ -6,13 +6,13 @@ use sp_staking::{
     SessionIndex,
 };
 
-use codec::{Decode, Encode};
+use codec::{Decode, DecodeWithMemTracking, Encode};
 use pallet_session::{historical::IdentificationTuple, Config as SessionConfig};
 use sp_runtime::{scale_info::TypeInfo, traits::Convert};
 use sp_staking::offence::ReportOffence;
 use sp_std::prelude::*;
 
-#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
+#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo, DecodeWithMemTracking)]
 pub enum EthereumLogOffenceType {
     IncorrectValidationResultSubmitted,
     ChallengeAttemptedOnValidResult,

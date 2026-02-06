@@ -9,7 +9,7 @@ use alloc::{
 };
 
 use crate::bounds::VotingSessionIdBound;
-use codec::{Codec, Decode, Encode, MaxEncodedLen};
+use codec::{Codec, Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
 use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
@@ -101,7 +101,9 @@ impl EthTransaction {
     }
 }
 
-#[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, Default, Debug, TypeInfo)]
+#[derive(
+    Encode, Decode, Copy, Clone, PartialEq, Eq, Default, Debug, TypeInfo, DecodeWithMemTracking,
+)]
 pub struct Proof<Signature: TypeInfo, AccountId> {
     pub signer: AccountId,
     pub relayer: AccountId,
@@ -430,7 +432,19 @@ impl<BlockNumber, Weight: Zero> OnIdleHandler<BlockNumber, Weight> for () {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct RootRange<BlockNumber: AtLeast32Bit> {
     pub from_block: BlockNumber,
     pub to_block: BlockNumber,
@@ -442,7 +456,19 @@ impl<BlockNumber: AtLeast32Bit> RootRange<BlockNumber> {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct RootId<BlockNumber: AtLeast32Bit> {
     pub range: RootRange<BlockNumber>,
     pub ingress_counter: IngressCounter,

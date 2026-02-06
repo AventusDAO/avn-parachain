@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_system::{offchain::SubmitTransaction, pallet_prelude::BlockNumberFor};
 use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::event_types::Validator;
@@ -21,7 +21,9 @@ pub const UNKNOWN_CHALLENGE_REASON: u8 = 10;
 
 pub type SlotNumber = u32;
 
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode, Decode, Clone, PartialEq, Debug, Eq, MaxEncodedLen, TypeInfo, DecodeWithMemTracking,
+)]
 pub enum SummaryChallengeReason {
     /// The slot has not been advanced
     SlotNotAdvanced(SlotNumber),
@@ -30,7 +32,9 @@ pub enum SummaryChallengeReason {
     Unknown,
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, MaxEncodedLen, TypeInfo)]
+#[derive(
+    Encode, Decode, Default, Clone, PartialEq, Debug, MaxEncodedLen, TypeInfo, DecodeWithMemTracking,
+)]
 pub struct SummaryChallenge<AccountId: Member> {
     pub challenge_reason: SummaryChallengeReason,
     pub challenger: AccountId,

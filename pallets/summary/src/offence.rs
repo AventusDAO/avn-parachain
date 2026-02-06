@@ -6,13 +6,15 @@ use sp_staking::{
     SessionIndex,
 };
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use pallet_session::{historical::IdentificationTuple, Config as SessionConfig};
 use sp_core::Get;
 use sp_runtime::{scale_info::TypeInfo, traits::Convert};
 use sp_staking::offence::ReportOffence;
 use sp_std::prelude::*;
-#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, MaxEncodedLen, TypeInfo)]
+#[derive(
+    PartialEq, Eq, Clone, Debug, Encode, Decode, MaxEncodedLen, TypeInfo, DecodeWithMemTracking,
+)]
 pub enum SummaryOffenceType {
     InvalidSignatureSubmitted,
     InvalidVoteSubmitted,
