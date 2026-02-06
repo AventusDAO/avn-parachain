@@ -35,7 +35,10 @@ use sc_service::{
 };
 use sc_telemetry::{Telemetry, TelemetryHandle, TelemetryWorker, TelemetryWorkerHandle};
 
-use sp_avn_common::{DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER, EXTERNAL_SERVICE_PORT_NUMBER_KEY};
+use sp_avn_common::{
+    transaction_filter::{ExtrinsicFilter, FilteredPool, FilterResult},
+    DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER, EXTERNAL_SERVICE_PORT_NUMBER_KEY,
+};
 use sp_keystore::KeystorePtr;
 use substrate_prometheus_endpoint::Registry;
 
@@ -62,6 +65,43 @@ pub type Service = PartialComponents<
     sc_transaction_pool::TransactionPoolHandle<Block, ParachainClient>,
     (ParachainBlockImport, Option<Telemetry>, Option<TelemetryWorkerHandle>),
 >;
+
+/// Extrinsic filter that delegates to the runtime's `is_extrinsic_allowed` function.
+struct RuntimeExtrinsicFilter {
+    enabled: bool,
+    log_rejections: bool,
+}
+
+impl RuntimeExtrinsicFilter {
+    fn new(config: &AvnCliConfiguration) -> Self {
+        Self {
+            enabled: config.enable_transaction_filter,
+            log_rejections: config.transaction_filter_log_rejections,
+        }
+    }
+}
+
+impl ExtrinsicFilter for RuntimeExtrinsicFilter {
+    fn check(&self, xt: &sp_core::Bytes) -> FilterResult {
+        if !self.enabled {
+            return FilterResult::Allowed
+        }
+
+        let result = avn_parachain_runtime::is_extrinsic_allowed(xt.as_ref());
+
+        if self.log_rejections {
+            match result {
+                FilterResult::Allowed => {},
+                FilterResult::DisallowedCall =>
+                    log::warn!(target: "tx-filter", "Rejected disallowed transaction"),
+                FilterResult::Malformed =>
+                    log::warn!(target: "tx-filter", "Rejected malformed transaction"),
+            }
+        }
+
+        result
+    }
+}
 
 /// Starts a `ServiceBuilder` for a full service.
 ///
@@ -169,7 +209,7 @@ fn build_import_queue(
     )
 }
 
-fn start_consensus(
+fn start_consensus<Pool>(
     client: Arc<ParachainClient>,
     backend: Arc<ParachainBackend>,
     block_import: ParachainBlockImport,
@@ -177,14 +217,17 @@ fn start_consensus(
     telemetry: Option<TelemetryHandle>,
     task_manager: &TaskManager,
     relay_chain_interface: Arc<dyn RelayChainInterface>,
-    transaction_pool: Arc<sc_transaction_pool::TransactionPoolHandle<Block, ParachainClient>>,
+    transaction_pool: Arc<Pool>,
     keystore: KeystorePtr,
     relay_chain_slot_duration: Duration,
     para_id: ParaId,
     collator_key: CollatorPair,
     overseer_handle: OverseerHandle,
     announce_block: Arc<dyn Fn(Hash, Option<Vec<u8>>) + Send + Sync>,
-) -> Result<(), sc_service::Error> {
+) -> Result<(), sc_service::Error>
+where
+    Pool: sc_transaction_pool_api::TransactionPool<Block = Block> + 'static,
+{
     let proposer_factory = sc_basic_authorship::ProposerFactory::with_proof_recording(
         task_manager.spawn_handle(),
         client.clone(),
@@ -268,7 +311,14 @@ pub async fn start_parachain_node(
     .map_err(|e| sc_service::Error::Application(Box::new(e) as Box<_>))?;
 
     let validator = parachain_config.role.is_authority();
-    let transaction_pool = params.transaction_pool.clone();
+
+    // Pool wiring: RPC and offchain workers use `transaction_pool` (FilteredPool) so
+    // submissions go through the filter. Network/consensus use `inner_pool` because
+    // Cumulus API requires the concrete pool type.
+    let filter: Arc<dyn ExtrinsicFilter> = Arc::new(RuntimeExtrinsicFilter::new(&avn_cli_config));
+    let inner_pool = params.transaction_pool.clone();
+    let transaction_pool =
+        Arc::new(FilteredPool::new(params.transaction_pool, filter));
     let import_queue_service = params.import_queue.service();
 
     let avn_port = avn_cli_config.avn_port.clone();
@@ -280,7 +330,7 @@ pub async fn start_parachain_node(
             parachain_config: &parachain_config,
             net_config,
             client: client.clone(),
-            transaction_pool: transaction_pool.clone(),
+            transaction_pool: inner_pool, // Cumulus API requires concrete pool type
             para_id,
             spawn_handle: task_manager.spawn_handle(),
             relay_chain_interface: relay_chain_interface.clone(),
@@ -326,11 +376,10 @@ pub async fn start_parachain_node(
 
     let rpc_builder = {
         let client = client.clone();
-        let transaction_pool = transaction_pool.clone();
+        let pool = transaction_pool.clone();
 
         Box::new(move |_| {
-            let deps =
-                crate::rpc::FullDeps { client: client.clone(), pool: transaction_pool.clone() };
+            let deps = crate::rpc::FullDeps { client: client.clone(), pool: pool.clone() };
 
             crate::rpc::create_full(deps).map_err(Into::into)
         })
