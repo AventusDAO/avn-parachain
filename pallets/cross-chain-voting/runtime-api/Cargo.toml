@@ -1,0 +1,29 @@
+[package]
+name = "pallet-cross-chain-voting-runtime-api"
+description = "Runtime API for pallet-cross-chain-voting"
+license = "GPL-3.0"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec = { workspace = true, features = ["derive"] }
+sp-api.workspace = true
+sp-std.workspace = true
+sp-core.workspace = true
+node-primitives.workspace = true
+
+[features]
+default = ["std"]
+std = [
+  "codec/std",
+  "sp-api/std",
+  "sp-std/std",
+  "sp-core/std",
+]
