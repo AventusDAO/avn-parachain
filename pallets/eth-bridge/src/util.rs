@@ -1,11 +1,7 @@
 use super::*;
 use crate::{Config, AVN};
-use frame_support::{traits::UnixTime, BoundedVec};
+use frame_support::BoundedVec;
 use sp_avn_common::EthQueryResponse;
-
-pub fn time_now<T: Config<I>, I: 'static>() -> u64 {
-    <T as pallet::Config<I>>::TimeProvider::now().as_secs()
-}
 
 pub fn has_enough_corroborations<T: Config<I>, I: 'static>(corroborations: usize) -> bool {
     // the sender cannot corroborate their own transaction

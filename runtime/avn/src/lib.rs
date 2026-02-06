@@ -182,18 +182,18 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 
 #[docify::export]
 mod block_times {
-    use runtime_common::constants::time::MILLISECS_PER_BLOCK;
+    use runtime_common::constants::time::MILLI_SECS_PER_BLOCK;
     /// This determines the average expected block time that we are targeting. Blocks will be
     /// produced at a minimum duration defined by `SLOT_DURATION`. `SLOT_DURATION` is picked up by
     /// `pallet_timestamp` which is in turn picked up by `pallet_aura` to implement `fn
     /// slot_duration()`.
     ///
     /// Change this to adjust the block time.
-    pub const RUNTIME_MILLISECS_PER_BLOCK: u64 = MILLISECS_PER_BLOCK;
+    pub const RUNTIME_MILLISECS_PER_BLOCK: u64 = MILLI_SECS_PER_BLOCK;
 
     // NOTE: Currently it is not possible to change the slot duration after the chain has started.
     // Attempting to do so will brick block production.
-    pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
+    pub const SLOT_DURATION: u64 = RUNTIME_MILLISECS_PER_BLOCK;
 }
 pub use block_times::*;
 
@@ -212,8 +212,9 @@ const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 /// We allow for 0.5 of a second of compute with a 12 second average block time.
 // TODO set for async backing We allow for 2 seconds of compute with a 6 second average block time.
 const MAXIMUM_BLOCK_WEIGHT: Weight = Weight::from_parts(
-    // TODO set for asynch backing WEIGHT_REF_TIME_PER_SECOND.saturating_mul(2),
-    WEIGHT_REF_TIME_PER_SECOND.saturating_div(2),
+    // TODO set when asynch backing is disabled
+    // WEIGHT_REF_TIME_PER_SECOND.saturating_div(2),
+    WEIGHT_REF_TIME_PER_SECOND.saturating_mul(2),
     cumulus_primitives_core::relay_chain::MAX_POV_SIZE as u64,
 );
 

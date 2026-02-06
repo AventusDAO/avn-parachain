@@ -17,7 +17,8 @@
 mod xcm_config;
 
 // Substrate and Polkadot dependencies
-use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
+// use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
+use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 use frame_support::{
     derive_impl,
@@ -54,15 +55,15 @@ use crate::{
     fungible,
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
-    AvnProxyConfig, Balance, Balances, Block, BlockNumber, EnsureSigned, EthBridge, Hash,
-    Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment,
-    NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
+    AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, EnsureSigned, EthBridge,
+    Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
+    Moment, NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary, System,
-    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee,
-    XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager,
+    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -139,8 +140,8 @@ impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
     type OnTimestampSet = Aura;
-    // TODO update to 0 when enabling asynch backing
-    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
+    // TODO update to SLOT_DURATION / 2 to disable asynch backing
+    type MinimumPeriod = ConstU64<0>;
     type WeightInfo = ();
 }
 
@@ -198,11 +199,10 @@ impl cumulus_pallet_parachain_system::Config for Runtime {
     type ReservedDmpWeight = ReservedDmpWeight;
     type XcmpMessageHandler = XcmpQueue;
     type ReservedXcmpWeight = ReservedXcmpWeight;
-    // TODO review this
-    // TODO use RelayNumberMonotonicallyIncreases once asynchronous backing is enabled.
-    type CheckAssociatedRelayNumber = RelayNumberStrictlyIncreases;
-    // TODO use ConsensusHook once asynchronous backing is enabled.
-    type ConsensusHook = cumulus_pallet_parachain_system::consensus_hook::ExpectParentIncluded;
+    // TODO Review this and use RelayNumberStrictlyIncreases and ExpectParentIncluded to disable
+    // Asynchronous backing
+    type CheckAssociatedRelayNumber = RelayNumberMonotonicallyIncreases;
+    type ConsensusHook = ConsensusHook;
     type SelectCore = cumulus_pallet_parachain_system::DefaultCoreSelector<Runtime>;
 }
 
@@ -480,6 +480,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -531,7 +532,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type MinEthBlockConfirmation = MinEthBlockConfirmation;
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);

@@ -58,7 +58,7 @@ use crate::{
     Moment, NftManager, Nonce, Offences, Ordering, OriginCaller, PalletInfo, ParachainStaking,
     ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime, RuntimeCall,
     RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler,
-    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, TokenManager,
+    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, Timestamp, TokenManager,
     TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee, XcmpQueue,
     AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
     NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
@@ -139,7 +139,7 @@ impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
     type OnTimestampSet = Aura;
-    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
+    type MinimumPeriod = ConstU64<0>;
     type WeightInfo = ();
 }
 
@@ -275,7 +275,7 @@ impl pallet_aura::Config for Runtime {
     type DisabledValidators = ();
     type MaxAuthorities = ConstU32<100_000>;
     type AllowMultipleBlocksPerSlot = ConstBool<true>;
-    type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Self>;
+    type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
 parameter_types! {
@@ -507,6 +507,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -539,7 +540,7 @@ impl pallet_eth_bridge::Config<MainEthBridge> for Runtime {
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
     type ReportCorroborationOffence = Offences;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification =
         (Summary, TokenManager, NftManager, ParachainStaking, ValidatorsManager);
@@ -556,7 +557,7 @@ impl pallet_eth_bridge::Config<SecondaryEthBridge> for Runtime {
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
     type ReportCorroborationOffence = Offences;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification =
         (Summary, TokenManager, NftManager, ParachainStaking, ValidatorsManager);
