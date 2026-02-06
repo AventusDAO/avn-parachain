@@ -33,10 +33,10 @@ pallet-avn.workspace = true
 serde = { features = ["derive"], workspace = true, optional = true }
 
 # Optional imports for benchmarking
-parking_lot.workspace = true
 frame-benchmarking = { optional = true, workspace = true }
 
 [dev-dependencies]
+parking_lot.workspace = true
 pallet-timestamp = { default-features = true, workspace = true }
 pallet-balances = { workspace = true, default-features = true }
 sp-state-machine = { default-features = true, workspace = true }

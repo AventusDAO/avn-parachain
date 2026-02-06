@@ -7,7 +7,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Decode, Encode};
+use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_support::{
     dispatch::{DispatchResult, DispatchResultWithPostInfo, GetDispatchInfo, PostDispatchInfo},
     ensure,
@@ -248,7 +248,9 @@ pub trait ProvableProxy<Call, Signature: scale_info::TypeInfo, AccountId>:
     fn get_proof(call: &Call) -> Option<Proof<Signature, AccountId>>;
 }
 
-#[derive(Encode, Decode, Copy, Clone, PartialEq, Eq, Default, Debug, TypeInfo)]
+#[derive(
+    Encode, Decode, Copy, Clone, PartialEq, Eq, Default, Debug, TypeInfo, DecodeWithMemTracking,
+)]
 pub struct PaymentInfo<AccountId, Balance, Signature: TypeInfo, Token> {
     pub payer: AccountId,
     pub recipient: AccountId,

@@ -1,4 +1,4 @@
-use codec::{Decode, Encode};
+use codec::{Decode, DecodeWithMemTracking, Encode};
 use pallet_session::{historical::IdentificationTuple, Config as SessionConfig};
 use sp_runtime::{scale_info::TypeInfo, traits::Convert, Perbill};
 use sp_staking::{
@@ -9,7 +9,7 @@ use sp_std::{prelude::*, vec};
 
 use crate::Event;
 
-#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo)]
+#[derive(PartialEq, Eq, Clone, Debug, Encode, Decode, TypeInfo, DecodeWithMemTracking)]
 pub enum EthBridgeOffenceType {
     ChallengeAttemptedOnSuccessfulTransaction,
     ChallengeAttemptedOnUnsuccessfulTransaction,

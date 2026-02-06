@@ -69,7 +69,7 @@ construct_runtime!(
         Authorship: pallet_authorship::{Pallet, Storage},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         AvnProxy: avn_proxy::{Pallet, Call, Storage, Event<T>},
         Historical: pallet_session::historical::{Pallet, Storage},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
@@ -330,6 +330,7 @@ impl session::Config for Test {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = ParachainStaking;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 impl avn_proxy::Config for Test {
@@ -379,7 +380,19 @@ impl BridgeInterfaceNotification for Test {
 
 // Test Avn proxy configuration logic
 // We only allow System::Remark and signed_mint_single_nft calls to be proxied
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, Debug, TypeInfo)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    Debug,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 pub struct TestAvnProxyConfig {}
 impl Default for TestAvnProxyConfig {
     fn default() -> Self {
@@ -568,7 +581,7 @@ impl ExtBuilder {
     pub(crate) fn build(self) -> sp_io::TestExternalities {
         let mut t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 
-        pallet_balances::GenesisConfig::<Test> { balances: self.balances }
+        pallet_balances::GenesisConfig::<Test> { balances: self.balances, ..Default::default() }
             .assimilate_storage(&mut t)
             .expect("Pallet balances storage can be assimilated");
         pallet_parachain_staking::GenesisConfig::<Test> {
