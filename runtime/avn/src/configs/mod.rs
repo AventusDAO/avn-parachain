@@ -60,9 +60,9 @@ use crate::{
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary, System,
-    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee,
-    XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager,
+    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -474,6 +474,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -525,7 +526,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type MinEthBlockConfirmation = MinEthBlockConfirmation;
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);
