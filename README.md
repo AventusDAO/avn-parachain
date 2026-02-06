@@ -47,10 +47,6 @@ rustup update
 Once done, finish installing the support software and configure your default toolchain:
 
 ```bash
-# Install nightly toolchain and use it
-rustup toolchain install nightly-2022-10-18
-rustup default nightly-2022-10-18
-rustup target add --toolchain nightly-2022-10-18 wasm32-unknown-unknown
 
 # Additional OS dependencies
 sudo apt install build-essential
