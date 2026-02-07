@@ -95,6 +95,11 @@ impl<T: Config> Pallet<T> {
         LastPaidPointer::<T>::kill();
         <TotalUptime<T>>::remove(period_index);
         <RewardPot<T>>::remove(period_index);
+
+        // We can now remove all owner stake under this period index
+        // TODO NS: Implement onIdle to clean this up
+        // <OwnerStakeSnapshot<T>>::remove(period_index);
+
         Self::deposit_event(Event::RewardPayoutCompleted { reward_period_index: period_index });
     }
 
@@ -136,7 +141,7 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Get the current time in seconds
-    pub fn time_now() -> u64 {
+    pub fn time_now_sec() -> u64 {
         T::TimeProvider::now().as_secs()
     }
 }

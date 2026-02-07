@@ -20,15 +20,16 @@ impl<T: Config> Pallet<T> {
 
             match signature {
                 Some(signature) => {
-                    let call = Call::<T>::offchain_pay_nodes {
-                        reward_period_index,
-                        author: author.clone(),
-                        signature,
-                    };
+                    let call = T::create_inherent(
+                        Call::<T>::offchain_pay_nodes {
+                            reward_period_index,
+                            author: author.clone(),
+                            signature,
+                        }
+                        .into(),
+                    );
 
-                    if let Err(e) =
-                        SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
-                    {
+                    if let Err(e) = SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
                         log::error!("💔 Error submitting transaction to trigger payment. Period: {:?}, Error: {:?}", reward_period_index, e);
                     }
                 },
@@ -67,14 +68,17 @@ impl<T: Config> Pallet<T> {
 
                 match signature {
                     Some(signature) => {
-                        let call = Call::<T>::offchain_submit_heartbeat {
-                            node,
-                            reward_period_index: current_reward_period,
-                            heartbeat_count,
-                            signature,
-                        };
+                        let call = T::create_inherent(
+                            Call::<T>::offchain_submit_heartbeat {
+                                node,
+                                reward_period_index: current_reward_period,
+                                heartbeat_count,
+                                signature,
+                            }
+                            .into(),
+                        );
 
-                        match SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into()) {
+                        match SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
                             Ok(_) => {
                                 // If this fails, the extrinsic will still reject duplicates
                                 let _ = Self::record_heartbeat_ocw_submission(
