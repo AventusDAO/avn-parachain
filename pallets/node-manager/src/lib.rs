@@ -4,7 +4,10 @@ use frame_support::{
     dispatch::DispatchResult,
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
-    traits::{Currency, ExistenceRequirement, IsSubType, LockableCurrency, LockIdentifier, StorageVersion, UnixTime, WithdrawReasons},
+    traits::{
+        Currency, ExistenceRequirement, IsSubType, LockIdentifier, LockableCurrency,
+        StorageVersion, UnixTime, WithdrawReasons,
+    },
     PalletId,
 };
 use frame_system::{
@@ -327,12 +330,12 @@ pub mod pallet {
             node: NodeId<T>,
             amount: BalanceOf<T>,
         },
-        /// An error occurred while paying a reward.
-        ErrorPayingReward {
+        /// Node reward was auto staked.
+        RewardAutoStaked {
             reward_period: RewardPeriodIndex,
+            owner: T::AccountId,
             node: NodeId<T>,
             amount: BalanceOf<T>,
-            error: DispatchError,
         },
         /// A new node registrar has been set
         NodeRegistrarSet { new_registrar: T::AccountId },
@@ -437,6 +440,10 @@ pub mod pallet {
         DurationZero,
         /// There is no stake for the owner
         NoStakeFound,
+        /// Auto stake is still active, cannot unstake now
+        AutoStakeStillActive,
+        /// There is no available stake to unstake right now
+        NoAvailableStakeToUnstake,
     }
 
     #[pallet::config]
@@ -607,10 +614,9 @@ pub mod pallet {
                     ensure!(duration_sec > 0, Error::<T>::DurationZero);
                     <UnstakePeriodSec<T>>::mutate(|d| *d = duration_sec.clone());
                     Self::deposit_event(Event::UnstakePeriodSet { duration_sec });
-                    return Ok(Some(
-                        <T as Config>::WeightInfo::set_admin_config_unstake_period(),
+                    return Ok(
+                        Some(<T as Config>::WeightInfo::set_admin_config_unstake_period()).into()
                     )
-                    .into())
                 },
             }
         }
@@ -691,7 +697,8 @@ pub mod pallet {
                 );
                 let reward_amount =
                     Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
-                Self::pay_reward(&oldest_period, node.clone(), reward_amount)?;
+
+                Self::pay_reward(&oldest_period, node.clone(), &node_info, reward_amount)?;
 
                 last_node_paid = Some(node.clone());
                 paid_nodes.push(node.clone());
@@ -896,35 +903,10 @@ pub mod pallet {
         #[pallet::weight(0)]
         pub fn add_stake(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
             let owner = ensure_signed(origin)?;
-            ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
-
             // TODO: check if we want to prevent non node owners from staking.
             ensure!(<OwnedNodesCount<T>>::contains_key(&owner), Error::<T>::NodeOwnerNotFound);
 
-            let current_stake = OwnerStake::<T>::get(&owner).map(|s| s.amount).unwrap_or_default();
-            let new_total = current_stake.saturating_add(amount);
-
-            let free = T::Currency::free_balance(&owner);
-            ensure!(free >= new_total, Error::<T>::InsufficientFreeBalance);
-
-            T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
-
-            let current_reward_period = RewardPeriod::<T>::get().current;
-
-            OwnerStake::<T>::insert(&owner, OwnerStakeInfo { amount:new_total, last_effective_period: current_reward_period });
-            OwnerStakeSnapshot::<T>::insert(current_reward_period, &owner, new_total);
-
-            if current_stake.is_zero() {
-                OwnerUnstakeState::<T>::mutate(&owner, |s| {
-                    if s.last_updated_sec == 0 {
-                        // TODO: replace `now_sec` with the owner's auto-stake expiry time
-                        // let start_sec = OwnerAutoStakeExpirySec::<T>::get(&owner);
-                        let start_sec = Self::time_now_sec();
-                        s.last_updated_sec = start_sec;
-                        s.max_unstake_allowance = Zero::zero();
-                    }
-                });
-            }
+            let new_total = Self::do_add_stake(&owner, amount)?;
 
             Self::deposit_event(Event::StakeAdded { owner, amount, new_total });
             Ok(())
@@ -932,18 +914,21 @@ pub mod pallet {
 
         #[pallet::call_index(9)]
         #[pallet::weight(0)]
-        pub fn remove_stake(origin: OriginFor<T>, maybe_amount: Option<BalanceOf<T>>) -> DispatchResult {
+        pub fn remove_stake(
+            origin: OriginFor<T>,
+            maybe_amount: Option<BalanceOf<T>>,
+        ) -> DispatchResult {
             let owner = ensure_signed(origin)?;
 
             let now_sec = Self::time_now_sec();
+            let mut current_stake_info = OwnerStake::<T>::get(&owner).unwrap_or_default();
+            ensure!(current_stake_info.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
 
-            // TODO NS: Decide how to compute owner auto stake expiry
-            // let expiry = OwnerAutoStakeExpirySec::<T>::get(&owner);
-            // ensure!(now_sec >= expiry, Error::<T>::AutoStakeStillActive);
+            let current_owner_stake = current_stake_info.amount;
 
-            let current_owner_stake = OwnerStake::<T>::get(&owner).map(|s| s.amount).unwrap_or_default();
             let mut unstake_state = OwnerUnstakeState::<T>::get(&owner);
-            let (available, periods_advanced) = Self::available_to_unstake(now_sec, current_owner_stake, &unstake_state);
+            let (available, periods_advanced) =
+                Self::available_to_unstake(now_sec, current_owner_stake, &unstake_state);
 
             if let Some(amount) = maybe_amount {
                 ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
@@ -953,12 +938,15 @@ pub mod pallet {
 
             // By default unstake what is available now
             let amount = maybe_amount.unwrap_or(available);
+            ensure!(amount > Zero::zero(), Error::<T>::NoAvailableStakeToUnstake);
 
             // Advance last_updated_sec by the number of full periods we consumed.
             if unstake_state.last_updated_sec == 0 {
                 unstake_state.last_updated_sec = now_sec;
             } else if periods_advanced > 0 {
-                unstake_state.last_updated_sec = unstake_state.last_updated_sec.saturating_add(periods_advanced * <UnstakePeriodSec<T>>::get());
+                unstake_state.last_updated_sec = unstake_state
+                    .last_updated_sec
+                    .saturating_add(periods_advanced * <UnstakePeriodSec<T>>::get());
             }
 
             // Remaining allowance after withdrawing amount
@@ -973,7 +961,11 @@ pub mod pallet {
             } else {
                 let current_reward_period = RewardPeriod::<T>::get().current;
                 T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
-                OwnerStake::<T>::insert(&owner, OwnerStakeInfo { amount: new_total, last_effective_period: current_reward_period });
+
+                // Keep the expiry the same
+                current_stake_info.amount = new_total;
+                current_stake_info.last_period_updated = current_reward_period;
+                OwnerStake::<T>::insert(&owner, current_stake_info);
             }
 
             Ok(())

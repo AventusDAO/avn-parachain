@@ -86,38 +86,81 @@ impl<T: Config> Pallet<T> {
         };
 
         // This can happen because payout period is at least current_period - 1
-        if info.last_effective_period > reward_period {
+        if info.last_period_updated > reward_period {
             // stake exists but only becomes effective in a later period
-            return Zero::zero();
+            return Zero::zero()
         }
 
         // Get the latest snapshot as of this reward period
-        OwnerStakeSnapshot::<T>::get(info.last_effective_period, owner).unwrap_or_default()
+        OwnerStakeSnapshot::<T>::get(info.last_period_updated, owner).unwrap_or_default()
     }
 
-    pub fn available_to_unstake(now_sec: u64, owner_stake: BalanceOf<T>, state: &UnstakeState<BalanceOf<T>>) -> (BalanceOf<T>, u64) {
+    pub fn available_to_unstake(
+        now_sec: u64,
+        owner_stake: BalanceOf<T>,
+        state: &UnstakeState<BalanceOf<T>>,
+    ) -> (BalanceOf<T>, u64) {
         if owner_stake.is_zero() {
-            return (Zero::zero(), 0);
+            return (Zero::zero(), 0)
         }
 
         if state.last_updated_sec == 0 {
-            return (Zero::zero(), 0);
+            return (Zero::zero(), 0)
         }
 
         let elapsed = now_sec.saturating_sub(state.last_updated_sec);
         let periods = elapsed / <UnstakePeriodSec<T>>::get();
         if periods == 0 {
             // No new stake unlocked yet
-            return (state.max_unstake_allowance.min(owner_stake), 0);
+            return (state.max_unstake_allowance.min(owner_stake), 0)
         }
 
         // Increase for whole periods only.
         let per_period: BalanceOf<T> = <MaxUnstakePercentage<T>>::get() * owner_stake;
         let newly_unlocked_stake = per_period.saturating_mul((periods as u32).into());
 
-        let available = state.max_unstake_allowance.saturating_add(newly_unlocked_stake).min(owner_stake);
+        let available = state
+            .max_unstake_allowance
+            .saturating_add(newly_unlocked_stake)
+            .min(owner_stake);
 
         // Return available to unstake and how many periods we advanced (so caller can persist).
         (available, periods)
+    }
+
+    pub fn do_add_stake(
+        owner: &T::AccountId,
+        amount: BalanceOf<T>,
+    ) -> Result<BalanceOf<T>, DispatchError> {
+        ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
+        let mut current_stake_info = OwnerStake::<T>::get(&owner).unwrap_or_default();
+        let current_stake = current_stake_info.amount;
+        let new_total = current_stake.saturating_add(amount);
+
+        let free = T::Currency::free_balance(&owner);
+        ensure!(free >= new_total, Error::<T>::InsufficientFreeBalance);
+
+        T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
+
+        let current_reward_period = RewardPeriod::<T>::get().current;
+
+        if current_stake.is_zero() {
+            let expiry = Self::time_now_sec().saturating_add(AutoStakeDurationSec::<T>::get());
+            current_stake_info.auto_stake_expiry = expiry;
+
+            OwnerUnstakeState::<T>::mutate(&owner, |s| {
+                if s.last_updated_sec == 0 {
+                    let start_sec = expiry;
+                    s.last_updated_sec = start_sec;
+                    s.max_unstake_allowance = Zero::zero();
+                }
+            });
+        }
+        current_stake_info.amount = new_total;
+        current_stake_info.last_period_updated = current_reward_period;
+        OwnerStake::<T>::insert(&owner, current_stake_info);
+        OwnerStakeSnapshot::<T>::insert(current_reward_period, &owner, new_total);
+
+        Ok(new_total)
     }
 }

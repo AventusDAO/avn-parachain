@@ -16,7 +16,7 @@ impl<T: Config> Pallet<T> {
         let weight = uptime_info.weight;
 
         if actual_uptime > uptime_threshold.into() {
-            log::warn!("✋ Node ({:?}) has been up for more than the expected uptime. Actual: {:?}, Expected: {:?}",
+            log::warn!("⚠️ Node ({:?}) has been up for more than the expected uptime. Actual: {:?}, Expected: {:?}",
                 node_id, actual_uptime, uptime_threshold);
 
             // re-calculate weight using reward_period_end_time. If autostaking expired mid period,
@@ -49,29 +49,14 @@ impl<T: Config> Pallet<T> {
 
     pub fn pay_reward(
         period: &RewardPeriodIndex,
-        node: NodeId<T>,
+        node_id: NodeId<T>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId>,
         amount: BalanceOf<T>,
     ) -> DispatchResult {
-        let node_owner = match <NodeRegistry<T>>::get(&node) {
-            Some(info) => info.owner,
-            None => {
-                log::warn!("⚠️ Error paying reward. Node not found in registry. Reward period: {:?}, Node {:?}, Amount: {:?}",
-                  period, node, amount
-                );
-
-                Self::deposit_event(Event::ErrorPayingReward {
-                    reward_period: *period,
-                    node: node.clone(),
-                    amount,
-                    error: Error::<T>::NodeNotRegistered.into(),
-                });
-                // We skip paying rewards for this node and continue without erroring
-                return Ok(())
-            },
-        };
-
+        let node_owner = node_info.owner.clone();
         let reward_pot_account_id = Self::compute_reward_account_id();
 
+        // First pay the owner
         T::Currency::transfer(
             &reward_pot_account_id,
             &node_owner,
@@ -79,12 +64,25 @@ impl<T: Config> Pallet<T> {
             ExistenceRequirement::KeepAlive,
         )?;
 
-        Self::deposit_event(Event::RewardPaid {
-            reward_period: *period,
-            owner: node_owner,
-            node,
-            amount,
-        });
+        if node_info.auto_stake_expiry > Self::time_now_sec() {
+            // We are outside the auto stake period, finish paying.
+            Self::deposit_event(Event::RewardPaid {
+                reward_period: *period,
+                owner: node_owner,
+                node: node_id,
+                amount,
+            });
+        } else {
+            // We are within the auto stake period, auto stake the rewards.
+            Self::do_add_stake(&node_owner, amount)?;
+
+            Self::deposit_event(Event::RewardAutoStaked {
+                reward_period: *period,
+                owner: node_owner,
+                node: node_id,
+                amount,
+            });
+        }
 
         Ok(())
     }

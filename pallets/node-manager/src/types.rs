@@ -192,14 +192,32 @@ impl RewardWeight {
 
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct UnstakeState<Balance> {
-    /// Last timestamp (seconds) we updated the allowance.
-    pub last_updated_sec: u64,
     /// Allowance carried over (how much they can still withdraw right now).
     pub max_unstake_allowance: Balance,
+    /// Last timestamp (seconds) we updated the allowance.
+    pub last_updated_sec: u64,
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct OwnerStakeInfo<Balance> {
+    /// The amount staked
     pub amount: Balance,
-    pub last_effective_period: RewardPeriodIndex,
+    /// The last reward period this stake was updated
+    pub last_period_updated: RewardPeriodIndex,
+    /// The expiry timestamp the owner can start unstaking
+    pub auto_stake_expiry: u64,
+}
+
+impl<Balance: Copy> OwnerStakeInfo<Balance> {
+    pub fn new(
+        amount: Balance,
+        last_period_updated: RewardPeriodIndex,
+        auto_stake_expiry: u64,
+    ) -> OwnerStakeInfo<Balance> {
+        OwnerStakeInfo { amount, last_period_updated, auto_stake_expiry }
+    }
+
+    pub fn can_unstake(&self, now_sec: u64) -> bool {
+        now_sec >= self.auto_stake_expiry
+    }
 }
