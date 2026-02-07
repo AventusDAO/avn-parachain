@@ -205,7 +205,7 @@ pub mod pallet {
     /// The total uptime for each reward period.
     #[pallet::storage]
     pub(super) type TotalUptime<T: Config> =
-        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, u64, ValueQuery>;
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, TotalUptimeInfo, ValueQuery>;
 
     /// Controls if rewards are enabled
     #[pallet::storage]
@@ -230,7 +230,7 @@ pub mod pallet {
     /// Current stake of owner
     #[pallet::storage]
     pub(super) type OwnerStake<T: Config> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, OptionQuery>;
+        StorageMap<_, Blake2_128Concat, T::AccountId, OwnerStakeInfo<BalanceOf<T>>, OptionQuery>;
 
     /// DoubleMap storing each node owner's stake for a given reward period.
     #[pallet::storage]
@@ -434,7 +434,9 @@ pub mod pallet {
         /// You have already unstaked the maximum allowed amount for this period.
         UnstakeRateLimited,
         /// Duration must be greater than zero
-        DurationZero
+        DurationZero,
+        /// There is no stake for the owner
+        NoStakeFound,
     }
 
     #[pallet::config]
@@ -474,6 +476,9 @@ pub mod pallet {
         /// The lifetime (in blocks) of a signed transaction.
         #[pallet::constant]
         type SignedTxLifetime: Get<u32>;
+        /// The amount of AVT required to stake to get a +1 virtual node weight bonus.
+        #[pallet::constant]
+        type VirtualNodeStake: Get<BalanceOf<Self>>;
         /// The weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
     }
@@ -632,22 +637,23 @@ pub mod pallet {
                 Error::<T>::InvalidRewardPaymentRequest
             );
 
-            let total_heartbeats = TotalUptime::<T>::get(&oldest_period);
+            let total_uptime = TotalUptime::<T>::get(&oldest_period);
             let maybe_node_uptime = NodeUptime::<T>::iter_prefix(oldest_period).next();
 
-            if total_heartbeats == 0 && maybe_node_uptime.is_none() {
+            if total_uptime.total_weight == 0 && maybe_node_uptime.is_none() {
                 // No nodes to pay for this period so complete it
                 Self::complete_reward_payout(oldest_period);
                 return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
             }
 
-            ensure!(total_heartbeats > 0, Error::<T>::TotalUptimeNotFound);
+            ensure!(total_uptime.total_weight > 0, Error::<T>::TotalUptimeNotFound);
             ensure!(maybe_node_uptime.is_some(), Error::<T>::NodeUptimeNotFound);
 
             let reward_pot = RewardPot::<T>::get(&oldest_period).unwrap_or_else(|| {
                 RewardPotInfo::new(
                     RewardAmount::<T>::get(),
                     Self::calculate_uptime_threshold(length),
+                    Self::time_now_sec(),
                 )
             });
 
@@ -672,10 +678,19 @@ pub mod pallet {
             }
 
             for (node, uptime) in iter.by_ref().take(MaxBatchSize::<T>::get() as usize) {
-                let node_uptime =
-                    Self::calculate_node_uptime(&node, uptime.count, reward_pot.uptime_threshold);
+                let node_info =
+                    NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
+
+                let node_weight = Self::calculate_node_weight(
+                    &node,
+                    uptime,
+                    &node_info,
+                    reward_pot.uptime_threshold,
+                    reward_pot.reward_end_time,
+                    oldest_period,
+                );
                 let reward_amount =
-                    Self::calculate_reward(node_uptime, &total_heartbeats, &total_reward)?;
+                    Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
                 Self::pay_reward(&oldest_period, node.clone(), reward_amount)?;
 
                 last_node_paid = Some(node.clone());
@@ -711,20 +726,34 @@ pub mod pallet {
             Self::validate_heartbeats(node.clone(), reward_period_index, heartbeat_count)?;
 
             let current_reward_period = RewardPeriod::<T>::get().current;
-            <NodeUptime<T>>::mutate(&current_reward_period, &node, |maybe_info| {
-                if let Some(info) = maybe_info.as_mut() {
-                    info.count = info.count.saturating_add(1);
-                    info.last_reported = frame_system::Pallet::<T>::block_number();
-                } else {
-                    *maybe_info = Some(UptimeInfo {
-                        count: 1,
-                        last_reported: frame_system::Pallet::<T>::block_number(),
-                    });
-                }
+            // if we pass validation we have a registered node but double check
+            let node_info = NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
+            let now = frame_system::Pallet::<T>::block_number();
+
+            let weight = <NodeUptime<T>>::mutate(&current_reward_period, &node, |maybe_info| {
+                let info = maybe_info.get_or_insert_with(|| UptimeInfo {
+                    count: 0,
+                    last_reported: now,
+                    weight: 0,
+                });
+
+                let node_weight = Self::effective_heartbeat_weight(
+                    &node_info,
+                    current_reward_period,
+                    Self::time_now_sec(),
+                );
+
+                info.count = info.count.saturating_add(1);
+                info.last_reported = now;
+                info.weight = info.weight.saturating_add(node_weight);
+
+                // the total uptime for the period
+                node_weight
             });
 
             <TotalUptime<T>>::mutate(&current_reward_period, |total| {
-                *total = total.saturating_add(1);
+                total._total_heartbeats = total._total_heartbeats.saturating_add(1);
+                total.total_weight = total.total_weight.saturating_add(weight);
             });
 
             Self::deposit_event(Event::HeartbeatReceived {
@@ -872,14 +901,18 @@ pub mod pallet {
             // TODO: check if we want to prevent non node owners from staking.
             ensure!(<OwnedNodesCount<T>>::contains_key(&owner), Error::<T>::NodeOwnerNotFound);
 
-            let current_stake = OwnerStake::<T>::get(&owner).unwrap_or_else(Zero::zero);
+            let current_stake = OwnerStake::<T>::get(&owner).map(|s| s.amount).unwrap_or_default();
             let new_total = current_stake.saturating_add(amount);
 
             let free = T::Currency::free_balance(&owner);
             ensure!(free >= new_total, Error::<T>::InsufficientFreeBalance);
 
             T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
-            OwnerStake::<T>::insert(&owner, new_total);
+
+            let current_reward_period = RewardPeriod::<T>::get().current;
+
+            OwnerStake::<T>::insert(&owner, OwnerStakeInfo { amount:new_total, last_effective_period: current_reward_period });
+            OwnerStakeSnapshot::<T>::insert(current_reward_period, &owner, new_total);
 
             if current_stake.is_zero() {
                 OwnerUnstakeState::<T>::mutate(&owner, |s| {
@@ -908,7 +941,7 @@ pub mod pallet {
             // let expiry = OwnerAutoStakeExpirySec::<T>::get(&owner);
             // ensure!(now_sec >= expiry, Error::<T>::AutoStakeStillActive);
 
-            let current_owner_stake = OwnerStake::<T>::get(&owner).unwrap_or_else(Zero::zero);
+            let current_owner_stake = OwnerStake::<T>::get(&owner).map(|s| s.amount).unwrap_or_default();
             let mut unstake_state = OwnerUnstakeState::<T>::get(&owner);
             let (available, periods_advanced) = Self::available_to_unstake(now_sec, current_owner_stake, &unstake_state);
 
@@ -938,8 +971,9 @@ pub mod pallet {
                 T::Currency::remove_lock(STAKE_LOCK_ID, &owner);
                 OwnerStake::<T>::remove(&owner);
             } else {
+                let current_reward_period = RewardPeriod::<T>::get().current;
                 T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
-                OwnerStake::<T>::insert(&owner, new_total);
+                OwnerStake::<T>::insert(&owner, OwnerStakeInfo { amount: new_total, last_effective_period: current_reward_period });
             }
 
             Ok(())
@@ -969,7 +1003,11 @@ pub mod pallet {
                 let reward_amount = RewardAmount::<T>::get();
                 <RewardPot<T>>::insert(
                     previous_index,
-                    RewardPotInfo::<BalanceOf<T>>::new(reward_amount, previous_uptime_threshold),
+                    RewardPotInfo::<BalanceOf<T>>::new(
+                        reward_amount,
+                        previous_uptime_threshold,
+                        Self::time_now_sec(),
+                    ),
                 );
 
                 Self::deposit_event(Event::NewRewardPeriodStarted {
@@ -1253,7 +1291,7 @@ pub mod pallet {
         }
 
         pub fn calculate_auto_stake_expiry() -> u64 {
-            let current_time = T::TimeProvider::now().as_secs();
+            let current_time = Self::time_now_sec();
             current_time.saturating_add(AutoStakeDurationSec::<T>::get())
         }
     }

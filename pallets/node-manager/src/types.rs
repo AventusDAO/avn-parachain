@@ -1,5 +1,9 @@
 use crate::*;
-use sp_runtime::Saturating;
+use sp_runtime::{FixedPointNumber, FixedU128, Saturating};
+
+// This is used to scale a single heartbeat so we can preserve precision when applying the reward
+// weight.
+const HEARTBEAT_BASE_WEIGHT: u128 = 1_000_000;
 
 #[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 /// The current era index and transition information
@@ -65,11 +69,17 @@ pub struct RewardPotInfo<Balance> {
     pub total_reward: Balance,
     /// The minimum number of uptime reports required to earn full reward
     pub uptime_threshold: u32,
+    /// The last timestamp of the previous reward period, used to calculate gensis bonus
+    pub reward_end_time: u64,
 }
 
 impl<Balance: Copy> RewardPotInfo<Balance> {
-    pub fn new(total_reward: Balance, uptime_threshold: u32) -> RewardPotInfo<Balance> {
-        RewardPotInfo { total_reward, uptime_threshold }
+    pub fn new(
+        total_reward: Balance,
+        uptime_threshold: u32,
+        reward_end_time: u64,
+    ) -> RewardPotInfo<Balance> {
+        RewardPotInfo { total_reward, uptime_threshold, reward_end_time }
     }
 }
 
@@ -79,13 +89,15 @@ impl<Balance: Copy> RewardPotInfo<Balance> {
 pub struct UptimeInfo<BlockNumber> {
     /// Number of uptime reported
     pub count: u64,
+    /// The weight of the node (including genesis bonus and stake multiplier)
+    pub weight: u128,
     /// Block number when the uptime was last reported
     pub last_reported: BlockNumber,
 }
 
 impl<BlockNumber: Copy> UptimeInfo<BlockNumber> {
-    pub fn new(count: u64, last_reported: BlockNumber) -> UptimeInfo<BlockNumber> {
-        UptimeInfo { count, last_reported }
+    pub fn new(count: u64, weight: u128, last_reported: BlockNumber) -> UptimeInfo<BlockNumber> {
+        UptimeInfo { count, weight, last_reported }
     }
 }
 
@@ -147,10 +159,47 @@ pub enum AdminConfig<AccountId, Balance> {
     UnstakePeriod(u64),
 }
 
+#[derive(
+    Copy, Clone, PartialEq, Default, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen,
+)]
+pub struct TotalUptimeInfo {
+    /// Total number of uptime reported for reward period
+    // TODO NS: rename _total_heartbeats
+    pub _total_heartbeats: u64,
+    /// Total weight of the total heartbeats reported for reward period
+    pub total_weight: u128,
+}
+
+impl TotalUptimeInfo {
+    pub fn new(_total_heartbeats: u64, total_weight: u128) -> TotalUptimeInfo {
+        TotalUptimeInfo { _total_heartbeats, total_weight }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RewardWeight {
+    pub genesis_bonus: Perbill,
+    pub stake_multiplier: FixedU128,
+}
+
+impl RewardWeight {
+    pub fn to_heartbeat_weight(&self) -> u128 {
+        let scaled_stake_weight = self.stake_multiplier.saturating_mul_int(HEARTBEAT_BASE_WEIGHT);
+        // apply the bonus last to preserve precision.
+        self.genesis_bonus * scaled_stake_weight
+    }
+}
+
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct UnstakeState<Balance> {
     /// Last timestamp (seconds) we updated the allowance.
     pub last_updated_sec: u64,
     /// Allowance carried over (how much they can still withdraw right now).
     pub max_unstake_allowance: Balance,
+}
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+pub struct OwnerStakeInfo<Balance> {
+    pub amount: Balance,
+    pub last_effective_period: RewardPeriodIndex,
 }

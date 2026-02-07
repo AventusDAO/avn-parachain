@@ -1,36 +1,47 @@
 use crate::*;
 use sp_runtime::{ArithmeticError, SaturatedConversion};
+
 impl<T: Config> Pallet<T> {
     // Nodes should not be able to submit over the min uptime required.
     // but we still check it here to be sure.
-    pub fn calculate_node_uptime(
+    pub fn calculate_node_weight(
         node_id: &NodeId<T>,
-        actual_uptime: u64,
+        uptime_info: UptimeInfo<BlockNumberFor<T>>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId>,
         uptime_threshold: u32,
-    ) -> u64 {
-        let uptime_threshold_u64 = uptime_threshold as u64;
-        if actual_uptime >= uptime_threshold_u64 {
-            if actual_uptime > uptime_threshold_u64 {
-                log::warn!("✋ Node ({:?}) has been up for more than the expected uptime. Actual: {:?}, Expected: {:?}", node_id, actual_uptime, uptime_threshold);
-            }
-            uptime_threshold_u64
+        reward_period_end_time: u64,
+        reward_period: RewardPeriodIndex,
+    ) -> u128 {
+        let actual_uptime = uptime_info.count;
+        let weight = uptime_info.weight;
+
+        if actual_uptime > uptime_threshold.into() {
+            log::warn!("✋ Node ({:?}) has been up for more than the expected uptime. Actual: {:?}, Expected: {:?}",
+                node_id, actual_uptime, uptime_threshold);
+
+            // re-calculate weight using reward_period_end_time. If autostaking expired mid period,
+            // the node's reward will reduce because this recalculation will remove the
+            // genesis bonus for all heartbeats. This is ok because we are in this
+            // situation because the node managed to send more heartbeats than it should.
+            let single_node_weight =
+                Self::effective_heartbeat_weight(node_info, reward_period, reward_period_end_time);
+            single_node_weight.saturating_mul(u128::from(uptime_threshold))
         } else {
-            actual_uptime
+            weight
         }
     }
 
     pub fn calculate_reward(
-        uptime: u64,
-        total_uptime: &u64,
+        weight: u128,
+        total_weight: &u128,
         total_reward: &BalanceOf<T>,
     ) -> Result<BalanceOf<T>, DispatchError> {
-        if total_uptime.is_zero() {
+        if total_weight.is_zero() {
             return Err(DispatchError::Arithmetic(ArithmeticError::DivisionByZero))
         }
 
         // Convert everything to u128 to satisfy Perquintill requirements.
-        // We never overflow here because the values are bounded by u64 max.
-        let ratio = Perquintill::from_rational(uptime as u128, *total_uptime as u128);
+        let ratio = Perquintill::from_rational(weight, *total_weight);
         let total_rewards_u128: u128 = (*total_reward).saturated_into();
 
         Ok(ratio.mul_floor(total_rewards_u128).saturated_into())
