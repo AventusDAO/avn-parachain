@@ -11,7 +11,7 @@ use alloc::{
 
 use frame_support::{dispatch::DispatchResult, pallet_prelude::*, traits::IsType};
 use frame_system::{
-    offchain::{SendTransactionTypes, SubmitTransaction},
+    offchain::{CreateTransactionBase, SubmitTransaction},
     pallet_prelude::*,
     WeightInfo,
 };
@@ -63,7 +63,7 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config:
-        SendTransactionTypes<Call<Self>>
+        CreateTransactionBase<Call<Self>>
         + frame_system::Config
         + pallet_watchtower::Config
         + pallet_avn::Config
@@ -247,16 +247,17 @@ pub mod pallet {
                 None => return Err("Failed to sign vote data"),
             };
 
-            let call = pallet_watchtower::Call::unsigned_vote {
-                proposal_id,
-                in_favor,
-                watchtower: watchtower.clone(),
-                signature,
-            };
+            let call = T::create_inherent(
+                pallet_watchtower::Call::unsigned_vote {
+                    proposal_id,
+                    in_favor,
+                    watchtower: watchtower.clone(),
+                    signature,
+                }
+                .into(),
+            );
 
-            match SubmitTransaction::<T, pallet_watchtower::Call<T>>::submit_unsigned_transaction(
-                call.into(),
-            ) {
+            match SubmitTransaction::<T, pallet_watchtower::Call<T>>::submit_transaction(call) {
                 Ok(()) => {
                     Self::record_vote_submission(block_number, proposal_id, watchtower)?;
                     return Ok(())

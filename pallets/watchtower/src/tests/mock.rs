@@ -59,7 +59,7 @@ parameter_types! {
     pub const Offset: u64 = 0;
 }
 
-impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
+impl<LocalCall> system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
