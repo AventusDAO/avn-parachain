@@ -155,6 +155,8 @@ pub enum AdminConfig<AccountId, Balance> {
     RewardToggle(bool),
     MinUptimeThreshold(Perbill),
     AutoStakeDuration(u64),
+    MaxUnstakePercentage(Perbill),
+    UnstakePeriod(u64),
 }
 
 #[derive(
@@ -185,4 +187,12 @@ impl RewardWeight {
         // apply the bonus last to preserve precision.
         self.genesis_bonus * scaled_stake_weight
     }
+}
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+pub struct UnstakeState<Balance> {
+    /// Last timestamp (seconds) we updated the allowance.
+    pub last_updated_sec: u64,
+    /// Allowance carried over (how much they can still withdraw right now).
+    pub max_unstake_allowance: Balance,
 }
