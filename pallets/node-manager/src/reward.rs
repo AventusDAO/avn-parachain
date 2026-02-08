@@ -64,7 +64,7 @@ impl<T: Config> Pallet<T> {
             ExistenceRequirement::KeepAlive,
         )?;
 
-        if node_info.auto_stake_expiry > Self::time_now_sec() {
+        if node_info.auto_stake_expiry < Self::time_now_sec() {
             // We are outside the auto stake period, finish paying.
             Self::deposit_event(Event::RewardPaid {
                 reward_period: *period,
