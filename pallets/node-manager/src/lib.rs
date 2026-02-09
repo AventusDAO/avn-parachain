@@ -79,6 +79,7 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
 pub const MAX_NODES_TO_DEREGISTER: u32 = 64;
+pub const MAX_STAKE_CHANGES_PER_PERIOD: u32 = 256;
 
 // Error codes returned by validate unsigned methods
 /// Invalid signature for `paying` transaction
@@ -104,6 +105,8 @@ pub(crate) type RewardPeriodIndex = u64;
 pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 /// The max number of nodes that can be deregistered in a single call
 pub type MaxNodesToDeregister = ConstU32<MAX_NODES_TO_DEREGISTER>;
+/// The max number of stake changes an owner can do in a period
+pub type MaxStakeChangesPerPeriod = ConstU32<MAX_STAKE_CHANGES_PER_PERIOD>;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -238,7 +241,7 @@ pub mod pallet {
     /// DoubleMap storing each node owner's stake for a given reward period.
     #[pallet::storage]
     #[pallet::getter(fn owner_stake)]
-    pub(super) type OwnerStakeSnapshot<T: Config> = StorageDoubleMap<
+    pub(super) type StakeSnapshot<T: Config> = StorageDoubleMap<
         _,
         Blake2_128Concat,
         RewardPeriodIndex,
@@ -248,10 +251,16 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Map storing the unstake state for each node owner.
+    /// For each owner, store the reward periods where we created a snapshot.
+    /// This is used to efficiently query the effective stake of an owner for a given reward period.
     #[pallet::storage]
-    pub type OwnerUnstakeState<T: Config> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, UnstakeState<BalanceOf<T>>, ValueQuery>;
+    pub type StakeSnapshotPeriods<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        BoundedVec<RewardPeriodIndex, MaxStakeChangesPerPeriod>,
+        ValueQuery
+    >;
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
@@ -444,6 +453,8 @@ pub mod pallet {
         AutoStakeStillActive,
         /// There is no available stake to unstake right now
         NoAvailableStakeToUnstake,
+        /// Stake snapshot full for the specified owner
+        StakeSnapshotFull,
     }
 
     #[pallet::config]
@@ -921,14 +932,14 @@ pub mod pallet {
             let owner = ensure_signed(origin)?;
 
             let now_sec = Self::time_now_sec();
-            let mut current_stake_info = OwnerStake::<T>::get(&owner).unwrap_or_default();
-            ensure!(current_stake_info.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
+            let mut stake = OwnerStake::<T>::get(&owner).unwrap_or_default();
+            ensure!(stake.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
 
-            let current_owner_stake = current_stake_info.amount;
+            let current_owner_stake = stake.amount;
 
-            let mut unstake_state = OwnerUnstakeState::<T>::get(&owner);
+            let mut unstake_state = stake.state.clone();
             let (available, periods_advanced) =
-                Self::available_to_unstake(now_sec, current_owner_stake, &unstake_state);
+                stake.available_to_unstake(now_sec, <UnstakePeriodSec<T>>::get(), <MaxUnstakePercentage<T>>::get());
 
             if let Some(amount) = maybe_amount {
                 ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
@@ -936,37 +947,31 @@ pub mod pallet {
                 ensure!(amount <= available, Error::<T>::UnstakeRateLimited);
             }
 
-            // By default unstake what is available now
+            // If amount is not specified, unstake what is available now
             let amount = maybe_amount.unwrap_or(available);
             ensure!(amount > Zero::zero(), Error::<T>::NoAvailableStakeToUnstake);
 
-            // Advance last_updated_sec by the number of full periods we consumed.
-            if unstake_state.last_updated_sec == 0 {
-                unstake_state.last_updated_sec = now_sec;
-            } else if periods_advanced > 0 {
-                unstake_state.last_updated_sec = unstake_state
-                    .last_updated_sec
-                    .saturating_add(periods_advanced * <UnstakePeriodSec<T>>::get());
-            }
+            let current_reward_period = RewardPeriod::<T>::get().current;
+
+            // Advance next_unstake_time_sec by the number of full periods we consumed.
+            let new_unstake_time_sec = unstake_state
+                .next_unstake_time_sec
+                .saturating_add(periods_advanced.max(1).saturating_mul(<UnstakePeriodSec<T>>::get()));
+
+            unstake_state.next_unstake_time_sec = new_unstake_time_sec;
 
             // Remaining allowance after withdrawing amount
             unstake_state.max_unstake_allowance = available.saturating_sub(amount);
-            OwnerUnstakeState::<T>::insert(&owner, unstake_state);
+            stake.state = unstake_state;
 
             // Reduce stake + lock
             let new_total = current_owner_stake.saturating_sub(amount);
-            if new_total.is_zero() {
-                T::Currency::remove_lock(STAKE_LOCK_ID, &owner);
-                OwnerStake::<T>::remove(&owner);
-            } else {
-                let current_reward_period = RewardPeriod::<T>::get().current;
-                T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
+            stake.amount = new_total;
+            stake.last_period_updated = current_reward_period;
 
-                // Keep the expiry the same
-                current_stake_info.amount = new_total;
-                current_stake_info.last_period_updated = current_reward_period;
-                OwnerStake::<T>::insert(&owner, current_stake_info);
-            }
+            Self::update_stake(&owner, stake, current_reward_period)?;
+
+            Self::deposit_event(Event::StakeRemoved { owner, amount, new_total });
 
             Ok(())
         }
