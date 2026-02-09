@@ -130,13 +130,8 @@ pub mod pallet {
 
     /// Reverse index: signing_key -> node_id
     #[pallet::storage]
-    pub type SigningKeyToNodeId<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::SignerId,
-        NodeId<T>,
-        OptionQuery,
-    >;
+    pub type SigningKeyToNodeId<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::SignerId, NodeId<T>, OptionQuery>;
 
     /// Total registered nodes.
     /// Note: This is mainly used for performance reasons. It is better to have a single value
@@ -269,7 +264,7 @@ pub mod pallet {
         Blake2_128Concat,
         T::AccountId,
         BoundedVec<RewardPeriodIndex, MaxStakeChangesPerPeriod>,
-        ValueQuery
+        ValueQuery,
     >;
 
     #[pallet::genesis_config]
@@ -714,7 +709,9 @@ pub mod pallet {
                 },
             }
 
-            let pay = |node: &NodeId<T>, uptime: UptimeInfo<BlockNumberFor<T>>| -> Result<(), DispatchError> {
+            let pay = |node: &NodeId<T>,
+                       uptime: UptimeInfo<BlockNumberFor<T>>|
+             -> Result<(), DispatchError> {
                 let node_info =
                     NodeRegistry::<T>::get(node).ok_or(Error::<T>::NodeNotRegistered)?;
 
@@ -921,16 +918,21 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
 
             let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
-            let current_info = NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
+            let current_info =
+                NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
             let owner = current_info.owner;
 
             ensure!(who == registrar || who == owner, Error::<T>::UnauthorizedSigningKeyUpdate);
-            // We could remove this and use the check below to catch all cases but this is more user friendly
+            // We could remove this and use the check below to catch all cases but this is more user
+            // friendly
             ensure!(
                 current_info.signing_key != new_signing_key,
                 Error::<T>::SigningKeyMustBeDifferent
             );
-            ensure!(!SigningKeyToNodeId::<T>::contains_key(&new_signing_key), Error::<T>::SigningKeyAlreadyInUse);
+            ensure!(
+                !SigningKeyToNodeId::<T>::contains_key(&new_signing_key),
+                Error::<T>::SigningKeyAlreadyInUse
+            );
 
             <NodeRegistry<T>>::mutate(&node, |maybe_info| {
                 if let Some(info) = maybe_info.as_mut() {
@@ -972,8 +974,11 @@ pub mod pallet {
             let current_owner_stake = stake.amount;
 
             let mut unstake_state = stake.state.clone();
-            let (available, periods_advanced) =
-                stake.available_to_unstake(now_sec, <UnstakePeriodSec<T>>::get(), <MaxUnstakePercentage<T>>::get());
+            let (available, periods_advanced) = stake.available_to_unstake(
+                now_sec,
+                <UnstakePeriodSec<T>>::get(),
+                <MaxUnstakePercentage<T>>::get(),
+            );
 
             if let Some(amount) = maybe_amount {
                 ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
@@ -988,9 +993,9 @@ pub mod pallet {
             let current_reward_period = RewardPeriod::<T>::get().current;
 
             // Advance next_unstake_time_sec by the number of full periods we consumed.
-            let new_unstake_time_sec = unstake_state
-                .next_unstake_time_sec
-                .saturating_add(periods_advanced.max(1).saturating_mul(<UnstakePeriodSec<T>>::get()));
+            let new_unstake_time_sec = unstake_state.next_unstake_time_sec.saturating_add(
+                periods_advanced.max(1).saturating_mul(<UnstakePeriodSec<T>>::get()),
+            );
 
             unstake_state.next_unstake_time_sec = new_unstake_time_sec;
 
@@ -1230,7 +1235,10 @@ pub mod pallet {
             signing_key: T::SignerId,
         ) -> DispatchResult {
             ensure!(!<NodeRegistry<T>>::contains_key(&node), Error::<T>::DuplicateNode);
-            ensure!(!SigningKeyToNodeId::<T>::contains_key(&signing_key), Error::<T>::SigningKeyAlreadyInUse);
+            ensure!(
+                !SigningKeyToNodeId::<T>::contains_key(&signing_key),
+                Error::<T>::SigningKeyAlreadyInUse
+            );
 
             let auto_stake_expiry = Self::calculate_auto_stake_expiry();
 
@@ -1337,7 +1345,7 @@ pub mod pallet {
             if let Some(existing_node) = SigningKeyToNodeId::<T>::get(signing_key) {
                 ensure!(&existing_node == node, Error::<T>::SigningKeyAlreadyInUse);
                 // If it already maps to this node, do nothing.
-                return Ok(());
+                return Ok(())
             }
 
             SigningKeyToNodeId::<T>::insert(signing_key, node);
@@ -1353,9 +1361,13 @@ pub mod pallet {
             Ok(())
         }
 
-        fn rotate_signing_key_index(node: &NodeId<T>, old_key: &T::SignerId, new_key: &T::SignerId) -> DispatchResult {
+        fn rotate_signing_key_index(
+            node: &NodeId<T>,
+            old_key: &T::SignerId,
+            new_key: &T::SignerId,
+        ) -> DispatchResult {
             if old_key == new_key {
-                return Ok(());
+                return Ok(())
             }
 
             Self::remove_signing_key_index(node, old_key)?;

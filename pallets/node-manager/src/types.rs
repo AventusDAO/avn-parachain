@@ -1,5 +1,8 @@
 use crate::*;
-use sp_runtime::{FixedPointNumber, FixedU128, Saturating, traits::{AtLeast32BitUnsigned, Zero}};
+use sp_runtime::{
+    traits::{AtLeast32BitUnsigned, Zero},
+    FixedPointNumber, FixedU128, Saturating,
+};
 
 // This is used to scale a single heartbeat so we can preserve precision when applying the reward
 // weight.
@@ -210,8 +213,11 @@ pub struct UnstakeState<Balance> {
     pub next_unstake_time_sec: u64,
 }
 
-impl <Balance: Copy + AtLeast32BitUnsigned + Zero> UnstakeState<Balance> {
-    pub fn new(max_unstake_allowance: Balance, next_unstake_time_sec: u64) -> UnstakeState<Balance> {
+impl<Balance: Copy + AtLeast32BitUnsigned + Zero> UnstakeState<Balance> {
+    pub fn new(
+        max_unstake_allowance: Balance,
+        next_unstake_time_sec: u64,
+    ) -> UnstakeState<Balance> {
         UnstakeState { max_unstake_allowance, next_unstake_time_sec }
     }
 }
@@ -230,7 +236,12 @@ impl<Balance: Copy + AtLeast32BitUnsigned + Zero + Saturating> OwnerStakeInfo<Ba
         now_sec >= self.auto_stake_expiry
     }
 
-    pub fn available_to_unstake(&self, now_sec: u64, unstake_period: u64, max_unstake_percentage: Perbill) -> (Balance, u64) {
+    pub fn available_to_unstake(
+        &self,
+        now_sec: u64,
+        unstake_period: u64,
+        max_unstake_percentage: Perbill,
+    ) -> (Balance, u64) {
         if !self.can_unstake(now_sec) || self.amount.is_zero() {
             return (Zero::zero(), 0)
         }
@@ -251,7 +262,8 @@ impl<Balance: Copy + AtLeast32BitUnsigned + Zero + Saturating> OwnerStakeInfo<Ba
         let per_period = max_unstake_percentage * self.amount;
         let newly_unlocked_stake = per_period.saturating_mul((periods as u32).into());
 
-        let available = self.state
+        let available = self
+            .state
             .max_unstake_allowance
             .saturating_add(newly_unlocked_stake)
             .min(self.amount);
