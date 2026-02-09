@@ -6,7 +6,7 @@
 use super::*;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
-use sp_avn_common::Proof;
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
 use sp_runtime::SaturatedConversion;
 
 // Macro for comparing fixed point u128.
@@ -105,7 +105,11 @@ fn get_proof<T: Config>(
     signer: &T::AccountId,
     signature: sp_core::sr25519::Signature,
 ) -> Proof<T::Signature, T::AccountId> {
-    return Proof { signer: signer.clone(), relayer: relayer.clone(), signature: signature.into() }
+    return Proof {
+        signer: signer.clone(),
+        relayer: relayer.clone(),
+        signature: convert_sr25519_signature::<T::Signature>(signature),
+    }
 }
 
 fn enable_rewards<T: Config>() {

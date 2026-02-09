@@ -1,36 +1,47 @@
 use crate::*;
 use sp_runtime::{ArithmeticError, SaturatedConversion};
+
 impl<T: Config> Pallet<T> {
     // Nodes should not be able to submit over the min uptime required.
     // but we still check it here to be sure.
-    pub fn calculate_node_uptime(
+    pub fn calculate_node_weight(
         node_id: &NodeId<T>,
-        actual_uptime: u64,
+        uptime_info: UptimeInfo<BlockNumberFor<T>>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId>,
         uptime_threshold: u32,
-    ) -> u64 {
-        let uptime_threshold_u64 = uptime_threshold as u64;
-        if actual_uptime >= uptime_threshold_u64 {
-            if actual_uptime > uptime_threshold_u64 {
-                log::warn!("✋ Node ({:?}) has been up for more than the expected uptime. Actual: {:?}, Expected: {:?}", node_id, actual_uptime, uptime_threshold);
-            }
-            uptime_threshold_u64
+        reward_period_end_time: u64,
+        reward_period: RewardPeriodIndex,
+    ) -> u128 {
+        let actual_uptime = uptime_info.count;
+        let weight = uptime_info.weight;
+
+        if actual_uptime > uptime_threshold.into() {
+            log::warn!("⚠️ Node ({:?}) has been up for more than the expected uptime. Actual: {:?}, Expected: {:?}",
+                node_id, actual_uptime, uptime_threshold);
+
+            // re-calculate weight using reward_period_end_time. If autostaking expired mid period,
+            // the node's reward will reduce because this recalculation will remove the
+            // genesis bonus for all heartbeats. This is ok because we are in this
+            // situation because the node managed to send more heartbeats than it should.
+            let single_node_weight =
+                Self::effective_heartbeat_weight(node_info, reward_period, reward_period_end_time);
+            single_node_weight.saturating_mul(u128::from(uptime_threshold))
         } else {
-            actual_uptime
+            weight
         }
     }
 
     pub fn calculate_reward(
-        uptime: u64,
-        total_uptime: &u64,
+        weight: u128,
+        total_weight: &u128,
         total_reward: &BalanceOf<T>,
     ) -> Result<BalanceOf<T>, DispatchError> {
-        if total_uptime.is_zero() {
+        if total_weight.is_zero() {
             return Err(DispatchError::Arithmetic(ArithmeticError::DivisionByZero))
         }
 
         // Convert everything to u128 to satisfy Perquintill requirements.
-        // We never overflow here because the values are bounded by u64 max.
-        let ratio = Perquintill::from_rational(uptime as u128, *total_uptime as u128);
+        let ratio = Perquintill::from_rational(weight, *total_weight);
         let total_rewards_u128: u128 = (*total_reward).saturated_into();
 
         Ok(ratio.mul_floor(total_rewards_u128).saturated_into())
@@ -38,29 +49,14 @@ impl<T: Config> Pallet<T> {
 
     pub fn pay_reward(
         period: &RewardPeriodIndex,
-        node: NodeId<T>,
+        node_id: NodeId<T>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId>,
         amount: BalanceOf<T>,
     ) -> DispatchResult {
-        let node_owner = match <NodeRegistry<T>>::get(&node) {
-            Some(info) => info.owner,
-            None => {
-                log::warn!("⚠️ Error paying reward. Node not found in registry. Reward period: {:?}, Node {:?}, Amount: {:?}",
-                  period, node, amount
-                );
-
-                Self::deposit_event(Event::ErrorPayingReward {
-                    reward_period: *period,
-                    node: node.clone(),
-                    amount,
-                    error: Error::<T>::NodeNotRegistered.into(),
-                });
-                // We skip paying rewards for this node and continue without erroring
-                return Ok(())
-            },
-        };
-
+        let node_owner = node_info.owner.clone();
         let reward_pot_account_id = Self::compute_reward_account_id();
 
+        // First pay the owner
         T::Currency::transfer(
             &reward_pot_account_id,
             &node_owner,
@@ -68,12 +64,25 @@ impl<T: Config> Pallet<T> {
             ExistenceRequirement::KeepAlive,
         )?;
 
-        Self::deposit_event(Event::RewardPaid {
-            reward_period: *period,
-            owner: node_owner,
-            node,
-            amount,
-        });
+        if node_info.auto_stake_expiry < Self::time_now_sec() {
+            // We are outside the auto stake period, finish paying.
+            Self::deposit_event(Event::RewardPaid {
+                reward_period: *period,
+                owner: node_owner,
+                node: node_id,
+                amount,
+            });
+        } else {
+            // We are within the auto stake period, auto stake the rewards.
+            Self::do_add_stake(&node_owner, amount)?;
+
+            Self::deposit_event(Event::RewardAutoStaked {
+                reward_period: *period,
+                owner: node_owner,
+                node: node_id,
+                amount,
+            });
+        }
 
         Ok(())
     }
@@ -98,7 +107,7 @@ impl<T: Config> Pallet<T> {
 
         // We can now remove all owner stake under this period index
         // TODO NS: Implement onIdle to clean this up
-        // <OwnerStakeSnapshot<T>>::remove(period_index);
+        // <StakeSnapshot<T>>::remove(period_index);
 
         Self::deposit_event(Event::RewardPayoutCompleted { reward_period_index: period_index });
     }

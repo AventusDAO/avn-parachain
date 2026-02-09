@@ -1,5 +1,9 @@
 use crate::*;
-use sp_runtime::Saturating;
+use sp_runtime::{FixedPointNumber, FixedU128, Saturating, traits::{AtLeast32BitUnsigned, Zero}};
+
+// This is used to scale a single heartbeat so we can preserve precision when applying the reward
+// weight.
+const HEARTBEAT_BASE_WEIGHT: u128 = 1_000_000;
 
 #[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 /// The current era index and transition information
@@ -65,11 +69,17 @@ pub struct RewardPotInfo<Balance> {
     pub total_reward: Balance,
     /// The minimum number of uptime reports required to earn full reward
     pub uptime_threshold: u32,
+    /// The last timestamp of the previous reward period, used to calculate gensis bonus
+    pub reward_end_time: u64,
 }
 
 impl<Balance: Copy> RewardPotInfo<Balance> {
-    pub fn new(total_reward: Balance, uptime_threshold: u32) -> RewardPotInfo<Balance> {
-        RewardPotInfo { total_reward, uptime_threshold }
+    pub fn new(
+        total_reward: Balance,
+        uptime_threshold: u32,
+        reward_end_time: u64,
+    ) -> RewardPotInfo<Balance> {
+        RewardPotInfo { total_reward, uptime_threshold, reward_end_time }
     }
 }
 
@@ -79,13 +89,15 @@ impl<Balance: Copy> RewardPotInfo<Balance> {
 pub struct UptimeInfo<BlockNumber> {
     /// Number of uptime reported
     pub count: u64,
+    /// The weight of the node (including genesis bonus and stake multiplier)
+    pub weight: u128,
     /// Block number when the uptime was last reported
     pub last_reported: BlockNumber,
 }
 
 impl<BlockNumber: Copy> UptimeInfo<BlockNumber> {
-    pub fn new(count: u64, last_reported: BlockNumber) -> UptimeInfo<BlockNumber> {
-        UptimeInfo { count, last_reported }
+    pub fn new(count: u64, weight: u128, last_reported: BlockNumber) -> UptimeInfo<BlockNumber> {
+        UptimeInfo { count, weight, last_reported }
     }
 }
 
@@ -147,10 +159,104 @@ pub enum AdminConfig<AccountId, Balance> {
     UnstakePeriod(u64),
 }
 
+#[derive(
+    Copy, Clone, PartialEq, Default, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen,
+)]
+pub struct TotalUptimeInfo {
+    /// Total number of uptime reported for reward period
+    // TODO NS: rename _total_heartbeats
+    pub _total_heartbeats: u64,
+    /// Total weight of the total heartbeats reported for reward period
+    pub total_weight: u128,
+}
+
+impl TotalUptimeInfo {
+    pub fn new(_total_heartbeats: u64, total_weight: u128) -> TotalUptimeInfo {
+        TotalUptimeInfo { _total_heartbeats, total_weight }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RewardWeight {
+    pub genesis_bonus: Perbill,
+    pub stake_multiplier: FixedU128,
+}
+
+impl RewardWeight {
+    pub fn to_heartbeat_weight(&self) -> u128 {
+        let scaled_stake_weight = self.stake_multiplier.saturating_mul_int(HEARTBEAT_BASE_WEIGHT);
+        // apply the bonus last to preserve precision.
+        self.genesis_bonus * scaled_stake_weight
+    }
+}
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+pub struct OwnerStakeInfo<Balance> {
+    /// The amount staked
+    pub amount: Balance,
+    /// The last reward period this stake was updated
+    pub last_period_updated: RewardPeriodIndex,
+    /// The expiry timestamp the owner can start unstaking
+    pub auto_stake_expiry: u64,
+    /// The unstake state for this owner
+    pub state: UnstakeState<Balance>,
+}
+
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct UnstakeState<Balance> {
-    /// Last timestamp (seconds) we updated the allowance.
-    pub last_updated_sec: u64,
-    /// Allowance carried over (how much they can still withdraw right now).
+    /// Allowance carried over (how much they can withdraw right now).
     pub max_unstake_allowance: Balance,
+    /// The timestamp (seconds) that represents the next unstaking period.
+    pub next_unstake_time_sec: u64,
+}
+
+impl <Balance: Copy + AtLeast32BitUnsigned + Zero> UnstakeState<Balance> {
+    pub fn new(max_unstake_allowance: Balance, next_unstake_time_sec: u64) -> UnstakeState<Balance> {
+        UnstakeState { max_unstake_allowance, next_unstake_time_sec }
+    }
+}
+
+impl<Balance: Copy + AtLeast32BitUnsigned + Zero + Saturating> OwnerStakeInfo<Balance> {
+    pub fn new(
+        amount: Balance,
+        last_period_updated: RewardPeriodIndex,
+        auto_stake_expiry: u64,
+        state: UnstakeState<Balance>,
+    ) -> OwnerStakeInfo<Balance> {
+        OwnerStakeInfo { amount, last_period_updated, auto_stake_expiry, state }
+    }
+
+    pub fn can_unstake(&self, now_sec: u64) -> bool {
+        now_sec >= self.auto_stake_expiry
+    }
+
+    pub fn available_to_unstake(&self, now_sec: u64, unstake_period: u64, max_unstake_percentage: Perbill) -> (Balance, u64) {
+        if !self.can_unstake(now_sec) || self.amount.is_zero() {
+            return (Zero::zero(), 0)
+        }
+
+        // This should not happen because we set this when stake is added
+        if self.state.next_unstake_time_sec == 0 {
+            return (Zero::zero(), 0)
+        }
+
+        let elapsed = now_sec.saturating_sub(self.state.next_unstake_time_sec);
+        let periods = elapsed / unstake_period;
+        if periods == 0 {
+            // No new stake unlocked yet
+            return (self.state.max_unstake_allowance.min(self.amount), 0)
+        }
+
+        // Increase for whole periods only.
+        let per_period = max_unstake_percentage * self.amount;
+        let newly_unlocked_stake = per_period.saturating_mul((periods as u32).into());
+
+        let available = self.state
+            .max_unstake_allowance
+            .saturating_add(newly_unlocked_stake)
+            .min(self.amount);
+
+        // Return available to unstake and how many periods we advanced (so caller can persist).
+        (available, periods)
+    }
 }
