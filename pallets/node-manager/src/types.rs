@@ -1,5 +1,5 @@
 use crate::*;
-use sp_runtime::{FixedPointNumber, FixedU128, Saturating};
+use sp_runtime::{FixedPointNumber, FixedU128, Saturating, traits::{AtLeast32BitUnsigned, Zero}};
 
 // This is used to scale a single heartbeat so we can preserve precision when applying the reward
 // weight.
@@ -191,14 +191,6 @@ impl RewardWeight {
 }
 
 #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
-pub struct UnstakeState<Balance> {
-    /// Allowance carried over (how much they can still withdraw right now).
-    pub max_unstake_allowance: Balance,
-    /// Last timestamp (seconds) we updated the allowance.
-    pub last_updated_sec: u64,
-}
-
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct OwnerStakeInfo<Balance> {
     /// The amount staked
     pub amount: Balance,
@@ -206,18 +198,65 @@ pub struct OwnerStakeInfo<Balance> {
     pub last_period_updated: RewardPeriodIndex,
     /// The expiry timestamp the owner can start unstaking
     pub auto_stake_expiry: u64,
+    /// The unstake state for this owner
+    pub state: UnstakeState<Balance>,
 }
 
-impl<Balance: Copy> OwnerStakeInfo<Balance> {
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+pub struct UnstakeState<Balance> {
+    /// Allowance carried over (how much they can withdraw right now).
+    pub max_unstake_allowance: Balance,
+    /// The timestamp (seconds) that represents the next unstaking period.
+    pub next_unstake_time_sec: u64,
+}
+
+impl <Balance: Copy + AtLeast32BitUnsigned + Zero> UnstakeState<Balance> {
+    pub fn new(max_unstake_allowance: Balance, next_unstake_time_sec: u64) -> UnstakeState<Balance> {
+        UnstakeState { max_unstake_allowance, next_unstake_time_sec }
+    }
+}
+
+impl<Balance: Copy + AtLeast32BitUnsigned + Zero + Saturating> OwnerStakeInfo<Balance> {
     pub fn new(
         amount: Balance,
         last_period_updated: RewardPeriodIndex,
         auto_stake_expiry: u64,
+        state: UnstakeState<Balance>,
     ) -> OwnerStakeInfo<Balance> {
-        OwnerStakeInfo { amount, last_period_updated, auto_stake_expiry }
+        OwnerStakeInfo { amount, last_period_updated, auto_stake_expiry, state }
     }
 
     pub fn can_unstake(&self, now_sec: u64) -> bool {
         now_sec >= self.auto_stake_expiry
+    }
+
+    pub fn available_to_unstake(&self, now_sec: u64, unstake_period: u64, max_unstake_percentage: Perbill) -> (Balance, u64) {
+        if !self.can_unstake(now_sec) || self.amount.is_zero() {
+            return (Zero::zero(), 0)
+        }
+
+        // This should not happen because we set this when stake is added
+        if self.state.next_unstake_time_sec == 0 {
+            return (Zero::zero(), 0)
+        }
+
+        let elapsed = now_sec.saturating_sub(self.state.next_unstake_time_sec);
+        let periods = elapsed / unstake_period;
+        if periods == 0 {
+            // No new stake unlocked yet
+            return (self.state.max_unstake_allowance.min(self.amount), 0)
+        }
+
+        // Increase for whole periods only.
+        let per_period = max_unstake_percentage * self.amount;
+        let newly_unlocked_stake = per_period.saturating_mul((periods as u32).into());
+
+        let available = self.state
+            .max_unstake_allowance
+            .saturating_add(newly_unlocked_stake)
+            .min(self.amount);
+
+        // Return available to unstake and how many periods we advanced (so caller can persist).
+        (available, periods)
     }
 }

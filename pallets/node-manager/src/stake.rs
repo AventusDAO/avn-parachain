@@ -85,47 +85,12 @@ impl<T: Config> Pallet<T> {
             Some(info) => info,
         };
 
-        // This can happen because payout period is at least current_period - 1
-        if info.last_period_updated > reward_period {
-            // stake exists but only becomes effective in a later period
-            return Zero::zero()
+        if info.last_period_updated < reward_period {
+            // The last stake change happened in the previous period
+            info.amount
+        } else {
+            Self::get_effective_stake_for_period(owner, reward_period)
         }
-
-        // Get the latest snapshot as of this reward period
-        OwnerStakeSnapshot::<T>::get(info.last_period_updated, owner).unwrap_or_default()
-    }
-
-    pub fn available_to_unstake(
-        now_sec: u64,
-        owner_stake: BalanceOf<T>,
-        state: &UnstakeState<BalanceOf<T>>,
-    ) -> (BalanceOf<T>, u64) {
-        if owner_stake.is_zero() {
-            return (Zero::zero(), 0)
-        }
-
-        if state.last_updated_sec == 0 {
-            return (Zero::zero(), 0)
-        }
-
-        let elapsed = now_sec.saturating_sub(state.last_updated_sec);
-        let periods = elapsed / <UnstakePeriodSec<T>>::get();
-        if periods == 0 {
-            // No new stake unlocked yet
-            return (state.max_unstake_allowance.min(owner_stake), 0)
-        }
-
-        // Increase for whole periods only.
-        let per_period: BalanceOf<T> = <MaxUnstakePercentage<T>>::get() * owner_stake;
-        let newly_unlocked_stake = per_period.saturating_mul((periods as u32).into());
-
-        let available = state
-            .max_unstake_allowance
-            .saturating_add(newly_unlocked_stake)
-            .min(owner_stake);
-
-        // Return available to unstake and how many periods we advanced (so caller can persist).
-        (available, periods)
     }
 
     pub fn do_add_stake(
@@ -133,34 +98,85 @@ impl<T: Config> Pallet<T> {
         amount: BalanceOf<T>,
     ) -> Result<BalanceOf<T>, DispatchError> {
         ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
-        let mut current_stake_info = OwnerStake::<T>::get(&owner).unwrap_or_default();
-        let current_stake = current_stake_info.amount;
+        let mut stake = OwnerStake::<T>::get(&owner).unwrap_or_default();
+        let current_stake = stake.amount;
         let new_total = current_stake.saturating_add(amount);
 
         let free = T::Currency::free_balance(&owner);
         ensure!(free >= new_total, Error::<T>::InsufficientFreeBalance);
 
-        T::Currency::set_lock(STAKE_LOCK_ID, &owner, new_total, WithdrawReasons::all());
-
         let current_reward_period = RewardPeriod::<T>::get().current;
 
         if current_stake.is_zero() {
             let expiry = Self::time_now_sec().saturating_add(AutoStakeDurationSec::<T>::get());
-            current_stake_info.auto_stake_expiry = expiry;
+            stake.auto_stake_expiry = expiry;
 
-            OwnerUnstakeState::<T>::mutate(&owner, |s| {
-                if s.last_updated_sec == 0 {
-                    let start_sec = expiry;
-                    s.last_updated_sec = start_sec;
-                    s.max_unstake_allowance = Zero::zero();
-                }
-            });
+            if stake.state.next_unstake_time_sec == 0 {
+                stake.state = UnstakeState::new(Zero::zero(), expiry);
+            }
+
         }
-        current_stake_info.amount = new_total;
-        current_stake_info.last_period_updated = current_reward_period;
-        OwnerStake::<T>::insert(&owner, current_stake_info);
-        OwnerStakeSnapshot::<T>::insert(current_reward_period, &owner, new_total);
+        stake.amount = new_total;
+        stake.last_period_updated = current_reward_period;
+
+        Self::update_stake(owner, stake, current_reward_period)?;
 
         Ok(new_total)
+    }
+
+    // This function will return the last stake before the given reward period
+    fn get_effective_stake_for_period(owner: &T::AccountId, payout_period: RewardPeriodIndex) -> BalanceOf<T> {
+        let periods = StakeSnapshotPeriods::<T>::get(owner);
+        if periods.is_empty() { return Zero::zero(); }
+
+        // Find the last period <= payout_period
+        let idx = match periods.binary_search_by(|p| p.cmp(&payout_period)) {
+            Ok(i) => i,
+            Err(0) => return Zero::zero(), // all snapshots are after payout_period
+            Err(i) => i - 1, // insertion point - 1
+        };
+
+        StakeSnapshot::<T>::get(periods[idx], owner).unwrap_or_default()
+    }
+
+    pub fn update_stake(owner: &T::AccountId, stake: OwnerStakeInfo<BalanceOf<T>>, reward_period: RewardPeriodIndex) -> DispatchResult {
+        if stake.amount.is_zero() {
+            T::Currency::remove_lock(STAKE_LOCK_ID, &owner);
+        } else {
+            T::Currency::set_lock(STAKE_LOCK_ID, &owner, stake.amount, WithdrawReasons::all());
+        }
+
+        Self::record_stake_snapshot_period(&owner, reward_period)?;
+        StakeSnapshot::<T>::insert(reward_period, &owner, stake.amount);
+        OwnerStake::<T>::insert(&owner, stake);
+
+        Ok(())
+    }
+
+    fn record_stake_snapshot_period(
+        owner: &T::AccountId,
+        period: RewardPeriodIndex,
+    ) -> DispatchResult {
+        StakeSnapshotPeriods::<T>::try_mutate(owner, |periods| {
+            if let Some(&last) = periods.last() {
+                if last == period {
+                    // already recorded
+                    return Ok(())
+                }
+
+                // This should never happen in normal flow
+                if period < last {
+                    log::warn!("⚠️ snapshot period went backwards. Current period: {:?}, last period: {:?}, owner: {:?}", period, last, owner);
+                    return Ok(());
+                }
+            }
+
+            // Enforce capacity strictly
+            periods
+                .try_push(period)
+                .map_err(|_| Error::<T>::StakeSnapshotFull)?;
+
+            Ok(())
+        })
     }
 }

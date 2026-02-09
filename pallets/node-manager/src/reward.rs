@@ -107,7 +107,7 @@ impl<T: Config> Pallet<T> {
 
         // We can now remove all owner stake under this period index
         // TODO NS: Implement onIdle to clean this up
-        // <OwnerStakeSnapshot<T>>::remove(period_index);
+        // <StakeSnapshot<T>>::remove(period_index);
 
         Self::deposit_event(Event::RewardPayoutCompleted { reward_period_index: period_index });
     }
