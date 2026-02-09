@@ -44,7 +44,6 @@ sp-application-crypto.workspace = true
 pallet-balances = { workspace = true, default-features = true }
 parking_lot.workspace = true
 sp-state-machine.workspace = true
-substrate-test-utils.workspace = true
 pallet-eth-bridge = { workspace = true, default-features = true }
 
 [features]
