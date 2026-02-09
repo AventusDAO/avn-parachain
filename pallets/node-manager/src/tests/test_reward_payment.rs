@@ -67,17 +67,28 @@ fn register_node_and_send_heartbeat(
 
 fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>, uptime: u64) {
     for node in nodes {
+        let node_info = <NodeRegistry<TestRuntime>>::get(&node).unwrap();
+        let single_hb_weight = NodeManager::effective_heartbeat_weight(
+            &node_info,
+            reward_period,
+            NodeManager::time_now_sec(),
+        );
+        let weight = single_hb_weight.saturating_mul(uptime.into());
+
         <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
             if let Some(info) = maybe_info.as_mut() {
                 info.count = info.count.saturating_add(uptime);
                 info.last_reported = System::block_number();
+                info.weight = info.weight.saturating_add(weight);
             } else {
-                *maybe_info = Some(UptimeInfo { count: 1, last_reported: System::block_number() });
+                *maybe_info =
+                    Some(UptimeInfo { count: 1, last_reported: System::block_number(), weight });
             }
         });
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
-            *total = total.saturating_add(uptime);
+            total._total_heartbeats = total._total_heartbeats.saturating_add(uptime);
+            total.total_weight = total.total_weight.saturating_add(weight);
         });
     }
 }
@@ -140,11 +151,11 @@ fn payment_transaction_succeed() {
         // Trigger ocw and send the transaction
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // Check if the transaction from the mempool is what we expected
         assert!(matches!(
-            tx.call,
+            tx.function,
             RuntimeCall::NodeManager(crate::Call::offchain_pay_nodes {
                 reward_period_index: _,
                 author: _,
@@ -197,7 +208,7 @@ fn multiple_payments_can_be_triggered_in_the_same_block() {
         );
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state.clone());
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // We should have processed the first batch of payments
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_some());
@@ -215,7 +226,7 @@ fn multiple_payments_can_be_triggered_in_the_same_block() {
         );
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // This should complete the payment
         assert_eq!(true, <RewardPot<TestRuntime>>::get(reward_period_to_pay).is_none());
@@ -273,7 +284,6 @@ fn payment_is_based_on_uptime() {
         incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 2);
 
         let total_uptime = <TotalUptime<TestRuntime>>::get(reward_period_to_pay);
-
         // Complete a reward period
         roll_forward((reward_period_length - System::block_number()) + 1);
 
@@ -284,13 +294,13 @@ fn payment_is_based_on_uptime() {
         );
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
-
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
         // The owner has received the reward
         // total_expected_uptime - 1 because we run the OCW
-        let expected_new_owner_reward =
-            Perquintill::from_rational(total_expected_uptime as u128 - 1, total_uptime as u128) *
-                reward_amount;
+        let expected_new_owner_reward = Perquintill::from_rational(
+            total_expected_uptime as u128 - 1,
+            total_uptime._total_heartbeats as u128,
+        ) * reward_amount;
 
         assert!(
             Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
@@ -369,12 +379,13 @@ fn payment_works_when_uptime_is_threshold() {
         );
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // The owner has received the reward
-        let expected_new_owner_reward =
-            Perquintill::from_rational(total_expected_uptime as u128, total_uptime as u128) *
-                reward_amount;
+        let expected_new_owner_reward = Perquintill::from_rational(
+            total_expected_uptime as u128,
+            total_uptime._total_heartbeats as u128,
+        ) * reward_amount;
 
         assert!(
             Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
@@ -449,13 +460,14 @@ fn payment_works_even_when_uptime_is_over_threshold() {
         );
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // The owner has received the reward
         // The system limits the reward to the expected uptime
-        let expected_new_owner_reward =
-            Perquintill::from_rational(total_expected_uptime as u128, total_uptime as u128) *
-                reward_amount;
+        let expected_new_owner_reward = Perquintill::from_rational(
+            total_expected_uptime as u128,
+            total_uptime._total_heartbeats as u128,
+        ) * reward_amount;
 
         assert!(
             Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 1,
@@ -465,9 +477,10 @@ fn payment_works_even_when_uptime_is_over_threshold() {
         );
         //The old owner gets a smaller share of the rewards because the total_uptime has now
         // increased by the extra uptime
-        let expected_old_owner_reward = Perquintill::from_rational(1u128, total_uptime as u128) *
-            reward_amount *
-            (node_count as u128);
+        let expected_old_owner_reward =
+            Perquintill::from_rational(1u128, total_uptime._total_heartbeats as u128) *
+                reward_amount *
+                (node_count as u128);
 
         assert!(
             Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward) < 1,
@@ -548,12 +561,13 @@ fn threshold_update_is_respected() {
         );
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // The owner has received the reward
-        let expected_new_owner_reward =
-            Perquintill::from_rational(total_expected_uptime as u128, total_uptime as u128) *
-                reward_amount;
+        let expected_new_owner_reward = Perquintill::from_rational(
+            total_expected_uptime as u128,
+            total_uptime._total_heartbeats as u128,
+        ) * reward_amount;
 
         assert!(
             Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,

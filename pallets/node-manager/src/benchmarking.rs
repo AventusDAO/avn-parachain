@@ -43,30 +43,40 @@ fn set_registrar<T: Config>(registrar: T::AccountId) {
 fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::SignerId {
     let key = T::SignerId::generate_pair(None);
     <NodeRegistry<T>>::insert(node.clone(), NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64));
-    <OwnedNodes<T>>::insert(owner, node, ());
+    <OwnedNodes<T>>::insert(owner.clone(), node, ());
+    <OwnedNodesCount<T>>::mutate(owner, |count| *count += 1);
 
     key
 }
 
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
-    let uptime = <NodeUptime<T>>::get(reward_period_index, node.clone());
-    let total_uptime = <TotalUptime<T>>::get(reward_period_index);
-    if let Some(uptime) = uptime {
-        <NodeUptime<T>>::insert(
-            reward_period_index,
-            node,
-            UptimeInfo::<BlockNumberFor<T>>::new(
-                uptime.count + 1,
-                frame_system::Pallet::<T>::block_number(),
-            ),
-        );
-    } else {
-        let uptime_info =
-            UptimeInfo::<BlockNumberFor<T>>::new(1u64, frame_system::Pallet::<T>::block_number());
-        <NodeUptime<T>>::insert(reward_period_index, node, uptime_info);
-    }
+    let uptime = 1u64;
+    let node_info = <NodeRegistry<T>>::get(&node).unwrap();
+    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(
+        &node_info,
+        reward_period_index,
+        Pallet::<T>::time_now_sec(),
+    );
+    let weight = single_hb_weight.saturating_mul(uptime.into());
 
-    <TotalUptime<T>>::insert(reward_period_index, total_uptime + 1u64);
+    <NodeUptime<T>>::mutate(&reward_period_index, &node, |maybe_info| {
+        if let Some(info) = maybe_info.as_mut() {
+            info.count = info.count.saturating_add(uptime);
+            info.last_reported = frame_system::Pallet::<T>::block_number();
+            info.weight = info.weight.saturating_add(weight);
+        } else {
+            *maybe_info = Some(UptimeInfo {
+                count: 1,
+                last_reported: frame_system::Pallet::<T>::block_number(),
+                weight,
+            });
+        }
+    });
+
+    <TotalUptime<T>>::mutate(&reward_period_index, |total| {
+        total._total_heartbeats = total._total_heartbeats.saturating_add(1u64);
+        total.total_weight = total.total_weight.saturating_add(weight);
+    });
 }
 
 fn fund_reward_pot<T: Config>() {
@@ -112,8 +122,12 @@ fn get_proof<T: Config>(
     }
 }
 
-fn enable_rewards<T: Config>() {
+fn enable_rewards<T: Config>()
+where
+    T: pallet_timestamp::Config<Moment = u64>,
+{
     <RewardEnabled<T>>::set(true);
+    pallet_timestamp::Pallet::<T>::set_timestamp(1_000_000u64);
 }
 
 fn update_min_threshold<T: Config>(threshold: Perbill) {
@@ -125,6 +139,10 @@ fn update_min_threshold<T: Config>(threshold: Perbill) {
 }
 
 benchmarks! {
+    where_clause {
+        where T: pallet_timestamp::Config<Moment = u64>
+    }
+
     register_node {
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
@@ -361,6 +379,7 @@ benchmarks! {
     }
 
     signed_register_node {
+        enable_rewards::<T>();
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
             T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
@@ -478,6 +497,52 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node).expect("Node must be registered");
         assert!(node_info.signing_key == new_signing_key);
         assert_last_event::<T>(Event::SigningKeyUpdated {owner, node}.into());
+    }
+    add_stake {
+        let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
+        let registrar: T::AccountId =
+            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
+
+        set_registrar::<T>(registrar.clone());
+        enable_rewards::<T>();
+        fund_reward_pot::<T>();
+
+        let reward_period = <RewardPeriod<T>>::get();
+        let reward_period_index = reward_period.current;
+        let owner: T::AccountId = account("owner", 0, 0);
+        T::Currency::make_free_balance_be(&owner.clone(), 1_000_000u32.into());
+        let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
+    }: add_stake(RawOrigin::Signed(owner.clone()), 100u32.into())
+    verify {
+        let stake = OwnerStake::<T>::get(&owner).unwrap();
+        assert!(stake.amount == 100u32.into());
+        assert_last_event::<T>(Event::StakeAdded { owner, amount: 100u32.into(), new_total: stake.amount }.into());
+    }
+    remove_stake {
+        let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
+        let registrar: T::AccountId =
+            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
+
+        set_registrar::<T>(registrar.clone());
+        enable_rewards::<T>();
+        fund_reward_pot::<T>();
+        // Make sure we can unstake
+        AutoStakeDurationSec::<T>::put(0u64);
+        UnstakePeriodSec::<T>::put(1_000u64);
+
+        let reward_period = <RewardPeriod<T>>::get();
+        let reward_period_index = reward_period.current;
+        let owner: T::AccountId = account("owner", 0, 0);
+        T::Currency::make_free_balance_be(&owner.clone(), 1_000_000u32.into());
+        let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
+        Pallet::<T>::do_add_stake(&owner, 100u32.into()).unwrap();
+        // Go forward in time to make the stake available for unstaking
+        pallet_timestamp::Pallet::<T>::set_timestamp(20_000_000u64);
+    }: remove_stake(RawOrigin::Signed(owner.clone()), Some(10u32.into()))
+    verify {
+        let stake = OwnerStake::<T>::get(&owner).unwrap();
+        assert!(stake.amount == (100u32 - 10u32).into());
+        assert_last_event::<T>(Event::StakeRemoved { owner, amount: 10u32.into(), new_total: stake.amount }.into());
     }
 }
 

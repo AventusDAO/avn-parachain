@@ -30,7 +30,7 @@ pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
 
 #[path = "tests/helpers.rs"]
 pub mod avn_tests_helpers;
-#[cfg(feature = "runtime-benchmarks")]
+#[cfg(any(feature = "test-utils", feature = "runtime-benchmarks"))]
 pub mod benchmarking;
 pub mod constants;
 pub mod eth;

@@ -74,7 +74,7 @@ impl<T: Config> Pallet<T> {
             });
         } else {
             // We are within the auto stake period, auto stake the rewards.
-            Self::do_add_stake(&node_owner, amount)?;
+            Self::do_add_stake(&node_owner, amount).map_err(|_| Error::<T>::AutoStakeFailed)?;
 
             Self::deposit_event(Event::RewardAutoStaked {
                 reward_period: *period,

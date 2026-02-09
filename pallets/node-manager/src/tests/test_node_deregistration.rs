@@ -82,17 +82,27 @@ fn register_node_and_send_heartbeat(
 
 fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>, uptime: u64) {
     for node in nodes {
+        let node_info = <NodeRegistry<TestRuntime>>::get(&node).unwrap();
+        let single_hb_weight = NodeManager::effective_heartbeat_weight(
+            &node_info,
+            reward_period,
+            NodeManager::time_now_sec(),
+        );
+        let weight = single_hb_weight.saturating_mul(uptime.into());
+
         <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
             if let Some(info) = maybe_info.as_mut() {
                 info.count = info.count.saturating_add(uptime);
                 info.last_reported = System::block_number();
             } else {
-                *maybe_info = Some(UptimeInfo { count: 1, last_reported: System::block_number() });
+                *maybe_info =
+                    Some(UptimeInfo { count: 1, last_reported: System::block_number(), weight });
             }
         });
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
-            *total = total.saturating_add(uptime);
+            total._total_heartbeats = total._total_heartbeats.saturating_add(uptime);
+            total.total_weight = total.total_weight.saturating_add(weight);
         });
     }
 }
@@ -275,7 +285,7 @@ fn payment_works_all_nodes_deregistered() {
         // Trigger ocw and send the transaction
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // The owner should not get any reward because all the nodes were deregistered
         assert_eq!(Balances::free_balance(&context.owner), initial_owner_balance);
@@ -291,7 +301,6 @@ fn payment_works_all_nodes_deregistered() {
             Event::ErrorPayingReward {
                 reward_period: reward_period_to_pay,
                 node: context.registered_nodes[num_nodes_to_deregister - 1].clone(),
-                amount: reward_amount / node_count as u128,
                 error: Error::<TestRuntime>::NodeNotRegistered.into(),
             }
             .into(),
@@ -351,14 +360,13 @@ fn payment_works_some_nodes_deregistered() {
         // Trigger ocw and send the transaction
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state);
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // Make sure the failed payment event is emitted
         System::assert_has_event(
             Event::ErrorPayingReward {
                 reward_period: reward_period_to_pay,
                 node: context.registered_nodes[(num_nodes_to_deregister - 1) as usize].clone(),
-                amount: reward_amount / node_count as u128,
                 error: Error::<TestRuntime>::NodeNotRegistered.into(),
             }
             .into(),

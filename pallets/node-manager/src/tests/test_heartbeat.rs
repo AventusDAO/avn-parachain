@@ -71,7 +71,7 @@ fn submit_multiple_heartbeats(n: u64, pool_state: Arc<RwLock<PoolState>>) {
     for _ in 0..n {
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_tx_from_mempool(pool_state.clone());
-        assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // Move forward
         System::set_block_number(
@@ -96,11 +96,11 @@ mod given_a_reward_period {
             NodeManager::offchain_worker(System::block_number());
 
             let tx = pop_tx_from_mempool(pool_state);
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Check if the transaction from the mempool is what we expected
             assert!(matches!(
-                tx.call,
+                tx.function,
                 RuntimeCall::NodeManager(crate::Call::offchain_submit_heartbeat {
                     node: _,
                     reward_period_index: _,
@@ -116,7 +116,7 @@ mod given_a_reward_period {
 
             assert_eq!(uptime_info.count, 1);
             assert_eq!(uptime_info.last_reported, System::block_number());
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period), 1);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
             System::assert_last_event(
                 Event::HeartbeatReceived {
                     reward_period_index: reward_period,
@@ -145,7 +145,7 @@ mod given_a_reward_period {
 
             // Check if the transaction from the mempool is what we expected
             assert!(matches!(
-                tx.call,
+                tx.function,
                 RuntimeCall::NodeManager(crate::Call::offchain_submit_heartbeat {
                     node: _,
                     reward_period_index: _,
@@ -216,7 +216,7 @@ mod given_a_reward_period {
 
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state.clone());
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Ensure the tx has executed successfully
             let reward_period = <RewardPeriod<TestRuntime>>::get().current;
@@ -229,13 +229,13 @@ mod given_a_reward_period {
             // Call OCW and send transactions
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state);
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             let uptime_info =
                 <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
             assert_eq!(uptime_info.count, 2);
             assert_eq!(uptime_info.last_reported, System::block_number());
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period), 2);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 2);
             System::assert_last_event(
                 Event::HeartbeatReceived {
                     reward_period_index: reward_period,
@@ -297,7 +297,7 @@ mod given_a_reward_period {
             assert_eq!(false, pool_state.read().transactions.is_empty());
             let runtime_call = pop_tx_from_mempool(pool_state.clone());
 
-            match runtime_call.call {
+            match runtime_call.function {
                 RuntimeCall::NodeManager(call) => {
                     assert_ok!(<NodeManager as ValidateUnsigned>::validate_unsigned(
                         TransactionSource::External,
@@ -321,7 +321,7 @@ mod given_a_reward_period {
 
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state.clone());
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Rotate signing key
             let new_signing_key = UintAuthorityId(999);
@@ -348,7 +348,7 @@ mod given_a_reward_period {
             assert_eq!(false, pool_state.read().transactions.is_empty());
             let runtime_call = pop_tx_from_mempool(pool_state.clone());
 
-            match runtime_call.call {
+            match runtime_call.function {
                 RuntimeCall::NodeManager(call) => {
                     assert_ok!(<NodeManager as ValidateUnsigned>::validate_unsigned(
                         TransactionSource::External,
@@ -397,12 +397,18 @@ mod across_multiple_reward_periods {
             let uptime_info =
                 <NodeUptime<TestRuntime>>::get(old_reward_period, &context.node_id).unwrap();
             assert_eq!(uptime_info.count, old_heartbeat_count);
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&old_reward_period), old_heartbeat_count);
+            assert_eq!(
+                <TotalUptime<TestRuntime>>::get(&old_reward_period)._total_heartbeats,
+                old_heartbeat_count
+            );
 
             let uptime_info =
                 <NodeUptime<TestRuntime>>::get(new_reward_period, &context.node_id).unwrap();
             assert_eq!(uptime_info.count, new_heartbeat_count);
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&new_reward_period), new_heartbeat_count);
+            assert_eq!(
+                <TotalUptime<TestRuntime>>::get(&new_reward_period)._total_heartbeats,
+                new_heartbeat_count
+            );
 
             System::assert_last_event(
                 Event::HeartbeatReceived {
@@ -431,7 +437,7 @@ mod fails_when {
             let reward_period = <RewardPeriod<TestRuntime>>::get().current;
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_tx_from_mempool(pool_state.clone());
-            assert_ok!(tx.call.clone().dispatch(frame_system::RawOrigin::None.into()));
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             let signature =
                 context.signing_key.sign(&("DummyProof").encode()).expect("Error signing");

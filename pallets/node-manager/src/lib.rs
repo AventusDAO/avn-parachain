@@ -349,6 +349,12 @@ pub mod pallet {
             node: NodeId<T>,
             amount: BalanceOf<T>,
         },
+        /// An error occurred while paying a reward.
+        ErrorPayingReward {
+            reward_period: RewardPeriodIndex,
+            node: NodeId<T>,
+            error: DispatchError,
+        },
         /// Node reward was auto staked.
         RewardAutoStaked {
             reward_period: RewardPeriodIndex,
@@ -467,6 +473,8 @@ pub mod pallet {
         NoAvailableStakeToUnstake,
         /// Stake snapshot full for the specified owner
         StakeSnapshotFull,
+        /// Failed to auto stake reward
+        AutoStakeFailed,
     }
 
     #[pallet::config]
@@ -706,12 +714,12 @@ pub mod pallet {
                 },
             }
 
-            for (node, uptime) in iter.by_ref().take(MaxBatchSize::<T>::get() as usize) {
+            let pay = |node: &NodeId<T>, uptime: UptimeInfo<BlockNumberFor<T>>| -> Result<(), DispatchError> {
                 let node_info =
-                    NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
+                    NodeRegistry::<T>::get(node).ok_or(Error::<T>::NodeNotRegistered)?;
 
                 let node_weight = Self::calculate_node_weight(
-                    &node,
+                    node,
                     uptime,
                     &node_info,
                     reward_pot.uptime_threshold,
@@ -722,6 +730,17 @@ pub mod pallet {
                     Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
 
                 Self::pay_reward(&oldest_period, node.clone(), &node_info, reward_amount)?;
+                Ok(())
+            };
+
+            for (node, uptime) in iter.by_ref().take(MaxBatchSize::<T>::get() as usize) {
+                if let Err(e) = pay(&node, uptime) {
+                    Self::deposit_event(Event::ErrorPayingReward {
+                        reward_period: oldest_period,
+                        node: node.clone(),
+                        error: e,
+                    });
+                }
 
                 last_node_paid = Some(node.clone());
                 paid_nodes.push(node.clone());
