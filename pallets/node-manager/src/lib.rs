@@ -128,6 +128,16 @@ pub mod pallet {
         OptionQuery,
     >;
 
+    /// Reverse index: signing_key -> node_id
+    #[pallet::storage]
+    pub type SigningKeyToNodeId<T: Config> = StorageMap<
+        _,
+        Blake2_128Concat,
+        T::SignerId,
+        NodeId<T>,
+        OptionQuery,
+    >;
+
     /// Total registered nodes.
     /// Note: This is mainly used for performance reasons. It is better to have a single value
     /// storage than iterate over a huge map.
@@ -391,6 +401,8 @@ pub mod pallet {
         DuplicateNode,
         /// The signing key of the node is invalid
         InvalidSigningKey,
+        /// The signing key is already in use by another node
+        SigningKeyAlreadyInUse,
         /// The reward period is invalid
         RewardPeriodInvalid,
         /// The batch size is 0 or invalid
@@ -889,15 +901,17 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
-            let current_info =
-                NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
-            let owner = current_info.owner;
             let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            let current_info = NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
+            let owner = current_info.owner;
+
             ensure!(who == registrar || who == owner, Error::<T>::UnauthorizedSigningKeyUpdate);
+            // We could remove this and use the check below to catch all cases but this is more user friendly
             ensure!(
                 current_info.signing_key != new_signing_key,
                 Error::<T>::SigningKeyMustBeDifferent
             );
+            ensure!(!SigningKeyToNodeId::<T>::contains_key(&new_signing_key), Error::<T>::SigningKeyAlreadyInUse);
 
             <NodeRegistry<T>>::mutate(&node, |maybe_info| {
                 if let Some(info) = maybe_info.as_mut() {
@@ -905,6 +919,7 @@ pub mod pallet {
                 }
             });
 
+            Self::rotate_signing_key_index(&node, &current_info.signing_key, &new_signing_key)?;
             Self::deposit_event(Event::SigningKeyUpdated { owner, node });
 
             Ok(())
@@ -1167,7 +1182,9 @@ pub mod pallet {
                     Error::<T>::NodeNotOwnedByOwner
                 );
 
-                <NodeRegistry<T>>::remove(node);
+                let info = NodeRegistry::<T>::take(node).ok_or(Error::<T>::NodeNotRegistered)?;
+                Self::remove_signing_key_index(node, &info.signing_key)?;
+
                 <OwnedNodes<T>>::remove(owner, node);
                 <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
@@ -1194,6 +1211,8 @@ pub mod pallet {
             signing_key: T::SignerId,
         ) -> DispatchResult {
             ensure!(!<NodeRegistry<T>>::contains_key(&node), Error::<T>::DuplicateNode);
+            ensure!(!SigningKeyToNodeId::<T>::contains_key(&signing_key), Error::<T>::SigningKeyAlreadyInUse);
+
             let auto_stake_expiry = Self::calculate_auto_stake_expiry();
 
             <OwnedNodes<T>>::insert(&owner, &node, ());
@@ -1203,6 +1222,8 @@ pub mod pallet {
                 *n = n.saturating_add(1);
                 *n
             });
+
+            Self::insert_signing_key_index(&node, &signing_key)?;
 
             <NodeRegistry<T>>::insert(
                 &node,
@@ -1290,6 +1311,38 @@ pub mod pallet {
         pub fn calculate_auto_stake_expiry() -> u64 {
             let current_time = Self::time_now_sec();
             current_time.saturating_add(AutoStakeDurationSec::<T>::get())
+        }
+
+        /// Insert signing key reverse index. Fails if key already belongs to another node.
+        fn insert_signing_key_index(node: &NodeId<T>, signing_key: &T::SignerId) -> DispatchResult {
+            if let Some(existing_node) = SigningKeyToNodeId::<T>::get(signing_key) {
+                ensure!(&existing_node == node, Error::<T>::SigningKeyAlreadyInUse);
+                // If it already maps to this node, do nothing.
+                return Ok(());
+            }
+
+            SigningKeyToNodeId::<T>::insert(signing_key, node);
+            Ok(())
+        }
+
+        /// Remove signing key reverse index. Defensive: only remove if it points at this node.
+        fn remove_signing_key_index(node: &NodeId<T>, signing_key: &T::SignerId) -> DispatchResult {
+            if let Some(existing_node) = SigningKeyToNodeId::<T>::get(signing_key) {
+                ensure!(&existing_node == node, Error::<T>::InvalidSigningKey);
+                SigningKeyToNodeId::<T>::remove(signing_key);
+            }
+            Ok(())
+        }
+
+        fn rotate_signing_key_index(node: &NodeId<T>, old_key: &T::SignerId, new_key: &T::SignerId) -> DispatchResult {
+            if old_key == new_key {
+                return Ok(());
+            }
+
+            Self::remove_signing_key_index(node, old_key)?;
+            Self::insert_signing_key_index(node, new_key)?;
+
+            Ok(())
         }
     }
 

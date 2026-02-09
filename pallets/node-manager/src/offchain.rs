@@ -307,17 +307,19 @@ impl<T: Config> Pallet<T> {
         None
     }
 
-    fn search_node_id_by_signing_key(
-        local_keys: &Vec<T::SignerId>,
-    ) -> Option<(NodeId<T>, T::SignerId)> {
-        log::warn!("🔐 Fallback - Searching all registered nodes using local signing key.");
-        NodeRegistry::<T>::iter()
-            .filter_map(move |(node_id, info)| {
-                local_keys
-                    .binary_search(&info.signing_key)
-                    .ok()
-                    .map(|_| (node_id, info.signing_key))
-            })
-            .nth(0)
+    pub fn search_node_id_by_signing_key(local_keys: &Vec<T::SignerId>,) -> Option<(NodeId<T>, T::SignerId)> {
+        log::warn!("🔐 Fallback - Looking up node from onchain state storage.");
+        for key in local_keys.iter() {
+            if let Some(node_id) = SigningKeyToNodeId::<T>::get(key) {
+                // Optional safety: verify NodeRegistry still matches.
+                if let Some(info) = NodeRegistry::<T>::get(&node_id) {
+                    if info.signing_key == *key {
+                        return Some((node_id, key.clone()));
+                    }
+                }
+            }
+        }
+
+        None
     }
 }
