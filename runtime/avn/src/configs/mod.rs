@@ -538,6 +538,7 @@ impl pallet_eth_bridge::Config for Runtime {
 
 parameter_types! {
     pub const NodeManagerPalletId: PalletId = NODE_MANAGER_PALLET_ID;
+    pub const VirtualNodeStake: Balance = 2000 * AVT;
 }
 
 impl pallet_node_manager::Config for Runtime {
@@ -550,6 +551,7 @@ impl pallet_node_manager::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type VirtualNodeStake = VirtualNodeStake;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
 }
 
