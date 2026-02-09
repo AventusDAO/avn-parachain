@@ -72,6 +72,7 @@ cumulus-primitives-core.workspace = true
 cumulus-primitives-timestamp.workspace = true
 cumulus-primitives-utility.workspace = true
 cumulus-primitives-storage-weight-reclaim.workspace = true
+cumulus-pallet-weight-reclaim.workspace = true
 parachains-common.workspace = true
 parachain-info.workspace = true
 
@@ -129,6 +130,7 @@ std = [
 	"cumulus-primitives-aura/std",
 	"cumulus-primitives-core/std",
 	"cumulus-primitives-storage-weight-reclaim/std",
+	"cumulus-pallet-weight-reclaim/std",
 	"cumulus-primitives-timestamp/std",
 	"cumulus-primitives-utility/std",
 	"frame-executive/std",
@@ -209,6 +211,7 @@ runtime-benchmarks = [
 	"cumulus-pallet-parachain-system/runtime-benchmarks",
 	"cumulus-primitives-core/runtime-benchmarks",
 	"cumulus-primitives-utility/runtime-benchmarks",
+	"cumulus-pallet-weight-reclaim/runtime-benchmarks",
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system-benchmarking/runtime-benchmarks",

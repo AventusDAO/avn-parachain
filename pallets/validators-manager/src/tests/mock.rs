@@ -102,7 +102,7 @@ frame_support::construct_runtime!(
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         ValidatorManager: validators_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
         ParachainStaking: parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
@@ -250,6 +250,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = ParachainStaking;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 impl pallet_session::historical::Config for TestRuntime {
@@ -455,6 +456,7 @@ impl ExtBuilder {
         // Important: the order of the storage setup is important. Do not change it.
         let _ = pallet_balances::GenesisConfig::<TestRuntime> {
             balances: validator_account_ids.clone().into_iter().map(|v| (v, 10000)).collect(),
+            ..Default::default()
         }
         .assimilate_storage(&mut self.storage);
 

@@ -19,7 +19,7 @@ type Block = frame_system::mocking::MockBlock<TestRuntime>;
 frame_support::construct_runtime!(
     pub enum TestRuntime {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
         AvnOffenceHandler: avn_offence_handler::{Pallet, Call, Storage, Event<T>},
     }
@@ -77,6 +77,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = session::PeriodicSessions<Period, Offset>;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 impl Enforcer<ValidatorId> for TestRuntime {

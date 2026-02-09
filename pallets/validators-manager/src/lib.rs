@@ -34,7 +34,7 @@ use sp_runtime::{
 };
 use sp_std::prelude::*;
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use pallet_avn::{
     self as avn, AccountToBytesConverter, BridgeInterfaceNotification, EthereumPublicKeyChecker,
     NewSessionHandler, ProcessedEventsChecker, ValidatorRegistrationNotifier,
@@ -364,7 +364,18 @@ pub enum ValidatorsActionStatus {
     None,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Encode,
+    Decode,
+    Debug,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub enum ValidatorsActionType {
     /// Validator has asked to leave voluntarily
     Resignation,
@@ -943,7 +954,19 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    Copy,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct ActionId<AccountId: Member> {
     pub action_account_id: AccountId,
     pub ingress_counter: IngressCounter,

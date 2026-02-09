@@ -17,7 +17,7 @@ use hex_literal::hex;
 use pallet_avn_proxy::ProvableProxy;
 use pallet_session as session;
 
-use codec::alloc::sync::Arc;
+use codec::{alloc::sync::Arc, DecodeWithMemTracking};
 use parking_lot::RwLock;
 use sp_core::offchain::{
     testing::{OffchainState, PendingRequest, PoolState, TestOffchainExt, TestTransactionPoolExt},
@@ -50,7 +50,7 @@ frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
         Avn: pallet_avn::{Pallet, Storage, Event, Config<T>},
         AvnProxy: pallet_avn_proxy::{Pallet, Call, Storage, Event<T>},
@@ -203,6 +203,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = session::PeriodicSessions<Period, Offset>;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 parameter_types! {
@@ -421,7 +422,19 @@ impl pallet_avn_proxy::Config for TestRuntime {
 }
 
 // Test Avn proxy configuration logic
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, Debug, TypeInfo)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    Debug,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 pub struct TestAvnProxyConfig {}
 impl Default for TestAvnProxyConfig {
     fn default() -> Self {
