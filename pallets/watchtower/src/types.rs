@@ -140,7 +140,18 @@ pub trait NodesInterface<AccountId, SignerId> {
     fn get_node_from_local_signing_keys() -> Option<(AccountId, SignerId)>;
 }
 
-#[derive(Encode, Decode, DecodeWithMemTracking, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, Default)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    RuntimeDebug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
 pub struct Vote {
     pub in_favors: u32,
     pub againsts: u32,

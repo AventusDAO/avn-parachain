@@ -22,7 +22,17 @@ pub enum RawPayload {
     Uri(Vec<u8>),
 }
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking)]
+#[derive(
+    Encode,
+    Decode,
+    RuntimeDebug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub enum ProposalSource {
     /// External proposals created by other users. These require manual review and voting.
     External,
@@ -68,7 +78,17 @@ pub enum ProposalStatusEnum {
     Unknown,
 }
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking)]
+#[derive(
+    Encode,
+    Decode,
+    RuntimeDebug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub enum DecisionRule {
     /// Yes > No to win
     SimpleMajority,

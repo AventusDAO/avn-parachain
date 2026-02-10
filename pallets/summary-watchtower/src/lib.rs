@@ -367,7 +367,17 @@ pub mod pallet {
     }
 
     #[derive(
-        Encode, Decode, Default, Clone, Copy, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking
+        Encode,
+        Decode,
+        Default,
+        Clone,
+        Copy,
+        PartialEq,
+        Debug,
+        Eq,
+        TypeInfo,
+        MaxEncodedLen,
+        DecodeWithMemTracking,
     )]
     pub struct RootData<B: AtLeast32Bit> {
         pub root_id: RootId<B>,
