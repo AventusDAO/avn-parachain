@@ -125,7 +125,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     authoring_version: 1,
-    spec_version: 200,
+    spec_version: 201,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -373,6 +373,9 @@ mod runtime {
 
     #[runtime::pallet_index(98)]
     pub type Scheduler = pallet_scheduler;
+
+    #[runtime::pallet_index(103)]
+    pub type CrossChainVoting = pallet_cross_chain_voting;
 }
 
 #[docify::export(register_validate_block)]
