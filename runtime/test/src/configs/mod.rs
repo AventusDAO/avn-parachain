@@ -58,7 +58,7 @@ use crate::{
     Moment, NftManager, Nonce, Offences, Ordering, OriginCaller, PalletInfo, ParachainStaking,
     ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime, RuntimeCall,
     RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler,
-    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, TokenManager,
+    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, Timestamp, TokenManager,
     TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee, XcmpQueue,
     AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
     NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
@@ -130,6 +130,11 @@ impl frame_system::Config for Runtime {
     type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
+/// Configure the palelt weight reclaim tx.
+impl cumulus_pallet_weight_reclaim::Config for Runtime {
+    type WeightInfo = ();
+}
+
 impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
@@ -137,8 +142,7 @@ impl pallet_timestamp::Config for Runtime {
     type OnTimestampSet = ();
     #[cfg(not(feature = "runtime-benchmarks"))]
     type OnTimestampSet = Aura;
-    // TODO update to 0 when enabling asynch backing
-    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
+    type MinimumPeriod = ConstU64<0>;
     type WeightInfo = ();
 }
 
@@ -264,6 +268,7 @@ impl pallet_session::Config for Runtime {
     // Essentially just Aura, but let's be pedantic.
     type SessionHandler = <SessionKeys as sp_runtime::traits::OpaqueKeys>::KeyTypeIdProviders;
     type Keys = SessionKeys;
+    type DisablingStrategy = ();
     type WeightInfo = ();
 }
 
@@ -273,7 +278,7 @@ impl pallet_aura::Config for Runtime {
     type DisabledValidators = ();
     type MaxAuthorities = ConstU32<100_000>;
     type AllowMultipleBlocksPerSlot = ConstBool<true>;
-    type SlotDuration = pallet_aura::MinimumPeriodTimesTwo<Self>;
+    type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
 parameter_types! {
@@ -505,6 +510,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -537,7 +543,7 @@ impl pallet_eth_bridge::Config<MainEthBridge> for Runtime {
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
     type ReportCorroborationOffence = Offences;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification =
         (Summary, TokenManager, NftManager, ParachainStaking, ValidatorsManager);
@@ -554,13 +560,24 @@ impl pallet_eth_bridge::Config<SecondaryEthBridge> for Runtime {
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
     type ReportCorroborationOffence = Offences;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification =
         (Summary, TokenManager, NftManager, ParachainStaking, ValidatorsManager);
     type ProcessedEventsHandler = NoEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
+}
+
+parameter_types! {
+    pub const MaxLinkedAccounts: u32 = 10;
+}
+
+impl pallet_cross_chain_voting::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type MaxLinkedAccounts = MaxLinkedAccounts;
+    type WeightInfo = pallet_cross_chain_voting::default_weights::SubstrateWeight<Runtime>;
 }
 
 // Other pallets
@@ -589,6 +606,7 @@ impl pallet_assets::Config for Runtime {
     type MetadataDepositPerByte = MetadataDepositPerByte;
     type ApprovalDeposit = ApprovalDeposit;
     type StringLimit = StringLimit;
+    type Holder = ();
     type Freezer = ();
     type Extra = ();
     type CallbackHandle = ();
@@ -632,6 +650,7 @@ impl pallet_scheduler::Config for Runtime {
     type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Runtime>;
     type OriginPrivilegeCmp = OriginPrivilegeCmp;
     type Preimages = Preimage;
+    type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
 parameter_types! {

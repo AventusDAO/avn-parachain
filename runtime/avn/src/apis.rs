@@ -23,7 +23,7 @@ use frame_support::{
 use pallet_aura::Authorities;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata};
+use sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata, H160};
 use sp_runtime::{
     traits::Block as BlockT,
     transaction_validity::{TransactionSource, TransactionValidity},
@@ -39,8 +39,9 @@ use super::{
 };
 
 use crate::{
-    AdditionalEvents, AuthorityDiscovery, AuthorityDiscoveryId, Avn, EthBlockRange, EthBridge,
-    EthBridgeInstance, EthereumEventsPartition, InstanceId, MAIN_ETH_BRIDGE_ID,
+    AdditionalEvents, AuthorityDiscovery, AuthorityDiscoveryId, Avn, CrossChainVoting,
+    EthBlockRange, EthBridge, EthBridgeInstance, EthereumEventsPartition, InstanceId,
+    MAIN_ETH_BRIDGE_ID,
 };
 
 use codec::Encode;
@@ -109,6 +110,13 @@ impl_runtime_apis! {
             Runtime::metadata_versions()
         }
     }
+
+       impl frame_support::view_functions::runtime_api::RuntimeViewFunction<Block> for Runtime {
+               fn execute_view_function(id: frame_support::view_functions::ViewFunctionId, input: Vec<u8>) -> Result<Vec<u8>, frame_support::view_functions::ViewFunctionDispatchError> {
+                       Runtime::execute_view_function(id, input)
+               }
+       }
+
 
     impl sp_block_builder::BlockBuilder<Block> for Runtime {
         fn apply_extrinsic(extrinsic: <Block as BlockT>::Extrinsic) -> ApplyExtrinsicResult {
@@ -274,6 +282,20 @@ impl_runtime_apis! {
         }
     }
 
+    impl pallet_cross_chain_voting_runtime_api::CrossChainVotingApi<Block> for Runtime {
+        fn get_total_linked_balance(t1_identity_account: H160) -> Balance {
+            CrossChainVoting::get_total_linked_balance(t1_identity_account)
+        }
+
+        fn get_linked_accounts(t1_identity_account: H160) -> Vec<AccountId> {
+            CrossChainVoting::get_linked_accounts(t1_identity_account).to_vec()
+        }
+
+        fn get_identity_account(t2_linked_account: AccountId) -> Option<H160> {
+            CrossChainVoting::get_identity_account(t2_linked_account)
+        }
+    }
+
     impl cumulus_primitives_core::CollectCollationInfo<Block> for Runtime {
         fn collect_collation_info(header: &<Block as BlockT>::Header) -> cumulus_primitives_core::CollationInfo {
             ParachainSystem::collect_collation_info(header)
@@ -308,7 +330,7 @@ impl_runtime_apis! {
             Vec<frame_benchmarking::BenchmarkList>,
             Vec<frame_support::traits::StorageInfo>,
         ) {
-            use frame_benchmarking::{Benchmarking, BenchmarkList};
+            use frame_benchmarking::BenchmarkList;
             use frame_support::traits::StorageInfoTrait;
             use frame_system_benchmarking::Pallet as SystemBench;
             use cumulus_pallet_session_benchmarking::Pallet as SessionBench;
@@ -321,10 +343,11 @@ impl_runtime_apis! {
             (list, storage_info)
         }
 
+        #[allow(non_local_definitions)]
         fn dispatch_benchmark(
             config: frame_benchmarking::BenchmarkConfig
         ) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, sp_runtime::RuntimeString> {
-            use frame_benchmarking::{BenchmarkError, Benchmarking, BenchmarkBatch};
+            use frame_benchmarking::{BenchmarkError, BenchmarkBatch};
             use super::*;
 
             use frame_system_benchmarking::Pallet as SystemBench;

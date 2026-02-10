@@ -69,7 +69,7 @@ frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Event<T>},
         NftManager: pallet_nft_manager::{Pallet, Call, Storage, Event<T>},
         AvnProxy: avn_proxy::{Pallet, Call, Storage, Event<T>},
@@ -169,6 +169,7 @@ impl pallet_token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 parameter_types! {
@@ -202,6 +203,7 @@ impl pallet_scheduler::Config for TestRuntime {
     type WeightInfo = ();
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = ();
+    type BlockNumberProvider = System;
 }
 
 impl pallet_eth_bridge::Config for TestRuntime {
@@ -242,6 +244,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = ();
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 impl pallet_session::historical::Config for TestRuntime {
@@ -251,7 +254,19 @@ impl pallet_session::historical::Config for TestRuntime {
 
 // Test Avn proxy configuration logic
 // We only allow System::Remark and signed_mint_single_nft calls to be proxied
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, Debug, TypeInfo)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    Debug,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 pub struct TestAvnProxyConfig {}
 impl Default for TestAvnProxyConfig {
     fn default() -> Self {
@@ -334,6 +349,7 @@ impl ExtBuilder {
                 (context.signer.account_id(), HUNDRED_AVT),
                 (context.relayer.account_id(), HUNDRED_AVT),
             ],
+            dev_accounts: None,
         }
         .assimilate_storage(&mut self.storage);
         self

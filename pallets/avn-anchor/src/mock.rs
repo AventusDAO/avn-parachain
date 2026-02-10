@@ -207,6 +207,7 @@ impl pallet_scheduler::Config for TestRuntime {
     type WeightInfo = ();
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = ();
+    type BlockNumberProvider = System;
 }
 
 impl pallet_token_manager::Config for TestRuntime {
@@ -228,6 +229,7 @@ impl pallet_token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
@@ -307,6 +309,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = session::PeriodicSessions<Period, Offset>;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 impl pallet_session::historical::Config for TestRuntime {
@@ -338,7 +341,19 @@ impl Config for TestRuntime {
     type DefaultCheckpointFee = DefaultCheckpointFee;
 }
 // Test Avn proxy configuration logic
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, Debug, TypeInfo)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    Debug,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 pub struct TestAvnProxyConfig {}
 impl Default for TestAvnProxyConfig {
     fn default() -> Self {
@@ -386,6 +401,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
             (create_account_id(2), INITIAL_BALANCE),
             (create_account_id(3), INITIAL_BALANCE),
         ],
+        dev_accounts: None,
     }
     .assimilate_storage(&mut t)
     .unwrap();

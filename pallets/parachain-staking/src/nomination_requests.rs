@@ -19,7 +19,7 @@ use crate::{
     BalanceOf, CandidateInfo, Config, Delay, Era, EraIndex, Error, Event, MinTotalNominatorStake,
     NominationScheduledRequests, Nominator, NominatorState, Pallet, Total,
 };
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{dispatch::DispatchResultWithPostInfo, ensure, traits::Get};
 use scale_info::TypeInfo;
 use sp_runtime::{traits::Saturating, BoundedVec, RuntimeDebug};
@@ -27,7 +27,17 @@ use sp_std::vec;
 
 /// An action that can be performed upon a nomination
 #[derive(
-    Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, PartialOrd, Ord, MaxEncodedLen,
+    Clone,
+    Eq,
+    PartialEq,
+    Encode,
+    Decode,
+    RuntimeDebug,
+    TypeInfo,
+    PartialOrd,
+    Ord,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
 )]
 pub enum NominationAction<Balance> {
     Revoke(Balance),
@@ -56,7 +66,7 @@ pub struct ScheduledRequest<AccountId, Balance> {
 }
 
 /// Represents a cancelled scheduled request for emitting an event.
-#[derive(Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo)]
+#[derive(Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, DecodeWithMemTracking)]
 pub struct CancelledScheduledRequest<Balance> {
     pub when_executable: EraIndex,
     pub action: NominationAction<Balance>,

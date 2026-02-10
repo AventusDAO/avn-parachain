@@ -17,7 +17,7 @@ pub fn development_config() -> ChainSpec {
     ChainSpec::builder(
         avn_parachain_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
         Extensions {
-            relay_chain: "rococo-local".into(),
+            relay_chain: RELAY_CHAIN.into(),
             // You MUST set this to the correct network!
             para_id: dev_rococo_parachain_id,
         },
@@ -80,7 +80,7 @@ pub fn local_testnet_config() -> ChainSpec {
     ChainSpec::builder(
         avn_parachain_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
         Extensions {
-            relay_chain: "rococo-local".into(),
+            relay_chain: RELAY_CHAIN.into(),
             // You MUST set this to the correct network!
             para_id: 2000,
         },

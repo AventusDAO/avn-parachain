@@ -5,7 +5,7 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::marker::PhantomData;
 use scale_info::TypeInfo;
 use sp_core::H256;
@@ -30,7 +30,17 @@ pub enum ProposalSource {
     Internal(ProposalType),
 }
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    RuntimeDebug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub enum ProposalType {
     Summary,
     Anchor,
@@ -38,7 +48,17 @@ pub enum ProposalType {
     Other(u8),
 }
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    RuntimeDebug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub enum ProposalStatusEnum {
     Queued,
     Active,

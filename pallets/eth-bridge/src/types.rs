@@ -1,6 +1,7 @@
 use core::fmt;
 
 use crate::*;
+use codec::DecodeWithMemTracking;
 use sp_avn_common::{
     eth::EthereumId,
     event_discovery::{AdditionalEvents, EthBridgeEventsFilter},
@@ -207,7 +208,7 @@ impl ActiveEthRange {
     }
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo)]
+#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum AdminSettings {
     /// The delay, in blocks, for actions to wait before being executed
     EthereumTransactionLifetimeSeconds(u64),

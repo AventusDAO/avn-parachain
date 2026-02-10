@@ -2,9 +2,22 @@ use super::{
     AccountId, Box, Decode, Encode, InnerCallValidator, Proof, ProvableProxy, Runtime, RuntimeCall,
     RuntimeDebug, Signature, TypeInfo,
 };
+use codec::DecodeWithMemTracking;
 
 // Avn proxy configuration logic
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Encode, Decode, RuntimeDebug, TypeInfo)]
+#[derive(
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    RuntimeDebug,
+    TypeInfo,
+    DecodeWithMemTracking,
+)]
 pub struct AvnProxyConfig {}
 impl Default for AvnProxyConfig {
     fn default() -> Self {

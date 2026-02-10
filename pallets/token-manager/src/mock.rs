@@ -75,7 +75,7 @@ frame_support::construct_runtime!(
         Avn: pallet_avn::{Pallet, Storage, Event},
         TokenManager: token_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         ParachainStaking: parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
         Historical: pallet_session::historical::{Pallet, Storage},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
@@ -109,6 +109,7 @@ impl token_manager::Config for TestRuntime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = TestOnIdleHandler;
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 parameter_types! {
@@ -134,6 +135,7 @@ impl pallet_scheduler::Config for TestRuntime {
     type WeightInfo = ();
     type OriginPrivilegeCmp = EqualPrivilegeOnly;
     type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
 
 impl sp_runtime::BoundToRuntimeAppPublic for TestRuntime {
@@ -235,6 +237,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = ParachainStaking;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 parameter_types! {

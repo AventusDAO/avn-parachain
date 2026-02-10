@@ -17,17 +17,16 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
-log = { workspace = true, default-features = true }
 codec = { workspace = true, default-features = true }
 serde = { features = ["derive"], workspace = true, default-features = true }
-jsonrpsee.workspace = true
 hex-literal = "0.4.1"
 hex = { workspace = true, default-features = true }
 serde_json = { version = "1.0.111", features = ["arbitrary_precision"] }
-docify = "0.2.8"
-
-futures = "0.3.28"
 cfg-if = "0.1"
+docify = "0.2.8"
+futures = "0.3.28"
+jsonrpsee.workspace = true
+log = { workspace = true, default-features = true }
 
 # Local
 runtime-common.workspace = true

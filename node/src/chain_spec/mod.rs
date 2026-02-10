@@ -43,6 +43,9 @@ pub(crate) mod constants {
     pub(crate) const COLLATOR_DEPOSIT: Balance = 2_000 * AVT;
 
     pub const QUORUM_FACTOR: u32 = 3;
+
+    /// The relay chain that you want to configure this parachain to connect to.
+    pub const RELAY_CHAIN: &str = "rococo-local";
 }
 
 pub(crate) mod helpers {

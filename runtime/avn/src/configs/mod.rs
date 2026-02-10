@@ -17,7 +17,8 @@
 mod xcm_config;
 
 // Substrate and Polkadot dependencies
-use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
+// use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
+use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 use frame_support::{
     derive_impl,
@@ -55,16 +56,15 @@ use crate::{
     fungible,
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
-    AvnProxyConfig, Balance, Balances, Block, BlockNumber, EnsureSigned, EthBridge, Hash,
-    Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment,
-    NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
+    AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, EnsureSigned, EthBridge,
+    Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
+    Moment, NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
-    SummaryWatchtower, System, TokenManager, TransactionByteFee, UncheckedExtrinsic,
-    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager,
+    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -132,6 +132,11 @@ impl frame_system::Config for Runtime {
     type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
+/// Configure the palelt weight reclaim tx.
+impl cumulus_pallet_weight_reclaim::Config for Runtime {
+    type WeightInfo = ();
+}
+
 impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
@@ -139,8 +144,8 @@ impl pallet_timestamp::Config for Runtime {
     type OnTimestampSet = ();
     #[cfg(not(feature = "runtime-benchmarks"))]
     type OnTimestampSet = Aura;
-    // TODO update to 0 when enabling asynch backing
-    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
+    // TODO update to SLOT_DURATION / 2 to disable asynch backing
+    type MinimumPeriod = ConstU64<0>;
     type WeightInfo = ();
 }
 
@@ -198,11 +203,10 @@ impl cumulus_pallet_parachain_system::Config for Runtime {
     type ReservedDmpWeight = ReservedDmpWeight;
     type XcmpMessageHandler = XcmpQueue;
     type ReservedXcmpWeight = ReservedXcmpWeight;
-    // TODO review this
-    // TODO use RelayNumberMonotonicallyIncreases once asynchronous backing is enabled.
-    type CheckAssociatedRelayNumber = RelayNumberStrictlyIncreases;
-    // TODO use ConsensusHook once asynchronous backing is enabled.
-    type ConsensusHook = cumulus_pallet_parachain_system::consensus_hook::ExpectParentIncluded;
+    // TODO Review this and use RelayNumberStrictlyIncreases and ExpectParentIncluded to disable
+    // Asynchronous backing
+    type CheckAssociatedRelayNumber = RelayNumberMonotonicallyIncreases;
+    type ConsensusHook = ConsensusHook;
     type SelectCore = cumulus_pallet_parachain_system::DefaultCoreSelector<Runtime>;
 }
 
@@ -269,6 +273,7 @@ impl pallet_session::Config for Runtime {
     // Essentially just Aura, but let's be pedantic.
     type SessionHandler = <SessionKeys as sp_runtime::traits::OpaqueKeys>::KeyTypeIdProviders;
     type Keys = SessionKeys;
+    type DisablingStrategy = ();
     type WeightInfo = ();
 }
 
@@ -479,6 +484,7 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type BridgeInterface = EthBridge;
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
+    type TimeProvider = Timestamp;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -530,13 +536,24 @@ impl pallet_eth_bridge::Config for Runtime {
     type MinEthBlockConfirmation = MinEthBlockConfirmation;
     type ProcessedEventsChecker = EthBridge;
     type AccountToBytesConvert = Avn;
-    type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);
     type ProcessedEventsHandler = CorePrimaryEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
+}
+
+parameter_types! {
+    pub const MaxLinkedAccounts: u32 = 10;
+}
+
+impl pallet_cross_chain_voting::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type MaxLinkedAccounts = MaxLinkedAccounts;
+    type WeightInfo = pallet_cross_chain_voting::default_weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
@@ -584,6 +601,7 @@ impl pallet_assets::Config for Runtime {
     type MetadataDepositPerByte = MetadataDepositPerByte;
     type ApprovalDeposit = ApprovalDeposit;
     type StringLimit = StringLimit;
+    type Holder = ();
     type Freezer = ();
     type Extra = ();
     type CallbackHandle = ();
@@ -627,6 +645,7 @@ impl pallet_scheduler::Config for Runtime {
     type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Runtime>;
     type OriginPrivilegeCmp = OriginPrivilegeCmp;
     type Preimages = Preimage;
+    type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
 parameter_types! {

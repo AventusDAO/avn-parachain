@@ -1022,7 +1022,7 @@ impl<
 
 /// Convey relevant information describing if a nominator was added to the top or bottom
 /// Nominations added to the top yield a new total
-#[derive(Clone, Copy, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo)]
+#[derive(Clone, Copy, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, DecodeWithMemTracking)]
 pub enum NominatorAdded<B> {
     AddedToTop { new_total: B },
     AddedToBottom,
@@ -1413,13 +1413,24 @@ impl<A: Decode, B: Default> Default for GrowthInfo<A, B> {
 }
 
 // Data structure for tracking collator reward periods
-#[derive(Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, Default, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    RuntimeDebug,
+    Default,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 pub struct GrowthPeriodInfo {
     pub start_era_index: EraIndex,
     pub index: GrowthPeriodIndex,
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo)]
+#[derive(Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum AdminSettings<Balance> {
     /// The delay, in blocks, for actions to wait before being executed
     Delay(EraIndex),

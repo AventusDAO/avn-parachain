@@ -7,7 +7,7 @@ use alloc::string::String;
 
 use alloy_primitives::{Address, Bytes, FixedBytes, B256 as AlloyB256, U256 as AlloyU256};
 use alloy_sol_types::{eip712_domain, sol, Eip712Domain, SolStruct};
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::str::{self, FromStr};
 use sp_core::{ConstU32, H160, H256};
 use sp_io::hashing::blake2_256;
@@ -27,7 +27,18 @@ const LOWER_ID_SPAN: core::ops::Range<usize> = 72..PACKED_LOWER_V1_PARAMS_SIZE;
 const T2_SENDER_SPAN: core::ops::Range<usize> = PACKED_LOWER_V1_PARAMS_SIZE..108;
 const T2_TIMESTAMP_SPAN: core::ops::Range<usize> = 108..PACKED_LOWER_V2_PARAMS_SIZE;
 
-#[derive(Encode, Decode, Default, Clone, Debug, PartialEq, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum EthereumNetwork {
     #[default]
@@ -65,7 +76,18 @@ impl From<u64> for EthereumNetwork {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, Debug, PartialEq, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EthBridgeInstance {
     pub network: EthereumNetwork,

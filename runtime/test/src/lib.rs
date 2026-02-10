@@ -12,7 +12,6 @@ pub mod apis;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 mod configs;
-pub mod governance;
 pub mod proxy_config;
 
 use core::cmp::Ordering;
@@ -41,7 +40,6 @@ pub use frame_system::{
     limits::{BlockLength, BlockWeights},
     EnsureRoot, EnsureSigned, Event as SystemEvent, EventRecord, Phase,
 };
-use governance::pallet_custom_origins;
 use proxy_config::AvnProxyConfig;
 pub use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 
@@ -82,18 +80,20 @@ pub type BlockId = generic::BlockId<Block>;
 
 /// The extension to the basic transaction logic.
 #[docify::export(template_signed_extra)]
-pub type TxExtension = (
-    frame_system::CheckNonZeroSender<Runtime>,
-    frame_system::CheckSpecVersion<Runtime>,
-    frame_system::CheckTxVersion<Runtime>,
-    frame_system::CheckGenesis<Runtime>,
-    frame_system::CheckEra<Runtime>,
-    frame_system::CheckNonce<Runtime>,
-    frame_system::CheckWeight<Runtime>,
-    pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
-    cumulus_primitives_storage_weight_reclaim::StorageWeightReclaim<Runtime>,
-    frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
-);
+pub type TxExtension = cumulus_pallet_weight_reclaim::StorageWeightReclaim<
+    Runtime,
+    (
+        frame_system::CheckNonZeroSender<Runtime>,
+        frame_system::CheckSpecVersion<Runtime>,
+        frame_system::CheckTxVersion<Runtime>,
+        frame_system::CheckGenesis<Runtime>,
+        frame_system::CheckEra<Runtime>,
+        frame_system::CheckNonce<Runtime>,
+        frame_system::CheckWeight<Runtime>,
+        pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
+        frame_metadata_hash_extension::CheckMetadataHash<Runtime>,
+    ),
+>;
 
 /// Unchecked extrinsic type as expected by this runtime.
 pub type UncheckedExtrinsic =
@@ -123,7 +123,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     authoring_version: 1,
-    spec_version: 134,
+    spec_version: 201,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -140,11 +140,11 @@ mod block_times {
     /// slot_duration()`.
     ///
     /// Change this to adjust the block time.
-    pub const RUNTIME_MILLISECS_PER_BLOCK: u64 = MILLISECS_PER_BLOCK;
+    pub const RUNTIME_MILLISECS_PER_BLOCK: u64 = MILLI_SECS_PER_BLOCK;
 
     // NOTE: Currently it is not possible to change the slot duration after the chain has started.
     // Attempting to do so will brick block production.
-    pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
+    pub const SLOT_DURATION: u64 = RUNTIME_MILLISECS_PER_BLOCK;
 }
 pub use block_times::*;
 
@@ -249,7 +249,8 @@ mod runtime {
         RuntimeHoldReason,
         RuntimeSlashReason,
         RuntimeLockId,
-        RuntimeTask
+        RuntimeTask,
+        RuntimeViewFunction
     )]
     pub struct Runtime;
 
@@ -265,6 +266,9 @@ mod runtime {
 
     #[runtime::pallet_index(3)]
     pub type ParachainInfo = parachain_info;
+
+    #[runtime::pallet_index(4)]
+    pub type WeightReclaim = cumulus_pallet_weight_reclaim;
 
     // Monetary stuff.
     #[runtime::pallet_index(10)]
@@ -363,24 +367,14 @@ mod runtime {
     #[runtime::pallet_index(111)]
     pub type EthSecondBridge = pallet_eth_bridge<Instance2>;
 
-    // OpenGov pallets
     #[runtime::pallet_index(97)]
     pub type Preimage = pallet_preimage;
 
     #[runtime::pallet_index(98)]
     pub type Scheduler = pallet_scheduler;
 
-    #[runtime::pallet_index(99)]
-    pub type Origins = pallet_custom_origins;
-
-    #[runtime::pallet_index(100)]
-    pub type ConvictionVoting = pallet_conviction_voting;
-
-    #[runtime::pallet_index(101)]
-    pub type Referenda = pallet_referenda;
-
-    #[runtime::pallet_index(102)]
-    pub type Whitelist = pallet_whitelist;
+    #[runtime::pallet_index(103)]
+    pub type CrossChainVoting = pallet_cross_chain_voting;
 }
 
 #[docify::export(register_validate_block)]

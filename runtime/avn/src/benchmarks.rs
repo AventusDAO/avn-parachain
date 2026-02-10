@@ -21,6 +21,7 @@ frame_benchmarking::define_benchmarks!(
     [pallet_avn_offence_handler, AvnOffenceHandler]
     [pallet_avn_proxy, AvnProxy]
     [pallet_avn, Avn]
+    [pallet_cross_chain_voting, CrossChainVoting]
     [pallet_eth_bridge, EthBridge]
     [pallet_ethereum_events, EthereumEvents]
     [pallet_nft_manager, NftManager]
@@ -38,4 +39,5 @@ frame_benchmarking::define_benchmarks!(
     [pallet_avn_anchor, AvnAnchor]
     [cumulus_pallet_parachain_system, ParachainSystem]
     [cumulus_pallet_xcmp_queue, XcmpQueue]
+    [cumulus_pallet_weight_reclaim, WeightReclaim]
 );
