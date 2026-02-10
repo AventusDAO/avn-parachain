@@ -143,7 +143,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 
 #[docify::export]
 mod block_times {
-    use runtime_common::constants::time::MILLI_SECS_PER_BLOCK;
+    use sp_avn_common::constants::time::MILLI_SECS_PER_BLOCK;
     /// This determines the average expected block time that we are targeting. Blocks will be
     /// produced at a minimum duration defined by `SLOT_DURATION`. `SLOT_DURATION` is picked up by
     /// `pallet_timestamp` which is in turn picked up by `pallet_aura` to implement `fn

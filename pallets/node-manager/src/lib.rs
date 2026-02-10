@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-use codec::{Decode, Encode, FullCodec};
+use codec::{Decode, DecodeWithMemTracking, Encode, FullCodec};
 use frame_support::{
     dispatch::DispatchResult,
     pallet_prelude::*,

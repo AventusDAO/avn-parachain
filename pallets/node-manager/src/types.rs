@@ -87,7 +87,7 @@ impl<Balance: Copy> RewardPotInfo<Balance> {
 }
 
 #[derive(
-    Copy, Clone, PartialEq, Default, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen,
+    Copy, Clone, PartialEq, Default, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
 pub struct UptimeInfo<BlockNumber> {
     /// Number of uptime reported
@@ -104,7 +104,7 @@ impl<BlockNumber: Copy> UptimeInfo<BlockNumber> {
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, DecodeWithMemTracking, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
 pub struct PaymentPointer<AccountId> {
     pub period_index: RewardPeriodIndex,
     pub node: AccountId,
@@ -121,7 +121,7 @@ impl<AccountId: Clone + FullCodec + MaxEncodedLen + TypeInfo> PaymentPointer<Acc
     }
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, DecodeWithMemTracking, Default, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen)]
 pub struct NodeInfo<SignerId, AccountId> {
     /// The node owner
     pub owner: AccountId,
@@ -148,7 +148,7 @@ impl<
     }
 }
 
-#[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, Clone, PartialEq)]
 pub enum AdminConfig<AccountId, Balance> {
     NodeRegistrar(AccountId),
     RewardPeriod(u32),
@@ -163,7 +163,7 @@ pub enum AdminConfig<AccountId, Balance> {
 }
 
 #[derive(
-    Copy, Clone, PartialEq, Default, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen,
+    Copy, Clone, PartialEq, Default, Eq, Encode, Decode, DecodeWithMemTracking, RuntimeDebug, TypeInfo, MaxEncodedLen,
 )]
 pub struct TotalUptimeInfo {
     /// Total number of uptime reported for reward period
@@ -193,7 +193,7 @@ impl RewardWeight {
     }
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct OwnerStakeInfo<Balance> {
     /// The amount staked
     pub amount: Balance,
@@ -205,7 +205,7 @@ pub struct OwnerStakeInfo<Balance> {
     pub state: UnstakeState<Balance>,
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
+#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen, Default)]
 pub struct UnstakeState<Balance> {
     /// Allowance carried over (how much they can withdraw right now).
     pub max_unstake_allowance: Balance,

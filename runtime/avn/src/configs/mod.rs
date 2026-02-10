@@ -64,7 +64,7 @@ use crate::{
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
     SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager,
     WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS,
-    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION, Watchtower
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;

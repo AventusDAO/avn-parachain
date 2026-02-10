@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use node_primitives::{AccountId, Balance};
+use sp_avn_common::primitives::{AccountId, Balance};
 use sp_core::H160;
 use sp_std::vec::Vec;
 

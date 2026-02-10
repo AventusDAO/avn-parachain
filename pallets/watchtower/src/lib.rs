@@ -8,7 +8,7 @@ use alloc::{
     vec,
 };
 
-use codec::{Decode, Encode};
+use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_support::{
     dispatch::DispatchResult,
     pallet_prelude::*,
