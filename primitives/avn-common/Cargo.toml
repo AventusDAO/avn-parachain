@@ -32,8 +32,8 @@ libsecp256k1 = { version = "0.7.0", default-features = false, features = [
 	"hmac",
 ] }
 sha3 = { version = "0.8", default-features = false }
-alloy-primitives = { version = "1.1.2", default-features = false }
-alloy-sol-types = { version = "1.1.2", default-features = false }
+alloy-primitives.workspace = true
+alloy-sol-types.workspace = true
 serde = { features = ["alloc", "derive"], workspace = true, optional = true }
 
 [dev-dependencies]
