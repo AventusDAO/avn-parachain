@@ -7955,14 +7955,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
 
 [[package]]
-name = "node-primitives"
-version = "8.5.0"
-dependencies = [
- "sp-core",
- "sp-runtime",
-]
-
-[[package]]
 name = "nodrop"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8753,9 +8745,9 @@ dependencies = [
 name = "pallet-cross-chain-voting-runtime-api"
 version = "8.5.0"
 dependencies = [
- "node-primitives",
  "parity-scale-codec",
  "sp-api",
+ "sp-avn-common",
  "sp-core",
  "sp-std",
 ]
@@ -17066,7 +17058,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "proc-macro2",
  "quote",
- "syn 2.0.114",
+ "syn 2.0.98",
 ]
 
 [[package]]
@@ -17077,7 +17069,7 @@ checksum = "5c89e72a01ed4c579669add59014b9a524d609c0c88c6a585ce37485879f6ffb"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.114",
+ "syn 2.0.98",
  "test-case-core",
 ]
 

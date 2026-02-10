@@ -284,6 +284,8 @@ try-runtime = [
 	"pallet-avn-transaction-payment/try-runtime",
 	"pallet-parachain-staking/try-runtime",
 	"pallet-node-manager/try-runtime",
+	"pallet-watchtower/try-runtime",
+	"pallet-summary-watchtower/try-runtime",
 	"pallet-eth-bridge/try-runtime",
 	"pallet-assets/try-runtime",
 	"pallet-authority-discovery/try-runtime",

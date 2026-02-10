@@ -59,12 +59,21 @@ parameter_types! {
     pub const Offset: u64 = 0;
 }
 
-impl<LocalCall> system::offchain::SendTransactionTypes<LocalCall> for TestRuntime
+impl<LocalCall> system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    type OverarchingCall = RuntimeCall;
     type Extrinsic = Extrinsic;
+    type RuntimeCall = RuntimeCall;
+}
+
+impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+where
+    RuntimeCall: From<LocalCall>,
+{
+    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+        Extrinsic::new_bare(call)
+    }
 }
 
 parameter_types! {

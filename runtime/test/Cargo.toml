@@ -179,8 +179,6 @@ std = [
 	"pallet-avn-anchor/std",
 	"pallet-avn-proxy/std",
 	"pallet-avn-offence-handler/std",
-	"pallet-cross-chain-voting/std",
-	"pallet-cross-chain-voting-runtime-api/std",
 	"pallet-eth-bridge/std",
 	"pallet-eth-bridge-runtime-api/std",
 	"pallet-ethereum-events/std",

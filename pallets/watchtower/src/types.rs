@@ -10,6 +10,7 @@ use frame_support::{CloneNoBound, EqNoBound, PartialEqNoBound, RuntimeDebugNoBou
     EqNoBound,
     TypeInfo,
     MaxEncodedLen,
+    DecodeWithMemTracking,
 )]
 #[scale_info(skip_type_params(T))]
 pub enum Payload<T: Config> {
@@ -75,6 +76,7 @@ pub fn to_payload<T: Config>(raw: RawPayload) -> Result<Payload<T>, Error<T>> {
     EqNoBound,
     TypeInfo,
     MaxEncodedLen,
+    DecodeWithMemTracking,
 )]
 #[scale_info(skip_type_params(T))]
 pub struct Proposal<T: Config> {
@@ -138,13 +140,24 @@ pub trait NodesInterface<AccountId, SignerId> {
     fn get_node_from_local_signing_keys() -> Option<(AccountId, SignerId)>;
 }
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, Default)]
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    RuntimeDebug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
 pub struct Vote {
     pub in_favors: u32,
     pub againsts: u32,
 }
 
-#[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq, DecodeWithMemTracking)]
 pub enum AdminConfig<BlockNumber, AccountId> {
     MinVotingPeriod(BlockNumber),
     AdminAccount(Option<AccountId>),

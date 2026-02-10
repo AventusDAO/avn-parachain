@@ -43,7 +43,7 @@ frame_support::construct_runtime!(
         NodeManager: pallet_node_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
         AVN: pallet_avn::{Pallet, Storage, Event, Config<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
-        Session: pallet_session::{Pallet, Call, Storage, Event, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
     }
 );
 
@@ -90,6 +90,7 @@ impl session::Config for TestRuntime {
     type ValidatorIdOf = ConvertInto;
     type NextSessionRotation = session::PeriodicSessions<Period, Offset>;
     type WeightInfo = ();
+    type DisablingStrategy = ();
 }
 
 impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
