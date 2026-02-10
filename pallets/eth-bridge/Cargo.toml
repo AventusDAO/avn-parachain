@@ -40,8 +40,8 @@ frame-benchmarking = { optional = true, workspace = true }
 parking_lot.workspace = true
 sp-state-machine = { default-features = true, workspace = true }
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
-alloy-sol-types = "1.1.2"
-alloy-primitives = "1.1.2"
+alloy-primitives = { workspace =true, default-features = true }
+alloy-sol-types = { workspace =true, default-features = true }
 
 [features]
 migrate = []
