@@ -1455,6 +1455,8 @@ dependencies = [
  "pallet-avn-transaction-payment",
  "pallet-balances",
  "pallet-conviction-voting",
+ "pallet-cross-chain-voting",
+ "pallet-cross-chain-voting-runtime-api",
  "pallet-eth-bridge",
  "pallet-eth-bridge-runtime-api",
  "pallet-ethereum-events",
@@ -1545,6 +1547,8 @@ dependencies = [
  "pallet-avn-transaction-payment",
  "pallet-balances",
  "pallet-conviction-voting",
+ "pallet-cross-chain-voting",
+ "pallet-cross-chain-voting-runtime-api",
  "pallet-eth-bridge",
  "pallet-eth-bridge-runtime-api",
  "pallet-ethereum-events",
@@ -7953,7 +7957,7 @@ checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
 
 [[package]]
 name = "node-primitives"
-version = "2.0.0"
+version = "8.5.0"
 dependencies = [
  "sp-core",
  "sp-runtime",
@@ -8723,6 +8727,38 @@ dependencies = [
  "serde",
  "sp-io",
  "sp-runtime",
+]
+
+[[package]]
+name = "pallet-cross-chain-voting"
+version = "8.5.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "libsecp256k1",
+ "log",
+ "pallet-balances",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-avn-common",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-state-machine",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-cross-chain-voting-runtime-api"
+version = "8.5.0"
+dependencies = [
+ "node-primitives",
+ "parity-scale-codec",
+ "sp-api",
+ "sp-core",
+ "sp-std",
 ]
 
 [[package]]

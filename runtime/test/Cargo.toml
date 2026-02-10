@@ -107,6 +107,8 @@ pallet-eth-bridge.workspace = true
 pallet-eth-bridge-runtime-api.workspace = true
 pallet-parachain-staking.workspace = true
 pallet-avn-anchor.workspace = true
+pallet-cross-chain-voting.workspace = true
+pallet-cross-chain-voting-runtime-api.workspace = true
 
 # Common Runtime
 runtime-common.workspace = true
@@ -179,6 +181,8 @@ std = [
 	"pallet-avn-anchor/std",
 	"pallet-avn-proxy/std",
 	"pallet-avn-offence-handler/std",
+	"pallet-cross-chain-voting/std",
+	"pallet-cross-chain-voting-runtime-api/std",
 	"pallet-eth-bridge/std",
 	"pallet-eth-bridge-runtime-api/std",
 	"pallet-ethereum-events/std",
@@ -188,6 +192,8 @@ std = [
 	"pallet-validators-manager/std",
 	"pallet-avn-transaction-payment/std",
 	"pallet-parachain-staking/std",
+	"pallet-cross-chain-voting/std",
+	"pallet-cross-chain-voting-runtime-api/std",
 	# Avn Common Runtime
 	"runtime-common/std",
 	# OpenGov
@@ -224,6 +230,7 @@ runtime-benchmarks = [
 	"pallet-avn-anchor/runtime-benchmarks",
 	"pallet-avn-proxy/runtime-benchmarks",
 	"pallet-avn-offence-handler/runtime-benchmarks",
+	"pallet-cross-chain-voting/runtime-benchmarks",
 	"pallet-eth-bridge/runtime-benchmarks",
 	"pallet-ethereum-events/runtime-benchmarks",
 	"pallet-avn/runtime-benchmarks",
@@ -285,4 +292,5 @@ try-runtime = [
 	"pallet-conviction-voting/try-runtime",
 	"pallet-referenda/try-runtime",
 	"pallet-whitelist/try-runtime",
+	"pallet-cross-chain-voting/try-runtime",
 ]

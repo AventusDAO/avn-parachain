@@ -173,6 +173,8 @@ pallet-eth-bridge = { path = "./pallets/eth-bridge", default-features = false }
 pallet-eth-bridge-runtime-api = { path = "./pallets/eth-bridge/runtime-api", default-features = false }
 pallet-parachain-staking = { path = "./pallets/parachain-staking", default-features = false }
 pallet-avn-anchor = { path = "./pallets/avn-anchor", default-features = false }
+pallet-cross-chain-voting = { path = "./pallets/cross-chain-voting", default-features = false }
+pallet-cross-chain-voting-runtime-api = { path = "./pallets/cross-chain-voting/runtime-api", default-features = false }
 
 # Common Runtime
 node-primitives = { path = "./node/primitives/", default-features = false }
