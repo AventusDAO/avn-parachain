@@ -15415,6 +15415,7 @@ version = "8.5.0"
 dependencies = [
  "alloy-primitives 1.5.3",
  "alloy-sol-types 1.5.3",
+ "async-trait",
  "byte-slice-cast",
  "derive_more 0.99.17",
  "hex",
@@ -15423,6 +15424,7 @@ dependencies = [
  "libsecp256k1",
  "log",
  "parity-scale-codec",
+ "sc-transaction-pool-api",
  "scale-info",
  "serde",
  "sha3 0.8.2",
