@@ -52,11 +52,11 @@ pub mod event_discovery;
 pub mod event_types;
 pub mod http_data_codec;
 pub mod ocw_lock;
-#[cfg(feature = "std")]
-pub mod transaction_filter;
 #[cfg(test)]
 #[path = "tests/test_event_discovery.rs"]
 pub mod test_event_discovery;
+#[cfg(feature = "std")]
+pub mod transaction_filter;
 
 /// Ingress counter type for a counter that can sign the same message with a different signature
 /// each time

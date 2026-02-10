@@ -130,13 +130,12 @@ pub fn is_extrinsic_allowed(encoded: &[u8]) -> FilterResult {
     use codec::Decode;
 
     match UncheckedExtrinsic::decode(&mut &encoded[..]) {
-        Ok(xt) => {
+        Ok(xt) =>
             if is_allowed_call(&xt.function) {
                 FilterResult::Allowed
             } else {
                 FilterResult::DisallowedCall
-            }
-        },
+            },
         Err(e) => {
             log::debug!(target: "tx-filter", "Decode failed: {:?}", e);
             FilterResult::Malformed

@@ -36,7 +36,7 @@ use sc_service::{
 use sc_telemetry::{Telemetry, TelemetryHandle, TelemetryWorker, TelemetryWorkerHandle};
 
 use sp_avn_common::{
-    transaction_filter::{ExtrinsicFilter, FilteredPool, FilterResult},
+    transaction_filter::{ExtrinsicFilter, FilterResult, FilteredPool},
     DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER, EXTERNAL_SERVICE_PORT_NUMBER_KEY,
 };
 use sp_keystore::KeystorePtr;
@@ -317,8 +317,7 @@ pub async fn start_parachain_node(
     // Cumulus API requires the concrete pool type.
     let filter: Arc<dyn ExtrinsicFilter> = Arc::new(RuntimeExtrinsicFilter::new(&avn_cli_config));
     let inner_pool = params.transaction_pool.clone();
-    let transaction_pool =
-        Arc::new(FilteredPool::new(params.transaction_pool, filter));
+    let transaction_pool = Arc::new(FilteredPool::new(params.transaction_pool, filter));
     let import_queue_service = params.import_queue.service();
 
     let avn_port = avn_cli_config.avn_port.clone();
