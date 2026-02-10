@@ -15,7 +15,10 @@ use frame_support::{
     traits::{IsSubType, IsType},
     weights::WeightMeter,
 };
-use frame_system::{offchain::SendTransactionTypes, pallet_prelude::*};
+use frame_system::{
+    offchain::{CreateInherent, CreateTransactionBase},
+    pallet_prelude::*,
+};
 pub use sp_avn_common::{verify_signature, InnerCallValidator, Proof};
 use sp_core::{MaxEncodedLen, H256};
 pub use sp_runtime::{
@@ -75,7 +78,9 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: SendTransactionTypes<Call<Self>> + frame_system::Config {
+    pub trait Config:
+        CreateTransactionBase<Call<Self>> + CreateInherent<Call<Self>> + frame_system::Config
+    {
         type RuntimeEvent: From<Event<Self>>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>
             + Clone
@@ -101,16 +106,7 @@ pub mod pallet {
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
 
         /// The signature type used by accounts/transactions.
-        #[cfg(not(feature = "runtime-benchmarks"))]
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-
-        #[cfg(feature = "runtime-benchmarks")]
-        type Signature: Verify<Signer = Self::Public>
-            + Member
-            + Decode
-            + Encode
-            + TypeInfo
-            + From<sp_core::sr25519::Signature>;
 
         /// Interface for accessing registered watchtowers
         type Watchtowers: NodesInterface<Self::AccountId, Self::SignerId>;

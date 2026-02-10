@@ -5,8 +5,8 @@
 use super::*;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
-use sp_avn_common::Proof;
-use sp_core::{crypto::DEV_PHRASE, ByteArray};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
+use sp_core::{crypto::DEV_PHRASE, sr25519, ByteArray};
 use sp_runtime::{traits::Hash, SaturatedConversion};
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
@@ -104,10 +104,11 @@ fn get_proof<T: Config>(
     signer: &T::AccountId,
     signature: &[u8],
 ) -> Proof<T::Signature, T::AccountId> {
+    let signature = sr25519::Signature::from_slice(signature).expect("valid sr25519 signature");
     return Proof {
         signer: signer.clone(),
         relayer: relayer.clone(),
-        signature: sp_core::sr25519::Signature::from_slice(signature).unwrap().into(),
+        signature: convert_sr25519_signature::<T::Signature>(signature),
     }
 }
 

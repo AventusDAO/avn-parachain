@@ -114,7 +114,6 @@ impl<T: Config> Pallet<T> {
             if stake.state.next_unstake_time_sec == 0 {
                 stake.state = UnstakeState::new(Zero::zero(), expiry);
             }
-
         }
         stake.amount = new_total;
         stake.last_period_updated = current_reward_period;
@@ -125,21 +124,30 @@ impl<T: Config> Pallet<T> {
     }
 
     // This function will return the last stake before the given reward period
-    fn get_effective_stake_for_period(owner: &T::AccountId, payout_period: RewardPeriodIndex) -> BalanceOf<T> {
+    fn get_effective_stake_for_period(
+        owner: &T::AccountId,
+        payout_period: RewardPeriodIndex,
+    ) -> BalanceOf<T> {
         let periods = StakeSnapshotPeriods::<T>::get(owner);
-        if periods.is_empty() { return Zero::zero(); }
+        if periods.is_empty() {
+            return Zero::zero()
+        }
 
         // Find the last period <= payout_period
         let idx = match periods.binary_search_by(|p| p.cmp(&payout_period)) {
             Ok(i) => i,
             Err(0) => return Zero::zero(), // all snapshots are after payout_period
-            Err(i) => i - 1, // insertion point - 1
+            Err(i) => i - 1,               // insertion point - 1
         };
 
         StakeSnapshot::<T>::get(periods[idx], owner).unwrap_or_default()
     }
 
-    pub fn update_stake(owner: &T::AccountId, stake: OwnerStakeInfo<BalanceOf<T>>, reward_period: RewardPeriodIndex) -> DispatchResult {
+    pub fn update_stake(
+        owner: &T::AccountId,
+        stake: OwnerStakeInfo<BalanceOf<T>>,
+        reward_period: RewardPeriodIndex,
+    ) -> DispatchResult {
         if stake.amount.is_zero() {
             T::Currency::remove_lock(STAKE_LOCK_ID, &owner);
         } else {
@@ -167,14 +175,12 @@ impl<T: Config> Pallet<T> {
                 // This should never happen in normal flow
                 if period < last {
                     log::warn!("⚠️ snapshot period went backwards. Current period: {:?}, last period: {:?}, owner: {:?}", period, last, owner);
-                    return Ok(());
+                    return Ok(())
                 }
             }
 
             // Enforce capacity strictly
-            periods
-                .try_push(period)
-                .map_err(|_| Error::<T>::StakeSnapshotFull)?;
+            periods.try_push(period).map_err(|_| Error::<T>::StakeSnapshotFull)?;
 
             Ok(())
         })

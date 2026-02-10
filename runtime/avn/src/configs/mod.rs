@@ -135,6 +135,9 @@ impl frame_system::Config for Runtime {
 impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
+    #[cfg(feature = "runtime-benchmarks")]
+    type OnTimestampSet = ();
+    #[cfg(not(feature = "runtime-benchmarks"))]
     type OnTimestampSet = Aura;
     // TODO update to 0 when enabling asynch backing
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
@@ -538,6 +541,7 @@ impl pallet_eth_bridge::Config for Runtime {
 
 parameter_types! {
     pub const NodeManagerPalletId: PalletId = NODE_MANAGER_PALLET_ID;
+    pub const VirtualNodeStake: Balance = 2000 * AVT;
 }
 
 impl pallet_node_manager::Config for Runtime {
@@ -550,6 +554,7 @@ impl pallet_node_manager::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type TimeProvider = pallet_timestamp::Pallet<Runtime>;
+    type VirtualNodeStake = VirtualNodeStake;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
 }
 
