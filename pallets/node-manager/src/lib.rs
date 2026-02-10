@@ -947,7 +947,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(8)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::add_stake())]
         pub fn add_stake(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
             let owner = ensure_signed(origin)?;
             // TODO: check if we want to prevent non node owners from staking.
@@ -960,7 +960,7 @@ pub mod pallet {
         }
 
         #[pallet::call_index(9)]
-        #[pallet::weight(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::remove_stake())]
         pub fn remove_stake(
             origin: OriginFor<T>,
             maybe_amount: Option<BalanceOf<T>>,

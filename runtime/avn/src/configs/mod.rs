@@ -135,6 +135,9 @@ impl frame_system::Config for Runtime {
 impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
+    #[cfg(feature = "runtime-benchmarks")]
+    type OnTimestampSet = ();
+    #[cfg(not(feature = "runtime-benchmarks"))]
     type OnTimestampSet = Aura;
     // TODO update to 0 when enabling asynch backing
     type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;

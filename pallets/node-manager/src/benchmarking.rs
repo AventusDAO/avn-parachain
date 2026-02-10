@@ -127,7 +127,7 @@ where
     T: pallet_timestamp::Config<Moment = u64>,
 {
     <RewardEnabled<T>>::set(true);
-    pallet_timestamp::Pallet::<T>::set_timestamp(1_000_000u64);
+    pallet_timestamp::Pallet::<T>::set_timestamp(10 * 12_000);
 }
 
 fn update_min_threshold<T: Config>(threshold: Perbill) {
@@ -235,6 +235,24 @@ benchmarks! {
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
         assert!(<AutoStakeDurationSec<T>>::get() == new_duration);
+    }
+
+    set_admin_config_max_unstake_percentage {
+        let current_percentage = <MaxUnstakePercentage<T>>::get();
+        let new_percentage = Perbill::from_percent(17);
+        let config = AdminConfig::MaxUnstakePercentage(new_percentage);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<MaxUnstakePercentage<T>>::get() == new_percentage);
+    }
+
+    set_admin_config_unstake_period {
+        let current_duration = <UnstakePeriodSec<T>>::get();
+        let new_duration = current_duration + 60;
+        let config = AdminConfig::UnstakePeriod(new_duration);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<UnstakePeriodSec<T>>::get() == new_duration);
     }
 
     on_initialise_with_new_reward_period {
@@ -484,6 +502,7 @@ benchmarks! {
             owner,
             node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone()}.into());
     }
+
     update_signing_key {
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
@@ -498,6 +517,7 @@ benchmarks! {
         assert!(node_info.signing_key == new_signing_key);
         assert_last_event::<T>(Event::SigningKeyUpdated {owner, node}.into());
     }
+
     add_stake {
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
@@ -518,6 +538,7 @@ benchmarks! {
         assert!(stake.amount == 100u32.into());
         assert_last_event::<T>(Event::StakeAdded { owner, amount: 100u32.into(), new_total: stake.amount }.into());
     }
+
     remove_stake {
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
@@ -537,7 +558,7 @@ benchmarks! {
         let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
         Pallet::<T>::do_add_stake(&owner, 100u32.into()).unwrap();
         // Go forward in time to make the stake available for unstaking
-        pallet_timestamp::Pallet::<T>::set_timestamp(20_000_000u64);
+        pallet_timestamp::Pallet::<T>::set_timestamp(10_000 * 12_000);
     }: remove_stake(RawOrigin::Signed(owner.clone()), Some(10u32.into()))
     verify {
         let stake = OwnerStake::<T>::get(&owner).unwrap();
