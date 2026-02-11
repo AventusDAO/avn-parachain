@@ -1,6 +1,6 @@
 [package]
 name = "node-primitives"
-version = "8.5.0"
+version = "8.6.0"
 authors.workspace = true
 description = "Parachain Substrate node low-level primitives."
 edition.workspace = true
