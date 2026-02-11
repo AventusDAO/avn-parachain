@@ -205,7 +205,7 @@ During node execution, you have the flexibility to modify the log level for all 
 There are numerous log targets available, and you can discover more by utilizing the detailed-log-output parameter or by referring to the code. However, for convenience, here are some commonly used log targets:
 
 - txpool
-- avn-service
+- external-service
 - sub-libp2p
 - sub-authority-discovery
 - parachain::collator-protocol

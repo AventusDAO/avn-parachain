@@ -20,9 +20,8 @@
 
 //! Implementation of the `insert` subcommand
 
-use avn_service::{secret_key_address, web3SecretKey};
+use super::ethereum_utils::eth_address_from_private_key_hex;
 use clap::{Parser, ValueEnum};
-use hex::ToHex;
 use sc_cli::{
     utils, with_crypto_scheme, CryptoScheme, Error, KeystoreParams, SharedParams, SubstrateCli,
 };
@@ -31,7 +30,6 @@ use sc_service::config::{BasePath, KeystoreConfig};
 use sp_core::crypto::{KeyTypeId, SecretString};
 use sp_keystore::{Keystore, KeystorePtr};
 use std::sync::Arc;
-use web3::types::H160;
 
 /// The crypto scheme to use.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
@@ -102,7 +100,7 @@ impl InsertAvNKeyCmd {
             KeystoreConfig::Path { path, password } => {
                 let public: Vec<u8> = match self.scheme {
                     AvNCryptoScheme::EcdsaSeed =>
-                        get_public_key_string_bytes_from_private_key(suri.as_str())?,
+                        get_public_key_bytes_from_private_key_hex(suri.as_str())?,
                     scheme => with_crypto_scheme!(
                         scheme.to_substrate_crypto_scheme().expect("Already checked"),
                         to_vec(&suri, password.clone())
@@ -124,21 +122,10 @@ impl InsertAvNKeyCmd {
     }
 }
 
-fn get_public_key_string_bytes_from_private_key(suri: &str) -> Result<Vec<u8>, Error> {
-    let seed_encoded = hex::decode(suri).map_err(|_| Error::KeyFormatInvalid)?;
-    let secret_key =
-        web3SecretKey::from_slice(&seed_encoded).map_err(|_| Error::KeyFormatInvalid)?;
-    let public_eth_address: H160 = secret_key_address(&secret_key);
+fn get_public_key_bytes_from_private_key_hex(suri: &str) -> Result<Vec<u8>, Error> {
+    let address = eth_address_from_private_key_hex(suri).map_err(|_| Error::KeyFormatInvalid)?;
 
-    return get_ethereum_public_address_lowercase_string_bytes(public_eth_address)
-}
-
-fn get_ethereum_public_address_lowercase_string_bytes(
-    public_eth_address: H160,
-) -> Result<Vec<u8>, Error> {
-    //  encode hex formats the output to lowercase.
-    Ok(hex::decode(public_eth_address.encode_hex::<String>())
-        .map_err(|_| Error::KeyFormatInvalid)?)
+    Ok(address.as_bytes().to_vec())
 }
 
 fn to_vec<P: sp_core::Pair>(uri: &str, pass: Option<SecretString>) -> Result<Vec<u8>, Error> {
@@ -148,11 +135,7 @@ fn to_vec<P: sp_core::Pair>(uri: &str, pass: Option<SecretString>) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use std::{any::Any, process::id};
-
     use super::*;
-    use futures::io::Chain;
-    use polkadot_service::chain_spec::Extensions;
     use sc_service::{ChainSpec, ChainType, GenericChainSpec, NoExtension};
     use sp_core::{sr25519::Pair, ByteArray, Pair as _};
     use tempfile::TempDir;

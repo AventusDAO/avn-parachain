@@ -1,5 +1,10 @@
-use crate::{timer::Web3Timer, web3_utils, BlockT, ETH_FINALITY};
-use futures::{future::try_join_all, lock::Mutex};
+use crate::{
+    chain::{ChainClient, ChainLog, LogFilter},
+    evm::client::EvmClient,
+    timer::Timer,
+    ETH_FINALITY,
+};
+use futures::future::try_join_all;
 use node_primitives::AccountId;
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
 use sc_client_api::{BlockBackend, UsageProvider};
@@ -20,26 +25,18 @@ use sp_avn_common::{
 };
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::HeaderBackend;
-use sp_core::{sr25519::Public, H256 as SpH256};
+use sp_core::{sr25519::Public, H160, H256};
 use sp_keystore::Keystore;
-use sp_runtime::SaturatedConversion;
+use sp_runtime::traits::Block as BlockT;
 use std::collections::HashMap;
 pub use std::{path::PathBuf, sync::Arc};
-use tide::Error as TideError;
 use tokio::time::{sleep, Duration};
-use web3::{
-    transports::Http,
-    types::{FilterBuilder, Log, TransactionReceipt, H160, H256 as Web3H256, U64},
-    Web3,
-};
 
 pub use sp_avn_common::context_constants::{
     SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT, SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
 };
 
 use pallet_eth_bridge_runtime_api::InstanceId;
-
-use crate::{get_chain_id, server_error, setup_web3_connection, Web3Data};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 
 pub struct EventInfo {
@@ -59,12 +56,13 @@ impl CurrentNodeAuthor {
 }
 
 pub struct EventRegistry {
-    registry: HashMap<SpH256, EventInfo>,
+    registry: HashMap<H256, EventInfo>,
 }
 
 impl EventRegistry {
     pub fn new() -> Self {
         let mut m = HashMap::new();
+
         m.insert(
             ValidEvents::AddedValidator.signature(),
             EventInfo {
@@ -75,76 +73,84 @@ impl EventRegistry {
                 },
             },
         );
+
         m.insert(
             ValidEvents::Lifted.signature(),
             EventInfo {
                 parser: |data, topics| {
                     LiftedData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogLifted(data))
+                        .map(EventData::LogLifted)
                 },
             },
         );
+
         m.insert(
             ValidEvents::AvtGrowthLifted.signature(),
             EventInfo {
                 parser: |data, topics| {
                     AvtGrowthLiftedData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogAvtGrowthLifted(data))
+                        .map(EventData::LogAvtGrowthLifted)
                 },
             },
         );
+
         m.insert(
             ValidEvents::NftCancelListing.signature(),
             EventInfo {
                 parser: |data, topics| {
                     NftCancelListingData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogNftCancelListing(data))
+                        .map(EventData::LogNftCancelListing)
                 },
             },
         );
+
         m.insert(
             ValidEvents::NftEndBatchListing.signature(),
             EventInfo {
                 parser: |data, topics| {
                     NftEndBatchListingData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogNftEndBatchListing(data))
+                        .map(EventData::LogNftEndBatchListing)
                 },
             },
         );
+
         m.insert(
             ValidEvents::NftMint.signature(),
             EventInfo {
                 parser: |data, topics| {
                     NftMintData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogNftMinted(data))
+                        .map(EventData::LogNftMinted)
                 },
             },
         );
+
         m.insert(
             ValidEvents::NftTransferTo.signature(),
             EventInfo {
                 parser: |data, topics| {
                     NftTransferToData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogNftTransferTo(data))
+                        .map(EventData::LogNftTransferTo)
                 },
             },
         );
+
         m.insert(
             ValidEvents::AvtLowerClaimed.signature(),
             EventInfo {
                 parser: |data, topics| {
                     AvtLowerClaimedData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogLowerClaimed(data))
+                        .map(EventData::LogLowerClaimed)
                 },
             },
         );
+
         m.insert(
             ValidEvents::LowerReverted.signature(),
             EventInfo {
@@ -155,33 +161,25 @@ impl EventRegistry {
                 },
             },
         );
+
         m.insert(
             ValidEvents::LiftedToPredictionMarket.signature(),
             EventInfo {
                 parser: |data, topics| {
                     LiftedData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogLiftedToPredictionMarket(data))
+                        .map(EventData::LogLiftedToPredictionMarket)
                 },
             },
         );
+
         m.insert(
             ValidEvents::Erc20DirectTransfer.signature(),
             EventInfo {
                 parser: |data, topics| {
                     LiftedData::from_erc_20_contract_transfer_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogErc20Transfer(data))
-                },
-            },
-        );
-        m.insert(
-            ValidEvents::LiftedToPredictionMarket.signature(),
-            EventInfo {
-                parser: |data: Option<Vec<u8>>, topics| {
-                    LiftedData::parse_bytes(data, topics)
-                        .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(|data| EventData::LogLiftedToPredictionMarket(data))
+                        .map(EventData::LogErc20Transfer)
                 },
             },
         );
@@ -189,7 +187,7 @@ impl EventRegistry {
         EventRegistry { registry: m }
     }
 
-    pub fn get_event_info(&self, signature: &SpH256) -> Option<&EventInfo> {
+    pub fn get_event_info(&self, signature: &H256) -> Option<&EventInfo> {
         self.registry.get(signature)
     }
 }
@@ -199,7 +197,7 @@ pub enum AppError {
     ErrorParsingEventLogs,
     ErrorGettingEventLogs,
     ErrorGettingBridgeContract,
-    Web3RetryLimitReached,
+    RetryLimitReached,
     SignatureGenerationFailed,
     MissingTransactionHash,
     MissingBlockNumber,
@@ -210,67 +208,58 @@ pub enum AppError {
 
 /// Identifies secondary events associated with the bridge contract
 pub async fn identify_secondary_bridge_events(
-    web3: &Web3<web3::transports::Http>,
+    chain: &dyn ChainClient,
     start_block: u32,
     end_block: u32,
-    contract_addresses: &Vec<H160>,
+    contract_addresses: &[H160],
     event_types: Vec<ValidEvents>,
-) -> Result<Vec<Log>, AppError> {
-    let secondary_events_signatures = event_types
+) -> Result<Vec<ChainLog>, AppError> {
+    let topic0: Vec<H256> = event_types.iter().map(|e| e.signature()).collect();
+
+    let topic2: Vec<H256> = contract_addresses
         .iter()
-        .map(|event| Web3H256::from_slice(&event.signature().to_fixed_bytes()))
+        .map(|a| {
+            let mut b = [0u8; 32];
+            b[12..].copy_from_slice(a.as_bytes());
+            H256::from(b)
+        })
         .collect();
 
-    // Currently only ERC-20 transfer are supported, which is the 3rd topic of a Transfer event.
-    let contracts_topics =
-        contract_addresses.iter().map(|contract| Web3H256::from(*contract)).collect();
-    let filter = FilterBuilder::default()
-        .topics(Some(secondary_events_signatures), None, Some(contracts_topics), None)
-        .from_block(web3::types::BlockNumber::Number(U64::from(start_block)))
-        .to_block(web3::types::BlockNumber::Number(U64::from(end_block)))
-        .build();
+    let filter = LogFilter {
+        from_block: start_block as u64,
+        to_block: end_block as u64,
+        addresses: vec![],
+        topics: [Some(topic0), None, Some(topic2), None],
+    };
 
-    let logs_result = web3.eth().logs(filter).await;
-    log::trace!("Result of secondary bridge events discovery: {:?}", logs_result);
-    match logs_result {
-        Ok(logs) => Ok(logs),
-        Err(_) => return Err(AppError::ErrorGettingEventLogs),
-    }
+    chain.get_logs(filter).await.map_err(|_| AppError::ErrorGettingEventLogs)
 }
 
 pub async fn identify_primary_bridge_events(
-    web3: &Web3<web3::transports::Http>,
+    chain: &dyn ChainClient,
     start_block: u32,
     end_block: u32,
-    bridge_contract_addresses: &Vec<H160>,
+    bridge_contract_addresses: &[H160],
     event_types: Vec<ValidEvents>,
-) -> Result<Vec<Log>, AppError> {
-    let primary_events_signatures: Vec<Web3H256> = event_types
-        .iter()
-        .map(|event| Web3H256::from_slice(&event.signature().to_fixed_bytes()))
-        .collect();
+) -> Result<Vec<ChainLog>, AppError> {
+    let topic0: Vec<H256> = event_types.iter().map(|e| e.signature()).collect();
 
-    let filter = FilterBuilder::default()
-        .address(bridge_contract_addresses.to_owned())
-        .topics(Some(primary_events_signatures), None, None, None)
-        .from_block(web3::types::BlockNumber::Number(U64::from(start_block)))
-        .to_block(web3::types::BlockNumber::Number(U64::from(end_block)))
-        .build();
+    let filter = LogFilter {
+        from_block: start_block as u64,
+        to_block: end_block as u64,
+        addresses: bridge_contract_addresses.to_vec(),
+        topics: [Some(topic0), None, None, None],
+    };
 
-    let logs_result = web3.eth().logs(filter).await;
-    log::trace!("Result of primary bridge events discovery: {:?}", logs_result);
-    match logs_result {
-        Ok(logs) => Ok(logs),
-        Err(_) => return Err(AppError::ErrorGettingEventLogs),
-    }
+    chain.get_logs(filter).await.map_err(|_| AppError::ErrorGettingEventLogs)
 }
 
 pub async fn identify_events(
-    web3: &Web3<web3::transports::Http>,
+    chain: &dyn ChainClient,
     start_block: u32,
     end_block: u32,
-    contract_addresses: &Vec<H160>,
-    event_signatures_to_find: Vec<SpH256>,
+    contract_addresses: &[H160],
+    event_signatures_to_find: Vec<H256>,
     events_registry: &EventRegistry,
 ) -> Result<Vec<DiscoveredEvent>, AppError> {
     let (all_primary_events, all_secondary_events): (Vec<_>, Vec<_>) =
@@ -280,10 +269,10 @@ pub async fn identify_events(
     // primary event isn't a part of the signatures to find, a secondary event will not be
     // accidentally included to its place.
     let logs = identify_primary_bridge_events(
-        web3,
+        chain,
         start_block,
         end_block,
-        &contract_addresses,
+        contract_addresses,
         all_primary_events,
     )
     .await?;
@@ -297,39 +286,27 @@ pub async fn identify_events(
 
     let secondary_logs = if extend_discovery_to_secondary_events {
         identify_secondary_bridge_events(
-            web3,
+            chain,
             start_block,
             end_block,
-            &contract_addresses,
+            contract_addresses,
             all_secondary_events,
         )
         .await?
     } else {
-        Default::default()
+        Vec::new()
     };
-
-    log::debug!(
-        "🔭 Events found on [{},{}]: primary: {:#?} secondary: {:#?}",
-        start_block,
-        end_block,
-        logs,
-        secondary_logs
-    );
 
     // Combine the discovered primary and secondary events, ensuring that each tx id has a single
     // entry, with the primary taking precedence over the secondary
-    let mut unique_transactions = HashMap::<Web3H256, DiscoveredEvent>::new();
+    let mut unique_transactions = HashMap::<H256, DiscoveredEvent>::new();
     for log in logs.into_iter().chain(secondary_logs.into_iter()) {
         if let Some(tx_hash) = log.transaction_hash {
             if unique_transactions.contains_key(&tx_hash) {
-                continue
+                continue;
             }
-            match parse_log(log, events_registry) {
-                Ok(discovered_event) => {
-                    unique_transactions.insert(tx_hash, discovered_event);
-                },
-                Err(err) => return Err(err),
-            }
+            let discovered_event = parse_log(log, events_registry)?;
+            unique_transactions.insert(tx_hash, discovered_event);
         }
     }
     // Finally use the signatures to find, to filter the combined list and report back to the
@@ -340,108 +317,73 @@ pub async fn identify_events(
 }
 
 pub async fn identify_additional_event_info(
-    web3: &Web3<web3::transports::Http>,
-    additional_transactions_to_check: &Vec<EthTransactionId>,
-) -> Result<Vec<TransactionReceipt>, AppError> {
-    log::debug!("🔭 Additional events to find: {:#?}", additional_transactions_to_check);
-    // Create a future for each event
-    let futures = additional_transactions_to_check.iter().map(|transaction_hash| async move {
-        Ok(web3
-            .eth()
-            .transaction_receipt(Web3H256::from_slice(&transaction_hash.to_fixed_bytes()))
-            .await)
+    chain: &dyn ChainClient,
+    additional_transactions_to_check: &[EthTransactionId],
+) -> Result<Vec<u64>, AppError> {
+    let futures = additional_transactions_to_check.iter().map(|tx| {
+        let h = H256::from_slice(&tx.to_fixed_bytes());
+        chain.get_receipt(h)
     });
 
-    let results = try_join_all(futures).await?;
+    let results = try_join_all(futures).await.map_err(|_| AppError::ErrorGettingEventLogs)?;
 
-    // check results, return early if any error occurred
-    let mut additional_transactions_receipts = Vec::new();
-    for result in results {
-        match result {
-            Ok(Some(event)) => additional_transactions_receipts.push(event),
-            Ok(None) => {},
-            Err(_) => return Err(AppError::ErrorGettingEventLogs),
-        }
-    }
-
-    log::debug!(
-        "🔭 Additional events found to report back: {:#?}",
-        &additional_transactions_receipts
-    );
-    Ok(additional_transactions_receipts)
+    Ok(results.into_iter().flatten().filter_map(|r| r.block_number).collect())
 }
 
 pub async fn identify_additional_events(
-    web3: &Web3<web3::transports::Http>,
-    contract_addresses: &Vec<H160>,
-    event_signatures_to_find: &Vec<SpH256>,
+    chain: &dyn ChainClient,
+    contract_addresses: &[H160],
+    event_signatures_to_find: &[H256],
     events_registry: &EventRegistry,
     additional_transactions_to_check: Vec<EthTransactionId>,
 ) -> Result<Vec<DiscoveredEvent>, AppError> {
-    let additional_events_info =
-        identify_additional_event_info(web3, &additional_transactions_to_check).await?;
+    let additional_blocks =
+        identify_additional_event_info(chain, &additional_transactions_to_check).await?;
 
-    log::debug!("🔭 Additional transactions to find: {:#?}", &additional_transactions_to_check);
-    // Create a future for each event discovery
-    let futures = additional_events_info.iter().map(|event_receipt| {
-        let contract = contract_addresses.clone();
-        async move {
-            let identified_events = identify_events(
-                web3,
-                event_receipt.block_number.unwrap_or_default().saturated_into(),
-                event_receipt.block_number.unwrap_or_default().saturated_into(),
-                &contract,
-                event_signatures_to_find.clone(),
-                events_registry,
-            )
-            .await?;
-            Ok(identified_events)
-        }
+    let futures = additional_blocks.iter().map(|b| {
+        identify_events(
+            chain,
+            *b as u32,
+            *b as u32,
+            contract_addresses,
+            event_signatures_to_find.to_vec(),
+            events_registry,
+        )
     });
 
     let additional_events: Vec<DiscoveredEvent> =
         try_join_all(futures).await?.into_iter().flatten().collect();
 
-    log::debug!("🔭 Additional events found to report back: {:#?}", &additional_events);
     Ok(additional_events)
 }
 
-fn parse_log(log: Log, events_registry: &EventRegistry) -> Result<DiscoveredEvent, AppError> {
+fn parse_log(log: ChainLog, events_registry: &EventRegistry) -> Result<DiscoveredEvent, AppError> {
     if log.topics.is_empty() {
-        return Err(AppError::MissingEventSignature)
+        return Err(AppError::MissingEventSignature);
     }
-    log::debug!("⛓️ Parsing discovered log: {:?}", &log);
 
-    let web3_signature = log.topics[0];
-    let signature = SpH256::from(web3_signature.0);
+    let signature = log.topics[0];
+    let tx_hash = log.transaction_hash.ok_or(AppError::MissingTransactionHash)?;
+    let block_number = log.block_number.ok_or(AppError::MissingBlockNumber)?;
 
-    let transaction_hash = log.transaction_hash.ok_or(AppError::MissingTransactionHash)?;
+    let event_id = EthEventId { signature, transaction_hash: tx_hash };
 
-    let event_id = EthEventId { signature, transaction_hash: SpH256::from(transaction_hash.0) };
+    let topics: Vec<Vec<u8>> = log.topics.iter().map(|t| t.as_bytes().to_vec()).collect();
+    let data: Option<Vec<u8>> = if log.data.is_empty() { None } else { Some(log.data) };
 
-    let topics: Vec<Vec<u8>> = log.topics.iter().map(|t| t.0.to_vec()).collect();
-    let data: Option<Vec<u8>> = if log.data.0.is_empty() { None } else { Some(log.data.0) };
-
-    log::debug!(
-        "⛓️ Parsing discovered event: signature {:?}, data: {:?}, topics: {:?}",
-        signature,
-        data,
-        topics,
-    );
     let mut event_data = parse_event_data(signature, data, topics, events_registry)?;
 
-    let block_number = log.block_number.ok_or(AppError::MissingBlockNumber)?;
-    if let EventData::LogErc20Transfer(ref mut data) = event_data {
-        if data.token_contract.is_zero() {
-            data.token_contract = sp_core::H160::from(log.address.as_fixed_bytes());
+    if let EventData::LogErc20Transfer(ref mut d) = event_data {
+        if d.token_contract.is_zero() {
+            d.token_contract = sp_core::H160::from_slice(log.address.as_bytes());
         }
     }
 
-    Ok(DiscoveredEvent { event: EthEvent { event_id, event_data }, block: block_number.as_u64() })
+    Ok(DiscoveredEvent { event: EthEvent { event_id, event_data }, block: block_number })
 }
 
 fn parse_event_data(
-    signature: SpH256,
+    signature: H256,
     data: Option<Vec<u8>>,
     topics: Vec<Vec<u8>>,
     events_registry: &EventRegistry,
@@ -467,7 +409,7 @@ where
     pub keystore_path: PathBuf,
     pub avn_port: Option<String>,
     pub eth_node_urls: Vec<String>,
-    pub web3_data_mutexes: HashMap<u64, Arc<Mutex<Web3Data>>>,
+    pub evm_clients: HashMap<u64, Arc<EvmClient>>,
     pub client: Arc<ClientT>,
     pub offchain_transaction_pool_factory: OffchainTransactionPoolFactory<Block>,
 }
@@ -484,61 +426,60 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
-    pub async fn initialise_web3(
+    pub async fn initialise_evm(
         &mut self,
-        chain_id: u64,
-    ) -> Result<Arc<Mutex<Web3Data>>, TideError> {
-        let _web3_init_time = Web3Timer::new("ethereum-event-handler Web3 Initialization");
-        log::info!("⛓️  avn-events-handler: web3 initialisation start");
+        wanted_chain_id: u64,
+    ) -> Result<Arc<EvmClient>, AppError> {
+        let _init_time = Timer::new("ethereum-event-handler EVM client initialization");
+        log::info!("⛓️  avn-events-handler: evm client init start");
 
-        // No web3 connection found for network_id, try the rest of the URLs
-        let web3_connection_locks = Mutex::new(());
         for eth_node_url in self.eth_node_urls.iter() {
-            log::debug!("⛓️  Attempting to connect to Ethereum node: {}", eth_node_url);
-            let web3 = setup_web3_connection(eth_node_url);
-            if let Some(web3) = web3 {
-                let web3_chain_id = get_chain_id(&web3)
-                    .await
-                    .map_err(|_e| server_error("Error getting chain ID from web3".to_string()))?;
+            log::debug!("⛓️  Attempting to connect to EVM node: {}", eth_node_url);
 
-                log::info!(
-                    "⛓️  Successfully connected to node: {} with chain ID: {}",
-                    eth_node_url,
-                    web3_chain_id
+            let client = match EvmClient::new_http(eth_node_url) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("💔 Error creating EVM client for URL {}: {:?}", eth_node_url, e);
+                    continue;
+                },
+            };
+
+            let chain_id = match client.chain_id().await {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!(
+                        "💔 Connected but failed to get chain id for {}: {:?}",
+                        eth_node_url,
+                        e
+                    );
+                    continue;
+                },
+            };
+
+            log::info!(
+                "⛓️  Successfully connected to node: {} with chain ID: {}",
+                eth_node_url,
+                chain_id
+            );
+
+            if self.evm_clients.get(&chain_id).is_some() {
+                log::debug!(
+                    "⛓️  EVM client for chain ID {} already exists, skipping creation.",
+                    chain_id
                 );
-
-                {
-                    // Lock the mutex to ensure only one thread can alter the web3 connection
-                    let _lock = web3_connection_locks.lock();
-
-                    if self.web3_data_mutexes.get(&web3_chain_id).is_some() {
-                        log::debug!(
-                            "⛓️  Web3 connection for chain ID {} already exists, skipping creation.",
-                            web3_chain_id
-                        );
-                        continue
-                    }
-
-                    // Create a new mutex for the web3 data and store it in the map
-                    let mut web3_data = Web3Data::new();
-                    web3_data.web3 = Some(web3);
-                    let web3_data_mutex = Arc::new(Mutex::new(web3_data));
-                    self.web3_data_mutexes.insert(web3_chain_id, Arc::clone(&web3_data_mutex));
-
-                    if web3_chain_id == chain_id {
-                        log::info!(
-                            "⛓️  Web3 connection for chain ID {} successfully created.",
-                            web3_chain_id
-                        );
-                        return Ok(web3_data_mutex)
-                    }
-                }
             } else {
-                log::error!("💔 Error creating a web3 connection for URL: {}", eth_node_url);
+                let arc = Arc::new(client);
+                self.evm_clients.insert(chain_id, Arc::clone(&arc));
+            }
+
+            if chain_id == wanted_chain_id {
+                return Ok(Arc::clone(self.evm_clients.get(&chain_id).expect("inserted above")));
             }
         }
 
-        Err(server_error("Failed to acquire a valid web3 connection for the instance.".to_string()))
+        Err(AppError::GenericError(
+            "Failed to acquire a valid EVM client for the instance.".to_string(),
+        ))
     }
 }
 
@@ -546,10 +487,10 @@ pub const SLEEP_TIME: u64 = 60;
 pub const RETRY_LIMIT: usize = 3;
 pub const RETRY_DELAY: u64 = 5;
 
-async fn get_web3_connection_for_instance<Block, ClientT>(
+async fn get_evm_client_for_instance<Block, ClientT>(
     config: &mut EthEventHandlerConfig<Block, ClientT>,
     instance: &EthBridgeInstance,
-) -> Result<Arc<Mutex<Web3Data>>, AppError>
+) -> Result<Arc<EvmClient>, AppError>
 where
     Block: BlockT,
     ClientT: BlockBackend<Block>
@@ -561,39 +502,32 @@ where
         + BlockBuilder<Block>,
 {
     let chain_id = instance.network.chain_id();
-    // See if we have an existing web3 data mutex for the chain_id
-    match config.web3_data_mutexes.get(&chain_id) {
-        Some(web3_data_pointer) => {
-            log::debug!("⛓️  Found existing web3 connection for network: {}", chain_id);
-            return Ok(Arc::clone(&web3_data_pointer))
-        },
-        None => log::debug!(
-            "⛓️  No existing web3 connection found for network: {}. Initialising new...",
-            chain_id
-        ),
-    };
+
+    if let Some(c) = config.evm_clients.get(&chain_id) {
+        log::debug!("⛓️  Found existing EVM client for chain: {}", chain_id);
+        return Ok(Arc::clone(c));
+    }
+
+    log::debug!("⛓️  No EVM client found for chain {}. Initialising...", chain_id);
 
     let mut attempts = 0;
-
     while attempts < RETRY_LIMIT {
-        match config.initialise_web3(chain_id).await {
-            Ok(web3_lock) => {
-                log::info!("Successfully initialized web3 connection.");
-                return Ok(web3_lock)
-            },
+        match config.initialise_evm(chain_id).await {
+            Ok(c) => return Ok(c),
             Err(e) => {
                 attempts += 1;
-                log::error!("Failed to initialize web3 (attempt {}): {:?}", attempts, e);
+                log::error!("Failed to initialize EVM client (attempt {}): {:?}", attempts, e);
                 if attempts >= RETRY_LIMIT {
-                    log::error!("Reached maximum retry limit for initializing web3.");
-                    return Err(AppError::Web3RetryLimitReached)
+                    return Err(AppError::RetryLimitReached);
                 }
                 sleep(Duration::from_secs(RETRY_DELAY)).await;
             },
         }
     }
 
-    Err(AppError::GenericError("Failed to initialize web3 after multiple attempts.".to_string()))
+    Err(AppError::GenericError(
+        "Failed to initialize EVM client after multiple attempts.".to_string(),
+    ))
 }
 
 fn find_current_node_author<T>(
@@ -666,7 +600,7 @@ where
     loop {
         match query_runtime_and_process(&mut config, &current_node_author, &events_registry).await {
             Ok(_) => (),
-            Err(e) => log::error!("{}", e),
+            Err(e) => log::error!("{:?}", e),
         }
 
         log::debug!("Sleeping");
@@ -716,18 +650,12 @@ where
             .query_active_block_range(config.client.info().best_hash, instance_id)
             .map_err(|err| format!("Failed to query bridge contract: {:?}", err))?;
 
-        let web3_data_lock = match get_web3_connection_for_instance(config, &instance).await {
-            Ok(web3_data) => web3_data,
+        let evm = match get_evm_client_for_instance(config, &instance).await {
+            Ok(c) => c,
             Err(e) => {
-                log::error!("Failed to initialize web3 connection for instance: {:?}", e);
-                continue
+                log::error!("Failed to initialize EVM client for instance: {:?}", e);
+                continue;
             },
-        };
-
-        let web3_data_mutex = web3_data_lock.lock().await;
-        let web3_ref = match web3_data_mutex.web3.as_ref() {
-            Some(web3) => web3,
-            None => return Err("Web3 connection not set up".into()),
         };
 
         match result {
@@ -735,16 +663,12 @@ where
             Some((range, partition_id)) => {
                 log::info!("Getting events for range starting at: {:?}", range.start_block);
 
-                if web3_utils::is_eth_block_finalised(
-                    &web3_ref,
-                    range.end_block() as u64,
-                    ETH_FINALITY,
-                )
-                .await?
+                if is_evm_block_finalised(evm.as_ref(), range.end_block() as u64, ETH_FINALITY)
+                    .await?
                 {
                     process_events(
-                        &web3_ref,
-                        &config,
+                        evm.as_ref(),
+                        config,
                         instance_id,
                         &instance,
                         range.clone(),
@@ -759,8 +683,8 @@ where
             None => {
                 log::info!("Active range setup - Submitting latest block");
                 submit_latest_ethereum_block(
-                    &web3_ref,
-                    &config,
+                    evm.as_ref(),
+                    config,
                     instance_id,
                     &instance,
                     &current_node_author,
@@ -774,7 +698,7 @@ where
 }
 
 async fn submit_latest_ethereum_block<Block, ClientT>(
-    web3: &Web3<Http>,
+    evm: &EvmClient,
     config: &EthEventHandlerConfig<Block, ClientT>,
     instance_id: InstanceId,
     eth_bridge_instance: &EthBridgeInstance,
@@ -804,9 +728,10 @@ where
 
     if !has_casted_vote {
         log::debug!("Getting current block from Ethereum");
-        let latest_seen_ethereum_block = web3_utils::get_current_block_number(web3)
+        let latest_seen_ethereum_block = evm
+            .block_number()
             .await
-            .map_err(|err| format!("Failed to retrieve latest ethereum block: {:?}", err))?
+            .map_err(|err| format!("Failed to retrieve latest evm block: {:?}", err))?
             as u32;
 
         log::debug!("Encoding proof for latest block: {:?}", latest_seen_ethereum_block);
@@ -857,7 +782,7 @@ where
 }
 
 async fn process_events<Block, ClientT>(
-    web3: &Web3<Http>,
+    evm: &EvmClient,
     config: &EthEventHandlerConfig<Block, ClientT>,
     instance_id: InstanceId,
     eth_bridge_instance: &EthBridgeInstance,
@@ -876,9 +801,8 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
-    let contract_address_web3 =
-        web3::types::H160::from_slice(&eth_bridge_instance.bridge_contract.to_fixed_bytes());
-    let contract_addresses = vec![contract_address_web3];
+    let contract_addresses =
+        vec![H160::from_slice(&eth_bridge_instance.bridge_contract.to_fixed_bytes())];
 
     let event_signatures = config
         .client
@@ -908,7 +832,7 @@ where
 
     if !has_casted_vote {
         execute_event_processing(
-            web3,
+            evm,
             config,
             event_signatures,
             instance_id,
@@ -927,9 +851,9 @@ where
 }
 
 async fn execute_event_processing<Block, ClientT>(
-    web3: &Web3<Http>,
+    evm: &EvmClient,
     config: &EthEventHandlerConfig<Block, ClientT>,
-    event_signatures: Vec<SpH256>,
+    event_signatures: Vec<H256>,
     instance_id: InstanceId,
     eth_bridge_instance: &EthBridgeInstance,
     contract_addresses: Vec<H160>,
@@ -950,7 +874,7 @@ where
         + BlockBuilder<Block>,
 {
     let additional_events = identify_additional_events(
-        web3,
+        evm as &dyn ChainClient,
         &contract_addresses,
         &event_signatures,
         events_registry,
@@ -960,7 +884,7 @@ where
     .map_err(|err| format!("Error retrieving additional events: {:?}", err))?;
 
     let range_events = identify_events(
-        web3,
+        evm as &dyn ChainClient,
         range.start_block,
         range.end_block(),
         &contract_addresses,
@@ -1019,4 +943,16 @@ where
         partition.id()
     );
     Ok(())
+}
+
+pub async fn is_evm_block_finalised(
+    evm: &EvmClient,
+    current_block_num: u64,
+    num_blocks_to_wait: u64,
+) -> Result<bool, String> {
+    let latest_block = evm
+        .block_number()
+        .await
+        .map_err(|e| format!("Failed to get latest block number: {:?}", e))?;
+    Ok(latest_block >= current_block_num + num_blocks_to_wait)
 }

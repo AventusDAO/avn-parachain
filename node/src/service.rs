@@ -2,11 +2,11 @@
 
 // std
 use codec::Encode;
-use futures::lock::Mutex;
 use runtime_common::opaque::{Block, Hash};
 use sc_client_api::Backend;
 use sp_core::offchain::OffchainStorage;
 use std::{sync::Arc, time::Duration};
+use url::Url;
 
 // Cumulus Imports
 use cumulus_client_cli::CollatorOptions;
@@ -40,8 +40,8 @@ use sp_keystore::KeystorePtr;
 use substrate_prometheus_endpoint::Registry;
 
 use crate::{avn_config::*, RuntimeApi};
-use avn_service::{self, web3_utils::Web3Data};
 use cumulus_client_service::ParachainHostFunctions;
+use external_service::signing::{KeystoreSignerProvider, SignerProvider};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 
 #[docify::export(wasm_executor)]
@@ -401,28 +401,41 @@ pub async fn start_parachain_node(
             _ => Err("Keystore must be local"),
         }?;
 
-        let eth_web3_url = avn_cli_config
+        let eth_rpc_url_str = avn_cli_config
             .ethereum_node_urls
             .first()
             .cloned()
             .unwrap_or_else(|| "".to_string());
-        let avn_config = avn_service::Config::<Block, _> {
+
+        let evm_rpc_url: Url = eth_rpc_url_str
+            .parse()
+            .map_err(|e| sc_service::Error::Other(format!("invalid eth rpc url: {e:?}")))?;
+
+        let chain: Arc<dyn external_service::chain::ChainClient> = Arc::new(
+            external_service::evm::client::EvmClient::new_http(evm_rpc_url.as_str())
+                .map_err(|e| sc_service::Error::Other(format!("evm client init failed: {e:?}")))?,
+        );
+
+        let signer_provider: Arc<dyn SignerProvider> =
+            Arc::new(KeystoreSignerProvider::new(keystore_path.clone(), evm_rpc_url.clone()));
+
+        let avn_state = external_service::server::AppState::<Block, _> {
             keystore: params.keystore_container.local_keystore(),
             keystore_path: keystore_path.clone(),
             avn_port: avn_port.clone(),
-            eth_node_url: eth_web3_url,
-            web3_data_mutex: Arc::new(Mutex::new(Web3Data::new())),
+            chain,
+            signer_provider,
             client: client.clone(),
             _block: Default::default(),
         };
 
         let eth_event_handler_config =
-            avn_service::ethereum_events_handler::EthEventHandlerConfig::<Block, _> {
+            external_service::ethereum_events_handler::EthEventHandlerConfig::<Block, _> {
                 keystore: params.keystore_container.local_keystore(),
                 keystore_path: keystore_path.clone(),
                 avn_port: avn_port.clone(),
                 eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
-                web3_data_mutexes: Default::default(),
+                evm_clients: Default::default(),
                 client: client.clone(),
                 offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
                     transaction_pool.clone(),
@@ -430,14 +443,17 @@ pub async fn start_parachain_node(
             };
 
         task_manager.spawn_essential_handle().spawn(
-            "avn-service",
+            "external-service",
             None,
-            avn_service::start(avn_config),
+            external_service::server::start(avn_state),
         );
+
         task_manager.spawn_essential_handle().spawn(
             "eth-events-handler",
             None,
-            avn_service::ethereum_events_handler::start_eth_event_handler(eth_event_handler_config),
+            external_service::ethereum_events_handler::start_eth_event_handler(
+                eth_event_handler_config,
+            ),
         );
 
         start_consensus(
