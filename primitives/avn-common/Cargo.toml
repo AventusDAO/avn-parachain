@@ -28,6 +28,10 @@ sp-std.workspace = true
 sp-runtime = { workspace = true, features = ["serde"]}
 sp-io.workspace = true
 
+# Node-only (transaction filter)
+sc-transaction-pool-api = { workspace = true, optional = true }
+async-trait = { version = "0.1", optional = true }
+
 libsecp256k1 = { version = "0.7.0", default-features = false, features = [
 	"hmac",
 ] }
@@ -58,6 +62,8 @@ std = [
 	"strum/std",
 	"serde/std",
 	"hex/std",
+	"sc-transaction-pool-api",
+	"async-trait",
 ]
 
 runtime-benchmarks = []

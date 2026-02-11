@@ -257,6 +257,8 @@ pub fn run() -> Result<()> {
                 let avn_config = AvnCliConfiguration {
                     avn_port: cli.run.avn_port,
                     ethereum_node_urls: cli.run.eth_node_urls,
+                    enable_transaction_filter: cli.run.enable_transaction_filter,
+                    transaction_filter_log_rejections: cli.run.transaction_filter_log_rejections,
                 };
 
                 info!("Is collating: {}", if config.role.is_authority() { "yes" } else { "no" });
