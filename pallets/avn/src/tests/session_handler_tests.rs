@@ -1,4 +1,4 @@
-// Copyright 2022 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 use crate::mock::*;
 use sp_avn_common::event_types::Validator;

@@ -1,5 +1,5 @@
 //! # Summary pallet
-// Copyright 2022 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 //! summary pallet benchmarking.
 
