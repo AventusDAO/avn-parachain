@@ -1,4 +1,4 @@
-// Copyright 2023 Aventus Network Services.
+// Copyright 2026 Aventus DAO Ltd
 // This file is part of Aventus.
 
 // AvN specific cli configuration

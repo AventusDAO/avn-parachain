@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 // Copyright 2019-2022 PureStake Inc.
-// Copyright 2025 Aventus Network Services Ltd.
+// Copyright 2026 Aventus DAO Ltd.
 // This file is part of Moonbeam and Aventus.
 
 // Moonbeam is free software: you can redistribute it and/or modify
