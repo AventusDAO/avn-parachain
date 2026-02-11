@@ -1,4 +1,4 @@
-// Copyright 2022 Aventus Network Services.
+// Copyright 2026 Aventus DAO Ltd
 // This file is part of Aventus and extends the original implementation
 // from Substrate (Parity Technologies):
 // client/cli/src/commands/insert.rs

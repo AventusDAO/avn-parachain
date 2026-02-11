@@ -1,5 +1,5 @@
 //! # Avn proxy pallet
-// Copyright 2022 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 //! The avnProxy pallet is responsible for proxying transactions to a list of whitelisted pallets.
 //! The target pallets are responsible for validating the transaction and should not make any
