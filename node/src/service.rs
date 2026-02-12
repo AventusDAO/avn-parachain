@@ -218,9 +218,9 @@ fn start_consensus(
         relay_chain_slot_duration,
         proposer,
         collator_service,
-        authoring_duration: Duration::from_millis(2000),
+        authoring_duration: Duration::from_millis(1500),
         reinitialize: false,
-        max_pov_percentage: None,
+        max_pov_percentage: Some(75),
     };
 
     let fut = aura::run::<Block, sp_consensus_aura::sr25519::AuthorityPair, _, _, _, _, _, _, _, _>(
