@@ -183,7 +183,7 @@ avn-parachain-runtime = { path = "./runtime/avn/", default-features = false }
 avn-test-runtime = { package = "avn-parachain-test-runtime", path = "./runtime/test/", default-features = false }
 
 client-extrinsic-utils = { path = "./client/extrinsic-utils" }
-avn-service = { package = "external-service", path = "./client/external-service" }
+external-service = { package = "external-service", path = "./client/external-service" }
 
 [profile.release]
 panic = "unwind"

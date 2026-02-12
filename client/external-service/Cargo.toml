@@ -1,65 +1,43 @@
 [package]
 name = "external-service"
 license = "GPL-3.0"
-
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-# third-party dependencies
+alloy = { version = "=1.6.3", features = ["providers", "rpc-types", "transports", "signers"] }
+alloy-primitives = { version = "=1.5.4" }
+alloy-signer-local = { version = "=1.6.3" } 
+async-trait = "0.1"
+axum = "0.8"
 codec = { workspace = true, default-features = true }
-log = { workspace = true,  default-features = true }
-serde_json = { workspace = true, default-features = true }
+log = { workspace = true, default-features = true }
 serde = { workspace = true, default-features = true }
-tide = { version = "0.16.0", default-features = false, features = ["h1-server"] }
-web3 = { version = "0.19.0", default-features = false, features = [
-    "http-tls",  # implies tls feature
-    "signing",
-] }
-
-jsonrpsee.workspace = true
-futures.workspace = true
-anyhow.workspace = true
-jsonrpc-core = "18.0.0"
-
-# This version must be compatible with web3
-tokio = { version = "1.19", features = ["sync"] }
-
+serde_json = { workspace = true, default-features = true }
+futures = { workspace = true }
+anyhow = { workspace = true }
 hex = { workspace = true, default-features = true }
-hex-literal = "0.4.1"
-# Ensure compatibility by matching sp-core's secp256k1 version. Let cargo handle exact version matching.
-secp256k1 = { version = "=0.28.2", features = [
-    "recovery",
-    "alloc",
-] }
-web3Secp256k1 = { package = "secp256k1", version = "0.27.0", features = [
-    "recovery",
-    "alloc",
-] }
+tower-http = { version = "0.6", features = ["limit"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+url = "2"
+secp256k1 = { version = "0.31.1", features = ["recovery"] }
 
-
-# This needs to be the same version as the one used in web3, parity-scale-codec and ethereum-transactions pallet
-ethereum-types = "0.14.1"
-
+# substrate deps
 pallet-eth-bridge-runtime-api = { default-features = true, workspace = true }
 sp-block-builder = { default-features = true, workspace = true }
 sp-blockchain = { default-features = true, workspace = true }
-
-# primitives
 sp-avn-common = { default-features = true, workspace = true }
 sp-core = { default-features = true, workspace = true }
 sp-runtime = { default-features = true, workspace = true }
 sp-keystore = { default-features = true, workspace = true }
 sp-api = { default-features = true, workspace = true }
-
-# client dependencies
 sc-keystore = { default-features = true, workspace = true }
 sc-client-api = { default-features = true, workspace = true }
 sc-client-db = { default-features = true, workspace = true }
 sc-transaction-pool-api = { default-features = true, workspace = true }
-
 node-primitives = { default-features = true, workspace = true }
-client-extrinsic-utils.workspace = true
+client-extrinsic-utils = { workspace = true }
