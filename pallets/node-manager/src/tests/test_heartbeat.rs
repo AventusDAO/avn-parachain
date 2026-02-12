@@ -5,6 +5,7 @@
 use crate::{mock::*, *};
 use frame_support::{assert_noop, assert_ok};
 use frame_system::RawOrigin;
+use sp_runtime::{FixedPointNumber, FixedU128};
 
 #[derive(Clone)]
 struct Context {
@@ -82,6 +83,7 @@ fn submit_multiple_heartbeats(n: u64, pool_state: Arc<RwLock<PoolState>>) {
 
 mod given_a_reward_period {
     use super::*;
+    use test_case::test_case;
 
     #[test]
     fn heartbeat_submission_succeeds() {
@@ -114,8 +116,11 @@ mod given_a_reward_period {
             let uptime_info =
                 <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
 
+            let expected_weight = HEARTBEAT_BASE_WEIGHT;
+
             assert_eq!(uptime_info.count, 1);
             assert_eq!(uptime_info.last_reported, System::block_number());
+            assert_eq!(uptime_info.weight, expected_weight);
             assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
             System::assert_last_event(
                 Event::HeartbeatReceived {
@@ -357,6 +362,149 @@ mod given_a_reward_period {
                 },
                 _ => assert!(false),
             }
+        });
+    }
+
+    #[test_case(1, 1; "less than 2000")]
+    #[test_case(1, 8_000_000_000_000_000_000_000u128; "no genesis with 8000 stake")]
+    #[test_case(2000, 1; "exactly 2000")]
+    #[test_case(2000, 2_000_000_000_000_000_000_000u128; "exactly 2000 with stake")]
+    #[test_case(5000, 1; "exactly 5000")]
+    #[test_case(5000, 2_000_000_000_000_000_000_000u128; "exactly 5000 with stake")]
+    #[test_case(2001, 1; "50% bonus")]
+    #[test_case(2001, 8_000_000_000_000_000_000_000u128; "50% bonus with stake")]
+    #[test_case(5001, 1; "25% bonus")]
+    #[test_case(5001, 6_000_000_000_000_000_000_000u128; "25% bonus with stake")]
+    #[test_case(10000, 1; "exactly 10000")]
+    #[test_case(10000, 4_000_000_000_000_000_000_000u128; "exactly 10000 with stake")]
+    #[test_case(10001, 1; "over 10000, no bonus")]
+    #[test_case(10001, 2_000_000_000_000_000_000_000u128; "over 10000, no bonus with stake")]
+    #[test_case(2001, 3_000_000_000_000_000_000_000u128; "50% bonus with 1.5 stake")]
+    #[test_case(2001, 1_000_000_000_000_000_000_000u128; "50% bonus with half stake")]
+    #[test_case(2001, 1_000_000_000_000_000_000u128; "50% bonus with small stake")]
+    fn weight_calculated_correctly(serial_num: u32, stake: u128) {
+        let (mut ext, pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let context = Context::default();
+            // Set total nodes to update serial number based bonus
+            TotalRegisteredNodes::<TestRuntime>::put(serial_num - 1);
+            register_node(&context);
+
+            if stake > 0 {
+                let reward_period = <RewardPeriod<TestRuntime>>::get();
+                let reward_period_len = reward_period.length as u64;
+                Balances::make_free_balance_be(&context.owner, stake * 10u128);
+                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(context.owner.clone()), stake));
+                // Complete a reward period
+                roll_forward((reward_period_len - System::block_number()) + 1);
+            }
+
+            NodeManager::offchain_worker(System::block_number());
+
+            let tx = pop_tx_from_mempool(pool_state);
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
+
+            // Check if the transaction from the mempool is what we expected
+            assert!(matches!(
+                tx.function,
+                RuntimeCall::NodeManager(crate::Call::offchain_submit_heartbeat {
+                    node: _,
+                    reward_period_index: _,
+                    heartbeat_count: _,
+                    signature: _,
+                })
+            ));
+
+            // Ensure the tx has executed successfully
+            let reward_period = <RewardPeriod<TestRuntime>>::get().current;
+            let uptime_info =
+                <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
+
+            let expected_weight = match serial_num {
+                2001..=5000 => HEARTBEAT_BASE_WEIGHT + (HEARTBEAT_BASE_WEIGHT / 2),
+                5001..=10000 => HEARTBEAT_BASE_WEIGHT + (HEARTBEAT_BASE_WEIGHT / 4),
+                _ => HEARTBEAT_BASE_WEIGHT,
+            };
+
+            let expected_weight = if stake > 0 {
+                let step: u128 = <mock::TestRuntime as pallet::Config>::VirtualNodeStake::get() as u128;
+                FixedU128::from_rational(expected_weight.saturating_mul(step.saturating_add(stake)),step,).saturating_mul_int(1u128)
+            } else {
+                expected_weight
+            };
+
+            assert_eq!(uptime_info.weight, expected_weight);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
+            System::assert_last_event(
+                Event::HeartbeatReceived {
+                    reward_period_index: reward_period,
+                    node: context.node_id,
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test_case(1; "less than 2000")]
+    #[test_case(2000; "exactly 2000")]
+    #[test_case(5000; "exactly 5000")]
+    #[test_case(2001; "50% bonus")]
+    #[test_case(5001; "25% bonus")]
+    #[test_case(10000; "exactly 10000")]
+    #[test_case(10001; "over 10000, no bonus")]
+    fn auto_stake_expiry_works(serial_num: u32) {
+        let (mut ext, pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let context = Context::default();
+            // Set total nodes to update serial number based bonus
+            TotalRegisteredNodes::<TestRuntime>::put(serial_num - 1);
+
+            register_node(&context);
+            // Move forward to after auto-stake expiry
+            pallet_timestamp::Pallet::<TestRuntime>::set_timestamp(
+                (AutoStakeDurationSec::<TestRuntime>::get() + 1) * 1000,
+            );
+
+            NodeManager::offchain_worker(System::block_number());
+
+            let tx = pop_tx_from_mempool(pool_state);
+            assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
+
+            // Check if the transaction from the mempool is what we expected
+            assert!(matches!(
+                tx.function,
+                RuntimeCall::NodeManager(crate::Call::offchain_submit_heartbeat {
+                    node: _,
+                    reward_period_index: _,
+                    heartbeat_count: _,
+                    signature: _,
+                })
+            ));
+
+            // Ensure the tx has executed successfully
+            let reward_period = <RewardPeriod<TestRuntime>>::get().current;
+            let uptime_info =
+                <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
+
+            // No bonus because of expiry, even if serial number is in the bonus range
+            let expected_weight = HEARTBEAT_BASE_WEIGHT ;
+
+
+            assert_eq!(uptime_info.weight, expected_weight);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
+            System::assert_last_event(
+                Event::HeartbeatReceived {
+                    reward_period_index: reward_period,
+                    node: context.node_id,
+                }
+                .into(),
+            );
         });
     }
 }

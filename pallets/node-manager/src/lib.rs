@@ -58,6 +58,9 @@ mod test_node_registration;
 #[cfg(test)]
 #[path = "tests/test_reward_payment.rs"]
 mod test_reward_payment;
+#[cfg(test)]
+#[path = "tests/test_stake_weight.rs"]
+mod test_stake_weight;
 
 // Definition of the crypto to use for signing
 pub mod sr25519 {
