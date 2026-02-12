@@ -303,7 +303,7 @@ pub async fn identify_events(
     for log in logs.into_iter().chain(secondary_logs.into_iter()) {
         if let Some(tx_hash) = log.transaction_hash {
             if unique_transactions.contains_key(&tx_hash) {
-                continue;
+                continue
             }
             let discovered_event = parse_log(log, events_registry)?;
             unique_transactions.insert(tx_hash, discovered_event);
@@ -359,7 +359,7 @@ pub async fn identify_additional_events(
 
 fn parse_log(log: ChainLog, events_registry: &EventRegistry) -> Result<DiscoveredEvent, AppError> {
     if log.topics.is_empty() {
-        return Err(AppError::MissingEventSignature);
+        return Err(AppError::MissingEventSignature)
     }
 
     let signature = log.topics[0];
@@ -440,7 +440,7 @@ where
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("💔 Error creating EVM client for URL {}: {:?}", eth_node_url, e);
-                    continue;
+                    continue
                 },
             };
 
@@ -452,7 +452,7 @@ where
                         eth_node_url,
                         e
                     );
-                    continue;
+                    continue
                 },
             };
 
@@ -473,7 +473,7 @@ where
             }
 
             if chain_id == wanted_chain_id {
-                return Ok(Arc::clone(self.evm_clients.get(&chain_id).expect("inserted above")));
+                return Ok(Arc::clone(self.evm_clients.get(&chain_id).expect("inserted above")))
             }
         }
 
@@ -505,7 +505,7 @@ where
 
     if let Some(c) = config.evm_clients.get(&chain_id) {
         log::debug!("⛓️  Found existing EVM client for chain: {}", chain_id);
-        return Ok(Arc::clone(c));
+        return Ok(Arc::clone(c))
     }
 
     log::debug!("⛓️  No EVM client found for chain {}. Initialising...", chain_id);
@@ -518,7 +518,7 @@ where
                 attempts += 1;
                 log::error!("Failed to initialize EVM client (attempt {}): {:?}", attempts, e);
                 if attempts >= RETRY_LIMIT {
-                    return Err(AppError::RetryLimitReached);
+                    return Err(AppError::RetryLimitReached)
                 }
                 sleep(Duration::from_secs(RETRY_DELAY)).await;
             },
@@ -654,7 +654,7 @@ where
             Ok(c) => c,
             Err(e) => {
                 log::error!("Failed to initialize EVM client for instance: {:?}", e);
-                continue;
+                continue
             },
         };
 

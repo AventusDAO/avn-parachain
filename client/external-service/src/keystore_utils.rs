@@ -62,7 +62,7 @@ pub fn raw_public_keys(key_type: KeyTypeId, keystore_path: &PathBuf) -> Result<V
             match hex::decode(name) {
                 Ok(decoded) if decoded.len() > 4 => {
                     if decoded[0..4] != key_type.0 {
-                        continue;
+                        continue
                     }
                     public_keys.push(decoded[4..].to_vec());
                 },

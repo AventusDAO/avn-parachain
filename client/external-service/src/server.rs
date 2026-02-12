@@ -56,7 +56,7 @@ fn validate_authorisation_token(
         .map_err(|e| server_error(format!("Error decoding X-Auth token: {e:?}")))?;
 
     if !authenticate_token(keystore, msg_bytes, signature_token) {
-        return Err(server_error("X-Auth token verification failed"));
+        return Err(server_error("X-Auth token verification failed"))
     }
     Ok(())
 }
@@ -213,7 +213,7 @@ where
     log::info!("⏲️ get_extrinsics [{from_block},{to_block}] {:?}", extrinsics_start.elapsed());
 
     if extrinsics.is_empty() {
-        return Ok(hex::encode([0u8; 32]));
+        return Ok(hex::encode([0u8; 32]))
     }
 
     let root_start = Instant::now();

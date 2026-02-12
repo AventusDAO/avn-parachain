@@ -26,7 +26,7 @@ pub fn eth_address_from_private_key_hex(hex_sk: &str) -> Result<H160, EthUtilsEr
     let s = hex_sk.strip_prefix("0x").unwrap_or(hex_sk);
     let bytes = hex::decode(s).map_err(|_| EthUtilsError::InvalidHex)?;
     if bytes.len() != 32 {
-        return Err(EthUtilsError::InvalidLength);
+        return Err(EthUtilsError::InvalidLength)
     }
 
     let mut seed = [0u8; 32];
