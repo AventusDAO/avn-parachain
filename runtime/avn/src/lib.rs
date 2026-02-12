@@ -114,9 +114,12 @@ pub type Executive = frame_executive::Executive<
     Runtime,
     AllPalletsWithSystem,
     (
-        pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,
         pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
-        pallet_token_manager::migration::SetLowerSchedulePeriod<Runtime>,
+        pallet_session::migrations::v1::MigrateV0ToV1<
+            Runtime,
+            pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
+        >,
+        cumulus_pallet_xcmp_queue::migration::v5::MigrateV4ToV5<Runtime>,
     ),
 >;
 
