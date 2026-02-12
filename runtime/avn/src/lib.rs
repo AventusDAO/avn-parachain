@@ -178,10 +178,11 @@ const MAXIMUM_BLOCK_WEIGHT: Weight = Weight::from_parts(
 
 #[docify::export]
 mod async_backing_params {
-    /// Maximum number of blocks simultaneously accepted by the Runtime, not yet included
-    /// into the relay chain.
-    // TODO Set this value to 3 when enabling asynchronous backing
-    pub(crate) const UNINCLUDED_SEGMENT_CAPACITY: u32 = 3;
+    // Depth of the async backing pipeline.
+    // 1 = sync-ready but no pipelining (effectively DISABLED).
+    // > 1 asynchronous backing is ENABLED.
+    // Must not exceed relay max_candidate_depth.
+    pub(crate) const UNINCLUDED_SEGMENT_CAPACITY: u32 = 1;
     /// How many parachain blocks are processed by the relay chain per parent. Limits the
     /// number of blocks authored per slot.
     pub(crate) const BLOCK_PROCESSING_VELOCITY: u32 = 1;
