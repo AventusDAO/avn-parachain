@@ -220,7 +220,7 @@ fn start_consensus(
         collator_service,
         authoring_duration: Duration::from_millis(1500),
         reinitialize: false,
-        max_pov_percentage: Some(75),
+        max_pov_percentage: Some(90),
     };
 
     let fut = aura::run::<Block, sp_consensus_aura::sr25519::AuthorityPair, _, _, _, _, _, _, _, _>(
