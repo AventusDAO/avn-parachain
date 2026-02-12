@@ -114,9 +114,12 @@ pub type Executive = frame_executive::Executive<
     Runtime,
     AllPalletsWithSystem,
     (
-        pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,
         pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
-        pallet_token_manager::migration::SetLowerSchedulePeriod<Runtime>,
+        pallet_session::migrations::v1::MigrateV0ToV1<
+            Runtime,
+            pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
+        >,
+        cumulus_pallet_xcmp_queue::migration::v5::MigrateV4ToV5<Runtime>,
     ),
 >;
 
@@ -134,7 +137,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 201,
+    spec_version: 202,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
