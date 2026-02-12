@@ -10,6 +10,7 @@ use frame_system::RawOrigin;
 struct Context {
     registrar: AccountId,
     owner: AccountId,
+    ocw_node: AccountId,
 }
 
 impl Context {
@@ -23,9 +24,9 @@ impl Context {
             reward_amount * 2u128,
         );
         <NodeRegistrar<TestRuntime>>::set(Some(registrar.clone()));
-        let _ = register_nodes(registrar, owner, num_of_nodes);
+        let ocw_node = register_nodes(registrar, owner, num_of_nodes);
 
-        Context { registrar, owner }
+        Context { registrar, owner, ocw_node }
     }
 }
 
@@ -33,7 +34,7 @@ fn register_nodes(registrar: AccountId, owner: AccountId, num_of_nodes: u8) -> A
     let reward_period = <RewardPeriod<TestRuntime>>::get().current;
 
     for i in 0..num_of_nodes {
-        register_node_and_send_heartbeat(registrar, owner.clone(), reward_period, i);
+        register_node_and_send_heartbeat(registrar, owner.clone(), reward_period, i, None);
     }
 
     let this_node = TestAccount::new([0 as u8; 32]).account_id();
@@ -50,6 +51,7 @@ fn register_node_and_send_heartbeat(
     owner: AccountId,
     reward_period: RewardPeriodIndex,
     id: u8,
+    stake: Option<BalanceOf<TestRuntime>>,
 ) -> AccountId {
     let node_id = TestAccount::new([id as u8; 32]).account_id();
     let signing_key_id = id + 1;
@@ -60,6 +62,12 @@ fn register_node_and_send_heartbeat(
         owner,
         UintAuthorityId(signing_key_id as u64),
     ));
+
+    if let Some(stake) = stake {
+        let owner_balance = Balances::free_balance(&owner);
+        Balances::make_free_balance_be(&owner, owner_balance + stake);
+        assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), stake));
+    }
 
     incr_heartbeats(reward_period, vec![node_id], 1);
     node_id
@@ -275,6 +283,7 @@ fn payment_is_based_on_uptime() {
             new_owner,
             reward_period_to_pay,
             199,
+            None,
         );
 
         let total_expected_uptime =
@@ -360,6 +369,7 @@ fn payment_works_when_uptime_is_threshold() {
             new_owner,
             reward_period_to_pay,
             199,
+            None,
         );
 
         let total_expected_uptime =
@@ -441,6 +451,7 @@ fn payment_works_even_when_uptime_is_over_threshold() {
             new_owner,
             reward_period_to_pay,
             199,
+            None,
         );
 
         let total_expected_uptime =
@@ -539,6 +550,7 @@ fn threshold_update_is_respected() {
             new_owner,
             reward_period_to_pay,
             199,
+            None,
         );
         let total_expected_uptime =
             NodeManager::calculate_uptime_threshold(reward_period_length as u32);
@@ -598,6 +610,101 @@ fn threshold_update_is_respected() {
         );
     });
 }
+
+#[test]
+fn reward_share_increases_with_genesis_and_stake_bonus() {
+    let (mut ext, pool_state, offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let new_owner_stake = 4_000_000_000_000_000_000_000u128;
+        let reward_period_info = <RewardPeriod<TestRuntime>>::get();
+        let reward_period_to_pay = reward_period_info.current;
+        // No genesis bonus, no stake for default context node
+        let context = Context::new(1u8);
+
+        let new_owner = TestAccount::new([111u8; 32]).account_id();
+
+        // Ensure 50% genesis bonus
+        TotalRegisteredNodes::<TestRuntime>::put(2000);
+        let new_node = register_node_and_send_heartbeat(
+            context.registrar.clone(),
+            new_owner,
+            reward_period_to_pay,
+            199,
+            Some(new_owner_stake)
+        );
+
+        let node_uptime_a = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
+        let node_uptime_b = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
+        assert_eq!(node_uptime_a.weight, 100_000_000u128); // Node A: base
+        // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
+        assert_eq!(node_uptime_b.weight, 450_000_000u128);
+
+        let reward_period_length = reward_period_info.length as u64;
+        let total_expected_uptime =
+            NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+
+        // The node's uptime is exactly the threshold, so they should get the full rewards
+        incr_heartbeats(reward_period_to_pay, vec![context.ocw_node], total_expected_uptime as u64 - 1);
+        incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
+
+        let node_uptime_a = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
+        let node_uptime_b = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
+
+        // Node A: base
+        assert_eq!(node_uptime_a.weight, 100_000_000u128 * total_expected_uptime as u128);
+        // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
+        assert_eq!(node_uptime_b.weight, 450_000_000u128 * total_expected_uptime as u128);
+
+        // Set a custom reward amount for easier calculations
+        <RewardAmount<TestRuntime>>::put(1_000u128);
+
+        // Complete a reward period
+        roll_forward((reward_period_length - System::block_number()) + 1);
+
+        // Stake before payout
+        let previous_stake_a = OwnerStake::<TestRuntime>::get(&context.owner).unwrap_or_default().amount;
+        let previous_stake_b = OwnerStake::<TestRuntime>::get(&new_owner).unwrap_or_default().amount;
+
+        // Baance before payout
+        let balance_a_before = Balances::free_balance(&context.owner);
+        let balance_b_before = Balances::free_balance(&new_owner);
+
+        // Pay out
+        mock_get_finalised_block(
+            &mut offchain_state.write(),
+            &Some(hex::encode(1u32.encode()).into()),
+        );
+        NodeManager::offchain_worker(System::block_number());
+        let tx = pop_tx_from_mempool(pool_state);
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
+
+        // Stake after payout
+        let current_stake_a = OwnerStake::<TestRuntime>::get(&context.owner).unwrap().amount;
+        let current_stake_b = OwnerStake::<TestRuntime>::get(&new_owner).unwrap().amount;
+
+        let balance_a_after = Balances::free_balance(&context.owner);
+        let balance_b_after = Balances::free_balance(&new_owner);
+
+        // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) vs 181 (0.18%) (flooring)
+        assert_eq!(current_stake_a, previous_stake_a + 181u128);
+        assert_eq!(current_stake_b, previous_stake_b + 818u128);
+
+        // Balances should increase but will be locked
+        assert_eq!(balance_a_after, balance_a_before + 181u128);
+        assert_eq!(balance_b_after, balance_b_before + 818u128);
+
+        // Lock should match staked amount
+        let locks = Balances::locks(&context.owner);
+        assert!(locks.iter().any(|l| l.id == STAKE_LOCK_ID && l.amount == current_stake_a));
+        let locks = Balances::locks(&new_owner);
+        assert!(locks.iter().any(|l| l.id == STAKE_LOCK_ID && l.amount == current_stake_b));
+    });
+}
+
 
 mod fails_when {
     use super::*;

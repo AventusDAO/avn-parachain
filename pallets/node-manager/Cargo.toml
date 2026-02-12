@@ -32,7 +32,7 @@ pallet-balances = { workspace = true, features=["insecure_zero_ed", "default"] }
 pallet-session = { workspace = true }
 sp-state-machine = { workspace = true }
 parking_lot = {  workspace = true }
-
+test-case = { workspace = true }
 sp-avn-common = { workspace = true, features=["test-utils"] }
 sp-keystore = { workspace = true, features = ["default"]}
 

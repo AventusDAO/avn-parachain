@@ -11,18 +11,18 @@ impl<T: Config> Pallet<T> {
     fn calculate_genesis_bonus(
         node_info: &NodeInfo<T::SignerId, T::AccountId>,
         timestamp_sec: u64,
-    ) -> Perbill {
+    ) -> FixedU128 {
         if node_info.auto_stake_expiry < timestamp_sec {
-            return Perbill::from_percent(100) // no bonus
+            return FixedU128::one(); // no bonus
         }
 
         // Node is currently auto-staking, apply bonus if eligible
         if FIFTY_PERCENT_GENESIS_BONUS.contains(&node_info.serial_number) {
-            Perbill::from_percent(150) // 1.5x
+            FixedU128::saturating_from_rational(3u128, 2u128) // 1.5x
         } else if TWENTY_FIVE_PERCENT_GENESIS_BONUS.contains(&node_info.serial_number) {
-            Perbill::from_percent(125) // 1.25x
+            FixedU128::saturating_from_rational(5u128, 4u128) // 1.25x
         } else {
-            Perbill::from_percent(100) // no bonus
+            FixedU128::one() // no bonus
         }
     }
 
@@ -51,8 +51,31 @@ impl<T: Config> Pallet<T> {
         }
 
         let ratio = FixedU128::saturating_from_rational(owner_stake_u128, denom);
-
         FixedU128::one().saturating_add(ratio)
+    }
+
+    // This function calculated bonus base on VirtualNodeStake interval.
+    // Ex: 2000 AVT = 1 virutal node, 3999 AVT = 1 virtual node, 4000 AVT = 2 virtual nodes...
+    fn calculate_stake_bonus_from_owner_step(owner: &T::AccountId,
+        reward_period: RewardPeriodIndex,
+    ) -> FixedU128 {
+        let owner_stake = Self::get_owner_stake_for_period(owner, reward_period);
+        let owned_nodes = <OwnedNodesCount<T>>::get(owner);
+
+        let step: BalanceOf<T> = T::VirtualNodeStake::get();
+        if step.is_zero() || owned_nodes == 0 || owner_stake.is_zero() {
+            return FixedU128::one();
+        }
+
+        // node_stake = owner_stake / owned_nodes
+        let node_stake: BalanceOf<T> = owner_stake / owned_nodes.into();
+
+        // virtual = floor(node_stake / step)
+        let virtual_nodes: u128 = (node_stake / step).unique_saturated_into();
+
+        // multiplier = 1 + virtual
+        let inner = virtual_nodes.saturating_add(1u128);
+        FixedU128::from_inner(inner.saturating_mul(FixedU128::accuracy()))
     }
 
     pub fn compute_reward_weight(
@@ -117,7 +140,6 @@ impl<T: Config> Pallet<T> {
         }
         stake.amount = new_total;
         stake.last_period_updated = current_reward_period;
-
         Self::update_stake(owner, stake, current_reward_period)?;
 
         Ok(new_total)

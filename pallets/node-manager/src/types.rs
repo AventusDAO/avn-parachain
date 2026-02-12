@@ -6,7 +6,7 @@ use sp_runtime::{
 
 // This is used to scale a single heartbeat so we can preserve precision when applying the reward
 // weight.
-const HEARTBEAT_BASE_WEIGHT: u128 = 1_000_000;
+pub const HEARTBEAT_BASE_WEIGHT: u128 = 100_000_000;
 
 #[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 /// The current era index and transition information
@@ -223,7 +223,7 @@ impl TotalUptimeInfo {
 
 #[derive(Clone, Copy)]
 pub struct RewardWeight {
-    pub genesis_bonus: Perbill,
+    pub genesis_bonus: FixedU128,
     pub stake_multiplier: FixedU128,
 }
 
@@ -231,7 +231,7 @@ impl RewardWeight {
     pub fn to_heartbeat_weight(&self) -> u128 {
         let scaled_stake_weight = self.stake_multiplier.saturating_mul_int(HEARTBEAT_BASE_WEIGHT);
         // apply the bonus last to preserve precision.
-        self.genesis_bonus * scaled_stake_weight
+        self.genesis_bonus.saturating_mul_int(scaled_stake_weight)
     }
 }
 
