@@ -118,14 +118,14 @@ mod process_event {
         use super::*;
 
         fn tests_check_result() -> CheckResult {
-            return CheckResult::Ok
+            return CheckResult::Ok;
         }
 
         mod when_successfully_challenged {
             use super::*;
 
             fn setup() -> Context {
-                return setup_successful_challenge(tests_check_result())
+                return setup_successful_challenge(tests_check_result());
             }
 
             mod and_event_is_executed_successfully {
@@ -387,7 +387,7 @@ mod process_event {
             use super::*;
 
             fn setup() -> Context {
-                return setup_failing_challenge(tests_check_result())
+                return setup_failing_challenge(tests_check_result());
             }
 
             mod and_event_is_executed_successfully {
@@ -644,7 +644,7 @@ mod process_event {
             use super::*;
 
             fn setup() -> Context {
-                return setup_without_challenge(tests_check_result())
+                return setup_without_challenge(tests_check_result());
             }
 
             #[test]
@@ -665,14 +665,14 @@ mod process_event {
         use super::*;
 
         fn tests_check_result() -> CheckResult {
-            return CheckResult::Invalid
+            return CheckResult::Invalid;
         }
 
         mod when_successfully_challenged {
             use super::*;
 
             fn setup() -> Context {
-                return setup_successful_challenge(tests_check_result())
+                return setup_successful_challenge(tests_check_result());
             }
 
             mod and_event_is_executed_successfully {
@@ -934,7 +934,7 @@ mod process_event {
             use super::*;
 
             fn setup() -> Context {
-                return setup_failing_challenge(tests_check_result())
+                return setup_failing_challenge(tests_check_result());
             }
 
             mod and_event_is_executed_successfully {
@@ -1189,7 +1189,7 @@ mod process_event {
             use super::*;
 
             fn setup() -> Context {
-                return setup_without_challenge(tests_check_result())
+                return setup_without_challenge(tests_check_result());
             }
 
             #[test]
@@ -1230,7 +1230,7 @@ mod process_event {
             context.signature.clone(),
         );
 
-        return process_event_result
+        return process_event_result;
     }
 
     fn add_challenge(context: &Context) {
@@ -1251,7 +1251,7 @@ mod process_event {
         add_challenge(&context);
         assert_eq!(true, EthereumEvents::is_challenge_successful(&context.check_result));
 
-        return context
+        return context;
     }
 
     fn setup_failing_challenge(check_result: CheckResult) -> Context {
@@ -1261,7 +1261,7 @@ mod process_event {
         add_challenge(&context);
         assert_eq!(false, EthereumEvents::is_challenge_successful(&context.check_result));
 
-        return context
+        return context;
     }
 
     fn setup_without_challenge(check_result: CheckResult) -> Context {
@@ -1270,18 +1270,18 @@ mod process_event {
         setup_preconditions(&context);
         assert!(!EthereumEvents::is_challenge_successful(&context.check_result));
 
-        return context
+        return context;
     }
 
     fn there_are_no_pending_events() -> bool {
-        return EthereumEvents::events_pending_challenge().is_empty()
+        return EthereumEvents::events_pending_challenge().is_empty();
     }
 
     fn event_is_in_processed_list(context: &Context) -> bool {
-        return <ProcessedEvents<TestRuntime>>::contains_key(&context.event_id)
+        return <ProcessedEvents<TestRuntime>>::contains_key(&context.event_id);
     }
 
     fn an_event_was_emitted(event: &Event) -> bool {
-        return System::events().iter().any(|a| a.event == *event)
+        return System::events().iter().any(|a| a.event == *event);
     }
 }

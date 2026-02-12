@@ -177,7 +177,7 @@ pub fn set_block_range_size<T: Config<I>, I: 'static>() -> Weight {
     add_weight(0, 2, Weight::from_parts(0 as u64, 0));
 
     log::info!("✅ BlockRangeSize set successfully");
-    return consumed_weight + Weight::from_parts(25_000 as u64, 0)
+    return consumed_weight + Weight::from_parts(25_000 as u64, 0);
 }
 
 pub fn migrate_to_v3<T: Config<I>, I: 'static>() -> Weight {

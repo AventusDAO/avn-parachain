@@ -55,7 +55,7 @@ impl<T: Config> ShouldEndSession<BlockNumberFor<T>> for ParachainStaking<T> {
 
         // always update when a new era should start
         if era.should_update(now) {
-            return true
+            return true;
         }
 
         if <ForceNewEra<T>>::get() {
@@ -70,9 +70,9 @@ impl<T: Config> ShouldEndSession<BlockNumberFor<T>> for ParachainStaking<T> {
                 DispatchClass::Mandatory,
             );
 
-            return true
+            return true;
         } else {
-            return false
+            return false;
         }
     }
 }

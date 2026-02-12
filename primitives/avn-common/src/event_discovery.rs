@@ -73,8 +73,9 @@ impl PartialOrd for DiscoveredEvent {
 impl Ord for DiscoveredEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.block.cmp(&other.block) {
-            Ordering::Equal =>
-                self.event.event_id.transaction_hash.cmp(&other.event.event_id.transaction_hash),
+            Ordering::Equal => {
+                self.event.event_id.transaction_hash.cmp(&other.event.event_id.transaction_hash)
+            },
             ord => ord,
         }
     }
@@ -143,13 +144,11 @@ pub trait EthereumEventsFilterTrait {
     fn get_remaining() -> EthBridgeEventsFilter {
         let existing_filter = Self::get();
 
-        let remaining_events: BTreeSet<_> = ValidEvents::values()
-            .into_iter()
-            .filter(|e| !existing_filter.contains(e))
-            .collect();
+        let remaining_events: BTreeSet<_> =
+            ValidEvents::values().into_iter().filter(|e| !existing_filter.contains(e)).collect();
         let filter = EthBridgeEventsFilter::try_from(remaining_events).unwrap_or_default();
 
-        return filter
+        return filter;
     }
 }
 

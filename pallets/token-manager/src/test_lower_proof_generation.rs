@@ -24,8 +24,8 @@ fn schedule_lower(
     fast_forward_to_block(get_expected_execution_block());
 
     // Event emitted
-    assert!(System::events().iter().any(|a| a.event ==
-        RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+    assert!(System::events().iter().any(|a| a.event
+        == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
             token_id: NON_AVT_TOKEN_ID,
             sender: from,
             recipient: burn_acc,
@@ -58,9 +58,7 @@ fn lower_proof_generation_works() {
 
         // Generated proof should be stored in LowerReadyToClaim
         assert_eq!(
-            <LowersReadyToClaim<TestRuntime>>::get(expected_lower_id)
-                .unwrap()
-                .encoded_lower_data,
+            <LowersReadyToClaim<TestRuntime>>::get(expected_lower_id).unwrap().encoded_lower_data,
             test_proof_data
         );
 
@@ -68,8 +66,8 @@ fn lower_proof_generation_works() {
         assert!(<LowersPendingProof<TestRuntime>>::get(expected_lower_id).is_none());
 
         // Event should be emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerReadyToClaim {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerReadyToClaim {
                 lower_id: expected_lower_id,
             })));
     });
@@ -102,8 +100,8 @@ fn failed_lower_proofs_are_handled() {
         assert!(<LowersPendingProof<TestRuntime>>::get(expected_lower_id).is_none());
 
         // Event should be emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(
                 crate::Event::<TestRuntime>::FailedToGenerateLowerProof {
                     lower_id: expected_lower_id,
                 }
@@ -203,8 +201,8 @@ fn successfull_proof_can_be_regenerated() {
         assert!(<LowersPendingProof<TestRuntime>>::get(expected_lower_id).is_some());
 
         // Event should be emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::RegeneratingLowerProof {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::RegeneratingLowerProof {
                 lower_id: expected_lower_id,
                 requester: from,
             })));
@@ -246,8 +244,8 @@ fn failed_proof_can_be_regenerated() {
         assert!(<LowersPendingProof<TestRuntime>>::get(expected_lower_id).is_some());
 
         // Event should be emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(
                 crate::Event::<TestRuntime>::RegeneratingFailedLowerProof {
                     lower_id: expected_lower_id,
                     requester: from,

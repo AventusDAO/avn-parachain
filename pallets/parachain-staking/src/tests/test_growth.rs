@@ -30,12 +30,12 @@ impl GrowthData {
 }
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 fn roll_one_growth_period(current_era_index: EraIndex) -> u32 {
     roll_to_era_begin((current_era_index + ErasPerGrowthPeriod::get()).into());
-    return ParachainStaking::era().current
+    return ParachainStaking::era().current;
 }
 
 fn roll_one_era_and_try_paying_collators(current_era: EraIndex) -> EraIndex {
@@ -44,7 +44,7 @@ fn roll_one_era_and_try_paying_collators(current_era: EraIndex) -> EraIndex {
     // move one more block to finish paying out the second collator (if any due)
     roll_one_block();
 
-    return ParachainStaking::era().current
+    return ParachainStaking::era().current;
 }
 
 fn set_equal_points_for_collators(era: EraIndex, collator_1: AccountId, collator_2: AccountId) {
@@ -68,14 +68,14 @@ fn increase_collator_nomination(
 }
 
 fn get_expected_block_number(growth_index: u64) -> u64 {
-    return get_default_block_per_era() as u64 * ErasPerGrowthPeriod::get() as u64 * growth_index
+    return get_default_block_per_era() as u64 * ErasPerGrowthPeriod::get() as u64 * growth_index;
 }
 
 fn increase_reward_pot_by(amount: u128) -> u128 {
     let current_balance = ParachainStaking::reward_pot();
     let new_balance = current_balance + amount;
     set_reward_pot(new_balance);
-    return new_balance
+    return new_balance;
 }
 
 fn roll_foreward_and_pay_stakers(
@@ -137,7 +137,7 @@ fn roll_foreward_and_pay_stakers(
         era_data.insert(era_index, GrowthData::new(new_reward_pot_amount, total_stake as u128));
     }
 
-    return era_data
+    return era_data;
 }
 
 #[test]
@@ -444,8 +444,8 @@ mod growth_info_recorded_correctly {
                     // This assumes that ErasPerGrowthPeriod = 2
                     assert_eq!(
                         growth.total_stake_accumulated,
-                        raw_era_data.get(&payout_era.0).unwrap().stake +
-                            raw_era_data.get(&payout_era.1).unwrap().stake,
+                        raw_era_data.get(&payout_era.0).unwrap().stake
+                            + raw_era_data.get(&payout_era.1).unwrap().stake,
                         "total accumulation for n={} does not match expected value",
                         n
                     );
@@ -455,8 +455,8 @@ mod growth_info_recorded_correctly {
                     // sum of rewards for the non backdated eras that make up this GrowthPeriod)
                     assert_eq!(
                         growth.total_staker_reward,
-                        raw_era_data.get(&current_era.0).unwrap().reward +
-                            raw_era_data.get(&current_era.1).unwrap().reward,
+                        raw_era_data.get(&current_era.0).unwrap().reward
+                            + raw_era_data.get(&current_era.1).unwrap().reward,
                         "total reward for n={} does not match expected value",
                         n
                     );

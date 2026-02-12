@@ -312,10 +312,7 @@ mod input_is_end_voting_period {
         context: &[u8],
         root_id: &RootId<BlockNumber>,
     ) -> TestSignature {
-        validator
-            .key
-            .sign(&(context, root_id.encode()).encode())
-            .expect("Signature is signed")
+        validator.key.sign(&(context, root_id.encode()).encode()).expect("Signature is signed")
     }
 
     #[test]

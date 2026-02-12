@@ -17,7 +17,7 @@ use frame_system::RawOrigin;
 use pallet_avn_proxy::Error as avn_proxy_error;
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 mod proxy_signed_bond_extra {
@@ -30,20 +30,18 @@ mod proxy_signed_bond_extra {
     ) -> Box<<Test as Config>::RuntimeCall> {
         let proof = create_proof_for_signed_bond_extra(sender_nonce, staker, &extra_amount);
 
-        return Box::new(MockCall::ParachainStaking(super::super::Call::<Test>::signed_bond_extra {
-            proof,
-            extra_amount,
-        }))
+        return Box::new(MockCall::ParachainStaking(
+            super::super::Call::<Test>::signed_bond_extra { proof, extra_amount },
+        ));
     }
 
     fn create_call_for_bond_extra_from_proof(
         proof: Proof<Signature, AccountId>,
         extra_amount: u128,
     ) -> Box<<Test as Config>::RuntimeCall> {
-        return Box::new(MockCall::ParachainStaking(super::super::Call::<Test>::signed_bond_extra {
-            proof,
-            extra_amount,
-        }))
+        return Box::new(MockCall::ParachainStaking(
+            super::super::Call::<Test>::signed_bond_extra { proof, extra_amount },
+        ));
     }
 
     fn create_proof_for_signed_bond_extra(
@@ -58,7 +56,7 @@ mod proxy_signed_bond_extra {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]
@@ -488,7 +486,7 @@ mod proxy_signed_candidate_bond_extra {
 
         return Box::new(MockCall::ParachainStaking(
             super::super::Call::<Test>::signed_candidate_bond_extra { proof, extra_amount },
-        ))
+        ));
     }
 
     fn create_call_for_candidate_bond_extra_from_proof(
@@ -497,7 +495,7 @@ mod proxy_signed_candidate_bond_extra {
     ) -> Box<<Test as Config>::RuntimeCall> {
         return Box::new(MockCall::ParachainStaking(
             super::super::Call::<Test>::signed_candidate_bond_extra { proof, extra_amount },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_candidate_bond_extra(
@@ -512,7 +510,7 @@ mod proxy_signed_candidate_bond_extra {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]

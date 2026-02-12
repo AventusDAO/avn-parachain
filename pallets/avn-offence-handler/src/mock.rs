@@ -83,7 +83,7 @@ impl session::Config for TestRuntime {
 impl Enforcer<ValidatorId> for TestRuntime {
     fn slash_validator(slashed_validator_id: &ValidatorId) -> DispatchResult {
         if slashed_validator_id == &VALIDATOR_ID_CAN_CAUSE_SLASH_ERROR {
-            return Err(DispatchError::Other("Slash validator failed"))
+            return Err(DispatchError::Other("Slash validator failed"));
         }
         Ok(())
     }

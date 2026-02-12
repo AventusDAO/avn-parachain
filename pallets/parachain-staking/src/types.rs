@@ -129,13 +129,13 @@ impl<A: PartialEq, B: PartialEq> PartialEq for CollatorSnapshot<A, B> {
     fn eq(&self, other: &Self) -> bool {
         let must_be_true = self.bond == other.bond && self.total == other.total;
         if !must_be_true {
-            return false
+            return false;
         }
         for (Bond { owner: o1, amount: a1 }, Bond { owner: o2, amount: a2 }) in
             self.nominations.iter().zip(other.nominations.iter())
         {
             if o1 != o2 || a1 != a2 {
-                return false
+                return false;
             }
         }
         true
@@ -196,7 +196,7 @@ impl<AccountId, Balance: Copy + Ord + sp_std::ops::AddAssign + Zero + Saturating
             if self.nominations[self.nominations.len() - 1].amount == nomination.amount {
                 self.nominations.try_push(nomination).unwrap_or_else(|_| ());
                 // early return
-                return
+                return;
             }
         }
         // else binary search insertion
@@ -210,7 +210,7 @@ impl<AccountId, Balance: Copy + Ord + sp_std::ops::AddAssign + Zero + Saturating
                         new_index = new_index.saturating_add(1);
                     } else {
                         self.nominations.try_insert(new_index, nomination).unwrap_or_else(|_| ());
-                        return
+                        return;
                     }
                 }
                 self.nominations.try_push(nomination).unwrap_or_else(|_| ())
@@ -229,8 +229,9 @@ impl<AccountId, Balance: Copy + Ord + sp_std::ops::AddAssign + Zero + Saturating
     /// Return the capacity status for bottom nominations
     pub fn bottom_capacity<T: Config>(&self) -> CapacityStatus {
         match &self.nominations {
-            x if x.len() as u32 >= T::MaxBottomNominationsPerCandidate::get() =>
-                CapacityStatus::Full,
+            x if x.len() as u32 >= T::MaxBottomNominationsPerCandidate::get() => {
+                CapacityStatus::Full
+            },
             x if x.is_empty() => CapacityStatus::Empty,
             _ => CapacityStatus::Partial,
         }
@@ -555,8 +556,8 @@ impl<
             .expect("CandidateInfo existence => BottomNominations existence");
         // if bottom is full, kick the lowest bottom (which is expected to be lower than input
         // as per check)
-        let increase_nomination_count = if bottom_nominations.nominations.len() as u32 ==
-            T::MaxBottomNominationsPerCandidate::get()
+        let increase_nomination_count = if bottom_nominations.nominations.len() as u32
+            == T::MaxBottomNominationsPerCandidate::get()
         {
             let lowest_bottom_to_be_kicked = bottom_nominations
                 .nominations
@@ -920,8 +921,8 @@ impl<
         let bond_after_less_than_highest_bottom =
             bond.saturating_sub(less).into() < self.highest_bottom_nomination_amount;
         // The top nominations is full and the bottom nominations has at least one nomination
-        let full_top_and_nonempty_bottom = matches!(self.top_capacity, CapacityStatus::Full) &&
-            !matches!(self.bottom_capacity, CapacityStatus::Empty);
+        let full_top_and_nonempty_bottom = matches!(self.top_capacity, CapacityStatus::Full)
+            && !matches!(self.bottom_capacity, CapacityStatus::Empty);
         let mut top_nominations =
             <TopNominations<T>>::get(candidate).ok_or(Error::<T>::CandidateDNE)?;
         let in_top_after = if bond_after_less_than_highest_bottom && full_top_and_nonempty_bottom {
@@ -1047,13 +1048,13 @@ impl<A: PartialEq, B: PartialEq + Clone> PartialEq for Nominator<A, B> {
         let must_be_true =
             self.id == other.id && self.total == other.total && self.less_total == other.less_total;
         if !must_be_true {
-            return false
+            return false;
         }
         for (Bond { owner: o1, amount: a1 }, Bond { owner: o2, amount: a2 }) in
             self.nominations.0.iter().zip(other.nominations.0.iter())
         {
             if o1 != o2 || a1 != a2 {
-                return false
+                return false;
             }
         }
         true
@@ -1217,7 +1218,7 @@ impl<
                     amount: balance_amt,
                     in_top,
                 });
-                return Ok(())
+                return Ok(());
             }
         }
         Err(Error::<T>::NominationDNE.into())
@@ -1242,15 +1243,15 @@ impl<
         match additional_required_balance {
             BondAdjust::Increase(amount) => {
                 ensure!(
-                    <Pallet<T>>::get_nominator_stakable_free_balance(&self.id.clone().into()) >=
-                        amount.into(),
+                    <Pallet<T>>::get_nominator_stakable_free_balance(&self.id.clone().into())
+                        >= amount.into(),
                     Error::<T>::InsufficientBalance,
                 );
 
                 // additional sanity check: shouldn't ever want to lock more than total
                 if amount > self.total {
                     log::warn!("LOGIC ERROR: request to reserve more than bond total");
-                    return Err(DispatchError::Other("Invalid additional_required_balance"))
+                    return Err(DispatchError::Other("Invalid additional_required_balance"));
                 }
             },
             BondAdjust::Decrease => (), // do nothing on decrease
@@ -1459,11 +1460,12 @@ impl<
     {
         return match self {
             AdminSettings::Delay(d) => d > &0,
-            AdminSettings::MinTotalNominatorStake(s) =>
-                s >= &<<T as Config>::MinNominationPerCollator as Get<BalanceOf<T>>>::get().into(),
+            AdminSettings::MinTotalNominatorStake(s) => {
+                s >= &<<T as Config>::MinNominationPerCollator as Get<BalanceOf<T>>>::get().into()
+            },
             AdminSettings::MinCollatorStake(_) => true,
             _ => false,
-        }
+        };
     }
 }
 

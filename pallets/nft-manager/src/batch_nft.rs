@@ -41,7 +41,7 @@ pub fn generate_batch_id<T: Config>(unique_id: NftUniqueId) -> U256 {
 
     let hash = keccak_256(&data_to_hash);
 
-    return U256::from_big_endian(&hash)
+    return U256::from_big_endian(&hash);
 }
 
 /// The NftId for a Batch Sale is calculated by this formula: uint256(keccak256(“B”, batchId,
@@ -55,7 +55,7 @@ pub fn generate_batch_nft_id<T: Config>(batch_id: &NftBatchId, sales_index: &u64
 
     let hash = keccak_256(&data_to_hash);
 
-    return U256::from_big_endian(&hash)
+    return U256::from_big_endian(&hash);
 }
 
 pub fn get_nft_info_for_batch<T: Config>(
@@ -64,7 +64,7 @@ pub fn get_nft_info_for_batch<T: Config>(
     let nft_info_id = BatchInfoId::<T>::get(&batch_id);
     ensure!(<NftInfos<T>>::contains_key(&nft_info_id), Error::<T>::NftInfoMissing);
 
-    return Ok(<NftInfos<T>>::get(nft_info_id).expect("key existance checked"))
+    return Ok(<NftInfos<T>>::get(nft_info_id).expect("key existance checked"));
 }
 
 pub fn create_batch<T: Config>(
@@ -96,7 +96,7 @@ pub fn encode_create_batch_params<T: Config>(
         t1_authority,
         nonce,
     )
-        .encode()
+        .encode();
 }
 
 pub fn encode_mint_batch_nft_params<T: Config>(
@@ -114,7 +114,7 @@ pub fn encode_mint_batch_nft_params<T: Config>(
         unique_external_ref,
         owner,
     )
-        .encode()
+        .encode();
 }
 
 pub fn encode_list_batch_for_sale_params<T: Config>(
@@ -123,7 +123,7 @@ pub fn encode_list_batch_for_sale_params<T: Config>(
     market: &NftSaleType,
     nonce: &u64,
 ) -> Vec<u8> {
-    return (SIGNED_LIST_BATCH_FOR_SALE_CONTEXT, &proof.relayer, batch_id, market, nonce).encode()
+    return (SIGNED_LIST_BATCH_FOR_SALE_CONTEXT, &proof.relayer, batch_id, market, nonce).encode();
 }
 
 pub fn encode_end_batch_sale_params<T: Config>(
@@ -131,7 +131,7 @@ pub fn encode_end_batch_sale_params<T: Config>(
     batch_id: &NftBatchId,
     nonce: &u64,
 ) -> Vec<u8> {
-    return (SIGNED_END_BATCH_SALE_CONTEXT, &proof.relayer, batch_id, nonce).encode()
+    return (SIGNED_END_BATCH_SALE_CONTEXT, &proof.relayer, batch_id, nonce).encode();
 }
 
 pub fn process_mint_batch_nft_event<T: Config>(

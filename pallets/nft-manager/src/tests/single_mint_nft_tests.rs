@@ -57,13 +57,13 @@ mod mint_single_nft {
     impl Context {
         pub fn event_emitted_with_single_nft_minted(&self) -> bool {
             return System::events().iter().any(|a| {
-                a.event ==
-                    Event::NftManager(crate::Event::<TestRuntime>::SingleNftMinted {
+                a.event
+                    == Event::NftManager(crate::Event::<TestRuntime>::SingleNftMinted {
                         nft_id: self.generate_nft_id(),
                         owner: self.owner,
                         authority: self.t1_authority,
                     })
-            })
+            });
         }
 
         pub fn call_mint_single_nft(&self) -> DispatchResult {
@@ -72,11 +72,11 @@ mod mint_single_nft {
                 self.unique_external_ref.clone(),
                 self.royalties.clone(),
                 self.t1_authority,
-            )
+            );
         }
 
         pub fn generate_nft_id(&self) -> NftId {
-            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id)
+            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id);
         }
     }
 

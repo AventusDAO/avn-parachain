@@ -1064,7 +1064,7 @@ pub mod pallet {
             more: BalanceOf<T>,
         ) -> DispatchResultWithPostInfo {
             let collator = ensure_signed(origin)?;
-            return Self::call_candidate_bond_extra(&collator, more)
+            return Self::call_candidate_bond_extra(&collator, more);
         }
 
         #[pallet::weight(<T as Config>::WeightInfo::signed_candidate_bond_extra())]
@@ -1108,7 +1108,7 @@ pub mod pallet {
             less: BalanceOf<T>,
         ) -> DispatchResultWithPostInfo {
             let collator = ensure_signed(origin)?;
-            return Self::call_schedule_candidate_unbond(&collator, less)
+            return Self::call_schedule_candidate_unbond(&collator, less);
         }
 
         #[pallet::weight(<T as Config>::WeightInfo::execute_candidate_unbond())]
@@ -1119,7 +1119,7 @@ pub mod pallet {
             candidate: T::AccountId,
         ) -> DispatchResultWithPostInfo {
             ensure_signed(origin)?; // we may want to reward this if caller != candidate
-            return Self::call_execute_candidate_unbond(&candidate)
+            return Self::call_execute_candidate_unbond(&candidate);
         }
 
         #[pallet::weight(<T as Config>::WeightInfo::signed_execute_candidate_unbond())]
@@ -1223,7 +1223,7 @@ pub mod pallet {
                 amount,
                 candidate_nomination_count,
                 nomination_count,
-            )
+            );
         }
 
         #[pallet::weight(<T as Config>::WeightInfo::signed_nominate(
@@ -1346,7 +1346,7 @@ pub mod pallet {
 
                 <ProxyNonces<T>>::mutate(&sender, |n| *n += 1);
 
-                return Ok(().into())
+                return Ok(().into());
             }
 
             Err(Error::<T>::NominatorDNE)?
@@ -1416,7 +1416,7 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             let nominator = ensure_signed(origin)?;
             ensure!(is_staking_enabled(), Error::<T>::StakingNotAllowed);
-            return Self::call_bond_extra(&nominator, candidate, more)
+            return Self::call_bond_extra(&nominator, candidate, more);
         }
 
         /// Bond a maximum of 'extra_amount' amount.
@@ -1700,7 +1700,7 @@ pub mod pallet {
                 collator_count,
                 nomination_count,
             );
-            return (era, weight)
+            return (era, weight);
         }
 
         pub fn is_nominator(acc: &T::AccountId) -> bool {
@@ -1769,7 +1769,7 @@ pub mod pallet {
                     .expect("We have a default value");
             });
 
-            return payout
+            return payout;
         }
 
         /// Remove nomination from candidate state
@@ -1798,12 +1798,12 @@ pub mod pallet {
             // payout is now - delay eras ago => now - delay > 0 else return early
             let delay = T::RewardPaymentDelay::get();
             if now <= delay {
-                return
+                return;
             }
             let era_to_payout = now.saturating_sub(delay);
             let total_points = <Points<T>>::get(era_to_payout);
             if total_points.is_zero() {
-                return
+                return;
             }
             // Remove stake because it has been processed.
             let total_staked = <Staked<T>>::take(era_to_payout);
@@ -1843,7 +1843,7 @@ pub mod pallet {
 
             // don't underflow uint
             if now < delay {
-                return Weight::from_parts(0 as u64, 0).into()
+                return Weight::from_parts(0 as u64, 0).into();
             }
 
             let paid_for_era = now.saturating_sub(delay);
@@ -1880,7 +1880,7 @@ pub mod pallet {
                 // 2. we called pay_one_collator_reward when we were actually done with deferred
                 //    payouts
                 log::warn!("pay_one_collator_reward called with no <Points<T>> for the era!");
-                return (None, Weight::from_parts(0 as u64, 0).into())
+                return (None, Weight::from_parts(0 as u64, 0).into());
             }
 
             let reward_pot_account_id = Self::compute_reward_pot_account_id();
@@ -1992,7 +1992,7 @@ pub mod pallet {
                         total_exposed_amount: *snapshot_total,
                     })
                 }
-                return (collator_count, nomination_count, total)
+                return (collator_count, nomination_count, total);
             }
 
             // snapshot exposure for era for weighting reward distribution
@@ -2132,9 +2132,9 @@ pub mod pallet {
             era_index: &EraIndex,
             collator_payout_period: &GrowthPeriodInfo,
         ) -> bool {
-            return collator_payout_period.index == 0 ||
-                era_index - collator_payout_period.start_era_index >=
-                    T::ErasPerGrowthPeriod::get()
+            return collator_payout_period.index == 0
+                || era_index - collator_payout_period.start_era_index
+                    >= T::ErasPerGrowthPeriod::get();
         }
 
         fn accumulate_payout_for_period(
@@ -2175,11 +2175,8 @@ pub mod pallet {
             });
 
             return BoundedVec::truncate_from(
-                current_scores
-                    .into_iter()
-                    .map(|(acc, pts)| CollatorScore::new(acc, pts))
-                    .collect(),
-            )
+                current_scores.into_iter().map(|(acc, pts)| CollatorScore::new(acc, pts)).collect(),
+            );
         }
 
         pub fn payout_collators(amount: BalanceOf<T>, growth_period: u32) -> DispatchResult {
@@ -2201,7 +2198,7 @@ pub mod pallet {
                             });
 
                             imbalance.subsume(amount_paid);
-                            return Ok(())
+                            return Ok(());
                         },
                         Err(e) => {
                             log::error!(
@@ -2210,7 +2207,7 @@ pub mod pallet {
                                 collator_address,
                                 e
                             );
-                            return Err(Error::<T>::ErrorPayingCollator.into())
+                            return Err(Error::<T>::ErrorPayingCollator.into());
                         },
                     }
                 };
@@ -2259,7 +2256,7 @@ pub mod pallet {
             index: u64,
         ) -> bool {
             if dust.is_zero() {
-                return false
+                return false;
             }
 
             let block_number: u64 =
@@ -2268,7 +2265,7 @@ pub mod pallet {
 
             let chosen_collator_index = block_number % number_of_collators;
 
-            return index == chosen_collator_index
+            return index == chosen_collator_index;
         }
 
         pub fn identify_collators_to_withdraw_from(
@@ -2284,8 +2281,8 @@ pub mod pallet {
             );
 
             // Desired balance on each collator after nominator reduces its stake
-            let target_average_amount = Perbill::from_rational(1, state.nominations.0.len() as u32) *
-                (net_total_bonded.saturating_sub(total_reduction));
+            let target_average_amount = Perbill::from_rational(1, state.nominations.0.len() as u32)
+                * (net_total_bonded.saturating_sub(total_reduction));
 
             // Make sure each nominator will have at least required min amount
             ensure!(
@@ -2313,11 +2310,11 @@ pub mod pallet {
 
                 if outstanding_withdrawal.is_zero() {
                     // exit early
-                    break
+                    break;
                 }
             }
 
-            return Ok((payers, outstanding_withdrawal))
+            return Ok((payers, outstanding_withdrawal));
         }
 
         pub fn split_and_nominate(
@@ -2380,17 +2377,17 @@ pub mod pallet {
                 if <Growth<T>>::contains_key(growth_period) {
                     let growth_info = <Growth<T>>::get(growth_period);
 
-                    if <ProcessedGrowthPeriods<T>>::contains_key(growth_period) ||
-                        growth_info.tx_id.is_some() ||
-                        growth_info.triggered.is_some()
+                    if <ProcessedGrowthPeriods<T>>::contains_key(growth_period)
+                        || growth_info.tx_id.is_some()
+                        || growth_info.triggered.is_some()
                     {
                         log::warn!("Growth for period {:?} is already processed. Tx id: {:?}, triggered: {:?}", growth_period, growth_info.tx_id, growth_info.triggered);
-                        continue
+                        continue;
                     }
 
-                    if growth_info.number_of_accumulations == 0u32 ||
-                        growth_info.total_stake_accumulated == 0u32.into() ||
-                        growth_info.total_staker_reward == 0u32.into()
+                    if growth_info.number_of_accumulations == 0u32
+                        || growth_info.total_stake_accumulated == 0u32.into()
+                        || growth_info.total_staker_reward == 0u32.into()
                     {
                         log::warn!("Growth for period {:?} will be 0, skipping it.", growth_period);
                         <LastTriggeredGrowthPeriod<T>>::put(growth_period);
@@ -2398,7 +2395,7 @@ pub mod pallet {
                             growth.tx_id = Some(0u32);
                         });
 
-                        continue
+                        continue;
                     }
 
                     let result = Self::trigger_growth_on_t1(&growth_period, growth_info);
@@ -2443,19 +2440,19 @@ pub mod pallet {
                 growth.tx_id = Some(tx_id.into());
             });
 
-            return Ok(())
+            return Ok(());
         }
 
         pub fn get_untriggered_growths(current_period: u32) -> Vec<u32> {
             let starting_period = Self::last_triggered_growth_period() + 1;
-            return (starting_period..=current_period).take(MAX_GROWTHS_TO_PROCESS).collect()
+            return (starting_period..=current_period).take(MAX_GROWTHS_TO_PROCESS).collect();
         }
 
         pub fn try_get_growth_data(
             growth_period: &u32,
         ) -> Result<GrowthInfo<T::AccountId, BalanceOf<T>>, Error<T>> {
             if <Growth<T>>::contains_key(growth_period) {
-                return Ok(<Growth<T>>::get(growth_period))
+                return Ok(<Growth<T>>::get(growth_period));
             }
 
             Err(Error::<T>::GrowthDataNotFound)?
@@ -2481,7 +2478,7 @@ pub mod pallet {
     }
     impl<T: Config> OnGrowthLiftedHandler<BalanceOf<T>> for Pallet<T> {
         fn on_growth_lifted(amount: BalanceOf<T>, growth_period: u32) -> DispatchResult {
-            return Self::payout_collators(amount, growth_period)
+            return Self::payout_collators(amount, growth_period);
         }
     }
 }

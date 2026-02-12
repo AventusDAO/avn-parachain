@@ -27,10 +27,11 @@ pub fn generate_tree_root(leaves_data: Vec<Vec<u8>>) -> Result<H256> {
     // There should be only one root node
     return match root_nodes.as_slice() {
         [x] => Ok(*x),
-        _ =>
+        _ => {
             return Err(TreeError::ErrorGeneratingRoot)
-                .context("Error generating merkle tree root: multiple root nodes found"),
-    }
+                .context("Error generating merkle tree root: multiple root nodes found")
+        },
+    };
 }
 
 /// Keys:
@@ -44,7 +45,7 @@ fn process_level(nodes: &mut Vec<H256>) -> Vec<H256> {
         processed_nodes = process_level(&mut processed_nodes);
     }
 
-    return processed_nodes
+    return processed_nodes;
 }
 
 /// Keys: N - number of nodes
@@ -62,7 +63,7 @@ fn process_nodes_in_pairs(nodes: &mut Vec<H256>) -> Vec<H256> {
         processed_nodes.push(*nodes.last().unwrap());
     }
 
-    return processed_nodes
+    return processed_nodes;
 }
 
 fn sort_and_concatenate_pair(left_node: H256, right_node: H256) -> Vec<u8> {
@@ -78,7 +79,7 @@ fn sort_and_concatenate_pair(left_node: H256, right_node: H256) -> Vec<u8> {
         .into_iter()
         .map(|h| h.to_fixed_bytes().to_vec())
         .flatten()
-        .collect::<Vec<u8>>()
+        .collect::<Vec<u8>>();
 }
 
 /// Generates a merkle tree using `leaves_data` and returns the path from the specified `leaf_data`
@@ -88,11 +89,11 @@ pub fn generate_merkle_path(leaf_data: &Vec<u8>, leaves_data: Vec<Vec<u8>>) -> R
 
     if leaf_data.is_empty() {
         return Err(TreeError::EmptyLeaves)
-            .context("Error generating merkle path: no leaves data")?
+            .context("Error generating merkle path: no leaves data")?;
     }
 
     if leaves_data.is_empty() {
-        return Err(TreeError::EmptyLeaves).context("Error generating merkle path: no leaf data")?
+        return Err(TreeError::EmptyLeaves).context("Error generating merkle path: no leaf data")?;
     }
 
     let mut node_hash_in_leaf_branch = H256::from_slice(&keccak_256(leaf_data));
@@ -103,7 +104,7 @@ pub fn generate_merkle_path(leaf_data: &Vec<u8>, leaves_data: Vec<Vec<u8>>) -> R
 
     process_level_for_path(&mut node_hash_in_leaf_branch, nodes_hashes, &mut merkle_path);
 
-    return Ok(merkle_path)
+    return Ok(merkle_path);
 }
 
 fn process_level_for_path(
@@ -119,7 +120,7 @@ fn process_level_for_path(
             process_level_for_path(node_hash_in_leaf_branch, &processed_nodes, merkle_path);
     }
 
-    return processed_nodes
+    return processed_nodes;
 }
 
 fn process_nodes_in_pairs_for_path(
@@ -148,7 +149,7 @@ fn process_nodes_in_pairs_for_path(
         processed_nodes.push(*nodes.last().unwrap());
     }
 
-    return processed_nodes
+    return processed_nodes;
 }
 
 #[cfg(test)]
@@ -160,7 +161,7 @@ mod tests {
         for number in 0..n {
             nodes.push(vec![number]);
         }
-        return nodes
+        return nodes;
     }
 
     fn to_array(bytes: &[u8]) -> [u8; 32] {

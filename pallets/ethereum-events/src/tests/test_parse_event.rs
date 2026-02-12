@@ -88,7 +88,7 @@ mod parse_nft_mint_log {
             data.append(&mut vec![8; 4]);
             data.append(&mut vec![0; 28]);
 
-            return Context { topics, data: Some(data) }
+            return Context { topics, data: Some(data) };
         }
     }
 
@@ -174,7 +174,7 @@ mod parse_nft_transfer_to_log {
 
             let topics = vec![vec![0; 32], vec![11; 32], vec![10; 32], transfer_nonce];
 
-            return Context { topics, data: None }
+            return Context { topics, data: None };
         }
     }
 
@@ -245,7 +245,7 @@ mod parse_avt_growth_lifted_log {
         let mut topic = vec![0; 28];
         let mut values = bytes;
         topic.append(&mut values);
-        return topic
+        return topic;
     }
 
     struct Context {
@@ -267,7 +267,7 @@ mod parse_avt_growth_lifted_log {
                 into_32_be_bytes(&20u128.to_le_bytes()),
                 get_topic_8_bytes(vec![1; 4]),
             ];
-            return Context { topics, data: None }
+            return Context { topics, data: None };
         }
     }
 

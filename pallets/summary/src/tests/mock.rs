@@ -45,7 +45,7 @@ pub type BlockNumber = BlockNumberFor<TestRuntime>;
 
 impl Summary {
     pub fn get_root_data(root_id: &RootId<BlockNumber>) -> RootData<AccountId> {
-        return Roots::<TestRuntime>::get(root_id.range, root_id.ingress_counter)
+        return Roots::<TestRuntime>::get(root_id.range, root_id.ingress_counter);
     }
 
     pub fn insert_root_hash(
@@ -96,7 +96,7 @@ impl Summary {
     }
 
     pub fn get_block_number() -> BlockNumber {
-        return System::block_number()
+        return System::block_number();
     }
 
     pub fn insert_pending_approval(root_id: &RootId<BlockNumber>) {
@@ -145,13 +145,13 @@ impl Summary {
     }
 
     pub fn emitted_event(event: &RuntimeEvent) -> bool {
-        return System::events().iter().any(|a| a.event == *event)
+        return System::events().iter().any(|a| a.event == *event);
     }
 
     pub fn emitted_event_for_offence_of_type(offence_type: SummaryOffenceType) -> bool {
         return System::events()
             .iter()
-            .any(|e| Self::event_matches_offence_type(&e.event, offence_type.clone()))
+            .any(|e| Self::event_matches_offence_type(&e.event, offence_type.clone()));
     }
 
     pub fn event_matches_offence_type(event: &RuntimeEvent, this_type: SummaryOffenceType) -> bool {
@@ -160,19 +160,19 @@ impl Summary {
                 crate::Event::<TestRuntime>::SummaryOffenceReported{ offence_type, .. }
             )
             if this_type == *offence_type
-        )
+        );
     }
 
     pub fn total_events_emitted() -> usize {
-        return System::events().len()
+        return System::events().len();
     }
 
     pub fn create_mock_identification_tuple(account_id: AccountId) -> (AccountId, AccountId) {
-        return (account_id, account_id)
+        return (account_id, account_id);
     }
 
     pub fn get_offence_record() -> Vec<(Vec<ValidatorId>, Offence)> {
-        return OFFENCES.with(|o| o.borrow().to_vec())
+        return OFFENCES.with(|o| o.borrow().to_vec());
     }
 
     pub fn reported_offence(
@@ -191,13 +191,13 @@ impl Summary {
                 offenders.iter().map(|v| Self::create_mock_identification_tuple(*v)).collect(),
                 offence_type.clone(),
             )
-        })
+        });
     }
 
     pub fn reported_offence_of_type(offence_type: SummaryOffenceType) -> bool {
         let offences = Self::get_offence_record();
 
-        return offences.iter().any(|o| Self::offence_is_of_type(o, offence_type.clone()))
+        return offences.iter().any(|o| Self::offence_is_of_type(o, offence_type.clone()));
     }
 
     fn offence_matches_criteria(
@@ -221,7 +221,7 @@ impl Summary {
             && this_count == *validator_set_count
             && these_offenders == *offenders
             && this_type == *offence_type
-        )
+        );
     }
 
     fn offence_is_of_type(
@@ -239,13 +239,13 @@ impl Summary {
                     offence_type}
             )
             if this_type == *offence_type
-        )
+        );
     }
 }
 
 impl AnchorSummary {
     pub fn get_root_data(root_id: &RootId<BlockNumber>) -> RootData<AccountId> {
-        return Roots::<TestRuntime, Instance1>::get(root_id.range, root_id.ingress_counter)
+        return Roots::<TestRuntime, Instance1>::get(root_id.range, root_id.ingress_counter);
     }
 
     pub fn insert_root_hash(
@@ -482,7 +482,7 @@ impl BridgeInterface for TestRuntime {
         _caller_id: Vec<u8>,
     ) -> Result<EthereumId, DispatchError> {
         if function_name == BridgeContractMethod::PublishRoot.name_as_bytes() {
-            return Ok(INITIAL_TRANSACTION_ID)
+            return Ok(INITIAL_TRANSACTION_ID);
         }
         Err(Error::<TestRuntime>::ErrorPublishingSummary.into())
     }
@@ -526,9 +526,7 @@ impl pallet_session::historical::SessionManager<ValidatorId, FullIdentification>
 {
     fn new_session(_new_index: SessionIndex) -> Option<Vec<(ValidatorId, FullIdentification)>> {
         VALIDATORS.with(|l| {
-            l.borrow_mut()
-                .take()
-                .map(|validators| validators.iter().map(|v| (*v, *v)).collect())
+            l.borrow_mut().take().map(|validators| validators.iter().map(|v| (*v, *v)).collect())
         })
     }
     fn end_session(_: SessionIndex) {}
@@ -639,7 +637,7 @@ impl ExtBuilder {
         let validators_range: Vec<ValidatorId> = (1..=count).collect();
         VALIDATORS.with(|l| *l.borrow_mut() = Some(validators_range));
 
-        return self.with_validators()
+        return self.with_validators();
     }
 
     pub fn with_genesis_config(mut self) -> Self {
@@ -910,7 +908,7 @@ pub fn advance_block_numbers(number_of_blocks: u64) -> BlockNumber {
     let new_block_number =
         safe_add_block_numbers(now, number_of_blocks).expect("Advanced block number is valid");
     System::set_block_number(new_block_number);
-    return new_block_number
+    return new_block_number;
 }
 
 pub fn retreat_block_numbers(number_of_blocks: u64) -> BlockNumber {
@@ -918,5 +916,5 @@ pub fn retreat_block_numbers(number_of_blocks: u64) -> BlockNumber {
     let new_block_number =
         safe_sub_block_numbers(now, number_of_blocks).expect("Retreated block number is valid");
     System::set_block_number(new_block_number);
-    return new_block_number
+    return new_block_number;
 }

@@ -20,7 +20,7 @@ fn record_summary_calculation_is_called(
 ) -> bool {
     AnchorSummary::process_summary_if_required(current_block_number, this_validator);
 
-    return !pool_state.read().transactions.is_empty()
+    return !pool_state.read().transactions.is_empty();
 }
 
 fn record_summary_calculation_is_ok(context: &Context) -> bool {
@@ -35,7 +35,7 @@ fn record_summary_calculation_is_ok(context: &Context) -> bool {
             context.record_summary_calculation_signature.clone(),
         )
     );
-    return true
+    return true;
 }
 
 fn setup_block_numbers_and_slots(context: &Context) {
@@ -65,8 +65,8 @@ fn approve_summary(context: &Context) {
     );
     assert_eq!(AnchorSummary::last_summary_slot(), AnchorSummary::current_slot());
 
-    assert!(System::events().iter().any(|a| a.event ==
-        mock::RuntimeEvent::AnchorSummary(
+    assert!(System::events().iter().any(|a| a.event
+        == mock::RuntimeEvent::AnchorSummary(
             crate::Event::<TestRuntime, Instance1>::VotingEnded {
                 root_id: context.root_id,
                 vote_approved: true

@@ -101,8 +101,9 @@ impl InsertAvNKeyCmd {
         let (keystore, public) = match keystore_config {
             KeystoreConfig::Path { path, password } => {
                 let public: Vec<u8> = match self.scheme {
-                    AvNCryptoScheme::EcdsaSeed =>
-                        get_public_key_string_bytes_from_private_key(suri.as_str())?,
+                    AvNCryptoScheme::EcdsaSeed => {
+                        get_public_key_string_bytes_from_private_key(suri.as_str())?
+                    },
                     scheme => with_crypto_scheme!(
                         scheme.to_substrate_crypto_scheme().expect("Already checked"),
                         to_vec(&suri, password.clone())
@@ -130,7 +131,7 @@ fn get_public_key_string_bytes_from_private_key(suri: &str) -> Result<Vec<u8>, E
         web3SecretKey::from_slice(&seed_encoded).map_err(|_| Error::KeyFormatInvalid)?;
     let public_eth_address: H160 = secret_key_address(&secret_key);
 
-    return get_ethereum_public_address_lowercase_string_bytes(public_eth_address)
+    return get_ethereum_public_address_lowercase_string_bytes(public_eth_address);
 }
 
 fn get_ethereum_public_address_lowercase_string_bytes(

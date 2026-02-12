@@ -69,11 +69,11 @@ pub fn finalize_state<T: Config<I>, I: 'static>(
 ) -> Result<(), Error<T, I>> {
     // if the transaction failed and the tx hash is missing or pointing to a different transaction,
     // replay transaction
-    if !success &&
-        util::has_enough_corroborations::<T, I>(tx.data.invalid_tx_hash_corroborations.len())
+    if !success
+        && util::has_enough_corroborations::<T, I>(tx.data.invalid_tx_hash_corroborations.len())
     {
         // raise an offence on the "sender" because the tx_hash they provided was invalid
-        return Ok(replay_send_request(tx)?)
+        return Ok(replay_send_request(tx)?);
     }
 
     Ok(complete_transaction::<T, I>(tx, success)?)
@@ -120,7 +120,7 @@ pub fn set_up_active_tx<T: Config<I>, I: 'static>(
         last_updated: <frame_system::Pallet<T>>::block_number(),
     });
 
-    return Ok(())
+    return Ok(());
 }
 
 pub fn replay_send_request<T: Config<I>, I: 'static>(
@@ -133,7 +133,7 @@ pub fn replay_send_request<T: Config<I>, I: 'static>(
     });
 
     let replay_attempt = Some(tx.replay_attempt.saturating_plus_one());
-    return Ok(set_up_active_tx(tx.request, replay_attempt)?)
+    return Ok(set_up_active_tx(tx.request, replay_attempt)?);
 }
 
 pub fn use_next_tx_id<T: Config<I>, I: 'static>() -> u32 {

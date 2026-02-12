@@ -93,7 +93,7 @@ pub(crate) mod helpers {
         derived_seed.push_str("//");
         derived_seed.push_str(extra_derivation);
 
-        return derived_seed
+        return derived_seed;
     }
 
     /// Generate collator keys from seed using the name of the key as extra derivation path.
@@ -135,7 +135,7 @@ pub(crate) mod helpers {
         seed: &str,
     ) -> (AccountId, AuraId, AuthorityDiscoveryId, ImOnlineId, AvnId) {
         let (aura, audi, imon, avn) = get_collator_session_keys_from_seed(seed);
-        return (get_account_id_from_seed::<sr25519::Public>(seed), aura, audi, imon, avn)
+        return (get_account_id_from_seed::<sr25519::Public>(seed), aura, audi, imon, avn);
     }
 
     /// Helper function to return the authority keys for a seed with extra derivation
@@ -144,7 +144,7 @@ pub(crate) mod helpers {
     ) -> (AccountId, AuraId, AuthorityDiscoveryId, ImOnlineId, AvnId) {
         let (aura, audi, imon, avn) =
             get_collator_session_keys_from_seed_with_extra_derivation(seed);
-        return (get_account_id_from_seed::<sr25519::Public>(seed), aura, audi, imon, avn)
+        return (get_account_id_from_seed::<sr25519::Public>(seed), aura, audi, imon, avn);
     }
 }
 
@@ -175,7 +175,7 @@ pub(crate) fn avn_chain_properties() -> sc_chain_spec::Properties {
     properties.insert("ss58Format".into(), 42.into());
     // TODO: Replace with this when we switch to using custom prefixes
     // properties.insert("ss58Format".into(), 65.into());
-    return properties
+    return properties;
 }
 
 fn local_ethereum_public_keys() -> Vec<EthPublicKey> {
@@ -216,5 +216,5 @@ fn local_ethereum_public_keys() -> Vec<EthPublicKey> {
             "031f8860a4f05ec62077a97d37af60f0229b775b98946efcb92998522abefc1b6c"
         ])
         .unwrap(),
-    ]
+    ];
 }

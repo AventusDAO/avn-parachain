@@ -141,10 +141,8 @@ mod process_events {
     // successfully process the specified ethereum_event
     #[test]
     fn successful_event_processing_accepted() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let context = EventProcessContext::setup();
             init_active_range();
@@ -164,8 +162,8 @@ mod process_events {
                 context.test_signature_two.clone()
             ));
 
-            assert!(System::events().iter().any(|record| record.event ==
-                mock::RuntimeEvent::EthBridge(Event::<TestRuntime>::EventAccepted {
+            assert!(System::events().iter().any(|record| record.event
+                == mock::RuntimeEvent::EthBridge(Event::<TestRuntime>::EventAccepted {
                     eth_event_id: context.eth_event_id.clone(),
                 })));
         });
@@ -174,10 +172,8 @@ mod process_events {
     // This test should fail processing the ethereum_event and emit the specified event
     #[test]
     fn successful_event_processing_not_accepted() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let context = EventProcessContext::setup();
             init_active_range();
@@ -194,8 +190,8 @@ mod process_events {
                 context.test_signature.clone()
             ));
 
-            assert!(System::events().iter().any(|record| record.event ==
-                mock::RuntimeEvent::EthBridge(Event::<TestRuntime>::EventRejected {
+            assert!(System::events().iter().any(|record| record.event
+                == mock::RuntimeEvent::EthBridge(Event::<TestRuntime>::EventRejected {
                     eth_event_id: context.bad_eth_event_id.clone(),
                     reason: DispatchError::Other("").into(),
                 })));
@@ -207,10 +203,8 @@ mod process_events {
     // already in the system
     #[test]
     fn event_already_processed() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let context = EventProcessContext::setup();
             init_active_range();
@@ -238,8 +232,8 @@ mod process_events {
                 context.second_mock_event_partition.clone(),
                 context.test_signature_two.clone()
             ));
-            assert!(System::events().iter().any(|record| record.event ==
-                mock::RuntimeEvent::EthBridge(Event::<TestRuntime>::EventRejected {
+            assert!(System::events().iter().any(|record| record.event
+                == mock::RuntimeEvent::EthBridge(Event::<TestRuntime>::EventRejected {
                     eth_event_id: context.eth_event_id.clone(),
                     reason: Error::<TestRuntime>::EventAlreadyProcessed.into(),
                 })));

@@ -29,7 +29,7 @@ pub fn compress_eth_public_key(full_public_key: H512) -> ecdsa::Public {
     // otherwise prefix with 3
     compressed_public_key[0] = if full_public_key.0[63] % 2 == 0 { 2u8 } else { 3u8 };
 
-    return ecdsa::Public::from_raw(compressed_public_key)
+    return ecdsa::Public::from_raw(compressed_public_key);
 }
 
 #[cfg(test)]

@@ -235,8 +235,8 @@ impl<T: Config> Pallet<T> {
                     true
                 } else {
                     ensure!(
-                        state.total().saturating_sub(<MinTotalNominatorStake<T>>::get().into()) >=
-                            amount,
+                        state.total().saturating_sub(<MinTotalNominatorStake<T>>::get().into())
+                            >= amount,
                         <Error<T>>::NominatorBondBelowMin
                     );
                     false
@@ -323,7 +323,7 @@ impl<T: Config> Pallet<T> {
                         } else {
                             // must rm entire nomination if bond.amount <= less or cancel request
                             Err(<Error<T>>::NominationBelowMin.into())
-                        }
+                        };
                     }
                 }
                 Err(<Error<T>>::NominationDNE.into())
@@ -374,14 +374,12 @@ impl<T: Config> Pallet<T> {
         }
 
         if existing_revoke_count == state.nominations.0.len() {
-            return Err(<Error<T>>::NominatorAlreadyLeaving.into())
+            return Err(<Error<T>>::NominatorAlreadyLeaving.into());
         }
 
-        updated_scheduled_requests
-            .into_iter()
-            .for_each(|(collator, scheduled_requests)| {
-                <NominationScheduledRequests<T>>::insert(collator, scheduled_requests);
-            });
+        updated_scheduled_requests.into_iter().for_each(|(collator, scheduled_requests)| {
+            <NominationScheduledRequests<T>>::insert(collator, scheduled_requests);
+        });
 
         <NominatorState<T>>::insert(nominator.clone(), state);
         Self::deposit_event(Event::NominatorExitScheduled {
@@ -421,11 +419,9 @@ impl<T: Config> Pallet<T> {
             updated_scheduled_requests.push((collator, scheduled_requests));
         }
 
-        updated_scheduled_requests
-            .into_iter()
-            .for_each(|(collator, scheduled_requests)| {
-                <NominationScheduledRequests<T>>::insert(collator, scheduled_requests);
-            });
+        updated_scheduled_requests.into_iter().for_each(|(collator, scheduled_requests)| {
+            <NominationScheduledRequests<T>>::insert(collator, scheduled_requests);
+        });
 
         <NominatorState<T>>::insert(nominator.clone(), state);
         Self::deposit_event(Event::NominatorExitCancelled { nominator });
@@ -487,11 +483,9 @@ impl<T: Config> Pallet<T> {
         let unstaked_amount = state.total();
         state.total_sub::<T>(unstaked_amount)?;
 
-        updated_scheduled_requests
-            .into_iter()
-            .for_each(|(collator, scheduled_requests)| {
-                <NominationScheduledRequests<T>>::insert(collator, scheduled_requests);
-            });
+        updated_scheduled_requests.into_iter().for_each(|(collator, scheduled_requests)| {
+            <NominationScheduledRequests<T>>::insert(collator, scheduled_requests);
+        });
 
         Self::deposit_event(Event::NominatorLeft { nominator: nominator.clone(), unstaked_amount });
         <NominatorState<T>>::remove(&nominator);

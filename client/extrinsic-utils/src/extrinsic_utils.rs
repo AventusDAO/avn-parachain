@@ -144,15 +144,15 @@ where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
     let finalised_block_number = client.usage_info().chain.finalized_number;
-    return finalised_block_number.saturated_into::<u32>()
+    return finalised_block_number.saturated_into::<u32>();
 }
 
 fn get_filter_for_block(block_number: u32, filter: &LowerLeafFilter) -> Option<&LowerLeafFilter> {
     if filter.block_number == block_number {
-        return Some(filter)
+        return Some(filter);
     }
 
-    return None
+    return None;
 }
 
 fn extrinsic_matches_filter(
@@ -162,9 +162,9 @@ fn extrinsic_matches_filter(
 ) -> bool {
     if let Some(filter) = filter {
         if filter.extrinsic_index == index && filter.block_number == block_number {
-            return true
+            return true;
         }
     }
 
-    return false
+    return false;
 }

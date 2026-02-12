@@ -9,7 +9,7 @@ use frame_system::RawOrigin;
 use sp_runtime::DispatchError;
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 mod set_known_senders {

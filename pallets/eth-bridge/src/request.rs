@@ -13,7 +13,7 @@ pub fn add_new_send_request<T: Config<I>, I: 'static>(
     let function_name_string =
         String::from_utf8(name_bytes.clone()).map_err(|_| Error::<T, I>::FunctionNameError)?;
     if function_name_string.is_empty() {
-        return Err(Error::<T, I>::EmptyFunctionName)
+        return Err(Error::<T, I>::EmptyFunctionName);
     }
 
     let tx_id = tx::use_next_tx_id::<T, I>();
@@ -136,7 +136,7 @@ fn set_up_active_lower_proof<T: Config<I>, I: 'static>(
         last_updated: <frame_system::Pallet<T>>::block_number(),
     });
 
-    return Ok(())
+    return Ok(());
 }
 
 fn queue_request<T: Config<I>, I: 'static>(request: Request) -> Result<(), Error<T, I>> {

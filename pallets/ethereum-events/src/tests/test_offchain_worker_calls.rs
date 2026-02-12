@@ -22,7 +22,7 @@ fn mock_event_result() -> EthEventCheckResult<BlockNumberFor<TestRuntime>, Accou
         account_id_0(),
         14,
         20,
-    )
+    );
 }
 
 #[test]

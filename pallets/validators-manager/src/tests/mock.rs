@@ -89,11 +89,11 @@ impl TestAccount {
     }
 
     pub fn account_id(&self) -> AccountId {
-        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap()
+        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
     }
 
     pub fn key_pair(&self) -> sr25519::Pair {
-        return sr25519::Pair::from_seed(&self.seed)
+        return sr25519::Pair::from_seed(&self.seed);
     }
 }
 
@@ -125,11 +125,11 @@ impl ValidatorManager {
     }
 
     pub fn event_emitted(event: &RuntimeEvent) -> bool {
-        return System::events().iter().any(|a| a.event == *event)
+        return System::events().iter().any(|a| a.event == *event);
     }
 
     pub fn create_mock_identification_tuple(account_id: AccountId) -> (AccountId, AccountId) {
-        return (account_id, account_id)
+        return (account_id, account_id);
     }
 }
 
@@ -318,10 +318,10 @@ impl ProcessedEventsChecker for TestRuntime {
     fn processed_event_exists(event_id: &EthEventId) -> bool {
         return PROCESSED_EVENTS.with(|l| {
             l.borrow_mut().iter().any(|event| {
-                &EthEventId { signature: event.0.clone(), transaction_hash: event.1.clone() } ==
-                    event_id
+                &EthEventId { signature: event.0.clone(), transaction_hash: event.1.clone() }
+                    == event_id
             })
-        })
+        });
     }
 
     fn add_processed_event(_event_id: &EthEventId, _accepted: bool) -> Result<(), ()> {
@@ -335,9 +335,9 @@ impl ProcessedEventsChecker for TestRuntime {
 impl EthereumPublicKeyChecker<AccountId> for TestRuntime {
     fn get_validator_for_eth_public_key(eth_public_key: &ecdsa::Public) -> Option<AccountId> {
         if !EthereumPublicKeys::<TestRuntime>::contains_key(eth_public_key) {
-            return None
+            return None;
         }
-        return Some(EthereumPublicKeys::<TestRuntime>::get(eth_public_key).unwrap())
+        return Some(EthereumPublicKeys::<TestRuntime>::get(eth_public_key).unwrap());
     }
 }
 
@@ -371,7 +371,7 @@ fn initial_validators_public_keys() -> Vec<ecdsa::Public> {
         Public::from_slice(&COLLATOR_3_ETHEREUM_PUPLIC_KEY).unwrap(),
         Public::from_slice(&COLLATOR_4_ETHEREUM_PUPLIC_KEY).unwrap(),
         Public::from_slice(&COLLATOR_5_ETHEREUM_PUPLIC_KEY).unwrap(),
-    ]
+    ];
 }
 
 fn initial_maximum_validators_public_keys() -> Vec<ecdsa::Public> {
@@ -497,7 +497,7 @@ impl ExtBuilder {
 
         VALIDATORS.with(|l| *l.borrow_mut() = Some(validators));
 
-        return self.with_validators()
+        return self.with_validators();
     }
 
     pub fn for_offchain_worker(mut self) -> Self {
@@ -572,7 +572,7 @@ impl MockData {
         let topic_sender_lhs = LogDataHelper::get_topic_32_bytes(15);
         let topic_sender_rhs = LogDataHelper::get_topic_32_bytes(25);
         let topic_receiver = LogDataHelper::get_topic_32_bytes(30);
-        return vec![topic_event_signature, topic_sender_lhs, topic_sender_rhs, topic_receiver]
+        return vec![topic_event_signature, topic_sender_lhs, topic_sender_rhs, topic_receiver];
     }
 }
 
@@ -590,11 +590,11 @@ pub struct LogDataHelper {}
 
 impl LogDataHelper {
     pub fn get_validator_data(deposit: u128) -> Vec<u8> {
-        return into_32_be_bytes(&deposit.to_le_bytes())
+        return into_32_be_bytes(&deposit.to_le_bytes());
     }
 
     pub fn get_topic_32_bytes(n: u8) -> Vec<u8> {
-        return vec![n; 32]
+        return vec![n; 32];
     }
 }
 

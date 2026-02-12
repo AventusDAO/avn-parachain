@@ -42,7 +42,7 @@ mod test_add_ethereum_log {
             return EthEventId {
                 signature: self.nft_event_type.signature(),
                 transaction_hash: self.tx_hash,
-            }
+            };
         }
 
         fn insert_to_unchecked_events(&self) {
@@ -60,7 +60,7 @@ mod test_add_ethereum_log {
                 self.origin.clone(),
                 self.nft_event_type.clone(),
                 self.tx_hash,
-            )
+            );
         }
     }
 
@@ -173,7 +173,7 @@ mod test_add_ethereum_log {
                 transaction_hash: second_tx_hash,
             };
 
-            return (validator_event_1, validator_event_2)
+            return (validator_event_1, validator_event_2);
         }
 
         #[test]

@@ -47,8 +47,8 @@ fn schedule_lower(
     fast_forward_to_block(get_expected_execution_block());
 
     // Event emitted
-    assert!(System::events().iter().any(|a| a.event ==
-        RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
+    assert!(System::events().iter().any(|a| a.event
+        == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
             sender: from,
             recipient: burn_acc,
             amount,
@@ -76,19 +76,15 @@ fn perform_lower_setup(lower_id: u32) {
 
     // Generated proof should be stored in LowerReadyToClaim
     assert_eq!(
-        <LowersReadyToClaim<TestRuntime>>::get(expected_lower_id)
-            .unwrap()
-            .encoded_lower_data,
+        <LowersReadyToClaim<TestRuntime>>::get(expected_lower_id).unwrap().encoded_lower_data,
         test_proof_data
     );
 }
 
 #[test]
 fn avn_test_lift_to_zero_balance_account_should_succeed() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let mock_data = MockData::setup(AMOUNT_123_TOKEN, USE_RECEIVER_WITH_0_AMOUNT);
@@ -105,8 +101,8 @@ fn avn_test_lift_to_zero_balance_account_should_succeed() {
         // check that TokenManager.balance for AVT contract is still 0
         assert_eq!(TokenManager::balance((AVT_TOKEN_CONTRACT, mock_data.receiver_account_id)), 0);
 
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
                 recipient: mock_data.receiver_account_id,
                 amount: AMOUNT_123_TOKEN,
                 eth_tx_hash: mock_event.event_id.transaction_hash
@@ -116,10 +112,8 @@ fn avn_test_lift_to_zero_balance_account_should_succeed() {
 
 #[test]
 fn avn_test_lift_to_non_zero_balance_account_should_succeed() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let mock_data = MockData::setup(AMOUNT_123_TOKEN, USE_RECEIVER_WITH_EXISTING_AMOUNT);
@@ -138,8 +132,8 @@ fn avn_test_lift_to_non_zero_balance_account_should_succeed() {
         // check that TokenManager.balance for AVT contract is still 0
         assert_eq!(TokenManager::balance((AVT_TOKEN_CONTRACT, mock_data.receiver_account_id)), 0);
 
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
                 recipient: mock_data.receiver_account_id,
                 amount: AMOUNT_123_TOKEN,
                 eth_tx_hash: mock_event.event_id.transaction_hash
@@ -149,10 +143,8 @@ fn avn_test_lift_to_non_zero_balance_account_should_succeed() {
 
 #[test]
 fn avn_test_lift_max_balance_to_zero_balance_account_should_succeed() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let u128_max_amount: u128 = u128::max_value();
@@ -164,8 +156,8 @@ fn avn_test_lift_max_balance_to_zero_balance_account_should_succeed() {
         assert_ok!(TokenManager::on_event_processed(&mock_event));
         assert_eq!(Balances::free_balance(mock_data.receiver_account_id), u128_max_amount);
 
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
                 recipient: mock_data.receiver_account_id,
                 amount: u128_max_amount,
                 eth_tx_hash: mock_event.event_id.transaction_hash
@@ -175,10 +167,8 @@ fn avn_test_lift_max_balance_to_zero_balance_account_should_succeed() {
 
 #[test]
 fn avn_test_lift_max_balance_to_non_zero_balance_account_should_return_deposit_failed_error() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let u128_max_amount = u128::max_value();
@@ -193,8 +183,8 @@ fn avn_test_lift_max_balance_to_non_zero_balance_account_should_return_deposit_f
         );
         assert_eq!(Balances::free_balance(mock_data.receiver_account_id), balance_before);
 
-        assert!(!System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
+        assert!(!System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLifted {
                 recipient: mock_data.receiver_account_id,
                 amount: u128_max_amount,
                 eth_tx_hash: mock_event.event_id.transaction_hash
@@ -204,10 +194,8 @@ fn avn_test_lift_max_balance_to_non_zero_balance_account_should_return_deposit_f
 
 #[test]
 fn avn_test_lower_all_avt_token_succeed() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let (_, from_account_id, to_account_id, t1_recipient) =
@@ -227,13 +215,13 @@ fn avn_test_lower_all_avt_token_succeed() {
         fast_forward_to_block(get_expected_execution_block());
 
         assert_eq!(Balances::free_balance(from_account_id), from_account_balance_before - amount);
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
                 who: from_account_id,
                 amount
             })));
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
                 sender: from_account_id,
                 recipient: to_account_id,
                 amount,
@@ -245,10 +233,8 @@ fn avn_test_lower_all_avt_token_succeed() {
 
 #[test]
 fn avn_test_lower_some_avt_token_succeed() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let (_, from_account_id, to_account_id, t1_recipient) =
@@ -268,13 +254,13 @@ fn avn_test_lower_some_avt_token_succeed() {
         fast_forward_to_block(get_expected_execution_block());
 
         assert_eq!(Balances::free_balance(from_account_id), from_account_balance_before - amount);
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
                 who: from_account_id,
                 amount
             })));
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
                 sender: from_account_id,
                 recipient: to_account_id,
                 amount,
@@ -286,10 +272,8 @@ fn avn_test_lower_some_avt_token_succeed() {
 
 #[test]
 fn avn_test_reverted_avt_lower_refunds_sender_removes_claim_and_emits_event() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let lower_id: u32 = 0;
@@ -323,8 +307,8 @@ fn avn_test_reverted_avt_lower_refunds_sender_removes_claim_and_emits_event() {
         assert_ok!(TokenManager::on_event_processed(&mock_event));
         assert_eq!(Balances::free_balance(from), balance_before + amount);
         assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLowerReverted {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTLowerReverted {
                 t2_refunded_sender: from,
                 amount,
                 eth_tx_hash: mock_event.event_id.transaction_hash,
@@ -379,10 +363,8 @@ fn avn_test_lower_avt_token_should_fail_when_sender_does_not_have_enough_avt_tok
 // receive all the tokens which may cause an overflow of the t2 destination account token balance
 #[test]
 fn avn_test_avt_token_total_lowered_amount_greater_than_balance_max_value_ok() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let (_, from_account_id, to_account_id, _) = MockData::setup_lower_request_data();
@@ -402,13 +384,13 @@ fn avn_test_avt_token_total_lowered_amount_greater_than_balance_max_value_ok() {
         fast_forward_to_block(get_expected_execution_block());
 
         assert_eq!(Balances::free_balance(from_account_id), from_account_balance_before - amount);
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
                 who: from_account_id,
                 amount
             })));
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
                 sender: from_account_id,
                 recipient: to_account_id,
                 amount,
@@ -433,13 +415,13 @@ fn avn_test_avt_token_total_lowered_amount_greater_than_balance_max_value_ok() {
         fast_forward_to_block(get_expected_execution_block());
 
         assert_eq!(Balances::free_balance(from_account_id), from_account_balance_before - amount);
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::Balances(pallet_balances::Event::<TestRuntime>::Withdraw {
                 who: from_account_id,
                 amount
             })));
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowered {
                 sender: from_account_id,
                 recipient: to_account_id,
                 amount,
@@ -451,10 +433,8 @@ fn avn_test_avt_token_total_lowered_amount_greater_than_balance_max_value_ok() {
 
 #[test]
 fn avt_lower_claimed_succesfully() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let mock_data = MockData::setup(AMOUNT_123_TOKEN, USE_RECEIVER_WITH_0_AMOUNT);
@@ -467,8 +447,8 @@ fn avt_lower_claimed_succesfully() {
 
         assert_ok!(TokenManager::on_event_processed(&mock_event));
 
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowerClaimed {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowerClaimed {
                 lower_id
             })));
     });
@@ -476,10 +456,8 @@ fn avt_lower_claimed_succesfully() {
 
 #[test]
 fn avt_lower_claimed_fails_due_with_invalid_lower_id() {
-    let mut ext = ExtBuilder::build_default()
-        .with_genesis_config()
-        .with_balances()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
     ext.execute_with(|| {
         let mock_data = MockData::setup(AMOUNT_123_TOKEN, USE_RECEIVER_WITH_0_AMOUNT);
@@ -498,10 +476,8 @@ mod set_native_token_eth_address {
 
     #[test]
     fn works() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_balances()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
 
         ext.execute_with(|| {
             let old_address = <AVTTokenContract<TestRuntime>>::get();
@@ -512,8 +488,8 @@ mod set_native_token_eth_address {
                 new_address
             ));
 
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(
                     crate::Event::<TestRuntime>::NativeTokenEthAddressUpdated {
                         old_address,
                         new_address
@@ -524,10 +500,8 @@ mod set_native_token_eth_address {
 
     #[test]
     fn fails_when_new_address_is_zero() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_balances()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
         ext.execute_with(|| {
             let new_token_address = H160::zero();
 
@@ -543,10 +517,8 @@ mod set_native_token_eth_address {
 
     #[test]
     fn fails_for_non_root() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_balances()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
         ext.execute_with(|| {
             let new_token_address =
                 H160(hex_literal::hex!("dadB0d80178819F2319190D340ce9A924f783711"));
@@ -563,10 +535,8 @@ mod set_native_token_eth_address {
 
     #[test]
     fn fails_for_unsigned() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_balances()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_balances().as_externality();
         ext.execute_with(|| {
             let new_token_address =
                 H160(hex_literal::hex!("dadB0d80178819F2319190D340ce9A924f783711"));

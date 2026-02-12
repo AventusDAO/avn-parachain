@@ -53,7 +53,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_bond_extra { proof, extra_amount } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -63,7 +63,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_candidate_bond_extra { proof, extra_amount } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -73,7 +73,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_schedule_candidate_unbond { proof, less } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -83,7 +83,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_schedule_nominator_unbond { proof, less } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -93,7 +93,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_schedule_revoke_nomination { proof, collator } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -103,7 +103,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_schedule_leave_nominators { proof } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -112,7 +112,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_execute_leave_nominators { proof, nominator } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -122,7 +122,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_execute_nomination_request { proof, nominator } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -132,7 +132,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         Call::signed_execute_candidate_unbond { proof, candidate } => {
             let sender_nonce = ParachainStaking::<T>::proxy_nonce(&proof.signer);
@@ -142,7 +142,7 @@ pub fn get_encoded_call_param<T: Config>(
                 sender_nonce,
             );
 
-            return Some((proof, encoded_data))
+            return Some((proof, encoded_data));
         },
         _ => return None,
     }
@@ -154,7 +154,7 @@ pub fn encode_signed_nominate_params<T: Config>(
     amount: &BalanceOf<T>,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_NOMINATOR_CONTEXT, relayer, targets, amount, sender_nonce).encode()
+    return (SIGNED_NOMINATOR_CONTEXT, relayer, targets, amount, sender_nonce).encode();
 }
 
 pub fn encode_signed_bond_extra_params<T: Config>(
@@ -162,7 +162,7 @@ pub fn encode_signed_bond_extra_params<T: Config>(
     extra_amount: &BalanceOf<T>,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_NOMINATOR_BOND_EXTRA_CONTEXT, relayer, extra_amount, sender_nonce).encode()
+    return (SIGNED_NOMINATOR_BOND_EXTRA_CONTEXT, relayer, extra_amount, sender_nonce).encode();
 }
 
 pub fn encode_signed_candidate_bond_extra_params<T: Config>(
@@ -170,7 +170,7 @@ pub fn encode_signed_candidate_bond_extra_params<T: Config>(
     extra_amount: &BalanceOf<T>,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_CANDIDATE_BOND_EXTRA_CONTEXT, relayer, extra_amount, sender_nonce).encode()
+    return (SIGNED_CANDIDATE_BOND_EXTRA_CONTEXT, relayer, extra_amount, sender_nonce).encode();
 }
 
 pub fn encode_signed_schedule_nominator_unbond_params<T: Config>(
@@ -178,7 +178,7 @@ pub fn encode_signed_schedule_nominator_unbond_params<T: Config>(
     value: &BalanceOf<T>,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_SCHEDULE_NOMINATOR_UNBOND_CONTEXT, relayer, value, sender_nonce).encode()
+    return (SIGNED_SCHEDULE_NOMINATOR_UNBOND_CONTEXT, relayer, value, sender_nonce).encode();
 }
 
 pub fn encode_signed_schedule_candidate_unbond_params<T: Config>(
@@ -186,7 +186,7 @@ pub fn encode_signed_schedule_candidate_unbond_params<T: Config>(
     value: &BalanceOf<T>,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_SCHEDULE_CANDIDATE_UNBOND_CONTEXT, relayer, value, sender_nonce).encode()
+    return (SIGNED_SCHEDULE_CANDIDATE_UNBOND_CONTEXT, relayer, value, sender_nonce).encode();
 }
 
 pub fn encode_signed_schedule_revoke_nomination_params<T: Config>(
@@ -194,14 +194,14 @@ pub fn encode_signed_schedule_revoke_nomination_params<T: Config>(
     collator: &T::AccountId,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_NOMINATOR_REMOVE_BOND_CONTEXT, relayer, collator, sender_nonce).encode()
+    return (SIGNED_NOMINATOR_REMOVE_BOND_CONTEXT, relayer, collator, sender_nonce).encode();
 }
 
 pub fn encode_signed_schedule_leave_nominators_params<T: Config>(
     relayer: T::AccountId,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_SCHEDULE_LEAVE_NOMINATORS_CONTEXT, relayer, sender_nonce).encode()
+    return (SIGNED_SCHEDULE_LEAVE_NOMINATORS_CONTEXT, relayer, sender_nonce).encode();
 }
 
 pub fn encode_signed_execute_leave_nominators_params<T: Config>(
@@ -209,7 +209,7 @@ pub fn encode_signed_execute_leave_nominators_params<T: Config>(
     nominator: &T::AccountId,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_EXECUTE_LEAVE_NOMINATORS_CONTEXT, relayer, nominator, sender_nonce).encode()
+    return (SIGNED_EXECUTE_LEAVE_NOMINATORS_CONTEXT, relayer, nominator, sender_nonce).encode();
 }
 
 pub fn encode_signed_execute_nomination_request_params<T: Config>(
@@ -217,7 +217,7 @@ pub fn encode_signed_execute_nomination_request_params<T: Config>(
     nominator: &T::AccountId,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_EXECUTE_NOMINATION_REQUESTS_CONTEXT, relayer, nominator, sender_nonce).encode()
+    return (SIGNED_EXECUTE_NOMINATION_REQUESTS_CONTEXT, relayer, nominator, sender_nonce).encode();
 }
 
 pub fn encode_signed_execute_candidate_unbond_params<T: Config>(
@@ -225,7 +225,7 @@ pub fn encode_signed_execute_candidate_unbond_params<T: Config>(
     candidate: &T::AccountId,
     sender_nonce: u64,
 ) -> Vec<u8> {
-    return (SIGNED_EXECUTE_CANDIDATE_UNBOND_CONTEXT, relayer, candidate, sender_nonce).encode()
+    return (SIGNED_EXECUTE_CANDIDATE_UNBOND_CONTEXT, relayer, candidate, sender_nonce).encode();
 }
 
 impl<T: Config> InnerCallValidator for ParachainStaking<T> {
@@ -237,9 +237,9 @@ impl<T: Config> InnerCallValidator for ParachainStaking<T> {
                 &proof,
                 &signed_payload.as_slice(),
             )
-            .is_ok()
+            .is_ok();
         }
 
-        return false
+        return false;
     }
 }

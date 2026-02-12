@@ -26,7 +26,7 @@ impl<AccountId> RootData<AccountId> {
             is_validated: false,
             is_finalised: false,
             tx_id: transaction_id,
-        }
+        };
     }
 }
 

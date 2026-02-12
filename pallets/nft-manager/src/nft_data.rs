@@ -41,7 +41,7 @@ pub struct RoyaltyRate {
 
 impl RoyaltyRate {
     pub fn is_valid(&self) -> bool {
-        return self.parts_per_million <= ROYALTY_RATE_DENOMINATOR
+        return self.parts_per_million <= ROYALTY_RATE_DENOMINATOR;
     }
 }
 
@@ -77,7 +77,7 @@ impl<AccountId: Member> Nft<AccountId> {
             nonce: 0,
             owner,
             is_locked: false,
-        }
+        };
     }
 }
 
@@ -113,7 +113,7 @@ impl<AccountId: Member> NftInfo<AccountId> {
             total_supply: 1u64,
             t1_authority,
             creator: None,
-        }
+        };
     }
 
     pub fn new_batch(
@@ -131,7 +131,7 @@ impl<AccountId: Member> NftInfo<AccountId> {
             total_supply,
             t1_authority,
             creator: Some(creator),
-        }
+        };
     }
 }
 
@@ -155,6 +155,6 @@ pub enum NftSaleType {
 
 impl Default for NftSaleType {
     fn default() -> Self {
-        return NftSaleType::Unknown
+        return NftSaleType::Unknown;
     }
 }

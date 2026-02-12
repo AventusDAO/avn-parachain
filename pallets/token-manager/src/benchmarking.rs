@@ -76,13 +76,13 @@ impl<T: Config> Transfer<T> {
             token_id: token_id.into(),
             amount: 1000u32.into(),
             nonce: 0,
-        }
+        };
     }
 
     fn setup(self) -> Self {
         Balances::<T>::insert((self.token_id, self.from.clone()), self.amount);
         Nonces::<T>::insert(self.from.clone(), self.nonce);
-        return self
+        return self;
     }
 
     fn generate_signed_transfer_call(&self, signature: &[u8]) -> <T as Config>::RuntimeCall {
@@ -94,7 +94,7 @@ impl<T: Config> Transfer<T> {
             token_id: self.token_id,
             amount: self.amount,
         }
-        .into()
+        .into();
     }
 
     fn get_proof(
@@ -107,7 +107,7 @@ impl<T: Config> Transfer<T> {
             signer: self.from.clone(),
             relayer: relayer.clone(),
             signature: convert_sr25519_signature::<T::Signature>(signature),
-        }
+        };
     }
 }
 
@@ -178,7 +178,7 @@ impl<T: Config> Lower<T> {
             signer: self.from_account_id.clone(),
             relayer: relayer_account_id.clone(),
             signature: T::Signature::decode(&mut &signature[..]).unwrap(),
-        }
+        };
     }
 }
 

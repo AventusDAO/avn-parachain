@@ -91,8 +91,8 @@ mod approve_root {
                 );
                 assert_eq!(Summary::get_vote(context.root_id).nays.is_empty(), true);
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: context.validator.account_id,
                         root_id: context.root_id,
                         agree_vote: true
@@ -134,8 +134,8 @@ mod approve_root {
                     vec![context.validator.account_id]
                 );
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: second_validator.account_id,
                         root_id: context.root_id,
                         agree_vote: true
@@ -174,8 +174,8 @@ mod approve_root {
                 );
                 assert_eq!(Summary::get_vote(context.root_id).nays.is_empty(), true);
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: second_validator.account_id,
                         root_id: context.root_id,
                         agree_vote: true
@@ -219,8 +219,8 @@ mod approve_root {
                     vec![second_validator.account_id]
                 );
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: third_validator.account_id,
                         root_id: context.root_id,
                         agree_vote: true
@@ -421,8 +421,8 @@ mod reject_root {
                     vec![context.validator.account_id]
                 );
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: context.validator.account_id,
                         root_id: context.root_id,
                         agree_vote: false
@@ -461,8 +461,8 @@ mod reject_root {
                     vec![second_validator.account_id]
                 );
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: second_validator.account_id,
                         root_id: context.root_id,
                         agree_vote: false
@@ -498,8 +498,8 @@ mod reject_root {
                     vec![context.validator.account_id, second_validator.account_id]
                 );
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: second_validator.account_id,
                         root_id: context.root_id,
                         agree_vote: false
@@ -540,8 +540,8 @@ mod reject_root {
                     vec![second_validator.account_id, third_validator.account_id]
                 );
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VoteAdded {
                         voter: third_validator.account_id,
                         root_id: context.root_id,
                         agree_vote: false
@@ -915,8 +915,8 @@ mod end_voting_period {
                 );
                 assert_eq!(Summary::last_summary_slot(), Summary::current_slot());
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(
                         crate::Event::<TestRuntime>::SummaryRootValidated {
                             block_range: context.root_id.range,
                             root_hash: context.root_hash_h256,
@@ -924,8 +924,8 @@ mod end_voting_period {
                         }
                     )));
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
                         root_id: context.root_id,
                         vote_approved: true
                     })));
@@ -959,8 +959,8 @@ mod end_voting_period {
                 assert_eq!(Summary::get_next_block_to_process(), context.next_block_to_process);
                 assert_eq!(Summary::last_summary_slot(), previous_slot);
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
                         root_id: context.root_id,
                         vote_approved: false
                     })));
@@ -1052,7 +1052,7 @@ mod end_voting_period {
         const TEST_VALIDATOR_COUNT: u64 = 7;
 
         fn validator_indices() -> Vec<ValidatorId> {
-            return (1..=TEST_VALIDATOR_COUNT).collect::<Vec<ValidatorId>>()
+            return (1..=TEST_VALIDATOR_COUNT).collect::<Vec<ValidatorId>>();
         }
 
         mod when_root_is_approved {
@@ -1082,7 +1082,7 @@ mod end_voting_period {
                 return (
                     vec![aye_validator_1, aye_validator_2, aye_validator_3],
                     vec![nay_validator_1, nay_validator_2],
-                )
+                );
             }
 
             #[test]
@@ -1160,7 +1160,7 @@ mod end_voting_period {
                 return (
                     vec![aye_validator_1, aye_validator_2],
                     vec![nay_validator_1, nay_validator_2, nay_validator_3],
-                )
+                );
             }
 
             #[test]
@@ -1271,7 +1271,7 @@ mod end_voting_period {
                 return (
                     vec![aye_validator_1, aye_validator_2],
                     vec![nay_validator_1, nay_validator_2],
-                )
+                );
             }
 
             fn end_voting_without_outcome(context: &Context) {

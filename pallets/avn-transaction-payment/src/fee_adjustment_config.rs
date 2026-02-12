@@ -118,7 +118,7 @@ impl<T: Config> FeeAdjustmentConfig<T> {
             FeeAdjustmentConfig::TimeBased(c) => c.is_valid(),
             FeeAdjustmentConfig::TransactionBased(c) => c.is_valid(),
             FeeAdjustmentConfig::None => false,
-        }
+        };
     }
 
     pub fn is_active(&self) -> bool {
@@ -128,7 +128,7 @@ impl<T: Config> FeeAdjustmentConfig<T> {
             FeeAdjustmentConfig::TimeBased(c) => c.is_active(),
             FeeAdjustmentConfig::TransactionBased(c) => c.is_active(),
             FeeAdjustmentConfig::None => false,
-        }
+        };
     }
 
     pub fn get_fee(&self, original_fee: BalanceOf<T>) -> Result<BalanceOf<T>, Error<T>> {
@@ -138,7 +138,7 @@ impl<T: Config> FeeAdjustmentConfig<T> {
             FeeAdjustmentConfig::TimeBased(c) => c.get_fee(original_fee),
             FeeAdjustmentConfig::TransactionBased(c) => c.get_fee(original_fee),
             FeeAdjustmentConfig::None => Ok(original_fee),
-        }
+        };
     }
 }
 
@@ -199,20 +199,20 @@ pub struct FixedFeeConfig<T: Config> {
 
 impl<T: Config> FixedFeeConfig<T> {
     pub fn is_valid(&self) -> bool {
-        return !self.fee.is_zero()
+        return !self.fee.is_zero();
     }
 
     pub fn is_active(&self) -> bool {
-        return true
+        return true;
     }
 
     pub fn get_fee(&self, original_fee: BalanceOf<T>) -> Result<BalanceOf<T>, Error<T>> {
         if self.is_active() {
-            return Ok(self.fee)
+            return Ok(self.fee);
         }
 
         // There is no adjutment to make so return the original fee
-        return Ok(original_fee)
+        return Ok(original_fee);
     }
 }
 
@@ -238,26 +238,26 @@ pub struct PercentageFeeConfig<T: Config> {
 
 impl<T: Config> PercentageFeeConfig<T> {
     pub fn is_valid(&self) -> bool {
-        return !self.percentage.is_zero() && self.percentage <= 100u32
+        return !self.percentage.is_zero() && self.percentage <= 100u32;
     }
 
     pub fn is_active(&self) -> bool {
-        return true
+        return true;
     }
 
     pub fn get_fee(&self, original_fee: BalanceOf<T>) -> Result<BalanceOf<T>, Error<T>> {
         if self.is_active() {
             if self.percentage == 100u32 {
                 // the fee should be 0 due to the 100% adjustment
-                return Ok(BalanceOf::<T>::zero())
+                return Ok(BalanceOf::<T>::zero());
             } else {
                 return Ok(original_fee
-                    .saturating_sub(Perbill::from_percent(self.percentage) * original_fee))
+                    .saturating_sub(Perbill::from_percent(self.percentage) * original_fee));
             }
         }
 
         // There is no adjutment to make so return the original fee
-        return Ok(original_fee)
+        return Ok(original_fee);
     }
 }
 
@@ -281,30 +281,30 @@ pub struct TimeBasedConfig<T: Config> {
 
 impl<T: Config> TimeBasedConfig<T> {
     pub fn is_valid(&self) -> bool {
-        return !self.end_block_number.is_zero() && self.fee_type != FeeType::None
+        return !self.end_block_number.is_zero() && self.fee_type != FeeType::None;
     }
 
     pub fn is_active(&self) -> bool {
-        return self.end_block_number > <frame_system::Pallet<T>>::block_number()
+        return self.end_block_number > <frame_system::Pallet<T>>::block_number();
     }
 
     pub fn get_fee(&self, original_fee: BalanceOf<T>) -> Result<BalanceOf<T>, Error<T>> {
         if self.is_active() {
-            return calculate_fee::<T>(original_fee, &self.fee_type)
+            return calculate_fee::<T>(original_fee, &self.fee_type);
         }
 
         // There is no adjutment to make so return the original fee
-        return Ok(original_fee)
+        return Ok(original_fee);
     }
 
     pub fn new(fee_type: FeeType<T>, duration: BlockNumberFor<T>) -> Self {
         if duration == BlockNumberFor::<T>::zero() {
             // This is not a valid value so set the end block number to 0
-            return TimeBasedConfig::<T> { fee_type, end_block_number: BlockNumberFor::<T>::zero() }
+            return TimeBasedConfig::<T> { fee_type, end_block_number: BlockNumberFor::<T>::zero() };
         }
 
         let end_block_number = <frame_system::Pallet<T>>::block_number().saturating_add(duration);
-        return TimeBasedConfig::<T> { fee_type, end_block_number }
+        return TimeBasedConfig::<T> { fee_type, end_block_number };
     }
 }
 
@@ -329,25 +329,25 @@ pub struct TransactionBasedConfig<T: Config> {
 
 impl<T: Config> TransactionBasedConfig<T> {
     pub fn is_valid(&self) -> bool {
-        return !self.end_count.is_zero() && self.fee_type != FeeType::None
+        return !self.end_count.is_zero() && self.fee_type != FeeType::None;
     }
 
     pub fn is_active(&self) -> bool {
-        return self.end_count >= <frame_system::Pallet<T>>::account(&self.account).nonce
+        return self.end_count >= <frame_system::Pallet<T>>::account(&self.account).nonce;
     }
 
     pub fn get_fee(&self, original_fee: BalanceOf<T>) -> Result<BalanceOf<T>, Error<T>> {
         if self.is_active() {
-            return calculate_fee::<T>(original_fee, &self.fee_type)
+            return calculate_fee::<T>(original_fee, &self.fee_type);
         }
 
         // There is no adjustment to make so return the original fee
-        return Ok(original_fee)
+        return Ok(original_fee);
     }
 
     pub fn new(fee_type: FeeType<T>, account: T::AccountId, count: T::Nonce) -> Self {
         let end_count = <frame_system::Pallet<T>>::account(&account).nonce.saturating_add(count);
-        return TransactionBasedConfig::<T> { fee_type, account, end_count }
+        return TransactionBasedConfig::<T> { fee_type, account, end_count };
     }
 }
 
@@ -382,10 +382,11 @@ fn calculate_fee<T: Config>(
 ) -> Result<BalanceOf<T>, Error<T>> {
     return match fee_type {
         FeeType::FixedFee(f) => Ok(f.fee),
-        FeeType::PercentageFee(p) =>
+        FeeType::PercentageFee(p) => {
             return Ok(
                 original_fee.saturating_sub(Perbill::from_percent(p.percentage) * original_fee)
-            ),
+            )
+        },
         _ => Err(Error::InvalidFeeType),
-    }
+    };
 }

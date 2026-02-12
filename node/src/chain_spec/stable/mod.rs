@@ -49,11 +49,7 @@ pub(crate) fn testnet_genesis(
     default_non_avt_token: Option<H160>,
 ) -> serde_json::Value {
     let token_balances = if let Some(token) = default_non_avt_token {
-        endowed_accounts
-            .iter()
-            .cloned()
-            .map(|(k, a)| (token.clone(), k, a))
-            .collect::<Vec<_>>()
+        endowed_accounts.iter().cloned().map(|(k, a)| (token.clone(), k, a)).collect::<Vec<_>>()
     } else {
         vec![]
     };

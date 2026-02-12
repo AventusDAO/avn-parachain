@@ -89,11 +89,11 @@ impl TestAccount {
     }
 
     pub fn account_id(&self) -> AccountId {
-        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap()
+        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
     }
 
     pub fn key_pair(&self) -> sr25519::Pair {
-        return sr25519::Pair::from_seed(&self.seed)
+        return sr25519::Pair::from_seed(&self.seed);
     }
 }
 
@@ -225,9 +225,7 @@ impl pallet_session::historical::Config for TestRuntime {
 impl pallet_session::historical::SessionManager<AccountId, AccountId> for TestSessionManager {
     fn new_session(_new_index: SessionIndex) -> Option<Vec<(AccountId, AccountId)>> {
         VALIDATORS.with(|l| {
-            l.borrow_mut()
-                .take()
-                .map(|validators| validators.iter().map(|v| (*v, *v)).collect())
+            l.borrow_mut().take().map(|validators| validators.iter().map(|v| (*v, *v)).collect())
         })
     }
     fn end_session(_: SessionIndex) {}
@@ -287,7 +285,7 @@ pub const MIN_CHALLENGE_VOTES: u32 = 1;
 
 impl EthereumEvents {
     pub fn has_events_to_check() -> bool {
-        return <UncheckedEvents<TestRuntime>>::get().is_empty() == false
+        return <UncheckedEvents<TestRuntime>>::get().is_empty() == false;
     }
 
     pub fn setup_mock_ethereum_contracts_address() {
@@ -330,7 +328,7 @@ impl EthereumEvents {
             );
         }
         // returns the first ingress counter
-        return (from + 1) as IngressCounter
+        return (from + 1) as IngressCounter;
     }
 
     pub fn insert_to_events_pending_challenge_compact(
@@ -381,31 +379,31 @@ impl EthereumEvents {
         return EthEventId {
             signature: ValidEvents::AddedValidator.signature(),
             transaction_hash: H256::from([seed; 32]),
-        }
+        };
     }
 
     pub fn has_events_to_validate() -> bool {
-        return !<EventsPendingChallenge<TestRuntime>>::get().is_empty()
+        return !<EventsPendingChallenge<TestRuntime>>::get().is_empty();
     }
 
     pub fn validators() -> WeakBoundedVec<Validator<AuthorityId, AccountId>, MaximumValidatorsBound>
     {
-        return Avn::active_validators()
+        return Avn::active_validators();
     }
 
     pub fn is_primary_validator_for_block(
         block_number: BlockNumberFor<TestRuntime>,
         validator: &AccountId,
     ) -> Result<bool, avn_error<TestRuntime>> {
-        return Avn::is_primary_for_block(block_number, validator)
+        return Avn::is_primary_for_block(block_number, validator);
     }
 
     pub fn get_validator_for_current_node() -> Option<Validator<AuthorityId, AccountId>> {
-        return Avn::get_validator_for_current_node()
+        return Avn::get_validator_for_current_node();
     }
 
     pub fn event_emitted(event: &RuntimeEvent) -> bool {
-        return System::events().iter().any(|a| a.event == *event)
+        return System::events().iter().any(|a| a.event == *event);
     }
 }
 
@@ -472,13 +470,11 @@ impl InnerCallValidator for TestAvnProxyConfig {
 // session_handler_tests and test_challenges are fixed
 #[allow(dead_code)]
 pub fn eth_events_test_with_validators() -> TestExternalities {
-    let mut ext = ExtBuilder::build_default()
-        .with_validators()
-        .for_offchain_worker()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_validators().for_offchain_worker().as_externality();
 
     ext.execute_with(|| System::set_block_number(1));
-    return ext
+    return ext;
 }
 
 #[allow(dead_code)]
@@ -500,7 +496,7 @@ pub fn keys_setup_return_good_validator() -> Validator<AuthorityId, AccountId> {
         Validator { account_id: validator_id_1(), key: UintAuthorityId(0) }
     );
 
-    return current_node_validator
+    return current_node_validator;
 }
 
 #[allow(dead_code)]
@@ -508,7 +504,7 @@ pub fn bad_authority() -> Validator<AuthorityId, AccountId> {
     let validator =
         Validator { account_id: TestAccount::new([0u8; 32]).account_id(), key: UintAuthorityId(0) };
 
-    return validator
+    return validator;
 }
 
 pub fn test_json_data(
@@ -647,7 +643,7 @@ pub fn create_initial_processed_events() -> Vec<(H256, H256, bool)> {
         .map(|x| (ValidEvents::AddedValidator.signature(), H256::from(x), true))
         .collect::<Vec<(H256, H256, bool)>>();
     assert_eq!(INITIAL_PROCESSED_EVENTS.len(), initial_processed_events.len());
-    return initial_processed_events
+    return initial_processed_events;
 }
 
 pub struct ExtBuilder {
@@ -810,13 +806,13 @@ impl FeePaymentHandler for TestRuntime {
         _payer: &Self::AccountId,
         _recipient: &Self::AccountId,
     ) -> Result<(), Self::Error> {
-        return Err(DispatchError::Other("Test - Error"))
+        return Err(DispatchError::Other("Test - Error"));
     }
 
     fn pay_treasury(
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,
     ) -> Result<(), Self::Error> {
-        return Err(DispatchError::Other("Test - Error"))
+        return Err(DispatchError::Other("Test - Error"));
     }
 }

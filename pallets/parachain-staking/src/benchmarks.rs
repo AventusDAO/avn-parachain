@@ -69,7 +69,7 @@ fn fund_account<T: Config>(account: &T::AccountId, extra: BalanceOf<T>) -> Balan
     T::Currency::make_free_balance_be(&account, total);
     T::Currency::issue(total);
 
-    return total
+    return total;
 }
 
 /// Create a funded user.
@@ -150,11 +150,8 @@ fn add_collator_to_avn<T: Config>(
         Validator::new(collator.clone(), key.into());
 
     let current_collators = avn::Validators::<T>::get();
-    let new_collators: Vec<_> = current_collators
-        .iter()
-        .chain(vec![validator.clone()].iter())
-        .cloned()
-        .collect();
+    let new_collators: Vec<_> =
+        current_collators.iter().chain(vec![validator.clone()].iter()).cloned().collect();
 
     avn::Validators::<T>::put(WeakBoundedVec::force_from(
         new_collators,
@@ -230,7 +227,7 @@ fn roll_to_and_author<T: Config>(era_delay: u32, author: T::AccountId) {
 }
 
 fn get_collator_count<T: Config>() -> u32 {
-    return Pallet::<T>::selected_candidates().len() as u32
+    return Pallet::<T>::selected_candidates().len() as u32;
 }
 
 fn get_allowed_max_collators<T: Config>(max_collators: u32) -> u32 {
@@ -242,7 +239,7 @@ fn get_allowed_max_collators<T: Config>(max_collators: u32) -> u32 {
         actual_max_collators -= existing_collators;
     }
 
-    return actual_max_collators
+    return actual_max_collators;
 }
 
 fn setup_nomination<T: Config>(
@@ -314,7 +311,7 @@ fn setup_nomination<T: Config>(
         nominators.push(nominator);
     }
 
-    return Ok((collator, collators, nominators))
+    return Ok((collator, collators, nominators));
 }
 
 fn get_proof<T: Config>(
@@ -326,7 +323,7 @@ fn get_proof<T: Config>(
         signer: signer.clone(),
         relayer: relayer.clone(),
         signature: convert_sr25519_signature::<T::Signature>(signature),
-    }
+    };
 }
 
 fn get_caller<T: Config, F>(
@@ -343,7 +340,7 @@ where
     let signature = key.sign(&encoded_data).ok_or("Error signing proof")?;
     let proof = get_proof::<T>(&caller, &caller, signature.into());
 
-    return Ok((caller, proof))
+    return Ok((caller, proof));
 }
 
 fn setup_leave_nominator_state<T: Config>(
@@ -390,14 +387,14 @@ fn setup_leave_nominator_state<T: Config>(
     Pallet::<T>::schedule_leave_nominators(RawOrigin::Signed(caller.clone()).into())?;
     roll_to_and_author::<T>(2, author);
 
-    return Ok(nomination_count)
+    return Ok(nomination_count);
 }
 
 fn generate_signature<T: pallet_avn::Config>(
 ) -> <<T as avn::Config>::AuthorityId as RuntimeAppPublic>::Signature {
     let encoded_data = 0.encode();
     let authority_id = T::AuthorityId::generate_pair(None);
-    return authority_id.sign(&encoded_data).expect("able to make signature")
+    return authority_id.sign(&encoded_data).expect("able to make signature");
 }
 
 const USER_SEED: u32 = 999666;

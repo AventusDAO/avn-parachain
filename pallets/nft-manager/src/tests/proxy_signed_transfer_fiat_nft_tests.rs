@@ -31,7 +31,7 @@ fn build_proof(
     relayer: &AccountId,
     signature: Signature,
 ) -> Proof<Signature, AccountId> {
-    return Proof { signer: *signer, relayer: *relayer, signature }
+    return Proof { signer: *signer, relayer: *relayer, signature };
 }
 
 struct Context {
@@ -91,7 +91,7 @@ impl Context {
                 nft_id: self.nft_id,
                 t2_transfer_to_public_key: self.t2_transfer_to_public_key,
             },
-        ))
+        ));
     }
 
     fn create_signed_transfer_fiat_nft_proof(&self) -> Proof<Signature, AccountId> {
@@ -102,20 +102,20 @@ impl Context {
             &self.nft_id,
             &self.t2_transfer_to_public_key,
             &self.op_id,
-        )
+        );
     }
 
     fn signed_transfer_fiat_nft_event_emitted(&self) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::FiatNftTransfer {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::FiatNftTransfer {
                     nft_id: self.nft_id,
                     sender: self.nft_owner_account,
                     new_owner: self.new_nft_owner_account,
                     sale_type: NftSaleType::Fiat,
                     op_id: self.op_id,
                 })
-        })
+        });
     }
 
     fn call_dispatched_event_emitted(
@@ -124,12 +124,12 @@ impl Context {
     ) -> bool {
         let relayer = TestAccount::new([2u8; 32]);
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::CallDispatched {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::CallDispatched {
                     relayer: relayer.account_id(),
                     hash: Hashing::hash_of(call),
                 })
-        })
+        });
     }
 }
 
@@ -880,5 +880,5 @@ fn create_proof_for_signed_transfer_fiat_nft(
     let data_to_sign = (context, relayer, nft_id, t2_transfer_to_public_key, op_id);
     let signature = sign(nft_owner_key_pair, &data_to_sign.encode());
 
-    return build_proof(nft_owner_account, relayer, signature)
+    return build_proof(nft_owner_account, relayer, signature);
 }

@@ -352,11 +352,11 @@ impl TestAccount {
     }
 
     pub fn account_id(&self) -> AccountId {
-        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap()
+        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
     }
 
     pub fn key_pair(&self) -> sr25519::Pair {
-        return sr25519::Pair::from_seed(&self.seed)
+        return sr25519::Pair::from_seed(&self.seed);
     }
 }
 
@@ -370,7 +370,7 @@ pub fn set_on_idle_run(run: bool) {
 }
 
 pub fn on_idle_has_run() -> bool {
-    return ON_IDLE_RUN.with(|f| *f.borrow())
+    return ON_IDLE_RUN.with(|f| *f.borrow());
 }
 
 pub fn insert_to_mock_processed_events(event_id: &EthEventId) {
@@ -379,7 +379,7 @@ pub fn insert_to_mock_processed_events(event_id: &EthEventId) {
 
 impl ProcessedEventsChecker for TestRuntime {
     fn processed_event_exists(event_id: &EthEventId) -> bool {
-        return PROCESSED_EVENTS.with(|l| l.borrow_mut().iter().any(|event| event == event_id))
+        return PROCESSED_EVENTS.with(|l| l.borrow_mut().iter().any(|event| event == event_id));
     }
 
     fn add_processed_event(_event_id: &EthEventId, _accepted: bool) -> Result<(), ()> {
@@ -397,7 +397,7 @@ impl TokenManager {
 }
 
 pub fn genesis_collators() -> Vec<AccountId> {
-    return vec![TestAccount::new([1u8; 32]).account_id(), TestAccount::new([2u8; 32]).account_id()]
+    return vec![TestAccount::new([1u8; 32]).account_id(), TestAccount::new([2u8; 32]).account_id()];
 }
 
 pub struct ExtBuilder {
@@ -481,19 +481,19 @@ impl ExtBuilder {
 }
 
 pub fn key_pair_for_account_with_100_avt() -> sr25519::Pair {
-    return sr25519::Pair::from_seed(&[69u8; 32])
+    return sr25519::Pair::from_seed(&[69u8; 32]);
 }
 
 pub fn receiver_topic_with_100_avt() -> Vec<u8> {
     let pair = key_pair_for_account_with_100_avt();
-    return pair.public().to_vec()
+    return pair.public().to_vec();
 }
 
 pub fn account_id_with_100_avt() -> <TestRuntime as system::Config>::AccountId {
     return <TestRuntime as system::Config>::AccountId::decode(
         &mut receiver_topic_with_100_avt().as_slice(),
     )
-    .unwrap()
+    .unwrap();
 }
 
 pub fn account_id2_with_100_avt() -> <TestRuntime as system::Config>::AccountId {
@@ -501,7 +501,7 @@ pub fn account_id2_with_100_avt() -> <TestRuntime as system::Config>::AccountId 
     return <TestRuntime as system::Config>::AccountId::decode(
         &mut pair.public().to_vec().as_slice(),
     )
-    .unwrap()
+    .unwrap();
 }
 
 pub fn account_id3_with_100_avt() -> <TestRuntime as system::Config>::AccountId {
@@ -509,14 +509,14 @@ pub fn account_id3_with_100_avt() -> <TestRuntime as system::Config>::AccountId 
     return <TestRuntime as system::Config>::AccountId::decode(
         &mut pair.public().to_vec().as_slice(),
     )
-    .unwrap()
+    .unwrap();
 }
 
 pub fn account_id_with_seed_item(seed_item: u8) -> <TestRuntime as system::Config>::AccountId {
     let key_pair_for_account_with_max_avt = sr25519::Pair::from_seed(&[seed_item; 32]);
     let account_with_max_avt = key_pair_for_account_with_max_avt.public().to_vec();
     return <TestRuntime as system::Config>::AccountId::decode(&mut account_with_max_avt.as_slice())
-        .unwrap()
+        .unwrap();
 }
 
 pub fn forward_to_next_block() {
@@ -533,7 +533,7 @@ pub fn fast_forward_to_block(n: u64) {
 }
 
 pub fn get_expected_execution_block() -> u64 {
-    return System::block_number() + LowerSchedulePeriod::<TestRuntime>::get() + 1
+    return System::block_number() + LowerSchedulePeriod::<TestRuntime>::get() + 1;
 }
 
 pub struct MockData {
@@ -609,7 +609,7 @@ impl MockData {
             <TestRuntime as system::Config>::AccountId::decode(&mut to_account.as_bytes()).unwrap();
         let t1_recipient = H160(hex!("7F792259892d2D07323cF5c449c27eaA50B2Cde3"));
 
-        return (from_account, from_account_id, to_account_id, t1_recipient)
+        return (from_account, from_account_id, to_account_id, t1_recipient);
     }
 
     fn get_event_data(amount: u128, topics: &Vec<Vec<u8>>) -> EventData {
@@ -621,7 +621,7 @@ impl MockData {
             assert_eq!(d.amount, amount);
         }
 
-        return event_data
+        return event_data;
     }
 
     fn get_lifted_token_data(amount: u128) -> Vec<u8> {
@@ -630,7 +630,7 @@ impl MockData {
         let amount_vec = into_32_be_bytes(&amount.to_le_bytes());
         data.extend(&amount_vec);
 
-        return data
+        return data;
     }
 
     fn get_lifted_avt_token_topics(use_receiver_with_existing_amount: bool) -> Vec<Vec<u8>> {
@@ -638,7 +638,7 @@ impl MockData {
         let topic_contract = Self::get_contract_topic(true);
         let topic_receiver = Self::get_receiver_topic(use_receiver_with_existing_amount);
 
-        return vec![topic_event_signature, topic_contract, topic_receiver]
+        return vec![topic_event_signature, topic_contract, topic_receiver];
     }
 
     fn get_lifted_non_avt_token_topics(use_receiver_with_existing_amount: bool) -> Vec<Vec<u8>> {
@@ -646,36 +646,36 @@ impl MockData {
         let topic_contract = Self::get_contract_topic(false);
         let topic_receiver = Self::get_receiver_topic(use_receiver_with_existing_amount);
 
-        return vec![topic_event_signature, topic_contract, topic_receiver]
+        return vec![topic_event_signature, topic_contract, topic_receiver];
     }
 
     fn get_contract_topic(use_avt_token_contract: bool) -> Vec<u8> {
         if use_avt_token_contract {
             let mut topic = vec![0; 12];
             topic.append(&mut AVT_TOKEN_CONTRACT.clone().as_fixed_bytes_mut().to_vec());
-            return topic
+            return topic;
         }
 
-        return Self::get_topic_20_bytes(20)
+        return Self::get_topic_20_bytes(20);
     }
 
     fn get_receiver_topic(use_receiver_with_existing_amount: bool) -> Vec<u8> {
         if use_receiver_with_existing_amount {
-            return receiver_topic_with_100_avt()
+            return receiver_topic_with_100_avt();
         }
 
-        return Self::get_topic_32_bytes(40)
+        return Self::get_topic_32_bytes(40);
     }
 
     fn get_topic_32_bytes(n: u8) -> Vec<u8> {
-        return vec![n; 32]
+        return vec![n; 32];
     }
 
     fn get_topic_20_bytes(n: u8) -> Vec<u8> {
         let mut topic = vec![0; 12];
         topic.append(&mut vec![n; 20]);
 
-        return topic
+        return topic;
     }
 
     fn get_receiver_account_id_from_topics(
@@ -683,12 +683,12 @@ impl MockData {
     ) -> <TestRuntime as system::Config>::AccountId {
         let receiver_topic = topics[TOPIC_RECEIVER_INDEX].clone();
         return <TestRuntime as system::Config>::AccountId::decode(&mut receiver_topic.as_slice())
-            .unwrap()
+            .unwrap();
     }
 
     pub fn get_token_balance(balance_in_u128: u128) -> <TestRuntime as Config>::TokenBalance {
         return <<TestRuntime as Config>::TokenBalance as TryFrom<u128>>::try_from(balance_in_u128)
-            .expect("Balance value overflow")
+            .expect("Balance value overflow");
     }
 
     pub fn set_avt_balance(
@@ -703,25 +703,25 @@ impl MockData {
                 amount,
             );
         if imbalance.peek() == BalanceOf::<TestRuntime>::zero() {
-            return false
+            return false;
         }
         drop(imbalance);
-        return true
+        return true;
     }
 }
 
 // ============================= Signature handling ========================
 pub fn sign(signer: &sr25519::Pair, message_to_sign: &[u8]) -> Signature {
-    return Signature::from(signer.sign(message_to_sign))
+    return Signature::from(signer.sign(message_to_sign));
 }
 
 pub fn get_account_id(signer: &sr25519::Pair) -> AccountId {
-    return AccountId::from(signer.public()).into_account()
+    return AccountId::from(signer.public()).into_account();
 }
 
 #[allow(dead_code)]
 pub fn verify_signature(signature: Signature, signer: AccountId, signed_data: &[u8]) -> bool {
-    return signature.verify(signed_data, &signer)
+    return signature.verify(signed_data, &signer);
 }
 
 pub fn create_valid_signature_for_signed_transfer(
@@ -736,7 +736,7 @@ pub fn create_valid_signature_for_signed_transfer(
     let context = SIGNED_TRANSFER_CONTEXT;
     let data_to_sign = (context, relayer, from, to, token_id, amount, nonce);
 
-    return sign(&keys, &data_to_sign.encode())
+    return sign(&keys, &data_to_sign.encode());
 }
 // ============================= Mock correctness tests ========================
 

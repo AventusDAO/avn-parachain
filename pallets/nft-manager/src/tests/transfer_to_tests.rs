@@ -66,15 +66,15 @@ mod transfer_eth_nft {
     impl Context {
         pub fn nft_transfer_to_event_emitted(&self) -> bool {
             return System::events().iter().any(|a| {
-                a.event ==
-                    Event::NftManager(crate::Event::<TestRuntime>::EthNftTransfer {
+                a.event
+                    == Event::NftManager(crate::Event::<TestRuntime>::EthNftTransfer {
                         nft_id: self.nft_id(),
                         new_owner: self.new_owner_to_account_id(),
                         sale_type: NftSaleType::Ethereum,
                         op_id: self.op_id,
                         eth_event_id: self.event_id.clone(),
                     })
-            })
+            });
         }
 
         pub fn list_nft_open_for_sale(&self) {
@@ -82,7 +82,7 @@ mod transfer_eth_nft {
         }
 
         pub fn nft_id(&self) -> NftId {
-            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id)
+            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id);
         }
 
         pub fn inject_nft_to_chain(&self) -> (Nft<AccountId>, NftInfo<AccountId>) {
@@ -93,11 +93,11 @@ mod transfer_eth_nft {
                 self.nft_id(),
                 self.bounded_external_ref(),
                 self.nft_owner,
-            )
+            );
         }
 
         pub fn new_owner_to_account_id(&self) -> AccountId {
-            return AccountId::decode(&mut self.new_nft_owner.as_bytes()).expect("should succeed")
+            return AccountId::decode(&mut self.new_nft_owner.as_bytes()).expect("should succeed");
         }
 
         pub fn transfer_to_nft_data(&self) -> NftTransferToData {
@@ -105,7 +105,7 @@ mod transfer_eth_nft {
                 nft_id: self.nft_id(),
                 t2_transfer_to_public_key: self.new_nft_owner.clone(),
                 op_id: self.op_id,
-            }
+            };
         }
 
         pub fn setup_valid_transfer(&self) {
@@ -115,7 +115,7 @@ mod transfer_eth_nft {
         }
 
         pub fn perform_transfer(&self) -> DispatchResult {
-            return NftManager::transfer_eth_nft(&self.event_id, &self.transfer_to_nft_data())
+            return NftManager::transfer_eth_nft(&self.event_id, &self.transfer_to_nft_data());
         }
 
         pub fn bounded_external_ref(&self) -> BoundedVec<u8, NftExternalRefBound> {

@@ -36,7 +36,7 @@ fn generate_growth_event(lifted_amount: u128) -> (EthEvent, AvtGrowthLiftedData)
         event_data: LogAvtGrowthLifted(growth_data.clone()),
     };
 
-    return (growth_eth_event, growth_data)
+    return (growth_eth_event, growth_data);
 }
 
 mod lifted_growth_processed_correctly {
@@ -47,10 +47,8 @@ mod lifted_growth_processed_correctly {
         let lifted_amount = 1000;
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let expected_treasury_share = TreasuryGrowthPercentage::get() * lifted_amount;
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let (growth_eth_event, growth_data) = generate_growth_event(lifted_amount);
@@ -65,8 +63,8 @@ mod lifted_growth_processed_correctly {
             assert_eq!(Balances::free_balance(treasury_account_id), expected_treasury_share);
 
             // Check expected event has been emitted
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTGrowthLifted {
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTGrowthLifted {
                     treasury_share: expected_treasury_share,
                     collators_share: lifted_amount - expected_treasury_share,
                     eth_tx_hash: growth_eth_event.event_id.transaction_hash
@@ -79,10 +77,8 @@ mod lifted_growth_processed_correctly {
         let lifted_amount = u128::max_value();
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let expected_treasury_share = TreasuryGrowthPercentage::get() * lifted_amount;
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let (growth_eth_event, growth_data) = generate_growth_event(lifted_amount);
@@ -97,8 +93,8 @@ mod lifted_growth_processed_correctly {
             assert_eq!(Balances::free_balance(treasury_account_id), expected_treasury_share);
 
             // Check expected event has been emitted
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTGrowthLifted {
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AVTGrowthLifted {
                     treasury_share: expected_treasury_share,
                     collators_share: lifted_amount - expected_treasury_share,
                     eth_tx_hash: growth_eth_event.event_id.transaction_hash
@@ -111,10 +107,8 @@ mod lifted_growth_processed_correctly {
         let lifted_amount = 500;
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let expected_treasury_share = TreasuryGrowthPercentage::get() * lifted_amount;
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let (growth_eth_event, mut growth_data) = generate_growth_event(lifted_amount);
@@ -141,10 +135,8 @@ mod lifted_growth_processed_correctly {
         let lifted_amount = 700;
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let expected_treasury_share = TreasuryGrowthPercentage::get() * lifted_amount;
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let (growth_eth_event, growth_data) = generate_growth_event(lifted_amount);
@@ -176,10 +168,8 @@ mod lifted_growth_fails_to_be_processed {
 
     #[test]
     fn when_amount_is_zero() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let bad_lifted_amount = 0u128;
@@ -197,10 +187,8 @@ mod lifted_growth_fails_to_be_processed {
     fn when_amount_overflows() {
         let treasury_account_id = TokenManager::compute_treasury_account_id();
 
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             Balances::make_free_balance_be(&treasury_account_id, u128::max_value());
@@ -226,7 +214,7 @@ mod transfering_from_treasury_works {
         insert_to_mock_processed_events(&growth_eth_event.event_id);
 
         assert_ok!(TokenManager::process_avt_growth_lift(&growth_eth_event, &growth_data));
-        return TreasuryGrowthPercentage::get() * amount
+        return TreasuryGrowthPercentage::get() * amount;
     }
 
     #[test]
@@ -234,10 +222,8 @@ mod transfering_from_treasury_works {
         let lifted_amount = 1000;
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let recipient = TestAccount::new([56u8; 32]).account_id();
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             // we start with an empty balance
@@ -260,8 +246,8 @@ mod transfering_from_treasury_works {
             assert_eq!(Balances::free_balance(&recipient), transfer_amount);
 
             // Check expected event has been emitted
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(
                     crate::Event::<TestRuntime>::AvtTransferredFromTreasury {
                         recipient,
                         amount: transfer_amount,
@@ -280,10 +266,8 @@ mod transfering_from_treasury_fails {
     fn when_origin_is_not_signed() {
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let recipient = TestAccount::new([56u8; 32]).account_id();
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let treasury_balance = 1000;
@@ -304,10 +288,8 @@ mod transfering_from_treasury_fails {
     fn when_origin_is_not_root() {
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let recipient = TestAccount::new([56u8; 32]).account_id();
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let treasury_balance = 1000;
@@ -328,10 +310,8 @@ mod transfering_from_treasury_fails {
     fn when_not_enough_funds() {
         let treasury_account_id = TokenManager::compute_treasury_account_id();
         let recipient = TestAccount::new([56u8; 32]).account_id();
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
 
         ext.execute_with(|| {
             let treasury_balance = 1000;

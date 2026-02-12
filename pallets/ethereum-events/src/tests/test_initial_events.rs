@@ -32,7 +32,7 @@ mod initial_lifts {
 
             assert_eq!(INITIAL_LIFTS.len(), initial_lifts.len());
 
-            return Context { initial_lifts }
+            return Context { initial_lifts };
         }
     }
 
@@ -82,7 +82,7 @@ mod initial_processed_events {
                 .iter()
                 .map(|(x, y, _)| EthEventId { signature: x.clone(), transaction_hash: y.clone() })
                 .collect::<Vec<EthEventId>>();
-            return Context { initial_processed_events }
+            return Context { initial_processed_events };
         }
     }
 

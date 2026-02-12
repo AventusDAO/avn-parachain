@@ -66,7 +66,7 @@ mod advance_slot {
             block_number_for_next_slot,
             grace_period,
             summary_last_block_in_range,
-        }
+        };
     }
 
     pub fn create_signature(slot_number: BlockNumber, validator: &MockValidator) -> TestSignature {
@@ -74,14 +74,14 @@ mod advance_slot {
             .key
             .sign(&(Summary::advance_block_context(), slot_number).encode())
             .expect("Signature is signed");
-        return signature
+        return signature;
     }
 
     pub fn call_advance_slot(
         validator: &MockValidator,
         signature: TestSignature,
     ) -> DispatchResult {
-        return Summary::advance_slot(RawOrigin::None.into(), validator.clone(), signature)
+        return Summary::advance_slot(RawOrigin::None.into(), validator.clone(), signature);
     }
 
     pub mod _if_required {
@@ -96,11 +96,11 @@ mod advance_slot {
             pool_state: &Arc<RwLock<PoolState>>,
         ) -> bool {
             if pool_state.read().transactions.is_empty() {
-                return false
+                return false;
             }
 
             let call = take_transaction_from_pool(pool_state);
-            return call == expected_advance_slot_transaction(validator)
+            return call == expected_advance_slot_transaction(validator);
         }
 
         fn take_transaction_from_pool(
@@ -123,7 +123,7 @@ mod advance_slot {
                 .sign(&(Summary::advance_block_context(), Summary::current_slot()).encode())
                 .expect("Signature is signed");
 
-            return crate::Call::advance_slot { validator: validator.clone(), signature }
+            return crate::Call::advance_slot { validator: validator.clone(), signature };
         }
 
         mod does_not_call_advance_slot_if {
@@ -747,7 +747,7 @@ mod cases_for_no_summary_created_offences {
             System::set_block_number(context.current_block);
             Summary::set_next_slot_block_number(context.block_number_for_next_slot);
 
-            return context
+            return context;
         }
 
         pub fn setup_approved_root(context: &LocalContext, root_context: RootContext) {
@@ -1258,12 +1258,12 @@ fn event_is_a_not_published_offence(e: &mock::RuntimeEvent) -> bool {
         ..
     }) = &e
     {
-        return true
+        return true;
     } else {
-        return false
+        return false;
     }
 }
 
 fn add_offence_event_emitted() -> bool {
-    return System::events().iter().any(|e| event_is_a_not_published_offence(&e.event))
+    return System::events().iter().any(|e| event_is_a_not_published_offence(&e.event));
 }

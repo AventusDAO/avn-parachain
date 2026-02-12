@@ -55,7 +55,7 @@ fn setup_voting_session<T: Config<I>, I: 'static>(root_id: &RootId<BlockNumberFo
         ),
     );
 
-    return quorum
+    return quorum;
 }
 
 fn setup_approval_votes<T: Config<I>, I: 'static>(
@@ -132,7 +132,7 @@ fn setup_validators<T: Config<I>, I: 'static>(
         Some("Too many validators for session"),
     ));
 
-    return validators
+    return validators;
 }
 
 fn setup_roots<T: Config<I>, I: 'static>(
@@ -171,7 +171,7 @@ fn generate_signature<T: pallet_avn::Config>(
     let encoded_data = 0.encode();
     let authority_id = T::AuthorityId::generate_pair(None);
     let signature = authority_id.sign(&encoded_data).expect("able to make signature");
-    return signature
+    return signature;
 }
 
 fn assert_last_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {

@@ -155,7 +155,7 @@ impl<T: Config> OnOffenceHandler<T::AccountId, IdentificationTuple<T>, Weight> f
                 add_db_reads_writes(0, 1);
             });
 
-        return consumed_weight
+        return consumed_weight;
     }
 }
 

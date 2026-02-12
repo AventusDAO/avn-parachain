@@ -63,14 +63,14 @@ mod cancel_single_nft_listing {
     impl Context {
         pub fn cancel_single_nft_listing_event_emitted(&self) -> bool {
             return System::events().iter().any(|a| {
-                a.event ==
-                    Event::NftManager(crate::Event::<TestRuntime>::CancelSingleEthNftListing {
+                a.event
+                    == Event::NftManager(crate::Event::<TestRuntime>::CancelSingleEthNftListing {
                         nft_id: self.nft_id(),
                         sale_type: NftSaleType::Ethereum,
                         op_id: self.op_id,
                         eth_event_id: self.event_id.clone(),
                     })
-            })
+            });
         }
 
         pub fn list_nft_open_for_sale(&self) {
@@ -78,7 +78,7 @@ mod cancel_single_nft_listing {
         }
 
         pub fn nft_id(&self) -> NftId {
-            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id)
+            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id);
         }
 
         pub fn inject_nft_to_chain(&self) -> (Nft<AccountId>, NftInfo<AccountId>) {
@@ -89,11 +89,11 @@ mod cancel_single_nft_listing {
                 self.nft_id(),
                 self.bounded_external_ref(),
                 self.nft_owner,
-            )
+            );
         }
 
         pub fn cancel_nft_listing_data(&self) -> NftCancelListingData {
-            return NftCancelListingData { nft_id: self.nft_id(), op_id: self.op_id }
+            return NftCancelListingData { nft_id: self.nft_id(), op_id: self.op_id };
         }
 
         pub fn bounded_external_ref(&self) -> BoundedVec<u8, NftExternalRefBound> {

@@ -80,10 +80,8 @@ pub struct ExtBuilder {
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
-        let storage = frame_system::GenesisConfig::<TestRuntime>::default()
-            .build_storage()
-            .unwrap()
-            .into();
+        let storage =
+            frame_system::GenesisConfig::<TestRuntime>::default().build_storage().unwrap().into();
         Self { storage }
     }
 
@@ -140,14 +138,14 @@ pub fn keys_setup_return_good_validator(
 
     assert_eq!(current_node_validator, Validator { account_id: 1, key: UintAuthorityId(1) });
 
-    return current_node_validator
+    return current_node_validator;
 }
 
 #[allow(dead_code)]
 pub fn bad_authority() -> Validator<<TestRuntime as Config>::AuthorityId, AccountId> {
     let validator = Validator { account_id: 0, key: UintAuthorityId(0) };
 
-    return validator
+    return validator;
 }
 
 #[allow(dead_code)]

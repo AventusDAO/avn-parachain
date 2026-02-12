@@ -6,19 +6,19 @@ pub const ONE_TOKEN: u128 = 1_000000_000000_000000u128;
 pub const AMOUNT_100_TOKEN: u128 = 100 * ONE_TOKEN;
 
 fn collator_1() -> AccountId {
-    return TestAccount::new(1u64).account_id()
+    return TestAccount::new(1u64).account_id();
 }
 
 fn collator_3() -> AccountId {
-    return TestAccount::new(3u64).account_id()
+    return TestAccount::new(3u64).account_id();
 }
 
 fn collator_4() -> AccountId {
-    return TestAccount::new(4u64).account_id()
+    return TestAccount::new(4u64).account_id();
 }
 
 fn non_collator_account_id() -> AccountId {
-    return TestAccount::new(2u64).account_id()
+    return TestAccount::new(2u64).account_id();
 }
 
 fn get_total_balance_of_collators(collator_account_ids: &Vec<AccountId>) -> u128 {
@@ -26,7 +26,7 @@ fn get_total_balance_of_collators(collator_account_ids: &Vec<AccountId>) -> u128
         .clone()
         .into_iter()
         .map(|v| Balances::free_balance(v))
-        .sum::<u128>()
+        .sum::<u128>();
 }
 
 #[test]

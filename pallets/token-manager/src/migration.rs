@@ -57,7 +57,7 @@ pub fn set_lower_schedule_period<T: Config>() -> Weight {
     log::info!("✅ Lower schedule period successfully");
 
     // add a bit extra as safety margin for computation
-    return consumed_weight + Weight::from_parts(25_000_000 as u64, 0)
+    return consumed_weight + Weight::from_parts(25_000_000 as u64, 0);
 }
 
 pub fn translate_lower_data<T: Config>() -> Weight {

@@ -160,14 +160,14 @@ pub mod pallet {
                     Error::<T>::AccountLinkedToDifferentIdentity
                 );
 
-                return Ok(())
+                return Ok(());
             }
 
             LinkedAccounts::<T>::try_mutate(
                 payload.t1_identity_account,
                 |vec| -> DispatchResult {
                     if vec.contains(&payload.t2_linked_account) {
-                        return Ok(())
+                        return Ok(());
                     }
                     vec.try_push(payload.t2_linked_account.clone())
                         .map_err(|_| Error::<T>::LinkedAccountsLimitReached)?;

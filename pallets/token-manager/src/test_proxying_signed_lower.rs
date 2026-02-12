@@ -42,24 +42,24 @@ const NON_ZERO_NONCE: u64 = 100;
 pub static TX_LEN: usize = 1;
 
 pub fn default_key_pair() -> sr25519::Pair {
-    return sr25519::Pair::from_seed(&[70u8; 32])
+    return sr25519::Pair::from_seed(&[70u8; 32]);
 }
 
 fn default_sender() -> AccountId {
-    return AccountId::decode(&mut default_key_pair().public().to_vec().as_slice()).unwrap()
+    return AccountId::decode(&mut default_key_pair().public().to_vec().as_slice()).unwrap();
 }
 
 fn default_receiver_account_id() -> AccountId {
     let receiver = H256(hex!("0000000000000000000000000000000000000000000000000000000000000000"));
-    return AccountId::decode(&mut receiver.as_bytes()).expect("Valid account id")
+    return AccountId::decode(&mut receiver.as_bytes()).expect("Valid account id");
 }
 
 fn default_relayer() -> AccountId {
-    return AccountId::from_raw([10; 32])
+    return AccountId::from_raw([10; 32]);
 }
 
 fn default_t1_recipient() -> H160 {
-    return H160(hex!("2222222222222222222222222222222222222222"))
+    return H160(hex!("2222222222222222222222222222222222222222"));
 }
 
 fn pay_gas_and_proxy_call(
@@ -76,9 +76,8 @@ fn pay_gas_and_proxy_call(
     let (_valid, val, origin) = ext
         .validate(origin, outer_call, &info, len, implicit, &implication, TransactionSource::Local)
         .map_err(|e| <&'static str>::from(e))?;
-    let pre = ext
-        .prepare(val, &origin, outer_call, &info, len)
-        .map_err(|e| <&'static str>::from(e))?;
+    let pre =
+        ext.prepare(val, &origin, outer_call, &info, len).map_err(|e| <&'static str>::from(e))?;
 
     let result = TokenManager::proxy(RuntimeOrigin::signed(*relayer), inner_call);
     ChargeTransactionPayment::<TestRuntime>::post_dispatch(
@@ -89,7 +88,7 @@ fn pay_gas_and_proxy_call(
         &result.map(|_| ()),
     )
     .map_err(|e| <&'static str>::from(e))?;
-    return result
+    return result;
 }
 
 fn pay_gas_and_call_lower_directly(
@@ -109,9 +108,7 @@ fn pay_gas_and_call_lower_directly(
     let (_valid, val, origin) = ext
         .validate(origin, call, &info, len, implicit, &implication, TransactionSource::Local)
         .map_err(|e| <&'static str>::from(e))?;
-    let pre = ext
-        .prepare(val, &origin, call, &info, len)
-        .map_err(|e| <&'static str>::from(e))?;
+    let pre = ext.prepare(val, &origin, call, &info, len).map_err(|e| <&'static str>::from(e))?;
 
     let result = TokenManager::schedule_signed_lower(
         RuntimeOrigin::signed(*sender),
@@ -129,7 +126,7 @@ fn pay_gas_and_call_lower_directly(
         &result.as_ref().map(|_| ()).map_err(|e| e.error.clone()),
     )
     .map_err(|e| <&'static str>::from(e))?;
-    return result
+    return result;
 }
 
 fn build_proof(
@@ -137,7 +134,7 @@ fn build_proof(
     relayer: &AccountId,
     signature: Signature,
 ) -> Proof<Signature, AccountId> {
-    return Proof { signer: *signer, relayer: *relayer, signature }
+    return Proof { signer: *signer, relayer: *relayer, signature };
 }
 
 fn setup(sender: &AccountId, nonce: u64) {
@@ -158,7 +155,7 @@ fn create_proof_for_signed_lower_with_relayer(relayer: &AccountId) -> Proof<Sign
         DEFAULT_NONCE,
         &default_key_pair(),
         default_t1_recipient(),
-    )
+    );
 }
 
 fn create_proof_for_signed_lower_with_nonce(nonce: u64) -> Proof<Signature, AccountId> {
@@ -170,7 +167,7 @@ fn create_proof_for_signed_lower_with_nonce(nonce: u64) -> Proof<Signature, Acco
         nonce,
         &default_key_pair(),
         default_t1_recipient(),
-    )
+    );
 }
 
 fn create_default_proof_for_signed_lower() -> Proof<Signature, AccountId> {
@@ -182,7 +179,7 @@ fn create_default_proof_for_signed_lower() -> Proof<Signature, AccountId> {
         DEFAULT_NONCE,
         &default_key_pair(),
         default_t1_recipient(),
-    )
+    );
 }
 
 fn create_proof_for_signed_lower(
@@ -198,7 +195,7 @@ fn create_proof_for_signed_lower(
     let data_to_sign = (context, relayer, from, token_id, amount, t1_recipient, nonce);
     let signature = sign(&keys, &data_to_sign.encode());
 
-    return build_proof(from, relayer, signature)
+    return build_proof(from, relayer, signature);
 }
 
 fn check_proxy_lower_default_call_succeed(call: Box<<TestRuntime as Config>::RuntimeCall>) {
@@ -206,8 +203,8 @@ fn check_proxy_lower_default_call_succeed(call: Box<<TestRuntime as Config>::Run
 
     assert_ok!(TokenManager::proxy(RuntimeOrigin::signed(default_relayer()), call));
     assert_eq!(System::events().len(), 3);
-    assert!(System::events().iter().any(|a| a.event ==
-        RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
+    assert!(System::events().iter().any(|a| a.event
+        == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
             relayer: default_relayer(),
             call_hash
         })));
@@ -215,8 +212,8 @@ fn check_proxy_lower_default_call_succeed(call: Box<<TestRuntime as Config>::Run
     // move a few blocks to trigger the execution
     fast_forward_to_block(get_expected_execution_block());
 
-    assert!(System::events().iter().any(|a| a.event ==
-        RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+    assert!(System::events().iter().any(|a| a.event
+        == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
             token_id: NON_AVT_TOKEN_ID,
             sender: default_sender(),
             recipient: default_receiver_account_id(),
@@ -305,8 +302,8 @@ mod proxy_signed_lower {
                 assert_ok!(TokenManager::proxy(RuntimeOrigin::signed(relayer), call.clone()));
 
                 let call_hash = Hashing::hash_of(&call);
-                assert!(System::events().iter().any(|a| a.event ==
-                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
+                assert!(System::events().iter().any(|a| a.event
+                    == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
                         relayer,
                         call_hash
                     })));
@@ -317,8 +314,8 @@ mod proxy_signed_lower {
                 // In order to validate that the proxied call has been dispatched we need any proof
                 // that lower was called. In this case we will check that the
                 // Lowered signal was emitted.
-                assert!(System::events().iter().any(|a| a.event ==
-                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+                assert!(System::events().iter().any(|a| a.event
+                    == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                         token_id: NON_AVT_TOKEN_ID,
                         sender,
                         recipient: recipient_account_id,
@@ -361,13 +358,13 @@ mod proxy_signed_lower {
                 DEFAULT_AMOUNT
             );
 
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
                     relayer,
                     call_hash
                 })));
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                     token_id: NON_AVT_TOKEN_ID,
                     sender,
                     recipient: recipient_account_id,
@@ -754,8 +751,8 @@ mod signed_lower {
                 // move a few blocks to trigger the execution
                 fast_forward_to_block(get_expected_execution_block());
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+                assert!(System::events().iter().any(|a| a.event
+                    == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                         token_id: NON_AVT_TOKEN_ID,
                         sender,
                         recipient: recipient_account_id,
@@ -853,8 +850,8 @@ mod fees {
 
                 // Check the effects of the transaction
                 let call_hash = Hashing::hash_of(&inner_call);
-                assert!(System::events().iter().any(|a| a.event ==
-                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
+                assert!(System::events().iter().any(|a| a.event
+                    == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::CallDispatched {
                         relayer,
                         call_hash
                     })));
@@ -862,8 +859,8 @@ mod fees {
                 // move a few blocks to trigger the execution
                 fast_forward_to_block(get_expected_execution_block());
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+                assert!(System::events().iter().any(|a| a.event
+                    == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                         token_id: NON_AVT_TOKEN_ID,
                         sender,
                         recipient: recipient_account_id,
@@ -952,8 +949,8 @@ mod fees {
                     TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, sender)),
                     DEFAULT_AMOUNT
                 );
-                assert!(System::events().iter().any(|a| a.event ==
-                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+                assert!(System::events().iter().any(|a| a.event
+                    == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                         token_id: NON_AVT_TOKEN_ID,
                         sender,
                         recipient: recipient_account_id,

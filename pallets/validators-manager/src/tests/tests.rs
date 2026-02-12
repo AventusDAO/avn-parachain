@@ -22,7 +22,7 @@ fn register_validator(
         *collator_id,
         *collator_eth_public_key,
         None,
-    )
+    );
 }
 
 fn simulate_t1_callback_success(tx_id: EthereumId) {
@@ -36,7 +36,7 @@ fn get_tx_id_for_validator(account_id: &AccountId) -> Option<EthereumId> {
         <ValidatorActions<TestRuntime>>::iter()
     {
         if &acc_id == account_id {
-            return Some(validators_action_data.eth_transaction_id)
+            return Some(validators_action_data.eth_transaction_id);
         }
     }
     None
@@ -130,11 +130,13 @@ mod register_validator {
     }
 
     fn find_validator_activation_action(data: &MockData, status: ValidatorsActionStatus) -> bool {
-        return ValidatorActions::<TestRuntime>::iter().any(|(account_id, _ingress, action_data)| {
-            action_data.status == status &&
-                action_data.action_type == ValidatorsActionType::Activation &&
-                account_id == data.new_validator_id
-        })
+        return ValidatorActions::<TestRuntime>::iter().any(
+            |(account_id, _ingress, action_data)| {
+                action_data.status == status
+                    && action_data.action_type == ValidatorsActionType::Activation
+                    && account_id == data.new_validator_id
+            },
+        );
     }
 
     mod succeeds {
@@ -167,8 +169,8 @@ mod register_validator {
                 // ValidatorActivationStarted Event has been deposited
                 assert_eq!(
                     true,
-                    System::events().iter().any(|a| a.event ==
-                        mock::RuntimeEvent::ValidatorManager(
+                    System::events().iter().any(|a| a.event
+                        == mock::RuntimeEvent::ValidatorManager(
                             crate::Event::<TestRuntime>::ValidatorActivationStarted {
                                 validator_id: context.new_validator_id
                             }
@@ -209,8 +211,8 @@ mod register_validator {
                 // change
                 assert_eq!(
                     true,
-                    System::events().iter().any(|a| a.event ==
-                        mock::RuntimeEvent::ValidatorManager(
+                    System::events().iter().any(|a| a.event
+                        == mock::RuntimeEvent::ValidatorManager(
                             crate::Event::<TestRuntime>::ValidatorActivationStarted {
                                 validator_id: context.new_validator_id
                             }
@@ -264,8 +266,8 @@ mod remove_validator_public {
             simulate_t1_callback_success(tx_id);
 
             //ValidatorDeregistered Event IS emitted immediately after T1 callback
-            assert!(System::events().iter().any(|a| a.event ==
-                mock::RuntimeEvent::ValidatorManager(
+            assert!(System::events().iter().any(|a| a.event
+                == mock::RuntimeEvent::ValidatorManager(
                     crate::Event::<TestRuntime>::ValidatorDeregistered {
                         validator_id: context.new_validator_id
                     }
@@ -408,7 +410,7 @@ mod compress_public_key {
 
         let mut result = [0; 65];
         result.copy_from_slice(&sig[..]);
-        return result
+        return result;
     }
 
     mod returns_a_valid_public_key {

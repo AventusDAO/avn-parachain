@@ -438,13 +438,13 @@ pub mod pallet {
                 let mut req = ActiveRequest::<T, I>::get().expect("is active");
 
                 if request::has_enough_confirmations::<T, I>(&req) {
-                    return Ok(().into())
+                    return Ok(().into());
                 }
 
                 if matches!(req.request, Request::Send(_) if req.tx_data.is_some()) {
                     let sender = &req.tx_data.as_ref().expect("has data").sender;
                     if &author.account_id == sender {
-                        return Ok(().into())
+                        return Ok(().into());
                     }
                 }
 
@@ -463,10 +463,12 @@ pub mod pallet {
                 match req.request {
                     Request::LowerProof(lower_req)
                         if request::has_enough_confirmations::<T, I>(&req) =>
+                    {
                         request::complete_lower_proof_request::<T, I>(
                             &lower_req,
                             req.confirmation.confirmations,
-                        )?,
+                        )?
+                    },
                     _ => {
                         save_active_request_to_storage::<T, I>(req);
                     },
@@ -539,7 +541,7 @@ pub mod pallet {
                     ensure!(!author_is_sender, Error::<T, I>::CannotCorroborateOwnTransaction);
 
                     if !util::requires_corroboration::<T, I>(&data, &author) {
-                        return Ok(().into())
+                        return Ok(().into());
                     }
 
                     let tx_hash_corroborations = if tx_hash_is_valid {
@@ -592,8 +594,8 @@ pub mod pallet {
             let active_range = Self::active_ethereum_range()
                 .ok_or_else(|| Error::<T, I>::NonActiveEthereumRange)?;
             ensure!(
-                *events_partition.range() == active_range.range &&
-                    events_partition.partition() == active_range.partition,
+                *events_partition.range() == active_range.range
+                    && events_partition.partition() == active_range.partition,
                 Error::<T, I>::NonActiveEthereumRange
             );
             ensure!(
@@ -692,7 +694,7 @@ pub mod pallet {
                             start_block: *eth_block_num,
                             length: eth_block_range_size,
                         };
-                        break
+                        break;
                     }
                 }
 
@@ -800,7 +802,7 @@ pub mod pallet {
 
             let mut meter = WeightMeter::with_limit(remaining_weight);
             if !meter.can_consume(processing_unit) {
-                return Weight::zero()
+                return Weight::zero();
             }
 
             let instance = Instance::<T, I>::get();
@@ -860,13 +862,13 @@ pub mod pallet {
                     "👷 Last updated block: {:?} is not finalised, skipping confirmation. Request: {:?}, finalised block: {:?}",
                     req.last_updated, req.request, finalised_block_number
                 );
-                return Ok(())
+                return Ok(());
             }
 
             let has_enough_confirmations = request::has_enough_confirmations::<T, I>(&req);
 
             match req.request {
-                Request::LowerProof(lower_req) =>
+                Request::LowerProof(lower_req) => {
                     if !has_enough_confirmations {
                         let confirmation =
                             eth::sign_msg_hash::<T, I>(&author, &req.confirmation.msg_hash)?;
@@ -877,7 +879,8 @@ pub mod pallet {
                                 author,
                             );
                         }
-                    },
+                    }
+                },
                 Request::Send(_) => {
                     let tx = req.as_active_tx::<T, I>()?;
                     let self_is_sender = author.account_id == tx.data.sender;
@@ -977,14 +980,14 @@ pub mod pallet {
         let _ = EthereumEvents::<T, I>::take(partition);
         for discovered_event in partition.events().iter() {
             match ValidEvents::try_from(&discovered_event.event.event_id.signature).ok() {
-                Some(valid_event) =>
+                Some(valid_event) => {
                     if active_range.event_types_filter.contains(&valid_event) {
                         if discovered_event.block > active_range.range.end_block().into() {
                             <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
                                 eth_event_id: discovered_event.event.event_id.clone(),
                                 reason: Error::<T, I>::EventBelongsInFutureRange.into(),
                             });
-                            continue
+                            continue;
                         }
 
                         if let Err(err) =
@@ -1002,7 +1005,8 @@ pub mod pallet {
                         }
                     } else {
                         log::warn!("Ethereum event signature ({:?}) included in approved range ({:?}), but not part of the expected ones {:?}", &discovered_event.event.event_id.signature, active_range.range, active_range.event_types_filter);
-                    },
+                    }
+                },
                 None => {
                     log::warn!(
                         "Unknown Ethereum event signature in range {:?}",
@@ -1062,7 +1066,7 @@ pub mod pallet {
             let reduce_priority: TransactionPriority = TransactionPriority::from(1000u64);
 
             match call {
-                Call::add_confirmation { request_id, confirmation, author, signature } =>
+                Call::add_confirmation { request_id, confirmation, author, signature } => {
                     if AVN::<T>::signature_is_valid(
                         &(
                             Instance::<T, I>::get().hash(),
@@ -1082,8 +1086,9 @@ pub mod pallet {
                             .build()
                     } else {
                         InvalidTransaction::Custom(1u8).into()
-                    },
-                Call::add_eth_tx_hash { tx_id, eth_tx_hash, author, signature } =>
+                    }
+                },
+                Call::add_eth_tx_hash { tx_id, eth_tx_hash, author, signature } => {
                     if AVN::<T>::signature_is_valid(
                         &(
                             Instance::<T, I>::get().hash(),
@@ -1103,7 +1108,8 @@ pub mod pallet {
                             .build()
                     } else {
                         InvalidTransaction::Custom(2u8).into()
-                    },
+                    }
+                },
                 Call::add_corroboration {
                     tx_id,
                     tx_succeeded,
@@ -1111,7 +1117,7 @@ pub mod pallet {
                     author,
                     replay_attempt,
                     signature,
-                } =>
+                } => {
                     if AVN::<T>::signature_is_valid(
                         &(
                             Instance::<T, I>::get().hash(),
@@ -1133,10 +1139,11 @@ pub mod pallet {
                             .build()
                     } else {
                         InvalidTransaction::Custom(3u8).into()
-                    },
-                Call::submit_ethereum_events { author, events_partition, signature } =>
-                    if Self::does_range_matches_active(&events_partition) &&
-                        AVN::<T>::signature_is_valid(
+                    }
+                },
+                Call::submit_ethereum_events { author, events_partition, signature } => {
+                    if Self::does_range_matches_active(&events_partition)
+                        && AVN::<T>::signature_is_valid(
                             &(
                                 Instance::<T, I>::get().hash(),
                                 &SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT,
@@ -1159,10 +1166,11 @@ pub mod pallet {
                             .build()
                     } else {
                         InvalidTransaction::Custom(4u8).into()
-                    },
+                    }
+                },
                 Call::submit_latest_ethereum_block { author, latest_seen_block, signature } => {
                     if Self::active_ethereum_range().is_some() {
-                        return InvalidTransaction::Custom(5u8).into()
+                        return InvalidTransaction::Custom(5u8).into();
                     }
                     if AVN::<T>::signature_is_valid(
                         &(
@@ -1384,7 +1392,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     fn ethereum_event_has_already_been_accepted(tx_hash: &H256) -> bool {
         if let Some(processed_event) = ProcessedEthereumEvents::<T, I>::get(tx_hash) {
             if processed_event.accepted {
-                return true
+                return true;
             }
         }
         false
@@ -1392,10 +1400,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
 
     fn does_range_matches_active(events_partition: &EthereumEventsPartition) -> bool {
         if let Some(active_range) = Self::active_ethereum_range() {
-            if *events_partition.range() == active_range.range &&
-                events_partition.partition() == active_range.partition
+            if *events_partition.range() == active_range.range
+                && events_partition.partition() == active_range.partition
             {
-                return true
+                return true;
             }
         }
         false
@@ -1404,7 +1412,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub fn author_has_cast_event_vote(author: &T::AccountId) -> bool {
         for (_partition, votes) in EthereumEvents::<T, I>::iter() {
             if votes.contains(&author) {
-                return true
+                return true;
             }
         }
         false
@@ -1413,7 +1421,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub fn author_has_submitted_latest_block(author: &T::AccountId) -> bool {
         for (_block_num, votes) in SubmittedEthBlocks::<T, I>::iter() {
             if votes.contains(&author) {
-                return true
+                return true;
             }
         }
         false
@@ -1450,7 +1458,7 @@ impl<T: Config<I>, I: 'static> NetworkAwareProcessedEventsChecker for Pallet<T, 
     fn processed_event_exists(network: &EthereumNetwork, event_id: &EthEventId) -> bool {
         let instance = Instance::<T, I>::get();
         if instance.is_valid() == false || instance.network != *network {
-            return false
+            return false;
         }
         <Self as ProcessedEventsChecker>::processed_event_exists(event_id)
     }
@@ -1473,7 +1481,7 @@ impl<T: Config<I>, I: 'static> EthereumEventsMigration for Pallet<T, I> {
     fn get_network() -> Option<EthereumNetwork> {
         let instance = Instance::<T, I>::get();
         if instance.is_valid() == false {
-            return None
+            return None;
         }
         Some(instance.network)
     }
@@ -1483,7 +1491,7 @@ impl<T: Config<I>, I: 'static> EthereumEventsMigration for Pallet<T, I> {
     ) -> Option<BoundedVec<EventMigration, ProcessingBatchBound>> {
         let instance = Instance::<T, I>::get();
         if !instance.is_valid() || instance.network != *network {
-            return None
+            return None;
         }
 
         let batch_size: u32 = ProcessingBatchBound::get();
@@ -1492,7 +1500,7 @@ impl<T: Config<I>, I: 'static> EthereumEventsMigration for Pallet<T, I> {
                 event
             } else {
                 log::warn!("Unknown event signature: {:?}", &event.signature);
-                return
+                return;
             };
 
             ProcessedEthereumEvents::<T, I>::insert(
@@ -1515,7 +1523,7 @@ impl<T: Config<I>, I: 'static> EthereumEventsMigration for Pallet<T, I> {
             .collect();
 
         if migration_batch.is_empty() {
-            return None
+            return None;
         }
 
         migration_batch.iter().for_each(|event_to_migrate| {

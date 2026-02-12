@@ -592,7 +592,7 @@ pub mod pallet {
 
                 Self::deposit_event(Event::<T>::RegeneratingLowerProof { lower_id, requester });
 
-                return Ok(().into())
+                return Ok(().into());
             } else if <FailedLowerProofs<T>>::contains_key(lower_id) {
                 let lower_params = <FailedLowerProofs<T>>::take(lower_id).expect("lower exists");
                 Self::regenerate_proof(lower_id, lower_params)?;
@@ -619,7 +619,7 @@ pub mod pallet {
             <LowerSchedulePeriod<T>>::put(new_period);
             Self::deposit_event(Event::<T>::LowerSchedulePeriodUpdated { new_period });
 
-            return Ok(())
+            return Ok(());
         }
 
         #[pallet::call_index(10)]
@@ -635,7 +635,7 @@ pub mod pallet {
                 Self::deposit_event(Event::<T>::LoweringDisabled);
             }
 
-            return Ok(())
+            return Ok(());
         }
 
         #[pallet::call_index(11)]
@@ -655,7 +655,7 @@ pub mod pallet {
                 new_address,
             });
 
-            return Ok(())
+            return Ok(());
         }
     }
 
@@ -860,7 +860,7 @@ impl<T: Config> Pallet<T> {
             amount,
             sender_nonce,
         )
-            .encode()
+            .encode();
     }
 
     fn encode_signed_lower_params(
@@ -880,7 +880,7 @@ impl<T: Config> Pallet<T> {
             t1_recipient,
             sender_nonce,
         )
-            .encode()
+            .encode();
     }
 
     fn get_encoded_call_param(
@@ -903,7 +903,7 @@ impl<T: Config> Pallet<T> {
                     sender_nonce,
                 );
 
-                return Some((proof, encoded_data))
+                return Some((proof, encoded_data));
             },
             Call::schedule_signed_lower { proof, from, token_id, amount, t1_recipient } => {
                 let sender_nonce = Self::nonce(&proof.signer);
@@ -916,7 +916,7 @@ impl<T: Config> Pallet<T> {
                     sender_nonce,
                 );
 
-                return Some((proof, encoded_data))
+                return Some((proof, encoded_data));
             },
             _ => return None,
         }
@@ -1117,7 +1117,7 @@ impl<T: Config> Pallet<T> {
 
             // Event handled or it is not for us, in which case ignore it.
             _ => Ok(()),
-        }
+        };
     }
 
     pub fn get_token_balance(
@@ -1125,10 +1125,10 @@ impl<T: Config> Pallet<T> {
         token_id: &T::TokenId,
     ) -> Option<T::TokenBalance> {
         if Balances::<T>::contains_key((token_id, account)) {
-            return Some(Self::balance((token_id, account)))
+            return Some(Self::balance((token_id, account)));
         }
 
-        return None
+        return None;
     }
 }
 
@@ -1169,10 +1169,10 @@ impl<T: Config> InnerCallValidator for Pallet<T> {
                 &proof,
                 &signed_payload.as_slice(),
             )
-            .is_ok()
+            .is_ok();
         }
 
-        return false
+        return false;
     }
 }
 
@@ -1263,17 +1263,17 @@ impl<T: Config> TokenInterface<T::TokenId, T::AccountId> for Pallet<T> {
         return match &event.event_data {
             EventData::LogLiftedToPredictionMarket(d) => {
                 let lifted_data = LiftedData::new(d.token_contract, d.receiver_address, d.amount);
-                return Self::process_lift(event, &lifted_data)
+                return Self::process_lift(event, &lifted_data);
             },
             EventData::LogErc20Transfer(d) => {
                 let lifted_data = LiftedData::new(d.token_contract, d.receiver_address, d.amount);
-                return Self::process_lift(event, &lifted_data)
+                return Self::process_lift(event, &lifted_data);
             },
 
             // Any other event should not be calling this hook, they should use the regular lift
             // pathway
             _ => Err(Error::<T>::InvalidLiftRequest)?,
-        }
+        };
     }
 
     fn deposit_tokens(

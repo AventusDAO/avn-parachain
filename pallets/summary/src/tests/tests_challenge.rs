@@ -63,7 +63,7 @@ fn setup_success_preconditions() -> LocalContext {
         block_number_for_next_slot,
         block_after_grace_period,
         challenge_reason,
-    }
+    };
 }
 
 fn call_challenge_slot_if_required(block_number: BlockNumber, validator: &MockValidator) {
@@ -75,7 +75,7 @@ fn call_add_challenge(
     validator: &MockValidator,
     signature: TestSignature,
 ) -> DispatchResult {
-    return Summary::add_challenge(RawOrigin::None.into(), challenge, validator.clone(), signature)
+    return Summary::add_challenge(RawOrigin::None.into(), challenge, validator.clone(), signature);
 }
 
 fn expected_add_challenge_transaction(
@@ -88,7 +88,7 @@ fn expected_add_challenge_transaction(
         challenge: challenge.clone(),
         validator: validator.clone(),
         signature,
-    }
+    };
 }
 
 fn get_valid_challenge(context: &LocalContext) -> SummaryChallenge<AccountId> {
@@ -96,7 +96,7 @@ fn get_valid_challenge(context: &LocalContext) -> SummaryChallenge<AccountId> {
         context.challenge_reason.clone(),
         context.other_validator.account_id,
         context.slot_validator.account_id,
-    )
+    );
 }
 
 fn get_challenge(
@@ -104,7 +104,7 @@ fn get_challenge(
     challenger: AccountId,
     challengee: AccountId,
 ) -> SummaryChallenge<AccountId> {
-    return SummaryChallenge { challenge_reason, challenger, challengee }
+    return SummaryChallenge { challenge_reason, challenger, challengee };
 }
 
 fn sign_challenge(
@@ -114,7 +114,7 @@ fn sign_challenge(
     return validator
         .key
         .sign(&(CHALLENGE_CONTEXT, challenge).encode())
-        .expect("Signature is signed")
+        .expect("Signature is signed");
 }
 
 fn expected_transaction_was_called(
@@ -123,13 +123,13 @@ fn expected_transaction_was_called(
     pool_state: &Arc<RwLock<PoolState>>,
 ) -> bool {
     if pool_state.read().transactions.is_empty() {
-        return false
+        return false;
     }
 
     let call = take_transaction_from_pool(pool_state);
     let _new_call = expected_add_challenge_transaction(challenge, validator);
 
-    return call == expected_add_challenge_transaction(challenge, validator)
+    return call == expected_add_challenge_transaction(challenge, validator);
 }
 
 pub fn take_transaction_from_pool(pool_state: &Arc<RwLock<PoolState>>) -> crate::Call<TestRuntime> {
@@ -348,7 +348,7 @@ mod challenge_slot_if_required {
                 .key
                 .sign(&(Summary::advance_block_context(), slot_number).encode())
                 .expect("Signature is signed");
-            return signature
+            return signature;
         }
 
         fn advance_slot(context: &LocalContext) -> DispatchResult {
@@ -358,13 +358,13 @@ mod challenge_slot_if_required {
                 RawOrigin::None.into(),
                 context.slot_validator.clone(),
                 signature,
-            )
+            );
         }
 
         fn get_primary_for_block(block_number: BlockNumber) -> MockValidator {
             let primary_validator_account_id =
                 Avn::calculate_primary_validator_for_block(block_number).unwrap();
-            return get_validator(primary_validator_account_id)
+            return get_validator(primary_validator_account_id);
         }
 
         #[test]

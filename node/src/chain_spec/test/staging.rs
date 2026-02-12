@@ -87,5 +87,5 @@ fn avn_garde_ethereum_public_keys() -> Vec<EthPublicKey> {
             "032ec3b54b8a2c351770e811aaef70917ce1c8e7fdf9151d365b778679819a8152"
         ])
         .unwrap(),
-    ]
+    ];
 }

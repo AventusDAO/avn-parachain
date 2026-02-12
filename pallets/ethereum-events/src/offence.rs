@@ -66,7 +66,7 @@ pub fn create_offenders_identification<T: crate::Config>(
         .filter_map(|id| <T as SessionConfig>::ValidatorIdOf::convert(id.clone()))
         .filter_map(|id| T::FullIdentificationOf::convert(id.clone()).map(|full_id| (id, full_id)))
         .collect::<Vec<IdentificationTuple<T>>>();
-    return offenders
+    return offenders;
 }
 
 pub fn create_and_report_invalid_log_offence<T: crate::Config>(

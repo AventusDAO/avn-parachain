@@ -588,10 +588,10 @@ pub mod pallet {
                     &proof,
                     &signed_payload.as_slice(),
                 )
-                .is_ok()
+                .is_ok();
             }
 
-            return false
+            return false;
         }
     }
 }

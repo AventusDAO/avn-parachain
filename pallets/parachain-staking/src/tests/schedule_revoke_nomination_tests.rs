@@ -24,7 +24,7 @@ thread_local! {
 }
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 mod proxy_signed_schedule_revoke_nomination {
@@ -43,7 +43,7 @@ mod proxy_signed_schedule_revoke_nomination {
                 proof,
                 collator: collator.clone(),
             },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_schedule_revoke_nomination(
@@ -58,7 +58,7 @@ mod proxy_signed_schedule_revoke_nomination {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]
@@ -274,7 +274,7 @@ mod proxy_signed_schedule_leave_nominators {
 
         return Box::new(MockCall::ParachainStaking(
             super::super::Call::<Test>::signed_schedule_leave_nominators { proof },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_schedule_leave_nominators(
@@ -287,7 +287,7 @@ mod proxy_signed_schedule_leave_nominators {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]
@@ -427,7 +427,7 @@ mod proxy_signed_execute_revoke_all_nomination {
             None
         ));
 
-        return ParachainStaking::proxy_nonce(staker.account_id)
+        return ParachainStaking::proxy_nonce(staker.account_id);
     }
 
     fn create_call_for_signed_execute_leave_nominators(
@@ -443,7 +443,7 @@ mod proxy_signed_execute_revoke_all_nomination {
                 proof,
                 nominator: nominator.clone(),
             },
-        ))
+        ));
     }
 
     fn create_call_for_signed_execute_leave_nominators_from_proof(
@@ -455,7 +455,7 @@ mod proxy_signed_execute_revoke_all_nomination {
                 proof,
                 nominator: nominator.clone(),
             },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_execute_leave_nominators(
@@ -470,7 +470,7 @@ mod proxy_signed_execute_revoke_all_nomination {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]

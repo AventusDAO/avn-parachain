@@ -138,57 +138,68 @@ impl ValidEvents {
             // event signatures
 
             // hex string of Keccak-256 for LogValidatorRegistered(bytes32,bytes32,bytes32,uint256)
-            ValidEvents::AddedValidator =>
-                H256(hex!("ff083a6e395a67771f3c9108922bc274c27b38b48c210b0f6a8c5f4710c0494b")),
+            ValidEvents::AddedValidator => {
+                H256(hex!("ff083a6e395a67771f3c9108922bc274c27b38b48c210b0f6a8c5f4710c0494b"))
+            },
 
             // hex string of Keccak-256 for LogLifted(address,bytes32,uint256)
-            ValidEvents::Lifted =>
-                H256(hex!("418da8f85cfa851601f87634c6950491b6b8785a6445c8584f5658048d512cae")),
+            ValidEvents::Lifted => {
+                H256(hex!("418da8f85cfa851601f87634c6950491b6b8785a6445c8584f5658048d512cae"))
+            },
 
             // hex string of Keccak-256 for LogLiftedToPredictionMarket(address,bytes32,uint256)
-            ValidEvents::LiftedToPredictionMarket =>
-                H256(hex!("2bf8107bf8c15cdcd8d6360f4a02ee97d7098a46b18fccd32df8796775552fc0")),
+            ValidEvents::LiftedToPredictionMarket => {
+                H256(hex!("2bf8107bf8c15cdcd8d6360f4a02ee97d7098a46b18fccd32df8796775552fc0"))
+            },
 
             // hex string of Keccak-256 for AvnMintTo(uint256,uint64,bytes32,string)
-            ValidEvents::NftMint =>
-                H256(hex!("242e8a2c5335295f6294a23543699a458e6d5ed7a5839f93cc420116e0a31f99")),
+            ValidEvents::NftMint => {
+                H256(hex!("242e8a2c5335295f6294a23543699a458e6d5ed7a5839f93cc420116e0a31f99"))
+            },
 
             // hex string of Keccak-256 for AvnTransferTo(uint256,bytes32,uint64)
-            ValidEvents::NftTransferTo =>
-                H256(hex!("fff226ba128aca9718a568817388f3711cfeedd8c81cec4d02dcefc50f3c67bb")),
+            ValidEvents::NftTransferTo => {
+                H256(hex!("fff226ba128aca9718a568817388f3711cfeedd8c81cec4d02dcefc50f3c67bb"))
+            },
 
             // hex string of Keccak-256 for AvnCancelNftListing(uint256,uint64)
-            ValidEvents::NftCancelListing =>
-                H256(hex!("eb0a71ca01b1505be834cafcd54b651d77eafd1ca915d21c0898575bcab53358")),
+            ValidEvents::NftCancelListing => {
+                H256(hex!("eb0a71ca01b1505be834cafcd54b651d77eafd1ca915d21c0898575bcab53358"))
+            },
 
             // hex string of Keccak-256 for AvnEndBatchListing(uint256)
-            ValidEvents::NftEndBatchListing =>
-                H256(hex!("20c46236a16e176bc83a795b3a64ad94e5db8bc92afc8cc6d3fd4a3864211f8f")),
+            ValidEvents::NftEndBatchListing => {
+                H256(hex!("20c46236a16e176bc83a795b3a64ad94e5db8bc92afc8cc6d3fd4a3864211f8f"))
+            },
 
             // hex string of Keccak-256 for LogGrowth(uint256,uint32)
-            ValidEvents::AvtGrowthLifted =>
-                H256(hex!("3ad58a8dc1110baa37ad88a68db14181b4ef0c69192dfa7699a9588960eca7fd")),
+            ValidEvents::AvtGrowthLifted => {
+                H256(hex!("3ad58a8dc1110baa37ad88a68db14181b4ef0c69192dfa7699a9588960eca7fd"))
+            },
 
             // hex string of Keccak-256 for LogLowerClaimed(uint32)
-            ValidEvents::AvtLowerClaimed =>
-                H256(hex!("9853e4c075911a10a89a0f7a46bac6f8a246c4e9152480d16d86aa6a2391a4f1")),
+            ValidEvents::AvtLowerClaimed => {
+                H256(hex!("9853e4c075911a10a89a0f7a46bac6f8a246c4e9152480d16d86aa6a2391a4f1"))
+            },
 
             // hex string of Keccak-256 for Transfer(address,address,uint256)
-            ValidEvents::Erc20DirectTransfer =>
-                H256(hex!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")),
+            ValidEvents::Erc20DirectTransfer => {
+                H256(hex!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"))
+            },
 
             // hex string of Keccak-256 for LogLowerReverted(address,bytes32,address,uint256,uint32)
-            ValidEvents::LowerReverted =>
-                H256(hex!("3a534ee35b9cf37cfa5e5aac24f8d0d3a2a2841b1ff92db68501d3c46956daa8")),
+            ValidEvents::LowerReverted => {
+                H256(hex!("3a534ee35b9cf37cfa5e5aac24f8d0d3a2a2841b1ff92db68501d3c46956daa8"))
+            },
         }
     }
 
     pub fn is_nft_event(&self) -> bool {
         match *self {
-            ValidEvents::NftMint |
-            ValidEvents::NftTransferTo |
-            ValidEvents::NftCancelListing |
-            ValidEvents::NftEndBatchListing => true,
+            ValidEvents::NftMint
+            | ValidEvents::NftTransferTo
+            | ValidEvents::NftCancelListing
+            | ValidEvents::NftEndBatchListing => true,
             _ => false,
         }
     }
@@ -241,9 +252,9 @@ impl AddedValidatorData {
     const TOPIC_INDEX_T2_ADDRESS: usize = 3;
 
     pub fn is_valid(&self) -> bool {
-        return !self.eth_public_key.is_zero() &&
-            !self.t2_address.is_zero() &&
-            !self.validator_account_id.is_zero()
+        return !self.eth_public_key.is_zero()
+            && !self.t2_address.is_zero()
+            && !self.validator_account_id.is_zero();
     }
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
@@ -256,23 +267,23 @@ impl AddedValidatorData {
         // topics[3] --> t2 address
 
         if data.is_none() {
-            return Err(Error::AddedValidatorEventMissingData)
+            return Err(Error::AddedValidatorEventMissingData);
         }
         let data = data.expect("Already checked for errors");
 
         if data.len() != WORD_LENGTH {
-            return Err(Error::AddedValidatorEventBadDataLength)
+            return Err(Error::AddedValidatorEventBadDataLength);
         }
 
         if topics.len() != 4 {
-            return Err(Error::AddedValidatorEventWrongTopicCount)
+            return Err(Error::AddedValidatorEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_INDEX_T1_PUBLIC_KEY_LHS].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_T1_PUBLIC_KEY_RHS].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_T2_ADDRESS].len() != WORD_LENGTH
+        if topics[Self::TOPIC_INDEX_T1_PUBLIC_KEY_LHS].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_T1_PUBLIC_KEY_RHS].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_T2_ADDRESS].len() != WORD_LENGTH
         {
-            return Err(Error::AddedValidatorEventBadTopicLength)
+            return Err(Error::AddedValidatorEventBadTopicLength);
         }
 
         // The full public key is split into 2 32 byte words
@@ -287,7 +298,7 @@ impl AddedValidatorData {
             eth_public_key,
             t2_address,
             validator_account_id: validator_id,
-        })
+        });
     }
 }
 
@@ -318,7 +329,7 @@ impl LiftedData {
     const TOPIC_INDEX_T2_ADDRESS: usize = 2;
 
     pub fn is_valid(&self) -> bool {
-        return !self.token_contract.is_zero() && !self.receiver_address.is_zero()
+        return !self.token_contract.is_zero() && !self.receiver_address.is_zero();
     }
 
     pub fn new(token_contract: H160, receiver_address: H256, amount: u128) -> Self {
@@ -340,22 +351,22 @@ impl LiftedData {
         // topics[2] --> receiver t2 public key (32 bytes)
 
         if data.is_none() {
-            return Err(Error::LiftedEventMissingData)
+            return Err(Error::LiftedEventMissingData);
         }
         let data = data.expect("Already checked for errors");
 
         if data.len() != WORD_LENGTH {
-            return Err(Error::LiftedEventBadDataLength)
+            return Err(Error::LiftedEventBadDataLength);
         }
 
         if topics.len() != 3 {
-            return Err(Error::LiftedEventWrongTopicCount)
+            return Err(Error::LiftedEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_CURRENCY_CONTRACT].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_T2_ADDRESS].len() != WORD_LENGTH
+        if topics[Self::TOPIC_CURRENCY_CONTRACT].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_T2_ADDRESS].len() != WORD_LENGTH
         {
-            return Err(Error::LiftedEventBadTopicLength)
+            return Err(Error::LiftedEventBadTopicLength);
         }
 
         let token_contract = H160::from_slice(
@@ -365,13 +376,11 @@ impl LiftedData {
         let receiver_address = H256::from_slice(&topics[Self::TOPIC_INDEX_T2_ADDRESS]);
 
         if data[0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::LiftedEventDataOverflow)
+            return Err(Error::LiftedEventDataOverflow);
         }
 
         let amount = u128::from_be_bytes(
-            data[HALF_WORD_LENGTH..WORD_LENGTH]
-                .try_into()
-                .expect("Slice is the correct size"),
+            data[HALF_WORD_LENGTH..WORD_LENGTH].try_into().expect("Slice is the correct size"),
         );
         return Ok(LiftedData {
             token_contract,
@@ -381,7 +390,7 @@ impl LiftedData {
             amount,
             // SYS-1905 Keeping for backwards compatibility with the dapps (block explorer)
             nonce: U256::zero(),
-        })
+        });
     }
 }
 
@@ -401,22 +410,22 @@ impl LiftedData {
         // topics[2] --> ethereum receiver address (bridge contract)
 
         if data.is_none() {
-            return Err(Error::LiftedEventMissingData)
+            return Err(Error::LiftedEventMissingData);
         }
         let data = data.expect("Already checked for errors");
 
         if data.len() != WORD_LENGTH {
-            return Err(Error::LiftedEventBadDataLength)
+            return Err(Error::LiftedEventBadDataLength);
         }
 
         if topics.len() != 3 {
-            return Err(Error::LiftedEventWrongTopicCount)
+            return Err(Error::LiftedEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_BRIDGE_CONTRACT].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_T1_FROM_ADDRESS].len() != WORD_LENGTH
+        if topics[Self::TOPIC_BRIDGE_CONTRACT].len() != WORD_LENGTH
+            || topics[Self::TOPIC_T1_FROM_ADDRESS].len() != WORD_LENGTH
         {
-            return Err(Error::LiftedEventBadTopicLength)
+            return Err(Error::LiftedEventBadTopicLength);
         }
 
         let bridge_contract = H160::from_slice(
@@ -428,13 +437,11 @@ impl LiftedData {
         );
 
         if data[0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::LiftedEventDataOverflow)
+            return Err(Error::LiftedEventDataOverflow);
         }
 
         let amount = u128::from_be_bytes(
-            data[HALF_WORD_LENGTH..WORD_LENGTH]
-                .try_into()
-                .expect("Slice is the correct size"),
+            data[HALF_WORD_LENGTH..WORD_LENGTH].try_into().expect("Slice is the correct size"),
         );
         return Ok(LiftedData {
             token_contract: H160::zero(),
@@ -444,7 +451,7 @@ impl LiftedData {
             receiver_address: bridge_contract.into(),
             amount,
             nonce: U256::zero(),
-        })
+        });
     }
 }
 
@@ -477,9 +484,9 @@ impl NftMintData {
     const TOPIC_INDEX_T2_OWNER_PUBLIC_KEY: usize = 3;
 
     pub fn is_valid(&self) -> bool {
-        return !self.batch_id.is_zero() &&
-            !self.t2_owner_public_key.is_zero() &&
-            !self.unique_external_ref.is_empty()
+        return !self.batch_id.is_zero()
+            && !self.t2_owner_public_key.is_zero()
+            && !self.unique_external_ref.is_empty();
     }
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
@@ -492,23 +499,23 @@ impl NftMintData {
         // topics[3] --> AvN onwer public key (32 bytes)
 
         if data.is_none() {
-            return Err(Error::NftMintedEventMissingData)
+            return Err(Error::NftMintedEventMissingData);
         }
         let data = data.expect("Already checked for errors");
 
         if data.len() != 4 * WORD_LENGTH {
-            return Err(Error::NftMintedEventBadDataLength)
+            return Err(Error::NftMintedEventBadDataLength);
         }
 
         if topics.len() != 4 {
-            return Err(Error::NftMintedEventWrongTopicCount)
+            return Err(Error::NftMintedEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_INDEX_BATCH_ID].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_T2_OWNER_PUBLIC_KEY].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_SALE_INDEX].len() != WORD_LENGTH
+        if topics[Self::TOPIC_INDEX_BATCH_ID].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_T2_OWNER_PUBLIC_KEY].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_SALE_INDEX].len() != WORD_LENGTH
         {
-            return Err(Error::NftMintedEventBadTopicLength)
+            return Err(Error::NftMintedEventBadTopicLength);
         }
 
         let batch_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_BATCH_ID]);
@@ -537,7 +544,7 @@ impl NftMintData {
             t1_contract_issuer: H160::zero(),
             sale_index,
             unique_external_ref,
-        })
+        });
     }
 }
 
@@ -565,7 +572,7 @@ impl NftTransferToData {
     const TOPIC_INDEX_OP_ID: usize = 3;
 
     pub fn is_valid(&self) -> bool {
-        return !self.t2_transfer_to_public_key.is_zero()
+        return !self.t2_transfer_to_public_key.is_zero();
     }
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
@@ -578,18 +585,18 @@ impl NftTransferToData {
         // topics[3] --> transfer nonce (first 24 bytes are 0 and should be ignored)
 
         if data.is_some() {
-            return Err(Error::NftTransferToEventShouldOnlyContainTopics)
+            return Err(Error::NftTransferToEventShouldOnlyContainTopics);
         }
 
         if topics.len() != 4 {
-            return Err(Error::NftTransferToEventWrongTopicCount)
+            return Err(Error::NftTransferToEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_INDEX_NFT_ID].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_T2_TRANSFER_TO_PUBLIC_KEY].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_INDEX_OP_ID].len() != WORD_LENGTH
+        if topics[Self::TOPIC_INDEX_NFT_ID].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_T2_TRANSFER_TO_PUBLIC_KEY].len() != WORD_LENGTH
+            || topics[Self::TOPIC_INDEX_OP_ID].len() != WORD_LENGTH
         {
-            return Err(Error::NftTransferToEventBadTopicLength)
+            return Err(Error::NftTransferToEventBadTopicLength);
         }
 
         let nft_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_NFT_ID]);
@@ -601,7 +608,7 @@ impl NftTransferToData {
                 .map_err(|_| Error::NftTransferToEventTranferNonceConversion)?,
         );
 
-        return Ok(NftTransferToData { nft_id, t2_transfer_to_public_key, op_id })
+        return Ok(NftTransferToData { nft_id, t2_transfer_to_public_key, op_id });
     }
 }
 
@@ -627,7 +634,7 @@ impl NftCancelListingData {
     const TOPIC_INDEX_OP_ID: usize = 2;
 
     pub fn is_valid(&self) -> bool {
-        return true
+        return true;
     }
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
@@ -639,22 +646,19 @@ impl NftCancelListingData {
         // topics[2] --> op_id (first 24 bytes are 0 and should be ignored)
 
         if data.is_some() {
-            return Err(Error::NftCancelListingEventShouldOnlyContainTopics)
+            return Err(Error::NftCancelListingEventShouldOnlyContainTopics);
         }
 
         if topics.len() != 3 {
-            return Err(Error::NftCancelListingEventWrongTopicCount)
+            return Err(Error::NftCancelListingEventWrongTopicCount);
         }
 
         if topics[Self::TOPIC_INDEX_NFT_ID].len() != WORD_LENGTH {
-            return Err(Error::NftCancelListingEventBadTopicLength)
+            return Err(Error::NftCancelListingEventBadTopicLength);
         }
 
-        if topics[Self::TOPIC_INDEX_OP_ID][0..TWENTY_FOUR_BYTES]
-            .iter()
-            .any(|byte| byte > &0)
-        {
-            return Err(Error::NftCancelListingEventDataOverflow)
+        if topics[Self::TOPIC_INDEX_OP_ID][0..TWENTY_FOUR_BYTES].iter().any(|byte| byte > &0) {
+            return Err(Error::NftCancelListingEventDataOverflow);
         }
 
         let nft_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_NFT_ID]);
@@ -664,7 +668,7 @@ impl NftCancelListingData {
                 .map_err(|_| Error::NftCancelListingEventTranferNonceConversion)?,
         );
 
-        return Ok(NftCancelListingData { nft_id, op_id })
+        return Ok(NftCancelListingData { nft_id, op_id });
     }
 }
 
@@ -688,7 +692,7 @@ impl NftEndBatchListingData {
     const TOPIC_INDEX_BATCH_ID: usize = 1;
 
     pub fn is_valid(&self) -> bool {
-        return true
+        return true;
     }
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
@@ -699,20 +703,20 @@ impl NftEndBatchListingData {
         // topics[1] --> the nft nft_id (32 bytes)
 
         if data.is_some() {
-            return Err(Error::NftEndBatchListingEventShouldOnlyContainTopics)
+            return Err(Error::NftEndBatchListingEventShouldOnlyContainTopics);
         }
 
         if topics.len() != 2 {
-            return Err(Error::NftEndBatchListingEventWrongTopicCount)
+            return Err(Error::NftEndBatchListingEventWrongTopicCount);
         }
 
         if topics[Self::TOPIC_INDEX_BATCH_ID].len() != WORD_LENGTH {
-            return Err(Error::NftEndBatchListingEventBadTopicLength)
+            return Err(Error::NftEndBatchListingEventBadTopicLength);
         }
 
         let batch_id = U256::from_big_endian(&topics[Self::TOPIC_INDEX_BATCH_ID]);
 
-        return Ok(NftEndBatchListingData { batch_id })
+        return Ok(NftEndBatchListingData { batch_id });
     }
 }
 
@@ -740,7 +744,7 @@ impl AvtGrowthLiftedData {
     const TOPIC_PERIOD: usize = 2;
 
     pub fn is_valid(&self) -> bool {
-        return self.amount > 0u128
+        return self.amount > 0u128;
     }
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
@@ -752,21 +756,21 @@ impl AvtGrowthLiftedData {
         // topics[2] --> period (first 28 bytes are 0 and should be ignored)
 
         if data.is_some() {
-            return Err(Error::AvtGrowthLiftedEventShouldOnlyContainTopics)
+            return Err(Error::AvtGrowthLiftedEventShouldOnlyContainTopics);
         }
 
         if topics.len() != 3 {
-            return Err(Error::AvtGrowthLiftedEventWrongTopicCount)
+            return Err(Error::AvtGrowthLiftedEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_PERIOD].len() != WORD_LENGTH
+        if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH
+            || topics[Self::TOPIC_PERIOD].len() != WORD_LENGTH
         {
-            return Err(Error::AvtGrowthLiftedEventBadTopicLength)
+            return Err(Error::AvtGrowthLiftedEventBadTopicLength);
         }
 
         if topics[Self::TOPIC_AMOUNT][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::AvtGrowthLiftedEventDataOverflow)
+            return Err(Error::AvtGrowthLiftedEventDataOverflow);
         }
 
         let amount = u128::from_be_bytes(
@@ -781,7 +785,7 @@ impl AvtGrowthLiftedData {
                 .map_err(|_| Error::AvtGrowthLiftedEventPeriodConversion)?,
         );
 
-        return Ok(AvtGrowthLiftedData { amount, period })
+        return Ok(AvtGrowthLiftedData { amount, period });
     }
 }
 
@@ -808,15 +812,15 @@ impl AvtLowerClaimedData {
 
     pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
         if data.is_some() {
-            return Err(Error::AvtLowerClaimedEventMissingData)
+            return Err(Error::AvtLowerClaimedEventMissingData);
         }
 
         if topics.len() != 2 {
-            return Err(Error::AvtLowerClaimedEventWrongTopicCount)
+            return Err(Error::AvtLowerClaimedEventWrongTopicCount);
         }
 
         if topics[Self::TOPIC_LOWER_ID].len() != WORD_LENGTH {
-            return Err(Error::AvtLowerClaimedEventBadTopicLength)
+            return Err(Error::AvtLowerClaimedEventBadTopicLength);
         }
 
         let lower_id: u32 = u32::from_be_bytes(
@@ -825,7 +829,7 @@ impl AvtLowerClaimedData {
                 .map_err(|_| Error::AvtLowerClaimedEventIdConversion)?,
         );
 
-        return Ok(AvtLowerClaimedData { lower_id })
+        return Ok(AvtLowerClaimedData { lower_id });
     }
 }
 
@@ -871,23 +875,23 @@ impl LowerRevertedData {
         //   topics[3] --> originalRecipient (H160, last 20 bytes)
 
         if data.is_none() {
-            return Err(Error::LowerRevertedEventMissingData)
+            return Err(Error::LowerRevertedEventMissingData);
         }
         let data = data.expect("Already checked for errors");
 
         if data.len() != 2 * WORD_LENGTH {
-            return Err(Error::LowerRevertedEventBadDataLength)
+            return Err(Error::LowerRevertedEventBadDataLength);
         }
 
         if topics.len() != 4 {
-            return Err(Error::LowerRevertedEventWrongTopicCount)
+            return Err(Error::LowerRevertedEventWrongTopicCount);
         }
 
-        if topics[Self::TOPIC_TOKEN_CONTRACT].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_T2_PUBLIC_KEY].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_ORIGINAL_RECIPIENT].len() != WORD_LENGTH
+        if topics[Self::TOPIC_TOKEN_CONTRACT].len() != WORD_LENGTH
+            || topics[Self::TOPIC_T2_PUBLIC_KEY].len() != WORD_LENGTH
+            || topics[Self::TOPIC_ORIGINAL_RECIPIENT].len() != WORD_LENGTH
         {
-            return Err(Error::LowerRevertedEventBadTopicLength)
+            return Err(Error::LowerRevertedEventBadTopicLength);
         }
 
         let token_contract = H160::from_slice(
@@ -903,7 +907,7 @@ impl LowerRevertedData {
         // Decode amount from the first 32 bytes of data
         let amount_bytes = &data[0..WORD_LENGTH];
         if amount_bytes[0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::LowerRevertedEventAmountOverflow)
+            return Err(Error::LowerRevertedEventAmountOverflow);
         }
 
         let amount = u128::from_be_bytes(
@@ -959,7 +963,7 @@ impl EventData {
             EventData::LogLowerReverted(d) => d.is_valid(),
             EventData::EmptyEvent => true,
             _ => false,
-        }
+        };
     }
 }
 
@@ -1029,7 +1033,7 @@ pub struct EthEventId {
 
 impl EthEventId {
     pub fn hashed<R, F: FnOnce(&[u8]) -> R>(&self, hasher: F) -> R {
-        return (self.signature, self.transaction_hash).using_encoded(hasher)
+        return (self.signature, self.transaction_hash).using_encoded(hasher);
     }
 }
 
@@ -1080,7 +1084,7 @@ impl<BlockNumber: Member, AccountId: Member> EthEventCheckResult<BlockNumber, Ac
             ready_for_processing_after_block: ready_after_block,
             checked_at_block,
             min_challenge_votes,
-        }
+        };
     }
 }
 
@@ -1109,7 +1113,7 @@ impl<AccountId: Member> Challenge<AccountId> {
         challenge_reason: ChallengeReason,
         challenged_by: AccountId,
     ) -> Self {
-        return Challenge::<AccountId> { event_id, challenge_reason, challenged_by }
+        return Challenge::<AccountId> { event_id, challenge_reason, challenged_by };
     }
 }
 
@@ -1132,7 +1136,7 @@ pub struct Validator<AuthorityId: Member, AccountId: Member> {
 
 impl<AuthorityId: Member, AccountId: Member> Validator<AuthorityId, AccountId> {
     pub fn new(account_id: AccountId, key: AuthorityId) -> Self {
-        return Validator::<AuthorityId, AccountId> { account_id, key }
+        return Validator::<AuthorityId, AccountId> { account_id, key };
     }
 }
 
@@ -1164,7 +1168,7 @@ pub trait TokenInterface<TokenId, AccountId> {
 
 impl<TokenId, AccountId> TokenInterface<TokenId, AccountId> for () {
     fn process_lift(_event: &EthEvent) -> DispatchResult {
-        return Err(DispatchError::Other("Not implemented"))
+        return Err(DispatchError::Other("Not implemented"));
     }
 
     fn deposit_tokens(
@@ -1172,7 +1176,7 @@ impl<TokenId, AccountId> TokenInterface<TokenId, AccountId> for () {
         _recipient_account_id: AccountId,
         _raw_amount: u128,
     ) -> DispatchResult {
-        return Err(DispatchError::Other("Not implemented"))
+        return Err(DispatchError::Other("Not implemented"));
     }
 }
 

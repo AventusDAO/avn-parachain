@@ -92,7 +92,7 @@ pub struct EthTransaction {
 
 impl EthTransaction {
     pub fn new(from: [u8; 32], to: H160, data: Vec<u8>) -> Self {
-        return EthTransaction { from, to, data, block: None }
+        return EthTransaction { from, to, data, block: None };
     }
 
     pub fn set_block(mut self, block: Option<u32>) -> Self {
@@ -300,10 +300,10 @@ where
     let wrapped_signed_payload: Vec<u8> =
         [OPEN_BYTES_TAG, signed_payload, CLOSE_BYTES_TAG].concat();
 
-    if signature.verify(&*wrapped_signed_payload, &signer) ||
-        signature.verify(signed_payload, &signer)
+    if signature.verify(&*wrapped_signed_payload, &signer)
+        || signature.verify(signed_payload, &signer)
     {
-        return Ok(())
+        return Ok(());
     }
 
     Err(())
@@ -325,16 +325,17 @@ where
     #[cfg(any(feature = "test-utils", feature = "runtime-benchmarks"))]
     {
         if verify_sr_signature(signer, signature, signed_payload).is_ok() {
-            return Ok(())
+            return Ok(());
         }
     }
 
     // Handle multi signature verification
     if let Ok(multi_signature) = MultiSignature::decode(&mut &signature.encode()[..]) {
         match multi_signature {
-            MultiSignature::Sr25519(_sr_signature) =>
-                return verify_sr_signature(signer, signature, signed_payload),
-            MultiSignature::Ecdsa(ecdsa_signature) =>
+            MultiSignature::Sr25519(_sr_signature) => {
+                return verify_sr_signature(signer, signature, signed_payload)
+            },
+            MultiSignature::Ecdsa(ecdsa_signature) => {
                 match recover_ethereum_address_from_ecdsa_signature(
                     &ecdsa_signature,
                     signed_payload,
@@ -344,13 +345,14 @@ where
                         let derived_public_key =
                             sr25519::Public::from_raw(keccak_256(&eth_address));
                         if derived_public_key.encode() == signer.clone().into().encode() {
-                            return Ok(())
+                            return Ok(());
                         }
                     },
                     Err(err) => {
                         log::error!("Error recovering ecdsa address: {:?}", err);
                     },
-                },
+                }
+            },
             _ => {
                 log::error!("MultiSignature is not supported");
             },
@@ -381,7 +383,7 @@ pub struct EthQueryRequest {
 
 impl EthQueryRequest {
     pub fn new(tx_hash: H256, response_type: EthQueryResponseType) -> Self {
-        return EthQueryRequest { tx_hash, response_type }
+        return EthQueryRequest { tx_hash, response_type };
     }
 }
 
@@ -452,7 +454,7 @@ pub struct RootRange<BlockNumber: AtLeast32Bit> {
 
 impl<BlockNumber: AtLeast32Bit> RootRange<BlockNumber> {
     pub fn new(from_block: BlockNumber, to_block: BlockNumber) -> Self {
-        return RootRange::<BlockNumber> { from_block, to_block }
+        return RootRange::<BlockNumber> { from_block, to_block };
     }
 }
 
@@ -476,7 +478,7 @@ pub struct RootId<BlockNumber: AtLeast32Bit> {
 
 impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
     pub fn new(range: RootRange<BlockNumber>, ingress_counter: IngressCounter) -> Self {
-        return RootId::<BlockNumber> { range, ingress_counter }
+        return RootId::<BlockNumber> { range, ingress_counter };
     }
 
     pub fn session_id(&self) -> BoundedVec<u8, VotingSessionIdBound> {

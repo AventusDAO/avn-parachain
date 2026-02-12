@@ -445,7 +445,7 @@ pub mod pallet {
                         },
                         ingress_counter,
                         BlockNumberFor::<T>::zero(),
-                    )
+                    );
                 })
                 .collect::<Vec<(EthEventId, IngressCounter, BlockNumberFor<T>)>>();
 
@@ -544,8 +544,8 @@ pub mod pallet {
             let (validated, _ingress_counter, _) = &Self::events_pending_challenge()[event_index];
 
             ensure!(
-                <frame_system::Pallet<T>>::block_number() >
-                    validated.ready_for_processing_after_block,
+                <frame_system::Pallet<T>>::block_number()
+                    > validated.ready_for_processing_after_block,
                 Error::<T>::InvalidEventToProcess
             );
 
@@ -560,8 +560,8 @@ pub mod pallet {
             let event_has_not_been_processed =
                 !T::ProcessedEventsChecker::processed_event_exists(&event_id);
             let event_was_declared_invalid = validated.result == CheckResult::Invalid;
-            let event_can_be_resubmitted = event_was_declared_invalid ||
-                (successful_challenge && event_has_not_been_processed);
+            let event_can_be_resubmitted = event_was_declared_invalid
+                || (successful_challenge && event_has_not_been_processed);
             if !event_can_be_resubmitted {
                 if T::ProcessedEventsChecker::add_processed_event(&event_id, true).is_err() {
                     log::error!(
@@ -602,9 +602,9 @@ pub mod pallet {
                 }
             }
 
-            if validated.result == CheckResult::Ok &&
-                !successful_challenge &&
-                event_has_not_been_processed
+            if validated.result == CheckResult::Ok
+                && !successful_challenge
+                && event_has_not_been_processed
             {
                 // Let everyone know we have processed an event.
                 let processing_outcome =
@@ -727,7 +727,7 @@ pub mod pallet {
             ensure!(&tx_hash != &H256::zero(), Error::<T>::MalformedHash);
 
             // TODO [TYPE: weightInfo][PRI: medium]: Return accurate weight
-            return Self::add_event(event_type, tx_hash, account_id)
+            return Self::add_event(event_type, tx_hash, account_id);
         }
 
         // # </weight>
@@ -762,7 +762,7 @@ pub mod pallet {
             <ProxyNonces<T>>::mutate(&sender, |n| *n += 1);
 
             // TODO [TYPE: weightInfo][PRI: medium]: Return accurate weight
-            return Self::add_event(event_type, tx_hash, sender)
+            return Self::add_event(event_type, tx_hash, sender);
         }
 
         /// Sets the address for ethereum contracts
@@ -814,7 +814,7 @@ pub mod pallet {
                     };
                 }
 
-                return
+                return;
             }
             let (this_validator, finalised_block) = setup_result.expect("We have a validator");
 
@@ -823,7 +823,7 @@ pub mod pallet {
                 AVN::<T>::is_primary_for_block(block_number, &this_validator.account_id);
             if is_primary.is_err() {
                 log::error!("Error checking if validator can check result");
-                return
+                return;
             }
 
             // =============================== Main Logic ===========================
@@ -856,22 +856,22 @@ pub mod pallet {
                 if !Self::unchecked_events().iter().any(|(event, counter, _)| {
                     event == &result.event.event_id && counter == ingress_counter
                 }) {
-                    return InvalidTransaction::Custom(ERROR_CODE_EVENT_NOT_IN_UNCHECKED).into()
+                    return InvalidTransaction::Custom(ERROR_CODE_EVENT_NOT_IN_UNCHECKED).into();
                 }
 
                 if !result.event.event_data.is_valid() {
-                    return InvalidTransaction::Custom(ERROR_CODE_INVALID_EVENT_DATA).into()
+                    return InvalidTransaction::Custom(ERROR_CODE_INVALID_EVENT_DATA).into();
                 }
 
                 if AVN::<T>::is_primary_for_block(result.checked_at_block, &result.checked_by)
-                    .map_err(|_| InvalidTransaction::Custom(ERROR_CODE_IS_PRIMARY_HAS_ERROR))? ==
-                    false
+                    .map_err(|_| InvalidTransaction::Custom(ERROR_CODE_IS_PRIMARY_HAS_ERROR))?
+                    == false
                 {
-                    return InvalidTransaction::Custom(ERROR_CODE_VALIDATOR_NOT_PRIMARY).into()
+                    return InvalidTransaction::Custom(ERROR_CODE_VALIDATOR_NOT_PRIMARY).into();
                 }
 
                 if validator.account_id != result.checked_by {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 }
 
                 if !Self::data_signature_is_valid(
@@ -879,7 +879,7 @@ pub mod pallet {
                     &validator,
                     signature,
                 ) {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 };
 
                 ValidTransaction::with_tag_prefix("EthereumEvents")
@@ -899,7 +899,7 @@ pub mod pallet {
                     &pending.event.event_id == event_id && counter == ingress_counter
                 }) {
                     return InvalidTransaction::Custom(ERROR_CODE_EVENT_NOT_IN_PENDING_CHALLENGES)
-                        .into()
+                        .into();
                 }
 
                 // TODO [TYPE: security][PRI: high][CRITICAL][JIRA: 350]: Check if `validator` is a
@@ -910,7 +910,7 @@ pub mod pallet {
                     validator,
                     signature,
                 ) {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 };
 
                 ValidTransaction::with_tag_prefix("EthereumEvents")
@@ -934,7 +934,7 @@ pub mod pallet {
                     pending.event.event_id == challenge.event_id && ingress_counter == counter
                 }) {
                     return InvalidTransaction::Custom(ERROR_CODE_EVENT_NOT_IN_PENDING_CHALLENGES)
-                        .into()
+                        .into();
                 }
 
                 // TODO [TYPE: business logic][PRI: medium][CRITICAL][JIRA: 351]: Make sure the
@@ -943,7 +943,7 @@ pub mod pallet {
                 // by the time the tx gets here the window may have passed.
 
                 if validator.account_id != challenge.challenged_by {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 }
 
                 if !Self::data_signature_is_valid(
@@ -951,7 +951,7 @@ pub mod pallet {
                     &validator,
                     signature,
                 ) {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 };
 
                 ValidTransaction::with_tag_prefix("EthereumEvents")
@@ -966,7 +966,7 @@ pub mod pallet {
                     .propagate(true)
                     .build()
             } else {
-                return InvalidTransaction::Call.into()
+                return InvalidTransaction::Call.into();
             }
         }
     }
@@ -1045,8 +1045,8 @@ impl<T: Config> Pallet<T> {
         let total_num_of_challenges =
             Self::challenges(validated.event.event_id.clone()).len() as u32;
 
-        return total_num_of_challenges >
-            cmp::max(validated.min_challenge_votes, required_challenge_votes)
+        return total_num_of_challenges
+            > cmp::max(validated.min_challenge_votes, required_challenge_votes);
     }
 
     fn get_pending_event_index(event_id: &EthEventId) -> Result<usize, Error<T>> {
@@ -1056,7 +1056,7 @@ impl<T: Config> Pallet<T> {
             .iter()
             .rposition(|(pending, _counter, _)| *event_id == pending.event.event_id);
         ensure!(event_index.is_some(), Error::<T>::PendingChallengeEventNotFound);
-        return Ok(event_index.expect("Checked for error"))
+        return Ok(event_index.expect("Checked for error"));
     }
 
     fn parse_tier1_event(
@@ -1070,63 +1070,63 @@ impl<T: Config> Pallet<T> {
                 Error::<T>::EventParsingFailed
             })?;
 
-            return Ok(EventData::LogAddedValidator(event_data))
+            return Ok(EventData::LogAddedValidator(event_data));
         } else if event_id.signature == ValidEvents::Lifted.signature() {
             let event_data = <LiftedData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 Lifted Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogLifted(event_data))
+            return Ok(EventData::LogLifted(event_data));
         } else if event_id.signature == ValidEvents::LiftedToPredictionMarket.signature() {
             let event_data = <LiftedData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 Prediction market lift Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogLiftedToPredictionMarket(event_data))
+            return Ok(EventData::LogLiftedToPredictionMarket(event_data));
         } else if event_id.signature == ValidEvents::NftMint.signature() {
             let event_data = <NftMintData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 AvnMintTo Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogNftMinted(event_data))
+            return Ok(EventData::LogNftMinted(event_data));
         } else if event_id.signature == ValidEvents::NftTransferTo.signature() {
             let event_data = <NftTransferToData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 AvnTransferTo Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogNftTransferTo(event_data))
+            return Ok(EventData::LogNftTransferTo(event_data));
         } else if event_id.signature == ValidEvents::NftCancelListing.signature() {
             let event_data = <NftCancelListingData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 AvnCancelNftListing Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogNftCancelListing(event_data))
+            return Ok(EventData::LogNftCancelListing(event_data));
         } else if event_id.signature == ValidEvents::NftEndBatchListing.signature() {
             let event_data = <NftEndBatchListingData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 AvnCancelNftBatchListing Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogNftEndBatchListing(event_data))
+            return Ok(EventData::LogNftEndBatchListing(event_data));
         } else if event_id.signature == ValidEvents::AvtGrowthLifted.signature() {
             let event_data = <AvtGrowthLiftedData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 LogGrowth Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogAvtGrowthLifted(event_data))
+            return Ok(EventData::LogAvtGrowthLifted(event_data));
         } else if event_id.signature == ValidEvents::AvtLowerClaimed.signature() {
             let event_data = <AvtLowerClaimedData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 LogLowerClaimed Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogLowerClaimed(event_data))
+            return Ok(EventData::LogLowerClaimed(event_data));
         } else if event_id.signature == ValidEvents::LowerReverted.signature() {
             let event_data = <LowerRevertedData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 LogLowerReverted Event: {:#?}", e);
                 Error::<T>::EventParsingFailed
             })?;
-            return Ok(EventData::LogLowerReverted(event_data))
+            return Ok(EventData::LogLowerReverted(event_data));
         } else {
-            return Err(Error::<T>::UnrecognizedEventSignature)
+            return Err(Error::<T>::UnrecognizedEventSignature);
         }
     }
 
@@ -1134,13 +1134,13 @@ impl<T: Config> Pallet<T> {
         finalised_block_number: BlockNumberFor<T>,
     ) -> Option<(EthEventId, IngressCounter, BlockNumberFor<T>)> {
         if Self::unchecked_events().is_empty() {
-            return None
+            return None;
         }
 
         return Self::unchecked_events()
             .into_iter()
             .filter(|e| e.2 <= finalised_block_number)
-            .nth(0)
+            .nth(0);
     }
 
     fn get_next_event_to_validate(
@@ -1175,7 +1175,7 @@ impl<T: Config> Pallet<T> {
                     node_has_never_validated_events,
                 ) && submitted_at_block <= &finalised_block_number
             })
-            .nth(0)
+            .nth(0);
     }
 
     fn can_validate_this_event(
@@ -1185,16 +1185,16 @@ impl<T: Config> Pallet<T> {
         node_has_never_validated_events: bool,
     ) -> bool {
         if checked.checked_by == *validator_account_id {
-            return false
+            return false;
         }
         if node_has_never_validated_events {
-            return true
+            return true;
         }
 
         let node_has_not_validated_this_event =
             |event_id| !validated_events.as_slice().contains(event_id);
 
-        return node_has_not_validated_this_event(&checked.event.event_id)
+        return node_has_not_validated_this_event(&checked.event.event_id);
     }
 
     fn get_next_event_to_process(
@@ -1208,10 +1208,10 @@ impl<T: Config> Pallet<T> {
         return Self::events_pending_challenge()
             .into_iter()
             .filter(|(checked, _counter, submitted_at_block)| {
-                block_number > checked.ready_for_processing_after_block &&
-                    submitted_at_block <= &finalised_block_number
+                block_number > checked.ready_for_processing_after_block
+                    && submitted_at_block <= &finalised_block_number
             })
-            .last()
+            .last();
     }
 
     fn send_event(
@@ -1249,14 +1249,14 @@ impl<T: Config> Pallet<T> {
         if result.result == CheckResult::HttpErrorCheckingEvent {
             // TODO [TYPE: review][PRI: high][CRITICAL]: should there be a punishment for this?
             log::info!("Http error checking event, skipping check");
-            return Ok(())
+            return Ok(());
         }
 
         if result.result == CheckResult::InsufficientConfirmations {
             // TODO [TYPE: review][PRI: medium][JIRA: SYS-358]: Is the correct behaviour? A young
             // event will block the queue.
             log::info!("Event is not old enough, skipping check");
-            return Ok(())
+            return Ok(());
         }
 
         let signature = validator
@@ -1290,7 +1290,7 @@ impl<T: Config> Pallet<T> {
         if validated.result == CheckResult::HttpErrorCheckingEvent {
             // TODO [TYPE: review][PRI: high][CRITICAL]: should there be a punishment for this?
             log::info!("Http error validating event, not challenging");
-            return Ok(())
+            return Ok(());
         }
 
         Self::save_validated_event_in_local_storage(checked.event.event_id.clone())?;
@@ -1331,15 +1331,15 @@ impl<T: Config> Pallet<T> {
     ) -> Option<Challenge<T::AccountId>> {
         if checked.event.event_id != validated.event.event_id {
             log::info!("Checked and validated have different event id's, not challenging");
-            return None
+            return None;
         }
 
-        if (validated.result == checked.result &&
-            validated.event.event_data == checked.event.event_data) ||
-            (validated.result == CheckResult::Invalid && checked.result == CheckResult::Invalid)
+        if (validated.result == checked.result
+            && validated.event.event_data == checked.event.event_data)
+            || (validated.result == CheckResult::Invalid && checked.result == CheckResult::Invalid)
         {
             log::info!("Validation matches original check, not challenging");
-            return None
+            return None;
         }
 
         let challenge_reason = match validated {
@@ -1352,16 +1352,18 @@ impl<T: Config> Pallet<T> {
             },
             EthEventCheckResult { result: CheckResult::Invalid, .. }
                 if checked.result == CheckResult::Ok =>
-                ChallengeReason::IncorrectResult,
+            {
+                ChallengeReason::IncorrectResult
+            },
             _ => ChallengeReason::Unknown, /* We shouldn't get here but in case we do, set it to
                                             * Unknown */
         };
 
         if challenge_reason == ChallengeReason::Unknown {
-            return None
+            return None;
         }
 
-        return Some(Challenge::new(checked.event.event_id, challenge_reason, validator_account_id))
+        return Some(Challenge::new(checked.event.event_id, challenge_reason, validator_account_id));
     }
 
     fn save_validated_event_in_local_storage(event_id: EthEventId) -> Result<(), Error<T>> {
@@ -1378,10 +1380,12 @@ impl<T: Config> Pallet<T> {
                 }
             });
         match result {
-            Err(MutateStorageError::ValueFunctionFailed(_)) =>
-                Err(Error::<T>::ErrorSavingValidationToLocalDB),
-            Err(MutateStorageError::ConcurrentModification(_)) =>
-                Err(Error::<T>::ErrorSavingValidationToLocalDB),
+            Err(MutateStorageError::ValueFunctionFailed(_)) => {
+                Err(Error::<T>::ErrorSavingValidationToLocalDB)
+            },
+            Err(MutateStorageError::ConcurrentModification(_)) => {
+                Err(Error::<T>::ErrorSavingValidationToLocalDB)
+            },
             Ok(_) => return Ok(()),
         }
     }
@@ -1396,7 +1400,7 @@ impl<T: Config> Pallet<T> {
         let body = Self::fetch_event(event_id);
 
         // analyse the body to see if the event exists and is correctly formed
-        return Self::compute_result(block_number, body, event_id, &validator.account_id)
+        return Self::compute_result(block_number, body, event_id, &validator.account_id);
     }
 
     // This function must not panic!!.
@@ -1429,7 +1433,7 @@ impl<T: Config> Pallet<T> {
                 validator_account_id.clone(),
                 block_number,
                 Default::default(),
-            )
+            );
         }
 
         let (response_data_object, num_confirmations) =
@@ -1438,32 +1442,32 @@ impl<T: Config> Pallet<T> {
 
         if response_data_object.is_empty() {
             log::error!("❌ Response data json is empty");
-            return invalid_result
+            return invalid_result;
         };
 
         // make sure the transaction has been successfully executed
         let status = get_status(&response_data_object).unwrap_or(0);
         if status != 1 {
             log::error!("❌ Transaction was not executed successfully on Ethereum");
-            return invalid_result
+            return invalid_result;
         }
 
         let event_object: Option<(_, _, _)> = find_event(&response_data_object, event_id.signature);
         if event_object.is_none() {
             log::error!("❌ Event missing from response or response is not valid. Response: {:?}, event topic: {:?}", response_data_object, event_id.signature);
-            return invalid_result
+            return invalid_result;
         }
         let (data, topics, contract_address) = event_object.expect("Value is not none");
 
         if Self::is_event_contract_valid(&contract_address, event_id) == false {
             log::error!("❌ Event contract address {:?} is not recognised", contract_address);
-            return invalid_result
+            return invalid_result;
         }
 
         let parsed_event = Self::parse_tier1_event(event_id.clone(), data, topics);
         if let Err(e) = parsed_event {
             log::error!("❌ Unable to parse tier 1 event data {:?}", e);
-            return invalid_result
+            return invalid_result;
         }
 
         if num_confirmations < <T as Config>::MinEthBlockConfirmation::get() {
@@ -1479,7 +1483,7 @@ impl<T: Config> Pallet<T> {
                 validator_account_id.clone(),
                 block_number,
                 Default::default(),
-            )
+            );
         }
 
         return EthEventCheckResult::new(
@@ -1490,7 +1494,7 @@ impl<T: Config> Pallet<T> {
             validator_account_id.clone(),
             block_number,
             Default::default(),
-        )
+        );
     }
 
     fn fetch_event(event_id: &EthEventId) -> Result<Vec<u8>, DispatchError> {
@@ -1506,11 +1510,11 @@ impl<T: Config> Pallet<T> {
     }
 
     fn event_exists_in_system(event_id: &EthEventId) -> bool {
-        return T::ProcessedEventsChecker::processed_event_exists(&event_id) ||
-            Self::unchecked_events().iter().any(|(event, _, _)| event == event_id) ||
-            Self::events_pending_challenge()
+        return T::ProcessedEventsChecker::processed_event_exists(&event_id)
+            || Self::unchecked_events().iter().any(|(event, _, _)| event == event_id)
+            || Self::events_pending_challenge()
                 .iter()
-                .any(|(event, _counter, _)| &event.event.event_id == event_id)
+                .any(|(event, _counter, _)| &event.event.event_id == event_id);
     }
 
     /// Adds an event: tx_hash must be a nonzero hash
@@ -1553,15 +1557,15 @@ impl<T: Config> Pallet<T> {
         let event_type = ValidEvents::try_from(&event_id.signature).ok();
         if let Some(event_type) = event_type {
             if event_type.is_nft_event() {
-                return <NftT1Contracts<T>>::contains_key(contract_address)
+                return <NftT1Contracts<T>>::contains_key(contract_address);
             }
 
             let non_nft_contract_address = Some(AVN::<T>::get_bridge_contract_address());
-            return non_nft_contract_address.is_some() &&
-                non_nft_contract_address.expect("checked for none") == *contract_address
+            return non_nft_contract_address.is_some()
+                && non_nft_contract_address.expect("checked for none") == *contract_address;
         }
 
-        return false
+        return false;
     }
 
     fn data_signature_is_valid<D: Encode>(
@@ -1571,18 +1575,18 @@ impl<T: Config> Pallet<T> {
     ) -> bool {
         // verify that the incoming (unverified) pubkey is actually a validator
         if !Self::is_validator(&validator.account_id) {
-            return false
+            return false;
         }
 
         // check signature (this is expensive so we do it last).
         let signature_valid =
             data.using_encoded(|encoded_data| validator.key.verify(&encoded_data, &signature));
 
-        return signature_valid
+        return signature_valid;
     }
 
     fn is_validator(account_id: &T::AccountId) -> bool {
-        return AVN::<T>::active_validators().into_iter().any(|v| v.account_id == *account_id)
+        return AVN::<T>::active_validators().into_iter().any(|v| v.account_id == *account_id);
     }
 
     fn encode_signed_add_ethereum_log_params(
@@ -1598,7 +1602,7 @@ impl<T: Config> Pallet<T> {
             tx_hash,
             sender_nonce,
         )
-            .encode()
+            .encode();
     }
 
     fn get_encoded_call_param(
@@ -1618,7 +1622,7 @@ impl<T: Config> Pallet<T> {
                     &tx_hash,
                     sender_nonce,
                 );
-                return Some((&proof, encoded_data))
+                return Some((&proof, encoded_data));
             },
 
             _ => return None,
@@ -1628,13 +1632,13 @@ impl<T: Config> Pallet<T> {
     pub fn get_next_ingress_counter() -> IngressCounter {
         let ingress_counter = Self::ingress_counter() + 1; // default value in storage is 0, so first root_hash has counter 1
         TotalIngresses::<T>::put(ingress_counter);
-        return ingress_counter
+        return ingress_counter;
     }
 }
 
 impl<T: Config> ProcessedEventsChecker for Pallet<T> {
     fn processed_event_exists(event_id: &EthEventId) -> bool {
-        return <ProcessedEvents<T>>::contains_key(event_id)
+        return <ProcessedEvents<T>>::contains_key(event_id);
     }
 
     fn add_processed_event(event_id: &EthEventId, accepted: bool) -> Result<(), ()> {
@@ -1657,7 +1661,7 @@ impl<T: Config> ProcessedEventsChecker for Pallet<T> {
             .collect();
 
         if migration_batch.is_empty() {
-            return None
+            return None;
         }
 
         migration_batch.iter().for_each(|event_to_migrate| {
@@ -1676,10 +1680,10 @@ impl<T: Config> InnerCallValidator for Pallet<T> {
                 &proof,
                 &signed_payload.as_slice(),
             )
-            .is_ok()
+            .is_ok();
         }
 
-        return false
+        return false;
     }
 }
 

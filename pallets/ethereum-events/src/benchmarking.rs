@@ -100,7 +100,7 @@ fn setup_validators<T: Config>(
         Some("Too many validators for session"),
     ));
 
-    return validators
+    return validators;
 }
 
 fn setup_extrinsics_inputs<T: Config>(
@@ -137,7 +137,7 @@ fn generate_signature<T: pallet_avn::Config>(
     let encoded_data = 0.encode();
     let authority_id = T::AuthorityId::generate_pair(None);
     let signature = authority_id.sign(&encoded_data).expect("able to make signature");
-    return signature
+    return signature;
 }
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {

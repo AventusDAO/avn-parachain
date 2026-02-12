@@ -27,7 +27,7 @@ mod test_set_ethereum_contract {
 
     impl Context {
         fn dispatch_map_nft_contract(&self, address: H160) -> DispatchResult {
-            return EthereumEvents::insert_nft_contract(self.origin.clone(), address.clone())
+            return EthereumEvents::insert_nft_contract(self.origin.clone(), address.clone());
         }
     }
 

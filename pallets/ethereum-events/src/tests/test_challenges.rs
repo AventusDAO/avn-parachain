@@ -21,7 +21,7 @@ fn with_offchain_worker(externality: sp_io::TestExternalities) -> sp_io::TestExt
     let (pool, _pool_state) = TestTransactionPoolExt::new();
     ext.register_extension(OffchainExt::new(offchain));
     ext.register_extension(TransactionPoolExt::new(pool));
-    return ext
+    return ext;
 }
 
 fn remove_from_events_pending_challenge(index: usize) {
@@ -33,7 +33,7 @@ fn get_event_check_result(
     data: &EventData,
     result: CheckResult,
 ) -> EthEventCheckResult<BlockNumberFor<TestRuntime>, AccountId> {
-    return EthEventCheckResult::new(10, result, id, data, account_id_0(), 5, 0)
+    return EthEventCheckResult::new(10, result, id, data, account_id_0(), 5, 0);
 }
 
 fn get_added_validator_data() -> AddedValidatorData {
@@ -41,7 +41,7 @@ fn get_added_validator_data() -> AddedValidatorData {
         eth_public_key: H512::random(),
         t2_address: H256::random(),
         validator_account_id: U256::one(),
-    }
+    };
 }
 
 fn create_challenge(
@@ -49,11 +49,11 @@ fn create_challenge(
     reason: ChallengeReason,
     challenger: AccountId,
 ) -> Challenge<AccountId> {
-    return Challenge::new(id, reason, challenger)
+    return Challenge::new(id, reason, challenger);
 }
 
 fn get_validator(index: usize) -> Validator<AuthorityId, AccountId> {
-    return EthereumEvents::validators()[index].clone()
+    return EthereumEvents::validators()[index].clone();
 }
 
 fn mock_send_challenge_transaction_from_ocw(
@@ -75,7 +75,7 @@ fn mock_send_challenge_transaction_from_ocw(
         ingress_counter,
         signature,
         validator,
-    )
+    );
 }
 
 // Tests for `fn get_next_event_to_validate` (also covers `fn can_validate_this_event`)
@@ -463,10 +463,8 @@ fn test_challenge_missing_event() {
         let bad_event_id = EthereumEvents::get_event_id(1);
         let challenge =
             create_challenge(bad_event_id, ChallengeReason::IncorrectResult, account_id_1());
-        let signature = validator
-            .key
-            .sign(&(CHALLENGE_EVENT_CONTEXT, challenge.clone()).encode())
-            .unwrap();
+        let signature =
+            validator.key.sign(&(CHALLENGE_EVENT_CONTEXT, challenge.clone()).encode()).unwrap();
 
         assert_eq!(EthereumEvents::events_pending_challenge().len(), 0);
         assert_noop!(
@@ -494,10 +492,8 @@ fn test_challenge_out_of_challenge_window() {
             ChallengeReason::IncorrectResult,
             validator.account_id,
         );
-        let signature = validator
-            .key
-            .sign(&(CHALLENGE_EVENT_CONTEXT, challenge.clone()).encode())
-            .unwrap();
+        let signature =
+            validator.key.sign(&(CHALLENGE_EVENT_CONTEXT, challenge.clone()).encode()).unwrap();
 
         // Move block_number past challenge window
         System::set_block_number(EVENT_CHALLENGE_PERIOD + 1);
@@ -527,10 +523,8 @@ fn test_challenge_invalid_validator() {
             ChallengeReason::IncorrectResult,
             bad_validator.account_id,
         );
-        let signature = bad_validator
-            .key
-            .sign(&(CHALLENGE_EVENT_CONTEXT, challenge.clone()).encode())
-            .unwrap();
+        let signature =
+            bad_validator.key.sign(&(CHALLENGE_EVENT_CONTEXT, challenge.clone()).encode()).unwrap();
 
         assert_noop!(
             EthereumEvents::challenge_event(
@@ -751,8 +745,8 @@ fn test_challenge_valid_challenge_invalid_result() {
         ));
         assert_eq!(EthereumEvents::challenges(challenge.event_id.clone()).len(), 1);
 
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventChallenged {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventChallenged {
                 eth_event_id: challenge.event_id.clone(),
                 challenger: validator.account_id,
                 challenge_reason: ChallengeReason::IncorrectResult
@@ -787,8 +781,8 @@ fn test_challenge_valid_challenge_invalid_event_data() {
         ));
         assert_eq!(EthereumEvents::challenges(challenge.event_id.clone()).len(), 1);
 
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventChallenged {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventChallenged {
                 eth_event_id: challenge.event_id.clone(),
                 challenger: validator.account_id,
                 challenge_reason: ChallengeReason::IncorrectEventData
@@ -800,9 +794,7 @@ fn test_challenge_valid_challenge_invalid_event_data() {
 #[test]
 #[should_panic]
 fn test_invalid_config_validator_threshold() {
-    ExtBuilder::build_default()
-        .invalid_config_with_zero_validator_threshold()
-        .as_externality();
+    ExtBuilder::build_default().invalid_config_with_zero_validator_threshold().as_externality();
 }
 
 // Test "increase the min_challenge_votes of any open challenges to 1/3 of the new validators"

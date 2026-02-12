@@ -292,9 +292,8 @@ pub async fn start_parachain_node(
     if parachain_config.offchain_worker.enabled {
         use futures::FutureExt;
 
-        let port_number = avn_port
-            .clone()
-            .unwrap_or_else(|| DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.to_string());
+        let port_number =
+            avn_port.clone().unwrap_or_else(|| DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.to_string());
 
         if let Some(mut local_db) = backend.offchain_storage() {
             local_db.set(
@@ -401,11 +400,8 @@ pub async fn start_parachain_node(
             _ => Err("Keystore must be local"),
         }?;
 
-        let eth_web3_url = avn_cli_config
-            .ethereum_node_urls
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "".to_string());
+        let eth_web3_url =
+            avn_cli_config.ethereum_node_urls.first().cloned().unwrap_or_else(|| "".to_string());
         let avn_config = avn_service::Config::<Block, _> {
             keystore: params.keystore_container.local_keystore(),
             keystore_path: keystore_path.clone(),

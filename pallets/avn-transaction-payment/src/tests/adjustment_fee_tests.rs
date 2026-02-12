@@ -26,7 +26,7 @@ pub const NO_TIP: u128 = 0u128;
 pub const ONE_ATTO_TIP: u128 = 1u128;
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 /// create a transaction info struct from weight. Handy to avoid building the whole struct.
@@ -49,9 +49,7 @@ fn pay_gas_and_call_remark_post_info(
     let (_valid, val, origin) = ext
         .validate(origin, &call, &info, len, implicit, &implication, TransactionSource::Local)
         .expect("validation should succeed");
-    let pre = ext
-        .prepare(val, &origin, &call, &info, len)
-        .expect("prepare should charge the fee");
+    let pre = ext.prepare(val, &origin, &call, &info, len).expect("prepare should charge the fee");
 
     System::inc_account_nonce(sender); // please don't move this line
 
@@ -116,7 +114,7 @@ pub(crate) fn fee_adjusted_event_emitted() -> bool {
         .collect::<Vec<_>>()
         .is_empty();
 
-    return transaction_payment_event_missing == false
+    return transaction_payment_event_missing == false;
 }
 
 /// Rolls desired block number of times.

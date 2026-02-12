@@ -32,14 +32,14 @@ fn build_proof(
     relayer: &AccountId,
     signature: Signature,
 ) -> Proof<Signature, AccountId> {
-    return Proof { signer: *signer, relayer: *relayer, signature }
+    return Proof { signer: *signer, relayer: *relayer, signature };
 }
 
 fn create_batch_and_list() -> U256 {
     let batch_id = create_batch();
     list_batch(batch_id, NftSaleType::Fiat);
 
-    return batch_id
+    return batch_id;
 }
 
 fn create_batch() -> U256 {
@@ -51,7 +51,7 @@ fn create_batch() -> U256 {
     let inner_call = context.create_signed_create_batch_call(nonce);
     assert_ok!(NftManager::proxy(Origin::signed(context.relayer), inner_call));
 
-    return batch_id
+    return batch_id;
 }
 
 fn list_batch(batch_id: U256, market: NftSaleType) {
@@ -111,7 +111,7 @@ impl CreateBatchContext {
             total_supply: self.total_supply,
             royalties: self.royalties.clone(),
             t1_authority: self.t1_authority,
-        }))
+        }));
     }
 
     fn create_signed_create_batch_proof(&self, nonce: u64) -> Proof<Signature, AccountId> {
@@ -125,19 +125,19 @@ impl CreateBatchContext {
         );
         let signature = sign(&self.creator_key_pair, &data_to_sign.encode());
 
-        return build_proof(&self.creator_account, &self.relayer, signature)
+        return build_proof(&self.creator_account, &self.relayer, signature);
     }
 
     fn batch_created_event_emitted(&self, batch_id: U256) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::BatchCreated {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::BatchCreated {
                     batch_nft_id: batch_id,
                     total_supply: self.total_supply,
                     batch_creator: self.creator_account,
                     authority: self.t1_authority,
                 })
-        })
+        });
     }
 }
 
@@ -352,7 +352,7 @@ mod signed_create_batch {
                         royalties: context.royalties.clone(),
                         t1_authority: context.t1_authority,
                     },
-                ))
+                ));
             }
 
             fn create_batch_and_assert_success(context: &CreateBatchContext, nonce: u64) {
@@ -581,7 +581,7 @@ impl MintBatchNftContext {
             index,
             owner: self.nft_owner_account,
             unique_external_ref: self.unique_external_ref.clone(),
-        }))
+        }));
     }
 
     fn create_signed_mint_batch_nft_proof(
@@ -599,19 +599,19 @@ impl MintBatchNftContext {
         );
         let signature = sign(&self.nft_owner_key_pair, &data_to_sign.encode());
 
-        return build_proof(&self.nft_owner_account, &self.relayer, signature)
+        return build_proof(&self.nft_owner_account, &self.relayer, signature);
     }
 
     fn mint_batch_nft_event_emitted(&self, batch_id: U256) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::BatchNftMinted {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::BatchNftMinted {
                     nft_id: self.nft_id,
                     batch_nft_id: batch_id,
                     authority: self.t1_authority,
                     owner: self.nft_owner_account,
                 })
-        })
+        });
     }
 }
 
@@ -659,8 +659,8 @@ mod signed_mint_batch_nft {
                 let info = <NftInfos<TestRuntime>>::get(<BatchInfoId<TestRuntime>>::get(batch_id))
                     .unwrap();
                 assert!(
-                    <NftBatches<TestRuntime>>::get(&batch_id).len() <=
-                        info.total_supply.try_into().unwrap()
+                    <NftBatches<TestRuntime>>::get(&batch_id).len()
+                        <= info.total_supply.try_into().unwrap()
                 );
             });
         }
@@ -871,8 +871,8 @@ mod signed_mint_batch_nft {
                 }
 
                 assert!(
-                    <NftBatches<TestRuntime>>::get(&batch_id).len() <=
-                        info.total_supply.try_into().unwrap()
+                    <NftBatches<TestRuntime>>::get(&batch_id).len()
+                        <= info.total_supply.try_into().unwrap()
                 );
             });
         }
@@ -942,7 +942,7 @@ mod signed_mint_batch_nft {
                         owner: context.nft_owner_account,
                         unique_external_ref: context.unique_external_ref.clone(),
                     },
-                ))
+                ));
             }
 
             fn create_batch_and_assert_success(
@@ -1195,7 +1195,7 @@ impl OpenForSaleContext {
                 batch_id,
                 market: self.market,
             },
-        ))
+        ));
     }
 
     fn create_signed_list_batch_for_sale_proof(
@@ -1207,17 +1207,17 @@ impl OpenForSaleContext {
             (SIGNED_LIST_BATCH_FOR_SALE_CONTEXT, &self.relayer, batch_id, self.market, nonce);
 
         let signature = sign(&self.creator_key_pair, &data_to_sign.encode());
-        return build_proof(&self.creator_account, &self.relayer, signature)
+        return build_proof(&self.creator_account, &self.relayer, signature);
     }
 
     fn batch_listed_for_sale_event_emitted(&self, batch_id: U256) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::BatchOpenForSale {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::BatchOpenForSale {
                     batch_nft_id: batch_id,
                     sale_type: self.market,
                 })
-        })
+        });
     }
 }
 
@@ -1434,7 +1434,7 @@ mod signed_list_batch_for_sale {
                         batch_id: *batch_id,
                         market: context.market,
                     },
-                ))
+                ));
             }
 
             fn create_batch_and_assert_success(
@@ -1631,7 +1631,7 @@ impl EndBatchSaleContext {
         return Box::new(MockCall::NftManager(super::Call::<TestRuntime>::signed_end_batch_sale {
             proof,
             batch_id,
-        }))
+        }));
     }
 
     fn create_signed_end_batch_sale_proof(
@@ -1642,17 +1642,17 @@ impl EndBatchSaleContext {
         let data_to_sign = (SIGNED_END_BATCH_SALE_CONTEXT, &self.relayer, batch_id, nonce);
 
         let signature = sign(&self.creator_key_pair, &data_to_sign.encode());
-        return build_proof(&self.creator_account, &self.relayer, signature)
+        return build_proof(&self.creator_account, &self.relayer, signature);
     }
 
     fn batch_sale_ended_event_emitted(&self, batch_id: U256) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::BatchSaleEnded {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::BatchSaleEnded {
                     batch_nft_id: batch_id,
                     sale_type: self.market,
                 })
-        })
+        });
     }
 }
 
@@ -1836,7 +1836,7 @@ mod signed_end_batch_sale {
                         proof,
                         batch_id: *batch_id,
                     },
-                ))
+                ));
             }
 
             fn end_sale_and_assert_success(

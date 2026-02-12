@@ -58,12 +58,12 @@ mod open_for_sale {
     impl Context {
         pub fn open_for_sale_event_emitted(&self) -> bool {
             return System::events().iter().any(|a| {
-                a.event ==
-                    Event::NftManager(crate::Event::<TestRuntime>::NftOpenForSale {
+                a.event
+                    == Event::NftManager(crate::Event::<TestRuntime>::NftOpenForSale {
                         nft_id: self.nft_id(),
                         sale_type: self.market.clone(),
                     })
-            })
+            });
         }
 
         pub fn call_list_nft_open_for_sale(&self) -> DispatchResult {
@@ -71,11 +71,11 @@ mod open_for_sale {
                 self.origin.clone().into(),
                 self.nft_id(),
                 self.market.clone(),
-            )
+            );
         }
 
         pub fn nft_id(&self) -> NftId {
-            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id)
+            return NftManager::generate_nft_id_single_mint(&self.t1_authority, self.unique_id);
         }
 
         pub fn inject_nft_to_chain(&self) -> (Nft<AccountId>, NftInfo<AccountId>) {
@@ -86,7 +86,7 @@ mod open_for_sale {
                 self.nft_id(),
                 self.bounded_external_ref(),
                 self.nft_owner,
-            )
+            );
         }
 
         pub fn bounded_external_ref(&self) -> BoundedVec<u8, NftExternalRefBound> {

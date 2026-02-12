@@ -160,11 +160,11 @@ impl TestAccount {
     }
 
     pub fn account_id(&self) -> AccountId {
-        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap()
+        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
     }
 
     pub fn key_pair(&self) -> sr25519::Pair {
-        return sr25519::Pair::from_seed(&self.seed)
+        return sr25519::Pair::from_seed(&self.seed);
     }
 
     fn into_32_bytes(account: &u64) -> [u8; 32] {
@@ -196,5 +196,5 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 }
 
 pub fn event_emitted(event: &RuntimeEvent) -> bool {
-    return System::events().iter().any(|a| a.event == *event)
+    return System::events().iter().any(|a| a.event == *event);
 }

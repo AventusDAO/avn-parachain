@@ -576,7 +576,7 @@ pub mod pallet {
                 .map_err(|e| e.error)?;
             Self::deposit_event(Event::<T>::CallDispatched { relayer, hash: call_hash });
 
-            return Self::get_dispatch_result_with_post_info(call)
+            return Self::get_dispatch_result_with_post_info(call);
         }
 
         /// Creates a new batch
@@ -777,7 +777,7 @@ pub mod pallet {
                 onchain_version,
                 Pallet::<T>::in_code_storage_version(),
             );
-            return Weight::from_parts(0 as u64, 0)
+            return Weight::from_parts(0 as u64, 0);
         }
     }
 }
@@ -856,14 +856,14 @@ impl<T: Config> Pallet<T> {
         let id = Self::next_info_id();
         <NextInfoId<T>>::mutate(|n| *n += U256::from(1));
 
-        return id
+        return id;
     }
 
     fn get_unique_id_and_advance() -> NftUniqueId {
         let id = Self::next_unique_id();
         <NextSingleNftUniqueId<T>>::mutate(|n| *n += U256::from(1));
 
-        return id
+        return id;
     }
 
     fn insert_single_nft_into_chain(
@@ -880,7 +880,7 @@ impl<T: Config> Pallet<T> {
         <NftInfos<T>>::insert(info.info_id, &info);
 
         Self::add_nft(&nft);
-        return (nft, info)
+        return (nft, info);
     }
 
     fn open_nft_for_sale(nft_id: &NftId, market: &NftSaleType) {
@@ -900,7 +900,7 @@ impl<T: Config> Pallet<T> {
 
         let hash = keccak_256(&data_to_hash);
 
-        return U256::from_big_endian(&hash)
+        return U256::from_big_endian(&hash);
     }
 
     fn remove_listing_from_open_for_sale(nft_id: &NftId) -> DispatchResult {
@@ -997,16 +997,20 @@ impl<T: Config> Pallet<T> {
         match call.is_sub_type() {
             Some(call) => {
                 let final_weight = match call {
-                    Call::signed_mint_single_nft { royalties, .. } =>
+                    Call::signed_mint_single_nft { royalties, .. } => {
                         <T as pallet::Config>::WeightInfo::proxy_signed_mint_single_nft(
                             royalties.len().try_into().unwrap(),
-                        ),
-                    Call::signed_list_nft_open_for_sale { .. } =>
-                        <T as pallet::Config>::WeightInfo::proxy_signed_list_nft_open_for_sale(),
-                    Call::signed_transfer_fiat_nft { .. } =>
-                        <T as pallet::Config>::WeightInfo::proxy_signed_transfer_fiat_nft(),
-                    Call::signed_cancel_list_fiat_nft { .. } =>
-                        <T as pallet::Config>::WeightInfo::proxy_signed_cancel_list_fiat_nft(),
+                        )
+                    },
+                    Call::signed_list_nft_open_for_sale { .. } => {
+                        <T as pallet::Config>::WeightInfo::proxy_signed_list_nft_open_for_sale()
+                    },
+                    Call::signed_transfer_fiat_nft { .. } => {
+                        <T as pallet::Config>::WeightInfo::proxy_signed_transfer_fiat_nft()
+                    },
+                    Call::signed_cancel_list_fiat_nft { .. } => {
+                        <T as pallet::Config>::WeightInfo::proxy_signed_cancel_list_fiat_nft()
+                    },
                     _ => <T as pallet::Config>::WeightInfo::proxy_signed_list_nft_open_for_sale()
                         .max(<T as pallet::Config>::WeightInfo::proxy_signed_mint_single_nft(
                             MAX_NUMBER_OF_ROYALTIES,
@@ -1037,7 +1041,7 @@ impl<T: Config> Pallet<T> {
             royalties,
             t1_authority,
         )
-            .encode()
+            .encode();
     }
 
     fn encode_list_nft_for_sale_params(
@@ -1053,7 +1057,7 @@ impl<T: Config> Pallet<T> {
             market,
             nft.nonce,
         )
-            .encode())
+            .encode());
     }
 
     fn encode_transfer_fiat_nft_params(
@@ -1063,7 +1067,7 @@ impl<T: Config> Pallet<T> {
     ) -> Result<Vec<u8>, Error<T>> {
         let nft = Self::try_get_nft(nft_id)?;
         return Ok((SIGNED_TRANSFER_FIAT_NFT_CONTEXT, &proof.relayer, nft_id, recipient, nft.nonce)
-            .encode())
+            .encode());
     }
 
     fn encode_cancel_list_fiat_nft_params(
@@ -1071,7 +1075,7 @@ impl<T: Config> Pallet<T> {
         nft_id: &NftId,
     ) -> Result<Vec<u8>, Error<T>> {
         let nft = Self::try_get_nft(nft_id)?;
-        return Ok((SIGNED_CANCEL_LIST_FIAT_NFT_CONTEXT, &proof.relayer, nft_id, nft.nonce).encode())
+        return Ok((SIGNED_CANCEL_LIST_FIAT_NFT_CONTEXT, &proof.relayer, nft_id, nft.nonce).encode());
     }
 
     fn get_encoded_call_param(
@@ -1088,7 +1092,7 @@ impl<T: Config> Pallet<T> {
                 unique_external_ref,
                 royalties,
                 t1_authority,
-            } =>
+            } => {
                 return Some((
                     proof,
                     Self::encode_mint_single_nft_params(
@@ -1097,32 +1101,33 @@ impl<T: Config> Pallet<T> {
                         royalties,
                         t1_authority,
                     ),
-                )),
+                ))
+            },
             Call::signed_list_nft_open_for_sale { proof, nft_id, market } => {
                 let encoded_params = Self::encode_list_nft_for_sale_params(proof, nft_id, market);
                 if encoded_params.is_err() {
-                    return None
+                    return None;
                 }
 
-                return Some((proof, encoded_params.expect("checked for none")))
+                return Some((proof, encoded_params.expect("checked for none")));
             },
             Call::signed_transfer_fiat_nft { proof, nft_id, t2_transfer_to_public_key } => {
                 let encoded_data =
                     Self::encode_transfer_fiat_nft_params(proof, nft_id, t2_transfer_to_public_key);
 
                 if encoded_data.is_err() {
-                    return None
+                    return None;
                 }
 
-                return Some((proof, encoded_data.expect("checked for none")))
+                return Some((proof, encoded_data.expect("checked for none")));
             },
             Call::signed_cancel_list_fiat_nft { proof, nft_id } => {
                 let encoded_data = Self::encode_cancel_list_fiat_nft_params(proof, nft_id);
                 if encoded_data.is_err() {
-                    return None
+                    return None;
                 }
 
-                return Some((proof, encoded_data.expect("checked for none")))
+                return Some((proof, encoded_data.expect("checked for none")));
             },
             Call::signed_create_batch { proof, total_supply, royalties, t1_authority } => {
                 let sender_nonce = Self::batch_nonce(&proof.signer);
@@ -1135,9 +1140,9 @@ impl<T: Config> Pallet<T> {
                         total_supply,
                         &sender_nonce,
                     ),
-                ))
+                ));
             },
-            Call::signed_mint_batch_nft { proof, batch_id, index, owner, unique_external_ref } =>
+            Call::signed_mint_batch_nft { proof, batch_id, index, owner, unique_external_ref } => {
                 return Some((
                     proof,
                     encode_mint_batch_nft_params::<T>(
@@ -1147,20 +1152,21 @@ impl<T: Config> Pallet<T> {
                         unique_external_ref,
                         owner,
                     ),
-                )),
+                ))
+            },
             Call::signed_list_batch_for_sale { proof, batch_id, market } => {
                 let sender_nonce = Self::batch_nonce(&proof.signer);
                 return Some((
                     proof,
                     encode_list_batch_for_sale_params::<T>(proof, batch_id, market, &sender_nonce),
-                ))
+                ));
             },
             Call::signed_end_batch_sale { proof, batch_id } => {
                 let sender_nonce = Self::batch_nonce(&proof.signer);
                 return Some((
                     proof,
                     encode_end_batch_sale_params::<T>(proof, batch_id, &sender_nonce),
-                ))
+                ));
             },
             _ => return None,
         }
@@ -1170,7 +1176,7 @@ impl<T: Config> Pallet<T> {
         let maybe_nft = Self::nfts(nft_id);
 
         if maybe_nft.is_none() {
-            return Err(Error::<T>::NftIdDoesNotExist)?
+            return Err(Error::<T>::NftIdDoesNotExist)?;
         }
 
         Ok(maybe_nft.expect("checked for none"))
@@ -1179,14 +1185,17 @@ impl<T: Config> Pallet<T> {
     fn processed_event_handler(event: &EthEvent) -> DispatchResult {
         return match &event.event_data {
             EventData::LogNftTransferTo(data) => Self::transfer_eth_nft(&event.event_id, data),
-            EventData::LogNftCancelListing(data) =>
-                Self::cancel_eth_nft_listing(&event.event_id, data),
-            EventData::LogNftMinted(data) =>
-                process_mint_batch_nft_event::<T>(&event.event_id, data),
-            EventData::LogNftEndBatchListing(data) =>
-                process_end_batch_listing_event::<T>(&event.event_id, data),
+            EventData::LogNftCancelListing(data) => {
+                Self::cancel_eth_nft_listing(&event.event_id, data)
+            },
+            EventData::LogNftMinted(data) => {
+                process_mint_batch_nft_event::<T>(&event.event_id, data)
+            },
+            EventData::LogNftEndBatchListing(data) => {
+                process_end_batch_listing_event::<T>(&event.event_id, data)
+            },
             _ => Ok(()),
-        }
+        };
     }
 }
 
@@ -1243,10 +1252,10 @@ impl<T: Config> InnerCallValidator for Pallet<T> {
                 &proof,
                 &signed_payload.as_slice(),
             )
-            .is_ok()
+            .is_ok();
         }
 
-        return false
+        return false;
     }
 }
 

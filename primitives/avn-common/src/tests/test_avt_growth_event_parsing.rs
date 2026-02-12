@@ -11,52 +11,52 @@ pub fn into_4_be_bytes(bytes: &[u8]) -> Vec<u8> {
     vec.extend(bytes.iter().copied());
     vec.resize(4, 0);
     vec.reverse();
-    return vec
+    return vec;
 }
 
 fn get_topic_8_bytes(bytes: Vec<u8>) -> Vec<u8> {
     let mut topic = vec![0; 28];
     let mut values = bytes;
     topic.append(&mut values);
-    return topic
+    return topic;
 }
 
 fn get_avt_growth_lifted_topics() -> Vec<Vec<u8>> {
     let topic_event_signature = get_topic_32_bytes(10);
     let topic_amount = into_32_be_bytes(&20u128.to_le_bytes());
     let topic_period = get_topic_8_bytes(vec![1; 4]);
-    return vec![topic_event_signature, topic_amount, topic_period]
+    return vec![topic_event_signature, topic_amount, topic_period];
 }
 
 fn get_avt_growth_lifted_topics_max_value() -> Vec<Vec<u8>> {
     let topic_event_signature = get_topic_32_bytes(10);
     let topic_amount = into_32_be_bytes(&u128::max_value().to_le_bytes());
     let topic_period = get_topic_8_bytes(into_4_be_bytes(&u32::max_value().to_le_bytes()));
-    return vec![topic_event_signature, topic_amount.to_vec(), topic_period]
+    return vec![topic_event_signature, topic_amount.to_vec(), topic_period];
 }
 
 fn get_lifted_avt_few_topics() -> Vec<Vec<u8>> {
     let mut topics = get_avt_growth_lifted_topics();
     topics.pop();
-    return topics
+    return topics;
 }
 
 fn get_lifted_avt_many_topics() -> Vec<Vec<u8>> {
     let mut topics = get_avt_growth_lifted_topics();
     topics.push(get_topic_32_bytes(20));
-    return topics
+    return topics;
 }
 
 fn get_lifted_avt_with_short_topic() -> Vec<Vec<u8>> {
     let mut topics = get_avt_growth_lifted_topics();
     topics[1].pop();
-    return topics
+    return topics;
 }
 
 fn get_lifted_avt_with_long_topic() -> Vec<Vec<u8>> {
     let mut topics = get_avt_growth_lifted_topics();
     topics[2].push(30);
-    return topics
+    return topics;
 }
 
 #[test]

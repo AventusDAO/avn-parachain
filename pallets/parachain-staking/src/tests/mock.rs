@@ -92,11 +92,11 @@ impl TestAccount {
     }
 
     pub fn account_id(&self) -> AccountId {
-        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap()
+        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
     }
 
     pub fn key_pair(&self) -> sr25519::Pair {
-        return sr25519::Pair::from_seed(&self.seed)
+        return sr25519::Pair::from_seed(&self.seed);
     }
 
     fn into_32_bytes(account: &u64) -> [u8; 32] {
@@ -110,7 +110,7 @@ impl TestAccount {
 }
 
 pub fn sign(signer: &sr25519::Pair, message_to_sign: &[u8]) -> Signature {
-    return Signature::from(signer.sign(message_to_sign))
+    return Signature::from(signer.sign(message_to_sign));
 }
 
 parameter_types! {
@@ -409,7 +409,7 @@ impl ProvableProxy<RuntimeCall, Signature, AccountId> for TestAvnProxyConfig {
                     signer: signer_account.account_id(),
                     relayer: TestAccount::new(6547).account_id(),
                     signature: sign(&signer_account.key_pair(), &("").encode()),
-                })
+                });
             },
 
             RuntimeCall::ParachainStaking(pallet_parachain_staking::Call::signed_nominate {
@@ -483,14 +483,15 @@ pub fn inner_call_failed_event_emitted(call_dispatch_error: DispatchError) -> bo
         RuntimeEvent::AvnProxy(avn_proxy::Event::<Test>::InnerCallFailed {
             dispatch_error,
             ..
-        }) =>
+        }) => {
             if dispatch_error == call_dispatch_error {
-                return true
+                return true;
             } else {
-                return false
-            },
+                return false;
+            }
+        },
         _ => false,
-    })
+    });
 }
 
 pub fn build_proof(
@@ -498,7 +499,7 @@ pub fn build_proof(
     relayer: &AccountId,
     signature: Signature,
 ) -> Proof<Signature, AccountId> {
-    return Proof { signer: *signer, relayer: *relayer, signature }
+    return Proof { signer: *signer, relayer: *relayer, signature };
 }
 
 #[derive(Clone)]
@@ -632,7 +633,7 @@ pub(crate) fn roll_to(n: u64) -> u64 {
 
 // This matches the genesis era length
 pub fn get_default_block_per_era() -> u64 {
-    return MinBlocksPerEra::get() as u64 + 2
+    return MinBlocksPerEra::get() as u64 + 2;
 }
 
 /// Rolls block-by-block to the beginning of the specified era.
@@ -694,13 +695,13 @@ impl FeePaymentHandler for Test {
         _payer: &Self::AccountId,
         _recipient: &Self::AccountId,
     ) -> Result<(), Self::Error> {
-        return Err(DispatchError::Other("Test - Error"))
+        return Err(DispatchError::Other("Test - Error"));
     }
     fn pay_treasury(
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,
     ) -> Result<(), Self::Error> {
-        return Err(DispatchError::Other("Test - Error"))
+        return Err(DispatchError::Other("Test - Error"));
     }
 }
 
@@ -825,7 +826,7 @@ pub(crate) fn set_author(era: u32, acc: AccountId, pts: u32) {
 pub(crate) fn query_lock_amount(account_id: AccountId, id: LockIdentifier) -> Option<Balance> {
     for lock in Balances::locks(&account_id) {
         if lock.id == id {
-            return Some(lock.amount)
+            return Some(lock.amount);
         }
     }
     None
@@ -854,7 +855,7 @@ pub(crate) fn pay_gas_for_transaction(sender: &AccountId, tip: u128) {
 }
 
 fn fake_treasury() -> AccountId {
-    return TestAccount::new(8999999998u64).account_id()
+    return TestAccount::new(8999999998u64).account_id();
 }
 
 #[test]

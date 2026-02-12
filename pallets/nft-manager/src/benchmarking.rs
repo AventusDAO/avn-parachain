@@ -52,7 +52,7 @@ fn into_bytes<T: Config>(account: &<T as avn::Config>::AuthorityId) -> [u8; 32] 
     let bytes = account.encode();
     let mut vector: [u8; 32] = Default::default();
     vector.copy_from_slice(&bytes[0..32]);
-    return vector
+    return vector;
 }
 
 fn get_proof<T: Config>(
@@ -65,7 +65,7 @@ fn get_proof<T: Config>(
         signer: signer.clone(),
         relayer: relayer.clone(),
         signature: convert_sr25519_signature::<T::Signature>(signature),
-    }
+    };
 }
 
 fn bounded_unique_external_ref() -> BoundedVec<u8, NftExternalRefBound> {
@@ -80,7 +80,7 @@ pub fn bounded_royalties(royalties: Vec<Royalty>) -> BoundedVec<Royalty, NftRoya
 fn get_relayer<T: Config>() -> T::AccountId {
     let relayer_account: H256 =
         H256(hex!("0000000000000000000000000000000000000000000000000000000000000001"));
-    return T::AccountId::decode(&mut relayer_account.as_bytes()).expect("valid relayer account id")
+    return T::AccountId::decode(&mut relayer_account.as_bytes()).expect("valid relayer account id");
 }
 
 fn get_user_account<T: Config>() -> (<T as avn::Config>::AuthorityId, T::AccountId) {
@@ -88,7 +88,7 @@ fn get_user_account<T: Config>() -> (<T as avn::Config>::AuthorityId, T::Account
         <T as avn::Config>::AuthorityId::generate_pair(Some(MNEMONIC.as_bytes().to_vec()));
     let account_bytes = into_bytes::<T>(&key_pair);
     let account_id = T::AccountId::decode(&mut &account_bytes.encode()[..]).unwrap();
-    return (key_pair, account_id)
+    return (key_pair, account_id);
 }
 
 struct MintSingleNft<T: Config> {
@@ -135,7 +135,7 @@ impl<T: Config> MintSingleNft<T> {
             royalties,
             t1_authority,
             signature,
-        }
+        };
     }
 
     fn setup_royalties(number_of_royalties: u32) -> Vec<Royalty> {
@@ -153,7 +153,7 @@ impl<T: Config> MintSingleNft<T> {
         <Nfts<T>>::remove(&self.nft_id);
         <NftInfos<T>>::remove(&self.nft_id);
         <UsedExternalReferences<T>>::remove(&self.unique_external_ref);
-        return self
+        return self;
     }
 
     fn generate_signed_mint_single_nft(&self) -> <T as Config>::RuntimeCall {
@@ -165,7 +165,7 @@ impl<T: Config> MintSingleNft<T> {
             royalties: self.royalties.clone(),
             t1_authority: self.t1_authority,
         }
-        .into()
+        .into();
     }
 }
 
@@ -201,13 +201,13 @@ impl<T: Config> ListNftOpenForSale<T> {
             nft,
             market: NftSaleType::Ethereum,
             signature,
-        }
+        };
     }
 
     fn setup(self) -> Self {
         <Nfts<T>>::insert(self.nft_id, self.nft.clone());
         <NftOpenForSale<T>>::remove(&self.nft_id);
-        return self
+        return self;
     }
 
     fn generate_signed_list_nft_open_for_sale_call(&self) -> <T as Config>::RuntimeCall {
@@ -218,7 +218,7 @@ impl<T: Config> ListNftOpenForSale<T> {
             nft_id: self.nft_id,
             market: self.market,
         }
-        .into()
+        .into();
     }
 }
 
@@ -271,13 +271,13 @@ impl<T: Config> TransferFiatNft<T> {
             new_nft_owner_account,
             op_id,
             signature,
-        }
+        };
     }
 
     fn setup(self) -> Self {
         <Nfts<T>>::insert(self.nft_id, self.nft.clone());
         <NftOpenForSale<T>>::insert(&self.nft_id, NftSaleType::Fiat);
-        return self
+        return self;
     }
 
     fn generate_signed_transfer_fiat_nft_call(&self) -> <T as Config>::RuntimeCall {
@@ -288,7 +288,7 @@ impl<T: Config> TransferFiatNft<T> {
             nft_id: self.nft_id,
             t2_transfer_to_public_key: self.t2_transfer_to_public_key,
         }
-        .into()
+        .into();
     }
 }
 
@@ -328,19 +328,19 @@ impl<T: Config> CancelListFiatNft<T> {
             nft,
             op_id,
             signature,
-        }
+        };
     }
 
     fn setup(self) -> Self {
         <Nfts<T>>::insert(self.nft_id, self.nft.clone());
         <NftOpenForSale<T>>::insert(&self.nft_id, NftSaleType::Fiat);
-        return self
+        return self;
     }
 
     fn generate_signed_cancel_list_fiat_nft_call(&self) -> <T as Config>::RuntimeCall {
         let proof: Proof<T::Signature, T::AccountId> =
             get_proof::<T>(self.nft_owner.clone(), self.relayer.clone(), &self.signature);
-        return Call::signed_cancel_list_fiat_nft { proof, nft_id: self.nft_id }.into()
+        return Call::signed_cancel_list_fiat_nft { proof, nft_id: self.nft_id }.into();
     }
 }
 
@@ -381,7 +381,7 @@ impl<T: Config> CreateBatch<T> {
             royalties,
             t1_authority,
             signature,
-        }
+        };
     }
 
     fn setup_royalties(number_of_royalties: u32) -> Vec<Royalty> {
@@ -404,7 +404,7 @@ impl<T: Config> CreateBatch<T> {
             royalties: self.royalties.clone(),
             t1_authority: self.t1_authority,
         }
-        .into()
+        .into();
     }
 
     fn create_batch_for_setup(&self) -> U256 {
@@ -420,7 +420,7 @@ impl<T: Config> CreateBatch<T> {
 
         <BatchNonces<T>>::mutate(&self.creator_account_id, |n| *n += 1);
 
-        return batch_id
+        return batch_id;
     }
 
     pub fn bounded_royalties(&self) -> BoundedVec<Royalty, NftRoyaltiesBound> {
@@ -480,7 +480,7 @@ impl<T: Config> MintBatchNft<T> {
             unique_external_ref,
             t1_authority,
             signature,
-        }
+        };
     }
 
     fn generate_signed_mint_batch_nft(
@@ -497,7 +497,7 @@ impl<T: Config> MintBatchNft<T> {
             owner: self.nft_owner.clone(),
             unique_external_ref: self.unique_external_ref.to_vec(),
         }
-        .into()
+        .into();
     }
 }
 
@@ -531,7 +531,7 @@ impl<T: Config> ListBatch<T> {
             batch_id,
             market,
             signature,
-        }
+        };
     }
 
     fn generate_signed_list_batch(&self) -> <T as Config>::RuntimeCall {
@@ -542,7 +542,7 @@ impl<T: Config> ListBatch<T> {
             batch_id: self.batch_id,
             market: self.market,
         }
-        .into()
+        .into();
     }
 }
 
@@ -578,13 +578,13 @@ impl<T: Config> EndBatchSale<T> {
             batch_id,
             market,
             signature,
-        }
+        };
     }
 
     fn generate_signed_end_batch_sale(&self) -> <T as Config>::RuntimeCall {
         let proof: Proof<T::Signature, T::AccountId> =
             get_proof::<T>(self.creator_account_id.clone(), self.relayer.clone(), &self.signature);
-        return Call::signed_end_batch_sale { proof, batch_id: self.batch_id }.into()
+        return Call::signed_end_batch_sale { proof, batch_id: self.batch_id }.into();
     }
 }
 

@@ -201,14 +201,14 @@ impl Contains<RuntimeCall> for RestrictedEndpointFilter {
     fn contains(c: &RuntimeCall) -> bool {
         !matches!(
             c,
-            RuntimeCall::ParachainStaking(pallet_parachain_staking::Call::join_candidates { .. }) |
-                RuntimeCall::ParachainStaking(
+            RuntimeCall::ParachainStaking(pallet_parachain_staking::Call::join_candidates { .. })
+                | RuntimeCall::ParachainStaking(
                     pallet_parachain_staking::Call::schedule_leave_candidates { .. }
-                ) |
-                RuntimeCall::ParachainStaking(
+                )
+                | RuntimeCall::ParachainStaking(
                     pallet_parachain_staking::Call::execute_leave_candidates { .. }
-                ) |
-                RuntimeCall::ParachainStaking(
+                )
+                | RuntimeCall::ParachainStaking(
                     pallet_parachain_staking::Call::cancel_leave_candidates { .. }
                 ) /* Allow the following direct staking extrinsics: */
                   /*

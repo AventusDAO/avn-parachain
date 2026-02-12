@@ -23,8 +23,8 @@ pub fn requires_corroboration<T: Config<I>, I: 'static>(
     eth_tx: &ActiveEthTransaction<T::AccountId>,
     author: &Author<T>,
 ) -> bool {
-    !eth_tx.success_corroborations.contains(&author.account_id) &&
-        !eth_tx.failure_corroborations.contains(&author.account_id)
+    !eth_tx.success_corroborations.contains(&author.account_id)
+        && !eth_tx.failure_corroborations.contains(&author.account_id)
 }
 
 pub fn bound_params<T, I>(
@@ -76,5 +76,5 @@ pub fn try_process_query_result<R: Decode, T: Config<I>, I: 'static>(
         Error::<T, I>::InvalidQueryResponseFromEthereum
     })?;
 
-    return Ok((call_data, eth_query_response.num_confirmations))
+    return Ok((call_data, eth_query_response.num_confirmations));
 }

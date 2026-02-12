@@ -104,7 +104,7 @@ pub fn insert_to_mock_processed_events(event_id: &EthEventId) {
 
 impl ProcessedEventsChecker for TestRuntime {
     fn processed_event_exists(event_id: &EthEventId) -> bool {
-        return PROCESSED_EVENTS.with(|l| l.borrow_mut().iter().any(|event| event == event_id))
+        return PROCESSED_EVENTS.with(|l| l.borrow_mut().iter().any(|event| event == event_id));
     }
     fn add_processed_event(_event_id: &EthEventId, _accepted: bool) -> Result<(), ()> {
         Ok(())
@@ -121,14 +121,14 @@ impl TestAccount {
     }
 
     pub fn account_id(&self) -> AccountId {
-        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap()
+        return AccountId::decode(&mut self.key_pair().public().to_vec().as_slice()).unwrap();
     }
 
     pub fn key_pair(&self) -> sr25519::Pair {
-        return sr25519::Pair::from_seed(&self.seed)
+        return sr25519::Pair::from_seed(&self.seed);
     }
 }
 
 pub fn sign(signer: &sr25519::Pair, message_to_sign: &[u8]) -> Signature {
-    return Signature::from(signer.sign(message_to_sign))
+    return Signature::from(signer.sign(message_to_sign));
 }

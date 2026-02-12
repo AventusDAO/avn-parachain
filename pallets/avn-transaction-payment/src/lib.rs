@@ -216,7 +216,7 @@ impl<T: Config> Pallet<T> {
         }
 
         let refund_amount = amount_paid.saturating_sub(fee_to_pay);
-        return (has_active_config, refund_amount)
+        return (has_active_config, refund_amount);
     }
 }
 
@@ -248,7 +248,7 @@ where
         _tip: Self::Balance,
     ) -> Result<Self::LiquidityInfo, TransactionValidityError> {
         if fee.is_zero() {
-            return Ok(None)
+            return Ok(None);
         }
 
         match F::withdraw(
@@ -274,7 +274,7 @@ where
         _tip: Self::Balance,
     ) -> Result<(), TransactionValidityError> {
         if fee.is_zero() {
-            return Ok(())
+            return Ok(());
         }
 
         match F::can_withdraw(who, fee) {
@@ -370,7 +370,7 @@ where
         _tip: Self::Balance,
     ) -> Result<Self::LiquidityInfo, TransactionValidityError> {
         if fee.is_zero() {
-            return Ok(None)
+            return Ok(None);
         }
 
         match F::withdraw(
@@ -396,7 +396,7 @@ where
         _tip: Self::Balance,
     ) -> Result<(), TransactionValidityError> {
         if fee.is_zero() {
-            return Ok(())
+            return Ok(());
         }
 
         match F::can_withdraw(who, fee) {

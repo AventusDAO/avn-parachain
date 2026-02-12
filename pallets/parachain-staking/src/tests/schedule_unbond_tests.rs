@@ -23,7 +23,7 @@ thread_local! {
 }
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 fn get_accounts(
@@ -41,7 +41,7 @@ fn get_accounts(
         balances = [balances, additional.unwrap()].concat()
     }
 
-    return balances
+    return balances;
 }
 
 fn get_nominations(
@@ -59,12 +59,12 @@ fn get_nominations(
         .into_iter()
         .zip(nominations)
         .map(|v| (v.0 .0, v.0 .1, *v.1))
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
 }
 
 fn get_max_to_unbond(nominations: &Vec<u128>, num_collators: u32) -> u128 {
     let total_nominations = nominations.iter().sum::<u128>();
-    return total_nominations - (MinNominationPerCollator::get() * num_collators as u128)
+    return total_nominations - (MinNominationPerCollator::get() * num_collators as u128);
 }
 
 mod proxy_signed_schedule_nominator_unbond {
@@ -86,7 +86,7 @@ mod proxy_signed_schedule_nominator_unbond {
                 proof,
                 less: reduction_amount,
             },
-        ))
+        ));
     }
 
     pub fn create_call_for_signed_schedule_nominator_unbond_proof(
@@ -98,7 +98,7 @@ mod proxy_signed_schedule_nominator_unbond {
                 proof,
                 less: reduction_amount,
             },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_schedule_nominator_unbond(
@@ -113,7 +113,7 @@ mod proxy_signed_schedule_nominator_unbond {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     fn unbond_event_emitted(nominator: AccountId) -> bool {
@@ -452,7 +452,7 @@ mod proxy_signed_schedule_collator_unbond {
                 proof,
                 less: reduction_amount,
             },
-        ))
+        ));
     }
 
     fn create_call_for_signed_schedule_candidate_unbond_proof(
@@ -464,7 +464,7 @@ mod proxy_signed_schedule_collator_unbond {
                 proof,
                 less: reduction_amount,
             },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_schedule_candidate_unbond(
@@ -479,7 +479,7 @@ mod proxy_signed_schedule_collator_unbond {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]
@@ -696,7 +696,7 @@ mod signed_execute_nomination_request {
         assert_ok!(AvnProxy::proxy(RuntimeOrigin::signed(staker.relayer), unbond_call, None));
 
         // return updated nonce
-        return ParachainStaking::proxy_nonce(staker.account_id)
+        return ParachainStaking::proxy_nonce(staker.account_id);
     }
 
     fn create_call_for_signed_execute_nomination_request(
@@ -709,7 +709,7 @@ mod signed_execute_nomination_request {
 
         return Box::new(MockCall::ParachainStaking(
             super::super::Call::<Test>::signed_execute_nomination_request { proof, nominator },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_execute_nomination_request(
@@ -724,7 +724,7 @@ mod signed_execute_nomination_request {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]
@@ -958,7 +958,7 @@ mod signed_execute_candidate_unbond {
         ));
 
         // return updated nonce
-        return ParachainStaking::proxy_nonce(candidate.account_id)
+        return ParachainStaking::proxy_nonce(candidate.account_id);
     }
 
     fn create_call_for_signed_execute_candidate_unbond(
@@ -971,7 +971,7 @@ mod signed_execute_candidate_unbond {
 
         return Box::new(MockCall::ParachainStaking(
             super::super::Call::<Test>::signed_execute_candidate_unbond { proof, candidate },
-        ))
+        ));
     }
 
     fn create_proof_for_signed_execute_candidate_unbond(
@@ -986,7 +986,7 @@ mod signed_execute_candidate_unbond {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]
@@ -1779,7 +1779,7 @@ fn execute_nominator_unbond_updates_just_bottom_nominations() {
                     if &owner == post_owner {
                         if &amount != post_amount {
                             not_equal = true;
-                            break
+                            break;
                         }
                     }
                 }
@@ -1793,7 +1793,7 @@ fn execute_nominator_unbond_updates_just_bottom_nominations() {
                     if &owner == post_owner {
                         if &amount != post_amount {
                             equal = false;
-                            break
+                            break;
                         }
                     }
                 }
@@ -1861,7 +1861,7 @@ fn execute_nominator_unbond_does_not_delete_bottom_nominations() {
                     if &owner == post_owner {
                         if &amount != post_amount {
                             equal = false;
-                            break
+                            break;
                         }
                     }
                 }
@@ -1875,7 +1875,7 @@ fn execute_nominator_unbond_does_not_delete_bottom_nominations() {
                     if &owner == post_owner {
                         if &amount != post_amount {
                             not_equal = true;
-                            break
+                            break;
                         }
                     }
                 }

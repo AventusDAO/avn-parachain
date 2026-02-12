@@ -36,7 +36,7 @@ mod test_set_periods {
                 self.origin.clone(),
                 self.new_schedule_period.clone(),
                 self.voting_period.clone(),
-            )
+            );
         }
 
         fn dispatch_set_voting_period(&self) -> DispatchResult {
@@ -45,7 +45,7 @@ mod test_set_periods {
                 self.origin.clone(),
                 self.schedule_period.clone(),
                 self.new_voting_period.clone(),
-            )
+            );
         }
     }
 

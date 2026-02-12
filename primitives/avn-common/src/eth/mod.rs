@@ -227,7 +227,7 @@ impl TryFrom<LowerParams> for LowerData {
 
     fn try_from(lower_params: LowerParams) -> Result<Self, Self::Error> {
         if lower_params.len() != PACKED_LOWER_V2_PARAMS_SIZE {
-            return Err(())
+            return Err(());
         }
 
         let token = Address::from_slice(&lower_params[TOKEN_SPAN]);
@@ -276,7 +276,7 @@ pub fn create_function_confirmation_hash(
     let extract_tx_id_and_expiry =
         |params: &Vec<(Vec<u8>, Vec<u8>)>| -> Result<(u32, AlloyU256), ()> {
             if params.len() < 2 {
-                return Err(()) // Ensure there are at least 2 elements in params
+                return Err(()); // Ensure there are at least 2 elements in params
             }
             let last_two_elements = &params[params.len() - 2..];
             let expiry = AlloyU256::from(parse_from_utf8::<u64>(&last_two_elements[0].1)?);
@@ -288,7 +288,7 @@ pub fn create_function_confirmation_hash(
     match BridgeContractMethod::try_from(&function_name[..])? {
         BridgeContractMethod::PublishRoot => {
             if params.len() != 3 {
-                return Err(()) // Ensure there are at least 3 elements in params
+                return Err(()); // Ensure there are at least 3 elements in params
             }
             let root_data = H256::from_slice(&params[0].1);
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
@@ -297,11 +297,11 @@ pub fn create_function_confirmation_hash(
                 expiry,
                 t2TxId: tx_id,
             };
-            return Ok(eip712_hash(&data, &domain))
+            return Ok(eip712_hash(&data, &domain));
         },
         BridgeContractMethod::TriggerGrowth => {
             if params.len() != 5 {
-                return Err(()) // Ensure there are at least 5 elements in params
+                return Err(()); // Ensure there are at least 5 elements in params
             }
 
             let rewards = AlloyU256::from(parse_from_utf8::<u128>(&params[0].1)?);
@@ -311,12 +311,12 @@ pub fn create_function_confirmation_hash(
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
             let data =
                 TriggerGrowth { rewards, avgStaked: avg_staked, period, expiry, t2TxId: tx_id };
-            return Ok(eip712_hash(&data, &domain))
+            return Ok(eip712_hash(&data, &domain));
         },
 
         BridgeContractMethod::AddAuthor => {
             if params.len() != 4 {
-                return Err(())
+                return Err(());
             }
 
             let t1_pub_key: Bytes = Bytes::from(params[0].1.clone());
@@ -325,12 +325,12 @@ pub fn create_function_confirmation_hash(
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
             let data =
                 AddAuthor { t1PubKey: t1_pub_key, t2PubKey: t2_pub_key, expiry, t2TxId: tx_id };
-            return Ok(eip712_hash(&data, &domain))
+            return Ok(eip712_hash(&data, &domain));
         },
 
         BridgeContractMethod::RemoveAuthor => {
             if params.len() != 4 {
-                return Err(())
+                return Err(());
             }
 
             let t2_pub_key: AlloyB256 = AlloyB256::from_slice(&params[0].1);
@@ -339,7 +339,7 @@ pub fn create_function_confirmation_hash(
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
             let data =
                 RemoveAuthor { t2PubKey: t2_pub_key, t1PubKey: t1_pub_key, expiry, t2TxId: tx_id };
-            return Ok(eip712_hash(&data, &domain))
+            return Ok(eip712_hash(&data, &domain));
         },
 
         _ => return Err(()),

@@ -58,7 +58,7 @@ impl<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<Block>> Config<
                 log::info!(
                     "⛓️  avn-service: web3 connection has already been initialised, skipping"
                 );
-                return Ok(())
+                return Ok(());
             }
 
             let _web3_init_time = Web3Timer::new("avn-service Web3 initialisation");
@@ -71,13 +71,13 @@ impl<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<Block>> Config<
                     "💔 Error creating a web3 connection. URL is not valid {:?}",
                     &self.eth_node_url
                 );
-                return Err(server_error("Error creating a web3 connection".to_string()))
+                return Err(server_error("Error creating a web3 connection".to_string()));
             }
 
             web3_data_mutex.web3 = web3;
             Ok(())
         } else {
-            return Err(server_error("Failed to acquire web3 data mutex.".to_string()))
+            return Err(server_error("Failed to acquire web3 data mutex.".to_string()));
         }
     }
 }
@@ -96,7 +96,7 @@ impl TxQueryData for TransactionReceipt {
             server_error(format!("Error serialising tx receipt json to string: {:?}", e))
         })?;
 
-        return Ok(string_data.as_bytes().to_vec())
+        return Ok(string_data.as_bytes().to_vec());
     }
 }
 
@@ -109,7 +109,7 @@ impl TxQueryData for Vec<u8> {
 
 pub fn server_error(message: String) -> TideError {
     log::error!("⛓️ 💔 avn-service {:?}", message);
-    return TideError::from_str(StatusCode::InternalServerError, format!("{:?}", message))
+    return TideError::from_str(StatusCode::InternalServerError, format!("{:?}", message));
 }
 
 // TODO: Create common version of this, eg in primitives/avn-common, to share with version in
@@ -123,7 +123,7 @@ pub fn to_bytes32(data: String) -> Result<[u8; 32], TideError> {
     return <[u8; 32]>::from_hex(data.clone()).map_or_else(
         |e| Err(server_error(format!("Error converting {:?} to bytes32: {:?}", data, e))),
         |bytes32| Ok(bytes32),
-    )
+    );
 }
 
 fn to_eth_query_response<T: TxQueryData>(
@@ -134,8 +134,8 @@ fn to_eth_query_response<T: TxQueryData>(
     Ok(hex::encode(
         EthQueryResponse {
             data: data.as_encodable().unwrap_or(vec![]).encode(),
-            num_confirmations: current_block_number -
-                data_block_number.unwrap_or(Default::default()).as_u64(),
+            num_confirmations: current_block_number
+                - data_block_number.unwrap_or(Default::default()).as_u64(),
         }
         .encode(),
     ))
@@ -149,10 +149,10 @@ fn error_due_to_low_nonce(error: &RPCError) -> bool {
     // https://github.com/ethereum/go-ethereum/blob/v1.10.26/rpc/json.go#L109-L123
     if error.code == ErrorCode::ServerError(-32000_i64) {
         let error_msg = error.to_string();
-        return error_msg.to_lowercase().find("the tx doesn't have the correct nonce").is_some() ||
-            error_msg.to_lowercase().find("nonce too low").is_some()
+        return error_msg.to_lowercase().find("the tx doesn't have the correct nonce").is_some()
+            || error_msg.to_lowercase().find("nonce too low").is_some();
     }
-    return false
+    return false;
 }
 
 async fn send_tx(
@@ -235,7 +235,7 @@ where
     log::info!("⛓️  avn-service: send Request");
     let post_body = req.body_bytes().await?;
     if post_body.len() > MAX_BODY_SIZE {
-        return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())))
+        return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())));
     }
 
     let send_request = &EthTransaction::decode(&mut &post_body[..])
@@ -246,7 +246,7 @@ where
 
     if let Some(mut mutex_web3_data) = req.state().web3_data_mutex.try_lock() {
         if mutex_web3_data.web3.is_none() {
-            return Err(server_error("Web3 connection not setup".to_string()))
+            return Err(server_error("Web3 connection not setup".to_string()));
         }
         let keystore_path = &req.state().keystore_path;
 
@@ -273,7 +273,7 @@ where
                         send_tx(&mut *mutex_web3_data, send_request, &my_eth_address, my_priv_key)
                             .await;
                 } else {
-                    return Err(server_error(format!("Error sending tx to ethereum: {:?}", error)))
+                    return Err(server_error(format!("Error sending tx to ethereum: {:?}", error)));
                 }
             }
         }
@@ -299,7 +299,7 @@ where
     log::info!("⛓️  avn-service: view Request");
     let post_body = req.body_bytes().await?;
     if post_body.len() > MAX_BODY_SIZE {
-        return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())))
+        return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())));
     }
 
     let view_request = &EthTransaction::decode(&mut &post_body[..])
@@ -307,18 +307,14 @@ where
 
     if let Some(mutex_web3_data) = req.state().web3_data_mutex.try_lock() {
         if mutex_web3_data.web3.is_none() {
-            return Err(server_error("Web3 connection not setup".to_string()))
+            return Err(server_error("Web3 connection not setup".to_string()));
         }
 
         let call_request = build_call_request(view_request).await?;
-        let result = mutex_web3_data
-            .web3
-            .as_ref()
-            .unwrap()
-            .eth()
-            .call(call_request, None)
-            .await
-            .map_err(|e| server_error(format!("Error calling view method on Ethereum: {:?}", e)))?;
+        let result =
+            mutex_web3_data.web3.as_ref().unwrap().eth().call(call_request, None).await.map_err(
+                |e| server_error(format!("Error calling view method on Ethereum: {:?}", e)),
+            )?;
         log::info!("⛓️  avn-service: view request result {:?}", result);
         Ok(hex::encode(result.0))
     } else {
@@ -336,7 +332,7 @@ where
     log::info!("⛓️  avn-service: query Request.");
     let post_body = req.body_bytes().await?;
     if post_body.len() > MAX_BODY_SIZE {
-        return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())))
+        return Err(server_error(format!("Request body too large. Size: {:?}", post_body.len())));
     }
 
     let request = &EthTransaction::decode(&mut &post_body[..])
@@ -347,7 +343,7 @@ where
 
     if let Some(mutex_web3_data) = req.state().web3_data_mutex.try_lock() {
         if mutex_web3_data.web3.is_none() {
-            return Err(server_error("Web3 connection not setup".to_string()))
+            return Err(server_error("Web3 connection not setup".to_string()));
         }
 
         let web3 = mutex_web3_data.web3.as_ref().unwrap();
@@ -358,10 +354,12 @@ where
             .map_err(|e| server_error(format!("Error getting block number: {:?}", e)))?;
 
         match query_request.response_type {
-            EthQueryResponseType::CallData =>
-                get_call_data(&web3, current_block_number, tx_hash).await,
-            EthQueryResponseType::TransactionReceipt =>
-                get_tx_receipt(&web3, current_block_number, tx_hash).await,
+            EthQueryResponseType::CallData => {
+                get_call_data(&web3, current_block_number, tx_hash).await
+            },
+            EthQueryResponseType::TransactionReceipt => {
+                get_tx_receipt(&web3, current_block_number, tx_hash).await
+            },
         }
     } else {
         Err(server_error(format!("Failed to acquire web3 mutex")))
@@ -373,7 +371,7 @@ where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
     if config.initialise_web3().await.is_err() {
-        return
+        return;
     }
 
     let port = format!(
@@ -394,7 +392,7 @@ where
                 return Err(server_error(format!(
                     "Request body too large. Size: {:?}",
                     body_bytes.len()
-                )))
+                )));
             }
             let msg_bytes = hex::decode(body_bytes).map_err(|e| {
                 server_error(format!("Error decoding signing message data from hex: {:?}", e))
@@ -411,23 +409,20 @@ where
         },
     );
 
-    app.at("/eth/send")
-        .post(|req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
-            // Methods that require web3 must be run within the tokio runtime (#[tokio::main])
-            return send_main(req)
-        });
+    app.at("/eth/send").post(|req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
+        // Methods that require web3 must be run within the tokio runtime (#[tokio::main])
+        return send_main(req);
+    });
 
-    app.at("/eth/view")
-        .post(|req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
-            // Methods that require web3 must be run within the tokio runtime (#[tokio::main])
-            return view_main(req)
-        });
+    app.at("/eth/view").post(|req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
+        // Methods that require web3 must be run within the tokio runtime (#[tokio::main])
+        return view_main(req);
+    });
 
-    app.at("/eth/query")
-        .post(|req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
-            // Methods that require web3 must be run within the tokio runtime (#[tokio::main])
-            return tx_query_main(req)
-        });
+    app.at("/eth/query").post(|req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
+        // Methods that require web3 must be run within the tokio runtime (#[tokio::main])
+        return tx_query_main(req);
+    });
 
     app.at("/roothash/:from_block/:to_block").get(
         |req: tide::Request<Arc<Config<Block, ClientT>>>| async move {
@@ -465,7 +460,7 @@ where
                     root_hash_duration
                 );
 
-                return Ok(hex::encode(root_hash))
+                return Ok(hex::encode(root_hash));
             }
 
             // the tree is empty
@@ -482,10 +477,7 @@ where
         },
     );
 
-    app.listen(port)
-        .await
-        .map_err(|e| log::error!("avn-service error: {}", e))
-        .unwrap_or(());
+    app.listen(port).await.map_err(|e| log::error!("avn-service error: {}", e)).unwrap_or(());
 }
 
 fn sign_digest_from_keystore(keystore_path: &PathBuf, digest: &[u8]) -> Result<String, TideError> {
@@ -517,14 +509,14 @@ fn validate_authorisation_token(
         },
         None => {
             log::error!("Missing X-Auth token");
-            return Err(server_error("Missing X-Auth token".to_string()))
+            return Err(server_error("Missing X-Auth token".to_string()));
         },
     };
 
     log::debug!("X-Auth token received: {:?}", signature_token);
     if !authenticate_token(keystore, msg_bytes, signature_token) {
         log::error!("X-Auth token verification failed");
-        return Err(server_error("X-Auth token verification failed".to_string()))
+        return Err(server_error("X-Auth token verification failed".to_string()));
     };
     Ok(())
 }

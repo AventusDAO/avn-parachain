@@ -38,7 +38,7 @@ use sp_runtime::{traits::Zero, BoundedVec, DispatchError, ModuleError};
 // ~~ ROOT ~~
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 #[test]
@@ -239,73 +239,58 @@ fn era_immediately_jumps_if_current_duration_exceeds_new_blocks_per_era() {
 #[test]
 fn join_candidates_event_emits_correctly() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 10)])
-        .build()
-        .execute_with(|| {
-            assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
-            assert_last_event!(MetaEvent::ParachainStaking(Event::JoinedCollatorCandidates {
-                account: account_id,
-                amount_locked: 10u128,
-                new_total_amt_locked: 10u128,
-            }));
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 10)]).build().execute_with(|| {
+        assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
+        assert_last_event!(MetaEvent::ParachainStaking(Event::JoinedCollatorCandidates {
+            account: account_id,
+            amount_locked: 10u128,
+            new_total_amt_locked: 10u128,
+        }));
+    });
 }
 
 #[test]
 fn join_candidates_reserves_balance() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 10)])
-        .build()
-        .execute_with(|| {
-            assert_eq!(ParachainStaking::get_collator_stakable_free_balance(&account_id), 10);
-            assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
-            assert_eq!(ParachainStaking::get_collator_stakable_free_balance(&account_id), 0);
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 10)]).build().execute_with(|| {
+        assert_eq!(ParachainStaking::get_collator_stakable_free_balance(&account_id), 10);
+        assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
+        assert_eq!(ParachainStaking::get_collator_stakable_free_balance(&account_id), 0);
+    });
 }
 
 #[test]
 fn join_candidates_increases_total_staked() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 10)])
-        .build()
-        .execute_with(|| {
-            assert_eq!(ParachainStaking::total(), 0);
-            assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
-            assert_eq!(ParachainStaking::total(), 10);
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 10)]).build().execute_with(|| {
+        assert_eq!(ParachainStaking::total(), 0);
+        assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
+        assert_eq!(ParachainStaking::total(), 10);
+    });
 }
 
 #[test]
 fn join_candidates_creates_candidate_state() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 10)])
-        .build()
-        .execute_with(|| {
-            assert!(ParachainStaking::candidate_info(account_id).is_none());
-            assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
-            let candidate_state =
-                ParachainStaking::candidate_info(account_id).expect("just joined => exists");
-            assert_eq!(candidate_state.bond, 10u128);
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 10)]).build().execute_with(|| {
+        assert!(ParachainStaking::candidate_info(account_id).is_none());
+        assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
+        let candidate_state =
+            ParachainStaking::candidate_info(account_id).expect("just joined => exists");
+        assert_eq!(candidate_state.bond, 10u128);
+    });
 }
 
 #[test]
 fn join_candidates_adds_to_candidate_pool() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 10)])
-        .build()
-        .execute_with(|| {
-            assert!(ParachainStaking::candidate_pool().0.is_empty());
-            assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
-            let candidate_pool = ParachainStaking::candidate_pool();
-            assert_eq!(candidate_pool.0[0].owner, account_id);
-            assert_eq!(candidate_pool.0[0].amount, 10);
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 10)]).build().execute_with(|| {
+        assert!(ParachainStaking::candidate_pool().0.is_empty());
+        assert_ok!(ParachainStaking::join_candidates(Origin::signed(account_id), 10u128, 0u32));
+        let candidate_pool = ParachainStaking::candidate_pool();
+        assert_eq!(candidate_pool.0[0].owner, account_id);
+        assert_eq!(candidate_pool.0[0].amount, 10);
+    });
 }
 
 #[test]
@@ -343,33 +328,27 @@ fn cannot_join_candidates_if_nominator() {
 #[test]
 fn cannot_join_candidates_without_min_bond() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 1000)])
-        .build()
-        .execute_with(|| {
-            assert_noop!(
-                ParachainStaking::join_candidates(Origin::signed(account_id), 9u128, 100u32),
-                Error::<Test>::CandidateBondBelowMin
-            );
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 1000)]).build().execute_with(|| {
+        assert_noop!(
+            ParachainStaking::join_candidates(Origin::signed(account_id), 9u128, 100u32),
+            Error::<Test>::CandidateBondBelowMin
+        );
+    });
 }
 
 #[test]
 fn cannot_join_candidates_with_more_than_available_balance() {
     let account_id = to_acc_id(1u64);
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 500)])
-        .build()
-        .execute_with(|| {
-            assert_noop!(
-                ParachainStaking::join_candidates(Origin::signed(account_id), 501u128, 100u32),
-                DispatchError::Module(ModuleError {
-                    index: 2,
-                    error: [6, 0, 0, 0],
-                    message: Some("InsufficientBalance")
-                })
-            );
-        });
+    ExtBuilder::default().with_balances(vec![(account_id, 500)]).build().execute_with(|| {
+        assert_noop!(
+            ParachainStaking::join_candidates(Origin::signed(account_id), 501u128, 100u32),
+            DispatchError::Module(ModuleError {
+                index: 2,
+                error: [6, 0, 0, 0],
+                message: Some("InsufficientBalance")
+            })
+        );
+    });
 }
 
 #[test]
@@ -5718,19 +5697,16 @@ fn locking_zero_amount_is_ignored() {
     // this test demonstrates the behavior of pallet Balance's `LockableCurrency` implementation of
     // `set_locks()` when an amount of 0 is provided: it is a no-op
 
-    ExtBuilder::default()
-        .with_balances(vec![(account_id, 100)])
-        .build()
-        .execute_with(|| {
-            assert_eq!(crate::mock::query_lock_amount(account_id, NOMINATOR_LOCK_ID), None);
+    ExtBuilder::default().with_balances(vec![(account_id, 100)]).build().execute_with(|| {
+        assert_eq!(crate::mock::query_lock_amount(account_id, NOMINATOR_LOCK_ID), None);
 
-            Balances::set_lock(NOMINATOR_LOCK_ID, &account_id, 1, WithdrawReasons::all());
-            assert_eq!(crate::mock::query_lock_amount(account_id, NOMINATOR_LOCK_ID), Some(1));
+        Balances::set_lock(NOMINATOR_LOCK_ID, &account_id, 1, WithdrawReasons::all());
+        assert_eq!(crate::mock::query_lock_amount(account_id, NOMINATOR_LOCK_ID), Some(1));
 
-            // Balances::set_lock(NOMINATOR_LOCK_ID, &account_id, 0, WithdrawReasons::all());
-            // // Note that we tried to call `set_lock(0)` and it ignored it, we still have our lock
-            // assert_eq!(crate::mock::query_lock_amount(account_id, NOMINATOR_LOCK_ID), Some(1));
-        });
+        // Balances::set_lock(NOMINATOR_LOCK_ID, &account_id, 0, WithdrawReasons::all());
+        // // Note that we tried to call `set_lock(0)` and it ignored it, we still have our lock
+        // assert_eq!(crate::mock::query_lock_amount(account_id, NOMINATOR_LOCK_ID), Some(1));
+    });
 }
 
 #[test]

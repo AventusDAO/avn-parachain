@@ -314,7 +314,7 @@ pub mod pallet {
             ensure!(author_id == author_account_id, Error::<T>::AuthorNotFound);
 
             EthereumPublicKeys::<T>::insert(author_new_eth_public_key, author_id);
-            return Ok(())
+            return Ok(());
         }
     }
 
@@ -407,7 +407,7 @@ impl AuthorsActionData {
         eth_transaction_id: EthereumId,
         action_type: AuthorsActionType,
     ) -> Self {
-        return AuthorsActionData { status, eth_transaction_id, action_type }
+        return AuthorsActionData { status, eth_transaction_id, action_type };
     }
 }
 
@@ -437,7 +437,7 @@ impl AuthorsActionType {
 
 impl<AccountId: Member + Encode> ActionId<AccountId> {
     fn new(action_account_id: AccountId, ingress_counter: IngressCounter) -> Self {
-        return ActionId::<AccountId> { action_account_id, ingress_counter }
+        return ActionId::<AccountId> { action_account_id, ingress_counter };
     }
 }
 
@@ -446,7 +446,7 @@ impl<T: Config> Pallet<T> {
         return <EthereumPublicKeys<T>>::iter()
             .filter(|(_, acc)| acc == account_id)
             .map(|(pk, _)| pk)
-            .nth(0)
+            .nth(0);
     }
 
     fn remove_ethereum_public_key_if_required(author_id: &T::AccountId) {
@@ -686,7 +686,7 @@ impl<T: Config> Pallet<T> {
                     ingress_counter,
                     "Failed to append author to active authors list",
                 );
-                return Err(Error::<T>::MaximumAuthorsReached.into())
+                return Err(Error::<T>::MaximumAuthorsReached.into());
             },
         }
 
@@ -756,8 +756,8 @@ impl<T: Config> Pallet<T> {
     ) -> bool {
         // If the author exists in either vectors then they have not been removed from the
         // session
-        return !active_authors.iter().any(|v| &v.account_id == deregistered_author) &&
-            !disabled_authors.iter().any(|v| v == deregistered_author)
+        return !active_authors.iter().any(|v| &v.account_id == deregistered_author)
+            && !disabled_authors.iter().any(|v| v == deregistered_author);
     }
 
     fn clean_up_author_data(action_account_id: T::AccountId, ingress_counter: IngressCounter) {
@@ -793,17 +793,17 @@ impl<T: Config> NewSessionHandler<T::AuthorityId, T::AccountId> for Pallet<T> {
             for (action_account_id, ingress_counter, authors_action_data) in
                 <AuthorActions<T>>::iter()
             {
-                if authors_action_data.status == AuthorsActionStatus::AwaitingConfirmation &&
-                    authors_action_data.action_type.is_deregistration() &&
-                    Self::author_permanently_removed(
+                if authors_action_data.status == AuthorsActionStatus::AwaitingConfirmation
+                    && authors_action_data.action_type.is_deregistration()
+                    && Self::author_permanently_removed(
                         &active_authors,
                         &disabled_authors,
                         &action_account_id,
                     )
                 {
                     Self::clean_up_author_data(action_account_id, ingress_counter);
-                } else if authors_action_data.status == AuthorsActionStatus::AwaitingConfirmation &&
-                    authors_action_data.action_type.is_activation()
+                } else if authors_action_data.status == AuthorsActionStatus::AwaitingConfirmation
+                    && authors_action_data.action_type.is_activation()
                 {
                     <AuthorActions<T>>::mutate(
                         &action_account_id,
@@ -863,11 +863,11 @@ impl<T: Config> session::SessionManager<T::AccountId> for Pallet<T> {
 impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
     fn process_result(tx_id: u32, caller_id: Vec<u8>, succeeded: bool) -> DispatchResult {
         if caller_id != PALLET_ID.to_vec() {
-            return Ok(())
+            return Ok(());
         }
 
         let Some((account_id, ingress_counter)) = TransactionToAction::<T>::take(tx_id) else {
-            return Ok(())
+            return Ok(());
         };
         let action_data = <AuthorActions<T>>::get(&account_id, ingress_counter)
             .ok_or(Error::<T>::AuthorsActionDataNotFound)?;
@@ -875,7 +875,7 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
 
         if !succeeded {
             Self::rollback_failed_author_action(&account_id, ingress_counter, action_type, tx_id);
-            return Ok(())
+            return Ok(());
         }
 
         // T1 succeeded - emit confirmation event and complete the operation

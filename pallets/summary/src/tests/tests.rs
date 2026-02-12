@@ -25,7 +25,7 @@ fn record_summary_calculation_is_called(
 ) -> bool {
     Summary::process_summary_if_required(current_block_number, this_validator);
 
-    return !pool_state.read().transactions.is_empty()
+    return !pool_state.read().transactions.is_empty();
 }
 
 fn get_unsigned_record_summary_calculation_call_from_chain(
@@ -63,7 +63,7 @@ fn expected_unsigned_record_summary_calculation_call(
         ingress_counter: context.root_id.ingress_counter,
         validator: context.validator.clone(),
         signature,
-    }
+    };
 }
 
 fn record_summary_calculation_is_ok(context: &Context) -> bool {
@@ -75,7 +75,7 @@ fn record_summary_calculation_is_ok(context: &Context) -> bool {
         context.validator.clone(),
         context.record_summary_calculation_signature.clone(),
     )
-    .is_ok()
+    .is_ok();
 }
 
 mod process_summary_if_required {
@@ -128,7 +128,7 @@ mod process_summary_if_required {
             block_number_for_next_slot,
             url_param,
             root_hash,
-        }
+        };
     }
 
     mod calls_record_summary_calculation_successfully {
@@ -957,8 +957,8 @@ pub mod record_summary_calculation {
 
                 assert!(record_summary_calculation_is_ok(&context));
 
-                assert!(System::events().iter().any(|a| a.event ==
-                    mock::RuntimeEvent::Summary(
+                assert!(System::events().iter().any(|a| a.event
+                    == mock::RuntimeEvent::Summary(
                         crate::Event::<TestRuntime>::SummaryCalculated {
                             from: context.next_block_to_process,
                             to: context.last_block_in_range,
@@ -1265,7 +1265,7 @@ pub mod record_summary_calculation {
                 ingress_counter,
                 context.last_block_in_range,
             );
-        return new_context
+        return new_context;
     }
 }
 
@@ -1375,8 +1375,8 @@ mod if_process_summary_is_called_a_second_time {
         );
         assert_eq!(Summary::last_summary_slot(), Summary::current_slot());
 
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
                 root_id: context.root_id,
                 vote_approved: true
             })));
@@ -1391,8 +1391,8 @@ mod if_process_summary_is_called_a_second_time {
         assert_eq!(Summary::get_next_block_to_process(), context.next_block_to_process);
         assert_eq!(Summary::last_summary_slot(), previous_summary_slot_before_voting);
 
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::Summary(crate::Event::<TestRuntime>::VotingEnded {
                 root_id: context.root_id,
                 vote_approved: false
             })));
@@ -1492,8 +1492,8 @@ mod if_process_summary_is_called_a_second_time {
                 // NextBlockToProcess is increased by 1 as the first processed summary is approved
                 assert_eq!(
                     second_process_summary_context.last_block_in_range,
-                    last_block_in_range_before_first_time_process_summary +
-                        Summary::schedule_period()
+                    last_block_in_range_before_first_time_process_summary
+                        + Summary::schedule_period()
                 );
                 // Url Param for the target root is updated from [from:3;to:4] to [from:5;to:6] as
                 // the first processed summary is approved

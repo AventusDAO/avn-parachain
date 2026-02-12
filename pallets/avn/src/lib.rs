@@ -263,7 +263,7 @@ impl<T: Config> Pallet<T> {
             },
         })?;
 
-        return Ok((maybe_validator.expect("Already checked"), finalised_block))
+        return Ok((maybe_validator.expect("Already checked"), finalised_block));
     }
 
     pub fn get_default_ocw_lock_expiry() -> u32 {
@@ -271,14 +271,14 @@ impl<T: Config> Pallet<T> {
         let delay: u32 = 5;
         let lock_expiry_in_blocks =
             (AVN_SERVICE_CALL_EXPIRY / avn_block_generation_in_millisec) + delay;
-        return lock_expiry_in_blocks
+        return lock_expiry_in_blocks;
     }
 
     pub fn get_primary_validator_for_sending() -> Result<T::AccountId, Error<T>> {
         let validators = Self::validators();
         // If there are no validators there's no point continuing
         if validators.is_empty() {
-            return Err(Error::<T>::NoValidatorsFound)
+            return Err(Error::<T>::NoValidatorsFound);
         }
 
         let mut index = PrimaryCollatorIndexForSending::<T>::get() as usize;
@@ -301,7 +301,7 @@ impl<T: Config> Pallet<T> {
             Err(error) => return Err(error),
         };
 
-        return Ok(&primary_validator == current_validator)
+        return Ok(&primary_validator == current_validator);
     }
 
     pub fn is_primary_for_block(
@@ -309,7 +309,7 @@ impl<T: Config> Pallet<T> {
         current_validator: &T::AccountId,
     ) -> Result<bool, Error<T>> {
         let primary_validator = Self::calculate_primary_validator_for_block(block_number)?;
-        return Ok(&primary_validator == current_validator)
+        return Ok(&primary_validator == current_validator);
     }
 
     pub fn advance_primary_validator_for_sending() -> Result<T::AccountId, Error<T>> {
@@ -317,7 +317,7 @@ impl<T: Config> Pallet<T> {
 
         // If there are no validators there's no point continuing
         if validators.is_empty() {
-            return Err(Error::<T>::NoValidatorsFound)
+            return Err(Error::<T>::NoValidatorsFound);
         }
 
         let ethereum_counter = PrimaryCollatorIndexForSending::<T>::get();
@@ -336,14 +336,14 @@ impl<T: Config> Pallet<T> {
 
         // If there are no validators there's no point continuing
         if validators.is_empty() {
-            return Err(Error::<T>::NoValidatorsFound)
+            return Err(Error::<T>::NoValidatorsFound);
         }
 
         let block_number: usize = TryInto::<usize>::try_into(block_number)
             .map_err(|_| Error::<T>::ErrorConvertingBlockNumber)?;
 
         let index = block_number % validators.len();
-        return Ok(validators[index].account_id.clone())
+        return Ok(validators[index].account_id.clone());
     }
 
     pub fn get_validator_for_current_node() -> Option<Validator<T::AuthorityId, T::AccountId>> {
@@ -358,7 +358,7 @@ impl<T: Config> Pallet<T> {
             .filter_map(move |(_, validator)| {
                 local_keys.binary_search(&validator.key).ok().map(|_| validator)
             })
-            .nth(0)
+            .nth(0);
     }
 
     // Minimum number required to reach the threshold.
@@ -379,7 +379,7 @@ impl<T: Config> Pallet<T> {
 
     pub fn get_data_from_service(url_path: String) -> Result<Vec<u8>, DispatchError> {
         let request = http::Request::default().method(http::Method::Get);
-        return Ok(Self::invoke_external_service(request, url_path)?)
+        return Ok(Self::invoke_external_service(request, url_path)?);
     }
 
     pub fn post_data_to_service(
@@ -394,7 +394,7 @@ impl<T: Config> Pallet<T> {
             log::debug!("X-Auth proof-data: {:?}", proof_data);
             request = request.add_header("X-Auth", &proof_data);
         }
-        return Ok(Self::invoke_external_service(request, url_path)?)
+        return Ok(Self::invoke_external_service(request, url_path)?);
     }
 
     pub fn request_ecdsa_signature_from_external_service(
@@ -422,7 +422,7 @@ impl<T: Config> Pallet<T> {
         // verify that the incoming (unverified) pubkey is actually a validator
         if !Self::is_validator(&validator.account_id) {
             log::warn!("Signature validation failed, account {:?}, is not validator", validator);
-            return false
+            return false;
         }
 
         // check signature (this is expensive so we do it last).
@@ -436,7 +436,7 @@ impl<T: Config> Pallet<T> {
             signature,
             signature_valid
         );
-        return signature_valid
+        return signature_valid;
     }
 
     pub fn convert_block_number_to_u32(block_number: BlockNumberFor<T>) -> Result<u32, Error<T>> {
@@ -447,18 +447,18 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn is_validator(account_id: &T::AccountId) -> bool {
-        return Self::validators().into_iter().any(|v| v.account_id == *account_id)
+        return Self::validators().into_iter().any(|v| v.account_id == *account_id);
     }
 
     pub fn active_validators(
     ) -> WeakBoundedVec<Validator<T::AuthorityId, T::AccountId>, MaximumValidatorsBound> {
-        return Self::validators()
+        return Self::validators();
     }
 
     pub fn try_get_validator(
         account_id: &T::AccountId,
     ) -> Option<Validator<T::AuthorityId, T::AccountId>> {
-        return Self::validators().into_iter().filter(|v| v.account_id == *account_id).nth(0)
+        return Self::validators().into_iter().filter(|v| v.account_id == *account_id).nth(0);
     }
 
     /// This function will mutate storage. Any code after calling this MUST not error.
@@ -490,7 +490,7 @@ impl<T: Config> Pallet<T> {
             Error::<T>::ErrorDecodingU32
         })?;
 
-        return Ok(BlockNumberFor::<T>::from(finalised_block))
+        return Ok(BlockNumberFor::<T>::from(finalised_block));
     }
 
     pub fn get_external_service_port_number() -> String {
@@ -507,7 +507,7 @@ impl<T: Config> Pallet<T> {
                 "❌ External service port {} is not formatted correctly. Using default port.",
                 e
             );
-            return DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.into()
+            return DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.into();
         }
 
         let port_number = port_number.expect("Already checked for errors");
@@ -517,10 +517,10 @@ impl<T: Config> Pallet<T> {
                 "❌ External service port {} is not a valid number. Using default port.",
                 port_number
             );
-            return DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.into()
+            return DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER.into();
         }
 
-        return port_number.into()
+        return port_number.into();
     }
 
     fn invoke_external_service(
@@ -556,7 +556,7 @@ impl<T: Config> Pallet<T> {
 
         if response.code != 200 {
             log::error!("❌ Unexpected status code: {}", response.code);
-            return Err(Error::<T>::UnexpectedStatusCode)?
+            return Err(Error::<T>::UnexpectedStatusCode)?;
         }
 
         Ok(response.body().collect())
@@ -652,7 +652,7 @@ impl<T: Config> AccountToBytesConverter<T::AccountId> for Pallet<T> {
         let bytes = account.encode();
         let mut vector: [u8; 32] = Default::default();
         vector.copy_from_slice(&bytes[0..32]);
-        return vector
+        return vector;
     }
 
     fn try_from(account_bytes: &[u8; 32]) -> Result<T::AccountId, DispatchError> {
@@ -665,7 +665,7 @@ impl<T: Config> AccountToBytesConverter<T::AccountId> for Pallet<T> {
         account_bytes.copy_from_slice(&bytes[0..32]);
 
         return T::AccountId::decode(&mut &account_bytes[..])
-            .map_err(|_| DispatchError::Other("Error converting to AccountId"))
+            .map_err(|_| DispatchError::Other("Error converting to AccountId"));
     }
 }
 

@@ -28,18 +28,18 @@ mod test_set_event_challenge_period {
             return EthereumEvents::set_event_challenge_period(
                 self.origin.clone(),
                 self.new_event_challenge_period.clone(),
-            )
+            );
         }
 
         fn event_challenge_period_updated_emitted(&self) -> bool {
             return System::events().iter().any(|a| {
-                a.event ==
-                    Event::EthereumEvents(
+                a.event
+                    == Event::EthereumEvents(
                         crate::Event::<TestRuntime>::EventChallengePeriodUpdated {
                             block: self.new_event_challenge_period,
                         },
                     )
-            })
+            });
         }
     }
 

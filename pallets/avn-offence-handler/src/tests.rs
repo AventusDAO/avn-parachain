@@ -267,5 +267,5 @@ mod on_offence {
 }
 
 pub fn event_emitted(event: &mock::RuntimeEvent) -> bool {
-    return System::events().iter().any(|a| a.event == *event)
+    return System::events().iter().any(|a| a.event == *event);
 }

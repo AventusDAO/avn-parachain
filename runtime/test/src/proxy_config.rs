@@ -151,14 +151,18 @@ impl InnerCallValidator for AvnProxyConfig {
 
     fn signature_is_valid(call: &Box<Self::Call>) -> bool {
         match **call {
-            RuntimeCall::EthereumEvents(..) =>
-                return pallet_ethereum_events::Pallet::<Runtime>::signature_is_valid(call),
-            RuntimeCall::TokenManager(..) =>
-                return pallet_token_manager::Pallet::<Runtime>::signature_is_valid(call),
-            RuntimeCall::NftManager(..) =>
-                return pallet_nft_manager::Pallet::<Runtime>::signature_is_valid(call),
-            RuntimeCall::ParachainStaking(..) =>
-                return pallet_parachain_staking::Pallet::<Runtime>::signature_is_valid(call),
+            RuntimeCall::EthereumEvents(..) => {
+                return pallet_ethereum_events::Pallet::<Runtime>::signature_is_valid(call)
+            },
+            RuntimeCall::TokenManager(..) => {
+                return pallet_token_manager::Pallet::<Runtime>::signature_is_valid(call)
+            },
+            RuntimeCall::NftManager(..) => {
+                return pallet_nft_manager::Pallet::<Runtime>::signature_is_valid(call)
+            },
+            RuntimeCall::ParachainStaking(..) => {
+                return pallet_parachain_staking::Pallet::<Runtime>::signature_is_valid(call)
+            },
             _ => false,
         }
     }

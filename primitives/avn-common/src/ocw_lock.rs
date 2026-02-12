@@ -35,10 +35,12 @@ pub fn record_block_run<BlockNumber: Member + Codec + AtLeast32Bit>(
 
     match result {
         Ok(_) => Ok(()),
-        Err(MutateStorageError::ValueFunctionFailed(_)) =>
-            Err(OcwStorageError::OffchainWorkerAlreadyRun),
-        Err(MutateStorageError::ConcurrentModification(_)) =>
-            Err(OcwStorageError::ErrorRecordingOffchainWorkerRun),
+        Err(MutateStorageError::ValueFunctionFailed(_)) => {
+            Err(OcwStorageError::OffchainWorkerAlreadyRun)
+        },
+        Err(MutateStorageError::ConcurrentModification(_)) => {
+            Err(OcwStorageError::ErrorRecordingOffchainWorkerRun)
+        },
     }
 }
 
@@ -54,7 +56,7 @@ pub fn is_locked<Provider: BlockNumberProvider>(lock_name: &[u8]) -> bool {
     match lock.try_lock() {
         Ok(guard) => {
             drop(guard);
-            return false
+            return false;
         },
         Err(_) => return true,
     };

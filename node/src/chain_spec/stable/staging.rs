@@ -208,7 +208,7 @@ pub(crate) fn staging_dev_endowed_collators() -> Vec<(AccountId, Balance)> {
             hex!["f628f84fe150472007ae73e7ee6e88cfc5337f21d23dfbf729a35e3c45273f5f"].into(),
             AVT_ENDOWMENT,
         ),
-    ]
+    ];
 }
 
 fn staging_ethereum_public_keys() -> Vec<EthPublicKey> {
@@ -229,7 +229,7 @@ fn staging_ethereum_public_keys() -> Vec<EthPublicKey> {
             "03cc53fb89f0422a38d2f4edce815cf7f329b14775a248d7b1960f595cd6c7c80c"
         ])
         .unwrap(),
-    ]
+    ];
 }
 
 fn staging_dev_ethereum_public_keys() -> Vec<EthPublicKey> {
@@ -254,5 +254,5 @@ fn staging_dev_ethereum_public_keys() -> Vec<EthPublicKey> {
             "02c916035bfc3ad6f7234816d37307578d0f7d0b848f13b8c15d307c1856394b48"
         ])
         .unwrap(),
-    ]
+    ];
 }

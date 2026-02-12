@@ -662,8 +662,9 @@ pub mod pallet {
 
             let offender = challenge.challengee.clone();
             let challenge_type = match challenge.challenge_reason {
-                SummaryChallengeReason::SlotNotAdvanced(_) =>
-                    Some(SummaryOffenceType::SlotNotAdvanced),
+                SummaryChallengeReason::SlotNotAdvanced(_) => {
+                    Some(SummaryOffenceType::SlotNotAdvanced)
+                },
                 SummaryChallengeReason::Unknown => None,
             };
 
@@ -715,7 +716,7 @@ pub mod pallet {
                     return Ok(Some(
                         <T as Config<I>>::WeightInfo::set_external_validation_threshold(),
                     )
-                    .into())
+                    .into());
                 },
                 AdminConfig::SchedulePeriod(period) => {
                     Self::validate_schedule_period(period)?;
@@ -730,7 +731,7 @@ pub mod pallet {
                     <NextSlotAtBlock<T, I>>::put(new_slot_at_block);
 
                     Self::deposit_event(Event::SchedulePeriodSet { new_period: period });
-                    return Ok(Some(<T as Config<I>>::WeightInfo::set_schedule_period()).into())
+                    return Ok(Some(<T as Config<I>>::WeightInfo::set_schedule_period()).into());
                 },
                 AdminConfig::VotingPeriod(period) => {
                     let schedule_period = <SchedulePeriod<T, I>>::get();
@@ -739,7 +740,7 @@ pub mod pallet {
                     <VotingPeriod<T, I>>::mutate(|p| *p = period);
 
                     Self::deposit_event(Event::VotingPeriodSet { new_period: period });
-                    return Ok(Some(<T as Config<I>>::WeightInfo::set_voting_period()).into())
+                    return Ok(Some(<T as Config<I>>::WeightInfo::set_voting_period()).into());
                 },
             }
         }
@@ -805,7 +806,7 @@ pub mod pallet {
                     };
                 }
 
-                return
+                return;
             }
             let (this_validator, _) = setup_result.expect("We have a validator");
 
@@ -842,7 +843,7 @@ pub mod pallet {
 
                 STORAGE_VERSION.put::<Pallet<T, I>>();
 
-                return T::DbWeight::get().reads_writes(0, 5)
+                return T::DbWeight::get().reads_writes(0, 5);
             }
 
             Weight::zero()
@@ -855,17 +856,17 @@ pub mod pallet {
 
         fn validate_unsigned(source: TransactionSource, call: &Self::Call) -> TransactionValidity {
             if let Call::record_summary_calculation { .. } = call {
-                return Self::record_summary_validate_unsigned(source, call)
+                return Self::record_summary_validate_unsigned(source, call);
             } else if let Call::end_voting_period { root_id, validator, signature } = call {
                 let root_voting_session = Self::get_root_voting_session(root_id);
                 return end_voting_period_validate_unsigned::<T>(
                     &root_voting_session,
                     validator,
                     signature,
-                )
+                );
             } else if let Call::approve_root { root_id, validator, signature } = call {
                 if !<Roots<T, I>>::contains_key(root_id.range, root_id.ingress_counter) {
-                    return InvalidTransaction::Custom(ERROR_CODE_INVALID_ROOT_RANGE).into()
+                    return InvalidTransaction::Custom(ERROR_CODE_INVALID_ROOT_RANGE).into();
                 }
 
                 let root_voting_session = Self::get_root_voting_session(root_id);
@@ -874,20 +875,20 @@ pub mod pallet {
                     &root_voting_session,
                     validator,
                     signature,
-                )
+                );
             } else if let Call::reject_root { root_id, validator, signature } = call {
                 let root_voting_session = Self::get_root_voting_session(root_id);
                 return reject_vote_validate_unsigned::<T>(
                     &root_voting_session,
                     validator,
                     signature,
-                )
+                );
             } else if let Call::add_challenge { challenge, validator, signature } = call {
-                return add_challenge_validate_unsigned::<T, I>(challenge, validator, signature)
+                return add_challenge_validate_unsigned::<T, I>(challenge, validator, signature);
             } else if let Call::advance_slot { .. } = call {
-                return Self::advance_slot_validate_unsigned(source, call)
+                return Self::advance_slot_validate_unsigned(source, call);
             } else {
-                return InvalidTransaction::Call.into()
+                return InvalidTransaction::Call.into();
             }
         }
     }
@@ -942,7 +943,7 @@ pub mod pallet {
                 Self::block_number_for_next_slot(),
             )
             .unwrap_or(0u32.into());
-            return diff > T::AdvanceSlotGracePeriod::get()
+            return diff > T::AdvanceSlotGracePeriod::get();
         }
 
         // Check if this validator is allowed
@@ -965,11 +966,11 @@ pub mod pallet {
 
             if Self::grace_period_elapsed(current_block_number) {
                 if validator.account_id == current_slot_validator {
-                    return Err(Error::<T, I>::GracePeriodElapsed)?
+                    return Err(Error::<T, I>::GracePeriodElapsed)?;
                 }
             } else {
                 if validator.account_id != current_slot_validator {
-                    return Err(Error::<T, I>::WrongValidator)?
+                    return Err(Error::<T, I>::WrongValidator)?;
                 }
             }
 
@@ -1016,7 +1017,7 @@ pub mod pallet {
             root_id: &RootId<BlockNumberFor<T>>,
         ) -> Box<dyn VotingSessionManager<T::AccountId, BlockNumberFor<T>>> {
             return Box::new(RootVotingSession::<T, I>::new(root_id))
-                as Box<dyn VotingSessionManager<T::AccountId, BlockNumberFor<T>>>
+                as Box<dyn VotingSessionManager<T::AccountId, BlockNumberFor<T>>>;
         }
 
         // // This can be called by other validators to verify the root hash
@@ -1042,13 +1043,13 @@ pub mod pallet {
                     T::InstanceId::get(),
                     e
                 );
-                return Err(Error::<T, I>::ErrorGettingSummaryDataFromService)?
+                return Err(Error::<T, I>::ErrorGettingSummaryDataFromService)?;
             }
 
             let root_hash = Self::validate_response(response.expect("checked for error"))?;
             log::trace!(target: "avn", "🥽 Instance({}) Calculated root hash {:?} for range [{:?}, {:?}]", T::InstanceId::get(), &root_hash, &from_block_number, &to_block_number);
 
-            return Ok(root_hash)
+            return Ok(root_hash);
         }
 
         pub fn create_root_lock_name(block_number: BlockNumberFor<T>) -> Vec<u8> {
@@ -1073,11 +1074,11 @@ pub mod pallet {
                     "💔 Instance({}) Current slot validator is not found. Cannot advance slot for block: {:?}",
                     T::InstanceId::get(), block_number
                 );
-                return
+                return;
             }
 
-            if this_validator.account_id == current_slot_validator.expect("Checked for none") &&
-                block_number >= Self::block_number_for_next_slot()
+            if this_validator.account_id == current_slot_validator.expect("Checked for none")
+                && block_number >= Self::block_number_for_next_slot()
             {
                 let advance_slot_lock_name = Self::get_advance_slot_lock_name(Self::current_slot());
                 let mut lock = AVN::<T>::get_ocw_locker(&advance_slot_lock_name);
@@ -1094,7 +1095,7 @@ pub mod pallet {
                         );
                         //free the lock so we can potentially retry
                         drop(guard);
-                        return
+                        return;
                     }
 
                     // If there are no errors, keep the lock to prevent doing the same logic again
@@ -1111,7 +1112,7 @@ pub mod pallet {
             let target_block = Self::get_target_block();
             if target_block.is_err() {
                 log::error!("💔️ Error getting target block.");
-                return
+                return;
             }
             let last_block_in_range = target_block.expect("Valid block number");
 
@@ -1135,7 +1136,7 @@ pub mod pallet {
                         log::warn!("💔️ Error processing summary: {:?}", e);
                         //free the lock so we can potentially retry
                         drop(guard);
-                        return
+                        return;
                     }
 
                     // If there are no errors, keep the lock to prevent doing the same logic again
@@ -1153,7 +1154,7 @@ pub mod pallet {
                     log::error!(
                         "💔 Current slot validator is not found. Unable to register offence"
                     );
-                    return
+                    return;
                 }
                 let current_slot_validator =
                     maybe_current_slot_validator.expect("Checked for none");
@@ -1182,7 +1183,7 @@ pub mod pallet {
             if OcwLock::is_locked::<frame_system::Pallet<T>>(&Self::create_root_lock_name(
                 last_block_in_range,
             )) {
-                return false
+                return false;
             }
 
             let target_block_with_buffer =
@@ -1195,22 +1196,22 @@ pub mod pallet {
                     last_block_in_range
                 );
 
-                return false
+                return false;
             }
             let target_block_with_buffer = target_block_with_buffer.expect("Already checked");
 
             let root_range = RootRange::new(Self::get_next_block_to_process(), last_block_in_range);
 
             let current_slot_validator = Self::slot_validator();
-            let is_slot_validator = current_slot_validator.is_some() &&
-                this_validator.account_id == current_slot_validator.expect("checked for none");
+            let is_slot_validator = current_slot_validator.is_some()
+                && this_validator.account_id == current_slot_validator.expect("checked for none");
             let slot_is_active = current_block_number < Self::block_number_for_next_slot();
             let blocks_are_old_enough = current_block_number > target_block_with_buffer;
 
-            return is_slot_validator &&
-                slot_is_active &&
-                blocks_are_old_enough &&
-                Self::summary_is_neither_pending_nor_approved(&root_range)
+            return is_slot_validator
+                && slot_is_active
+                && blocks_are_old_enough
+                && Self::summary_is_neither_pending_nor_approved(&root_range);
         }
 
         // called from OCW - no storage changes allowed here
@@ -1296,7 +1297,7 @@ pub mod pallet {
             .map_err(|_| Error::<T, I>::Overflow)?;
 
             if Self::get_next_block_to_process() == 0u32.into() {
-                return Ok(end_block_number)
+                return Ok(end_block_number);
             }
 
             Ok(safe_sub_block_numbers::<BlockNumberFor<T>>(end_block_number, 1u32.into())
@@ -1310,7 +1311,7 @@ pub mod pallet {
                     T::InstanceId::get(),
                     response
                 );
-                return Err(Error::<T, I>::InvalidRootHashLength)?
+                return Err(Error::<T, I>::InvalidRootHashLength)?;
             }
 
             let root_hash = core::str::from_utf8(&response);
@@ -1320,14 +1321,14 @@ pub mod pallet {
                     T::InstanceId::get(),
                     e
                 );
-                return Err(Error::<T, I>::InvalidUTF8Bytes)?
+                return Err(Error::<T, I>::InvalidUTF8Bytes)?;
             }
 
             let mut data: [u8; 32] = [0; 32];
             hex::decode_to_slice(root_hash.expect("Checked for error"), &mut data[..])
                 .map_err(|_| Error::<T, I>::InvalidHexString)?;
 
-            return Ok(H256::from_slice(&data))
+            return Ok(H256::from_slice(&data));
         }
 
         pub fn send_root_to_ethereum(
@@ -1453,8 +1454,8 @@ pub mod pallet {
         }
 
         fn can_end_vote(vote: &VotingSessionData<T::AccountId, BlockNumberFor<T>>) -> bool {
-            return vote.has_outcome() ||
-                <system::Pallet<T>>::block_number() >= vote.end_of_voting_period
+            return vote.has_outcome()
+                || <system::Pallet<T>>::block_number() >= vote.end_of_voting_period;
         }
 
         fn record_summary_validate_unsigned(
@@ -1470,10 +1471,10 @@ pub mod pallet {
             } = call
             {
                 let current_slot_validator = Self::slot_validator();
-                if current_slot_validator.is_none() ||
-                    validator.account_id != current_slot_validator.expect("checked for none")
+                if current_slot_validator.is_none()
+                    || validator.account_id != current_slot_validator.expect("checked for none")
                 {
-                    return InvalidTransaction::Custom(ERROR_CODE_VALIDATOR_IS_NOT_PRIMARY).into()
+                    return InvalidTransaction::Custom(ERROR_CODE_VALIDATOR_IS_NOT_PRIMARY).into();
                 }
 
                 let signed_data = &(
@@ -1483,7 +1484,7 @@ pub mod pallet {
                     new_block_number,
                 );
                 if !AVN::<T>::signature_is_valid(signed_data, &validator, signature) {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 };
 
                 return ValidTransaction::with_tag_prefix("Summary")
@@ -1496,10 +1497,10 @@ pub mod pallet {
                         .encode()])
                     .longevity(64_u64)
                     .propagate(true)
-                    .build()
+                    .build();
             }
 
-            return InvalidTransaction::Call.into()
+            return InvalidTransaction::Call.into();
         }
 
         fn advance_slot_validate_unsigned(
@@ -1508,10 +1509,10 @@ pub mod pallet {
         ) -> TransactionValidity {
             if let Call::advance_slot { validator, signature } = call {
                 let current_slot_validator = Self::slot_validator();
-                if current_slot_validator.is_none() ||
-                    validator.account_id != current_slot_validator.expect("checked for none")
+                if current_slot_validator.is_none()
+                    || validator.account_id != current_slot_validator.expect("checked for none")
                 {
-                    return InvalidTransaction::Custom(ERROR_CODE_VALIDATOR_IS_NOT_PRIMARY).into()
+                    return InvalidTransaction::Custom(ERROR_CODE_VALIDATOR_IS_NOT_PRIMARY).into();
                 }
 
                 // QUESTION: slash here? If we check the signature validity first, then fail the
@@ -1521,7 +1522,7 @@ pub mod pallet {
                 let current_slot = Self::current_slot();
                 let signed_data = &(Self::advance_block_context(), current_slot);
                 if !AVN::<T>::signature_is_valid(signed_data, &validator, signature) {
-                    return InvalidTransaction::BadProof.into()
+                    return InvalidTransaction::BadProof.into();
                 };
 
                 return ValidTransaction::with_tag_prefix("Summary")
@@ -1529,14 +1530,14 @@ pub mod pallet {
                     .and_provides(vec![(Self::advance_block_context(), current_slot).encode()])
                     .longevity(64_u64)
                     .propagate(true)
-                    .build()
+                    .build();
             }
 
-            return InvalidTransaction::Call.into()
+            return InvalidTransaction::Call.into();
         }
 
         pub fn empty_root() -> H256 {
-            return H256::from_slice(&[0; 32])
+            return H256::from_slice(&[0; 32]);
         }
 
         fn summary_is_neither_pending_nor_approved(
@@ -1546,14 +1547,14 @@ pub mod pallet {
                 <Roots<T, I>>::iter_prefix_values(root_range).any(|root| root.is_validated);
             let is_pending = <PendingApproval<T, I>>::contains_key(root_range);
 
-            return !is_pending && !has_been_approved
+            return !is_pending && !has_been_approved;
         }
 
         pub fn try_get_root_data(
             root_id: &RootId<BlockNumberFor<T>>,
         ) -> Result<RootData<T::AccountId>, Error<T, I>> {
             if <Roots<T, I>>::contains_key(root_id.range, root_id.ingress_counter) {
-                return Ok(<Roots<T, I>>::get(root_id.range, root_id.ingress_counter))
+                return Ok(<Roots<T, I>>::get(root_id.range, root_id.ingress_counter));
             }
 
             Err(Error::<T, I>::RootDataNotFound)?
@@ -1575,8 +1576,8 @@ pub mod pallet {
             result: &ProposalStatusEnum,
         ) {
             if let Ok(root_id) = Self::get_root_id_by_external_ref(external_ref) {
-                if matches!(result, ProposalStatusEnum::Expired) ||
-                    matches!(result, ProposalStatusEnum::Resolved { passed: true })
+                if matches!(result, ProposalStatusEnum::Expired)
+                    || matches!(result, ProposalStatusEnum::Resolved { passed: true })
                 {
                     let root_data = match Self::try_get_root_data(&root_id) {
                         Ok(data) => data,
@@ -1587,7 +1588,7 @@ pub mod pallet {
                                 external_ref,
                                 e
                             );
-                            return
+                            return;
                         },
                     };
 
@@ -1599,7 +1600,7 @@ pub mod pallet {
                             external_ref,
                             e
                         );
-                        return
+                        return;
                     };
 
                     Self::cleanup_external_validation_data(&root_id, external_ref);

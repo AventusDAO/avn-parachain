@@ -197,10 +197,8 @@ fn run_checks(
     expected_msg_hash: &str,
     expected_calldata: &dyn Fn(u64) -> String,
 ) {
-    let mut ext = ExtBuilder::build_default()
-        .with_validators()
-        .with_genesis_config()
-        .as_externality();
+    let mut ext =
+        ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
     ext.execute_with(|| {
         let current_time = 1_695_809_729_000;
         pallet_timestamp::Pallet::<TestRuntime>::set_timestamp(current_time);
@@ -366,10 +364,8 @@ mod set_admin_setting {
 
     #[test]
     fn remove_active_request_non_root_fails() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let context = setup_context();
             let _ = add_new_send_request::<TestRuntime, ()>(
@@ -433,10 +429,8 @@ mod set_admin_setting {
 
     #[test]
     fn resets_ethereum_events() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let context = EventProcessContext::setup();
             init_active_range();
@@ -847,10 +841,8 @@ fn publish_and_send_transaction() {
 
         assert_ok!(result);
 
-        let tx = ActiveRequest::<TestRuntime>::get()
-            .unwrap()
-            .as_active_tx::<TestRuntime, ()>()
-            .unwrap();
+        let tx =
+            ActiveRequest::<TestRuntime>::get().unwrap().as_active_tx::<TestRuntime, ()>().unwrap();
         assert_eq!(tx.data.eth_tx_hash, context.eth_tx_hash);
     });
 }
@@ -928,16 +920,14 @@ fn unsent_transactions_are_replayed() {
         corroborate_bad_transactions(tx_id, &context.second_confirming_author, &context);
 
         // the active request is retried with the same id, different sender
-        let tx = ActiveRequest::<TestRuntime>::get()
-            .unwrap()
-            .as_active_tx::<TestRuntime, ()>()
-            .unwrap();
+        let tx =
+            ActiveRequest::<TestRuntime>::get().unwrap().as_active_tx::<TestRuntime, ()>().unwrap();
         assert_eq!(tx_id, tx.request.tx_id);
         assert_eq!(initial_replay_attempt + 1, tx.replay_attempt);
         assert_ne!(&context.author.account_id, &tx.data.sender);
 
-        assert!(System::events().iter().any(|record| record.event ==
-            mock::RuntimeEvent::EthBridge(crate::Event::ActiveRequestRetried {
+        assert!(System::events().iter().any(|record| record.event
+            == mock::RuntimeEvent::EthBridge(crate::Event::ActiveRequestRetried {
                 function_name: tx.request.function_name.clone(),
                 params: tx.request.params.clone(),
                 caller_id: tx.request.caller_id.clone(),

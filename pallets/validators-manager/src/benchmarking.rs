@@ -123,12 +123,12 @@ fn generate_signature<T: pallet_avn::Config>(
     let encoded_data = 0.encode();
     let authority_id = T::AuthorityId::generate_pair(None);
     let signature = authority_id.sign(&encoded_data).expect("able to make signature");
-    return signature
+    return signature;
 }
 
 fn generate_mock_ecdsa_signature<T: pallet_avn::Config>(msg: u8) -> ecdsa::Signature {
     let signature_bytes: [u8; 65] = [msg; 65];
-    return ecdsa::Signature::from_slice(&signature_bytes).unwrap().into()
+    return ecdsa::Signature::from_slice(&signature_bytes).unwrap().into();
 }
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
@@ -187,7 +187,7 @@ fn generate_collator_eth_public_key_from_seed<T: Config>(seed: u64) -> Public {
 
     return ValidatorManager::<T>::compress_eth_public_key(H512::from_slice(
         &public_key.serialize()[1..],
-    ))
+    ));
 }
 
 fn simulate_t1_callback_success<T: Config>(tx_id: EthereumId) {
@@ -199,7 +199,7 @@ fn get_tx_id_for_validator<T: Config>(account_id: &T::AccountId) -> Option<Ether
     // Find the ValidatorActions entry for this validator
     for (acc_id, _ingress_counter, validators_action_data) in <ValidatorActions<T>>::iter() {
         if &acc_id == account_id {
-            return Some(validators_action_data.eth_transaction_id)
+            return Some(validators_action_data.eth_transaction_id);
         }
     }
     None

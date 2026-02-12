@@ -7,12 +7,12 @@ pub mod ethereum_converters {
         vec.extend(bytes.iter().copied());
         vec.resize(32, 0);
         vec.reverse();
-        return vec
+        return vec;
     }
 
     #[cfg(test)]
     pub fn get_topic_32_bytes(n: u8) -> Vec<u8> {
-        return vec![n; 32]
+        return vec![n; 32];
     }
 }
 

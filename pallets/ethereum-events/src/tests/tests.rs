@@ -28,7 +28,7 @@ mod test_get_contract_address_for {
             ValidEvents::LiftedToPredictionMarket => H160::from(BRIDGE_CONTRACT),
             ValidEvents::Erc20DirectTransfer => H160::from(BRIDGE_CONTRACT),
             ValidEvents::LowerReverted => H160::from(BRIDGE_CONTRACT),
-        }
+        };
     }
 
     #[test]
@@ -640,7 +640,7 @@ mod signature_in {
             EthereumEvents::insert_to_unchecked_events(&event_id, ingress_counter);
             assert_eq!(EthereumEvents::unchecked_events().len(), 1);
 
-            return validator.clone()
+            return validator.clone();
         }
 
         #[test]
@@ -801,7 +801,7 @@ mod signature_in {
                 MIN_CHALLENGE_VOTES,
             );
 
-            return validator.clone()
+            return validator.clone();
         }
 
         #[test]
@@ -953,7 +953,7 @@ mod signature_in {
 
             assert_eq!(EthereumEvents::events_pending_challenge().len(), 1);
 
-            return validator.clone()
+            return validator.clone();
         }
 
         #[test]

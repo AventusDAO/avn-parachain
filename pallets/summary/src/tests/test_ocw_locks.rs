@@ -63,7 +63,7 @@ pub fn setup_success_preconditions() -> LocalContext {
         block_after_grace_period,
         challenge_reason,
         finalised_block_vec,
-    }
+    };
 }
 
 mod advance_slot_locks {
@@ -191,7 +191,7 @@ mod record_summary_locks {
             ingress_counter: context.root_id.ingress_counter,
             validator: context.validator.clone(),
             signature,
-        }
+        };
     }
 
     #[test]

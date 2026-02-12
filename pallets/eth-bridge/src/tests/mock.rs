@@ -293,9 +293,7 @@ impl pallet_session::historical::Config for TestRuntime {
 impl pallet_session::historical::SessionManager<AccountId, AccountId> for TestSessionManager {
     fn new_session(_new_index: SessionIndex) -> Option<Vec<(AccountId, AccountId)>> {
         VALIDATORS.with(|l| {
-            l.borrow_mut()
-                .take()
-                .map(|validators| validators.iter().map(|v| (*v, *v)).collect())
+            l.borrow_mut().take().map(|validators| validators.iter().map(|v| (*v, *v)).collect())
         })
     }
     fn end_session(_: SessionIndex) {}
@@ -429,7 +427,7 @@ impl BridgeInterfaceNotification for TestRuntime {
 
     fn on_incoming_event_processed(event: &EthEvent) -> DispatchResult {
         if event.event_id.transaction_hash == H256::from_slice(&[6u8; 32]) {
-            return Err(DispatchError::Other("Test - Bad event"))
+            return Err(DispatchError::Other("Test - Bad event"));
         }
 
         Ok(())

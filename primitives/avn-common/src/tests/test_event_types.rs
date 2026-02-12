@@ -58,7 +58,7 @@ fn get_lifted_avt_data() -> Vec<u8> {
 
     data.extend(&amount_vec);
 
-    return data
+    return data;
 }
 
 fn get_lifted_avt_data_with_max_value() -> Vec<u8> {
@@ -69,7 +69,7 @@ fn get_lifted_avt_data_with_max_value() -> Vec<u8> {
 
     data.extend(&amount_vec);
 
-    return data
+    return data;
 }
 
 fn get_lifted_avt_data_with_max_bits() -> Vec<u8> {
@@ -80,7 +80,7 @@ fn get_lifted_avt_data_with_max_bits() -> Vec<u8> {
 
     data.extend(&amount_vec);
 
-    return data
+    return data;
 }
 
 fn get_lifted_avt_data_with_too_large_amount() -> Vec<u8> {
@@ -91,57 +91,57 @@ fn get_lifted_avt_data_with_too_large_amount() -> Vec<u8> {
 
     data.extend(&amount_vec);
 
-    return data
+    return data;
 }
 
 fn get_lifted_avt_short_data() -> Vec<u8> {
     let mut data = get_lifted_avt_data();
     data.pop();
-    return data
+    return data;
 }
 
 fn get_lifted_avt_long_data() -> Vec<u8> {
     let mut data = get_lifted_avt_data();
     data.push(10);
-    return data
+    return data;
 }
 
 fn get_topic_20_bytes(n: u8) -> Vec<u8> {
     let mut topic = vec![0; 12];
     topic.append(&mut vec![n; 20]);
 
-    return topic
+    return topic;
 }
 
 fn get_lifted_avt_topics() -> Vec<Vec<u8>> {
     let topic_event_signature = get_topic_32_bytes(10);
     let topic_contract = get_topic_20_bytes(20);
     let topic_receiver = get_topic_32_bytes(30);
-    return vec![topic_event_signature, topic_contract, topic_receiver]
+    return vec![topic_event_signature, topic_contract, topic_receiver];
 }
 
 fn get_lifted_avt_few_topics() -> Vec<Vec<u8>> {
     let mut topics = get_lifted_avt_topics();
     topics.pop();
-    return topics
+    return topics;
 }
 
 fn get_lifted_avt_many_topics() -> Vec<Vec<u8>> {
     let mut topics = get_lifted_avt_topics();
     topics.push(get_topic_20_bytes(20));
-    return topics
+    return topics;
 }
 
 fn get_lifted_avt_with_short_topic() -> Vec<Vec<u8>> {
     let mut topics = get_lifted_avt_topics();
     topics[1].pop();
-    return topics
+    return topics;
 }
 
 fn get_lifted_avt_with_long_topic() -> Vec<Vec<u8>> {
     let mut topics = get_lifted_avt_topics();
     topics[1].push(30);
-    return topics
+    return topics;
 }
 
 // ===================================== LiftedAVT related tests

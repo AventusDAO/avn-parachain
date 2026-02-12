@@ -55,8 +55,8 @@ fn advance_session() {
 fn keys_populated_correctly_on_genesis() {
     eth_events_test_with_validators().execute_with(|| {
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }
@@ -77,8 +77,8 @@ fn empty_validators_on_genesis() {
 fn keys_populated_correctly_new_session_same_validators_change() {
     eth_events_test_with_validators().execute_with(|| {
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }
@@ -88,8 +88,8 @@ fn keys_populated_correctly_new_session_same_validators_change() {
         advance_session();
 
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }
@@ -103,8 +103,8 @@ fn keys_populated_correctly_new_session_same_validators_change() {
 fn keys_populated_correctly_new_session_with_good_change() {
     eth_events_test_with_validators().execute_with(|| {
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }
@@ -114,8 +114,8 @@ fn keys_populated_correctly_new_session_with_good_change() {
         change_validators_good();
 
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) }
                 ]
@@ -128,8 +128,8 @@ fn keys_populated_correctly_new_session_with_good_change() {
 fn keys_populated_correctly_new_session_with_empty_change() {
     eth_events_test_with_validators().execute_with(|| {
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }
@@ -147,8 +147,8 @@ fn keys_populated_correctly_new_session_with_empty_change() {
 fn keys_populated_correctly_new_session_with_no_change() {
     eth_events_test_with_validators().execute_with(|| {
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }
@@ -158,8 +158,8 @@ fn keys_populated_correctly_new_session_with_no_change() {
         advance_session_no_validators_change();
 
         assert!(
-            EthereumEvents::validators() ==
-                vec![
+            EthereumEvents::validators()
+                == vec![
                     Validator { account_id: validator_id_1(), key: UintAuthorityId(0) },
                     Validator { account_id: validator_id_2(), key: UintAuthorityId(1) },
                     Validator { account_id: validator_id_3(), key: UintAuthorityId(2) }

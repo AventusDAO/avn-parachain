@@ -24,7 +24,7 @@ fn setup_authors<T: Config<I>, I: 'static>(
     let current_authors = avn::Validators::<T>::get();
 
     if number_of_validator_account_ids <= current_authors.len() as u32 {
-        return current_authors.to_vec()
+        return current_authors.to_vec();
     }
     let number_of_new_authors: u32 = number_of_validator_account_ids - current_authors.len() as u32;
     let mut new_authors: Vec<crate::Author<T>> = Vec::new();
@@ -44,7 +44,7 @@ fn setup_authors<T: Config<I>, I: 'static>(
         Some("Too many authors for session"),
     ));
 
-    return total_authors
+    return total_authors;
 }
 
 fn add_collator_to_avn<T: Config<I>, I: 'static>(
@@ -56,11 +56,8 @@ fn add_collator_to_avn<T: Config<I>, I: 'static>(
         Validator::new(collator.clone(), key.into());
 
     let current_collators = avn::Validators::<T>::get();
-    let new_collators: Vec<_> = current_collators
-        .iter()
-        .chain(vec![validator.clone()].iter())
-        .cloned()
-        .collect();
+    let new_collators: Vec<_> =
+        current_collators.iter().chain(vec![validator.clone()].iter()).cloned().collect();
 
     avn::Validators::<T>::put(WeakBoundedVec::force_from(
         new_collators,
@@ -100,7 +97,7 @@ fn generate_dummy_ecdsa_signature(i: u8) -> ecdsa::Signature {
     let mut bytes: [u8; 65] = [0; 65];
     let first_64_bytes: [u8; 64] = [i; 64];
     bytes[0..64].copy_from_slice(&first_64_bytes);
-    return ecdsa::Signature::from_raw(bytes)
+    return ecdsa::Signature::from_raw(bytes);
 }
 
 fn bound_params(

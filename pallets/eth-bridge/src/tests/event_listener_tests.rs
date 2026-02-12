@@ -147,10 +147,8 @@ mod submit_discovered_events {
 
     #[test]
     fn adds_vote_correctly() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             init_active_range();
             let context: Context = Default::default();
@@ -167,10 +165,8 @@ mod submit_discovered_events {
 
     #[test]
     fn adds_empty_vote_correctly() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             init_active_range();
             let context =
@@ -188,10 +184,8 @@ mod submit_discovered_events {
 
     #[test]
     fn finalises_vote() {
-        let mut ext = ExtBuilder::build_default()
-            .with_validators()
-            .with_genesis_config()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_validators().with_genesis_config().as_externality();
         ext.execute_with(|| {
             // given
             init_active_range();
@@ -359,10 +353,8 @@ mod initial_range_consensus {
 
     #[test]
     fn adds_latest_block_successfully() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
         ext.execute_with(|| {
             let context: Context = Default::default();
 
@@ -378,10 +370,8 @@ mod initial_range_consensus {
 
     #[test]
     fn finalises_initial_range() {
-        let mut ext = ExtBuilder::build_default()
-            .with_genesis_config()
-            .with_validators()
-            .as_externality();
+        let mut ext =
+            ExtBuilder::build_default().with_genesis_config().with_validators().as_externality();
         ext.execute_with(|| {
             let contexts = (1..5 as u64)
                 .map(|id| Context {

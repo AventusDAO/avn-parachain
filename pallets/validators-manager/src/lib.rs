@@ -476,8 +476,8 @@ impl<T: Config> Pallet<T> {
         );
 
         ensure!(
-            validator_account_ids.len() <
-                (<MaximumValidatorsBound as sp_core::TypedGet>::get() as usize),
+            validator_account_ids.len()
+                < (<MaximumValidatorsBound as sp_core::TypedGet>::get() as usize),
             Error::<T>::MaximumValidatorsReached
         );
 
@@ -557,7 +557,7 @@ impl<T: Config> Pallet<T> {
                 "Unable to find staking candidate info for collator: {:?}",
                 action_account_id
             );
-            return Err(())
+            return Err(());
         }
 
         let staking_state = staking_state.expect("Checked for none already");
@@ -576,7 +576,7 @@ impl<T: Config> Pallet<T> {
                 action_account_id,
                 result
             );
-            return Err(())
+            return Err(());
         }
 
         Ok(())
@@ -749,7 +749,7 @@ impl<T: Config> Pallet<T> {
                     "Failed to append validator to active validators list",
                     false,
                 );
-                return Err(Error::<T>::MaximumValidatorsReached.into())
+                return Err(Error::<T>::MaximumValidatorsReached.into());
             },
         }
 
@@ -763,7 +763,7 @@ impl<T: Config> Pallet<T> {
                     "Failed to add validator to staking candidates",
                     false,
                 );
-                return Err(e)
+                return Err(e);
             },
         }
 
@@ -810,7 +810,7 @@ impl<T: Config> Pallet<T> {
                     ingress_counter,
                     "Failed to schedule leave candidates",
                 );
-                return Err(e.error)
+                return Err(e.error);
             },
         }
 
@@ -916,11 +916,11 @@ impl<T: Config> Pallet<T> {
 impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
     fn process_result(tx_id: u32, caller_id: Vec<u8>, succeeded: bool) -> DispatchResult {
         if caller_id != PALLET_ID.to_vec() {
-            return Ok(())
+            return Ok(());
         }
 
         let Some((account_id, ingress_counter)) = TransactionIdToAction::<T>::take(tx_id) else {
-            return Ok(())
+            return Ok(());
         };
         let action_data = <ValidatorActions<T>>::get(&account_id, ingress_counter)
             .ok_or(Error::<T>::ValidatorsActionDataNotFound)?;
@@ -933,7 +933,7 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
                 action_type,
                 tx_id,
             );
-            return Ok(())
+            return Ok(());
         }
 
         // T1 succeeded - emit confirmation event and complete the operation
@@ -993,21 +993,21 @@ impl<T: Config> NewSessionHandler<T::AuthorityId, T::AccountId> for Pallet<T> {
             for (action_account_id, ingress_counter, validators_action_data) in
                 <ValidatorActions<T>>::iter()
             {
-                if validators_action_data.status == ValidatorsActionStatus::Actioned &&
-                    validators_action_data.action_type.is_deregistration()
+                if validators_action_data.status == ValidatorsActionStatus::Actioned
+                    && validators_action_data.action_type.is_deregistration()
                 {
                     // Check if account is still part of the session
                     let is_account_part_of_session =
-                        active_validators.iter().any(|v| v.account_id == action_account_id) ||
-                            disabled_validators.iter().any(|v| *v == action_account_id);
+                        active_validators.iter().any(|v| v.account_id == action_account_id)
+                            || disabled_validators.iter().any(|v| *v == action_account_id);
 
                     if !is_account_part_of_session {
                         if let Ok(()) = Self::exit_from_staking(action_account_id.clone()) {
                             Self::confirm_action(action_account_id, ingress_counter);
                         }
                     }
-                } else if validators_action_data.status == ValidatorsActionStatus::Actioned &&
-                    validators_action_data.action_type.is_activation()
+                } else if validators_action_data.status == ValidatorsActionStatus::Actioned
+                    && validators_action_data.action_type.is_activation()
                 {
                     // check if active_validators contains action_account_id
                     let is_now_active =
@@ -1023,7 +1023,7 @@ impl<T: Config> NewSessionHandler<T::AuthorityId, T::AccountId> for Pallet<T> {
                                     "Ethereum pub key not found. Validator: {:?}",
                                     action_account_id
                                 );
-                                return
+                                return;
                             },
                         };
 

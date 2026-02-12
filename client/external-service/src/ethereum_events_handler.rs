@@ -322,7 +322,7 @@ pub async fn identify_events(
     for log in logs.into_iter().chain(secondary_logs.into_iter()) {
         if let Some(tx_hash) = log.transaction_hash {
             if unique_transactions.contains_key(&tx_hash) {
-                continue
+                continue;
             }
             match parse_log(log, events_registry) {
                 Ok(discovered_event) => {
@@ -408,7 +408,7 @@ pub async fn identify_additional_events(
 
 fn parse_log(log: Log, events_registry: &EventRegistry) -> Result<DiscoveredEvent, AppError> {
     if log.topics.is_empty() {
-        return Err(AppError::MissingEventSignature)
+        return Err(AppError::MissingEventSignature);
     }
     log::debug!("⛓️ Parsing discovered log: {:?}", &log);
 
@@ -446,10 +446,9 @@ fn parse_event_data(
     topics: Vec<Vec<u8>>,
     events_registry: &EventRegistry,
 ) -> Result<EventData, AppError> {
-    (events_registry
-        .get_event_info(&signature)
-        .ok_or(AppError::ErrorParsingEventLogs)?
-        .parser)(data, topics)
+    (events_registry.get_event_info(&signature).ok_or(AppError::ErrorParsingEventLogs)?.parser)(
+        data, topics,
+    )
 }
 
 pub struct EthEventHandlerConfig<Block: BlockT, ClientT>
@@ -516,7 +515,7 @@ where
                             "⛓️  Web3 connection for chain ID {} already exists, skipping creation.",
                             web3_chain_id
                         );
-                        continue
+                        continue;
                     }
 
                     // Create a new mutex for the web3 data and store it in the map
@@ -530,7 +529,7 @@ where
                             "⛓️  Web3 connection for chain ID {} successfully created.",
                             web3_chain_id
                         );
-                        return Ok(web3_data_mutex)
+                        return Ok(web3_data_mutex);
                     }
                 }
             } else {
@@ -565,7 +564,7 @@ where
     match config.web3_data_mutexes.get(&chain_id) {
         Some(web3_data_pointer) => {
             log::debug!("⛓️  Found existing web3 connection for network: {}", chain_id);
-            return Ok(Arc::clone(&web3_data_pointer))
+            return Ok(Arc::clone(&web3_data_pointer));
         },
         None => log::debug!(
             "⛓️  No existing web3 connection found for network: {}. Initialising new...",
@@ -579,14 +578,14 @@ where
         match config.initialise_web3(chain_id).await {
             Ok(web3_lock) => {
                 log::info!("Successfully initialized web3 connection.");
-                return Ok(web3_lock)
+                return Ok(web3_lock);
             },
             Err(e) => {
                 attempts += 1;
                 log::error!("Failed to initialize web3 (attempt {}): {:?}", attempts, e);
                 if attempts >= RETRY_LIMIT {
                     log::error!("Reached maximum retry limit for initializing web3.");
-                    return Err(AppError::Web3RetryLimitReached)
+                    return Err(AppError::Web3RetryLimitReached);
                 }
                 sleep(Duration::from_secs(RETRY_DELAY)).await;
             },
@@ -612,7 +611,7 @@ fn find_current_node_author<T>(
                     CurrentNodeAuthor::new(Public::from_raw(author.0), Public::from_raw(author.1))
                 })
             })
-            .nth(0)
+            .nth(0);
     }
 
     None
@@ -637,20 +636,19 @@ where
 
     let current_node_author;
     loop {
-        let authors = config
-            .client
-            .runtime_api()
-            .query_authors(config.client.info().best_hash)
-            .map_err(|e| {
-                log::error!("Error querying authors: {:?}", e);
-            });
+        let authors =
+            config.client.runtime_api().query_authors(config.client.info().best_hash).map_err(
+                |e| {
+                    log::error!("Error querying authors: {:?}", e);
+                },
+            );
 
         let node_signing_keys = config.keystore.sr25519_public_keys(AVN_KEY_ID);
         if let Some(node_author) =
             find_current_node_author(authors.clone(), node_signing_keys.clone())
         {
             current_node_author = node_author;
-            break
+            break;
         }
         log::error!("Author not found. Will attempt again after a while. Chain signing keys: {:?}, keystore keys: {:?}.",
             authors,
@@ -658,7 +656,7 @@ where
         );
 
         sleep(Duration::from_secs(10 * SLEEP_TIME)).await;
-        continue
+        continue;
     }
 
     log::info!("Current node author address set: {:?}", current_node_author);
@@ -720,7 +718,7 @@ where
             Ok(web3_data) => web3_data,
             Err(e) => {
                 log::error!("Failed to initialize web3 connection for instance: {:?}", e);
-                continue
+                continue;
             },
         };
 

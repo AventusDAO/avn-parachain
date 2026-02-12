@@ -17,7 +17,7 @@ use pallet_avn_proxy::Error as avn_proxy_error;
 use sp_runtime::traits::Zero;
 
 fn to_acc_id(id: u64) -> AccountId {
-    return TestAccount::new(id).account_id()
+    return TestAccount::new(id).account_id();
 }
 
 mod proxy_signed_nominate {
@@ -35,7 +35,7 @@ mod proxy_signed_nominate {
             proof,
             targets,
             amount,
-        }))
+        }));
     }
 
     fn create_call_for_nominate_from_proof(
@@ -47,7 +47,7 @@ mod proxy_signed_nominate {
             proof,
             targets,
             amount,
-        }))
+        }));
     }
 
     fn create_proof_for_signed_nominate(
@@ -64,7 +64,7 @@ mod proxy_signed_nominate {
         );
 
         let signature = sign(&staker.key_pair, &data_to_sign);
-        return build_proof(&staker.account_id, &staker.relayer, signature)
+        return build_proof(&staker.account_id, &staker.relayer, signature);
     }
 
     #[test]

@@ -33,7 +33,7 @@ fn build_proof(
     relayer: &AccountId,
     signature: Signature,
 ) -> Proof<Signature, AccountId> {
-    return Proof { signer: *signer, relayer: *relayer, signature }
+    return Proof { signer: *signer, relayer: *relayer, signature };
 }
 
 struct Context {
@@ -87,7 +87,7 @@ impl Context {
                 nft_id: self.nft_id,
                 market: self.market,
             },
-        ))
+        ));
     }
 
     fn create_signed_list_nft_open_for_sale_proof(&self) -> Proof<Signature, AccountId> {
@@ -98,17 +98,17 @@ impl Context {
             self.nft_id,
             self.market,
             self.nft_nonce,
-        )
+        );
     }
 
     fn open_for_sale_event_emitted(&self) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::NftOpenForSale {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::NftOpenForSale {
                     nft_id: self.nft_id,
                     sale_type: self.market,
                 })
-        })
+        });
     }
 
     fn call_dispatched_event_emitted(
@@ -117,12 +117,12 @@ impl Context {
     ) -> bool {
         let relayer = TestAccount::new([2u8; 32]);
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::CallDispatched {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::CallDispatched {
                     relayer: relayer.account_id(),
                     hash: Hashing::hash_of(call),
                 })
-        })
+        });
     }
 }
 
@@ -967,5 +967,5 @@ fn create_proof_for_signed_list_nft_open_for_sale(
     let data_to_sign = (context, relayer, nft_id, market, nft_nonce);
     let signature = sign(nft_owner_key_pair, &data_to_sign.encode());
 
-    return build_proof(nft_owner_account, relayer, signature)
+    return build_proof(nft_owner_account, relayer, signature);
 }

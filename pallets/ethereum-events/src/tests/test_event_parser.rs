@@ -29,15 +29,11 @@ impl MockEthEventsResponse {
         let transaction_index_value_2 = JsonValue::String("0x1".chars().collect());
         let block_hash_key: Vec<char> = "blockHash".chars().collect();
         let block_hash_value = JsonValue::String(
-            "0x5536c9e671fe581fe4ef4631112038297dcdecae163e8724c281ece8ad94c8c3"
-                .chars()
-                .collect(),
+            "0x5536c9e671fe581fe4ef4631112038297dcdecae163e8724c281ece8ad94c8c3".chars().collect(),
         );
         let transaction_hash_key: Vec<char> = "transactionHash".chars().collect();
         let transaction_hash_value = JsonValue::String(
-            "0x9ad4d46054b0495fa38e8418263c6107ecb4ffd879675372613edf39af898dcb"
-                .chars()
-                .collect(),
+            "0x9ad4d46054b0495fa38e8418263c6107ecb4ffd879675372613edf39af898dcb".chars().collect(),
         );
         let block_number_key: Vec<char> = "blockNumber".chars().collect();
         let block_number_value = JsonValue::String("0x2e".chars().collect());
@@ -48,9 +44,7 @@ impl MockEthEventsResponse {
             JsonValue::String("0X704DD282E3FBE35F40F84405F90965821483827F".chars().collect());
         let event_data_key: Vec<char> = "data".chars().collect();
         let data_value = JsonValue::String(
-            "0xFF00000000000000000000000000000000000000000000000000000005F5e100"
-                .chars()
-                .collect(),
+            "0xFF00000000000000000000000000000000000000000000000000000005F5e100".chars().collect(),
         );
         let topics_key: Vec<char> = "topics".chars().collect();
         let topics_value_1 = JsonValue::Array(vec![
@@ -110,15 +104,11 @@ impl MockEthEventsResponse {
         let v_value = JsonValue::String("0x1c".chars().collect());
         let r_key: Vec<char> = "r".chars().collect();
         let r_value = JsonValue::String(
-            "0x8823b54a06401fed57e03ac54b1a4cf81091dc1e44192b9a87ce4f4b9c56d454"
-                .chars()
-                .collect(),
+            "0x8823b54a06401fed57e03ac54b1a4cf81091dc1e44192b9a87ce4f4b9c56d454".chars().collect(),
         );
         let s_key: Vec<char> = "s".chars().collect();
         let s_value = JsonValue::String(
-            "0x842e06a5258c4337148bc677f0b5ca343a8dfda597fb92f540ce443fd2bf340"
-                .chars()
-                .collect(),
+            "0x842e06a5258c4337148bc677f0b5ca343a8dfda597fb92f540ce443fd2bf340".chars().collect(),
         );
 
         let valid_event_1 = vec![
@@ -309,19 +299,13 @@ pub fn find_event_should_return_expected_result_event_when_event_topics_without_
     let mut without_0x_event_signature_topic_event = mock_events_response.valid_event_1.clone();
     without_0x_event_signature_topic_event[INDEX_TOPICS].1 = JsonValue::Array(vec![
         JsonValue::String(
-            "39369dea7465bf87d004db7942da5e8e7fdf484fa950ea3d73cd75fb517b6416"
-                .chars()
-                .collect(),
+            "39369dea7465bf87d004db7942da5e8e7fdf484fa950ea3d73cd75fb517b6416".chars().collect(),
         ),
         JsonValue::String(
-            "00000000000000000000000023aaf097c241897060c0a6b8aae61af5ea48cea3"
-                .chars()
-                .collect(),
+            "00000000000000000000000023aaf097c241897060c0a6b8aae61af5ea48cea3".chars().collect(),
         ),
         JsonValue::String(
-            "689d5b000758030ea25304346869b002a345e7647ec5784b8af986e24e971303"
-                .chars()
-                .collect(),
+            "689d5b000758030ea25304346869b002a345e7647ec5784b8af986e24e971303".chars().collect(),
         ),
     ]);
     let valid_events = vec![
@@ -337,11 +321,7 @@ pub fn find_event_should_return_expected_result_event_when_event_topics_without_
 
     assert_eq!(
         hex::encode(contract_address),
-        valid_event_1[INDEX_EVENT_ADDRESS]
-            .1
-            .get_string()
-            .unwrap()
-            .trim_start_matches("0x")
+        valid_event_1[INDEX_EVENT_ADDRESS].1.get_string().unwrap().trim_start_matches("0x")
     );
 }
 
@@ -401,9 +381,7 @@ pub fn find_event_should_return_none_when_event_topics_are_invalid_hex_string() 
     let mut invalid_hex_event_signature_topic_event = mock_events_response.valid_event_1.clone();
     invalid_hex_event_signature_topic_event[INDEX_TOPICS].1 =
         JsonValue::Array(vec![JsonValue::String(
-            "0xggg69dea7465bf87d004db7942da5e8e7fdf484fa950ea3d73cd75fb517b6416"
-                .chars()
-                .collect(),
+            "0xggg69dea7465bf87d004db7942da5e8e7fdf484fa950ea3d73cd75fb517b6416".chars().collect(),
         )]);
     let invalid_events = vec![
         JsonValue::Object(invalid_hex_event_signature_topic_event),
@@ -448,9 +426,7 @@ pub fn get_data_should_return_expected_result_when_event_data_without_0x_prefix(
     let mock_events_response = MockEthEventsResponse::setup();
     let mut mock_event = mock_events_response.valid_event_1.clone();
     mock_event[INDEX_EVENT_DATA].1 = JsonValue::String(
-        "FF00000000000000000000000000000000000000000000000000000005F5e100"
-            .chars()
-            .collect(),
+        "FF00000000000000000000000000000000000000000000000000000005F5e100".chars().collect(),
     );
     let event_with_valid_data = JsonValue::Object(mock_event);
 
@@ -500,9 +476,7 @@ pub fn get_data_should_return_error_when_event_data_hex_string_contains_invalid_
     let mock_events_response = MockEthEventsResponse::setup();
     let mut mock_event = mock_events_response.valid_event_1.clone();
     mock_event[INDEX_EVENT_DATA].1 = JsonValue::String(
-        "0xGGGGGGGGGGG00000000000000000000000000000000000000000000005F5e100"
-            .chars()
-            .collect(),
+        "0xGGGGGGGGGGG00000000000000000000000000000000000000000000005F5e100".chars().collect(),
     );
     let event_with_invalid_data = JsonValue::Object(mock_event);
 
@@ -582,9 +556,7 @@ pub fn get_topics_should_return_error_when_topics_contain_non_hex_characters() {
     let mock_events_response = MockEthEventsResponse::setup();
     let mut mock_event = mock_events_response.valid_event_1.clone();
     mock_event[INDEX_TOPICS].1 = JsonValue::Array(vec![JsonValue::String(
-        "0xGGGGGGGGGGG00000000000000000000000000000000000000000000005F5e100"
-            .chars()
-            .collect(),
+        "0xGGGGGGGGGGG00000000000000000000000000000000000000000000005F5e100".chars().collect(),
     )]);
     let event_with_invalid_topics = JsonValue::Object(mock_event);
 

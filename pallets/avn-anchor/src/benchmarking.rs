@@ -57,7 +57,7 @@ pub fn ensure_fee_payment_possible<T: Config>(
     let fee = Pallet::<T>::checkpoint_fee(chain_id);
     let balance = T::Currency::free_balance(account);
     if balance < fee {
-        return Err("Insufficient balance for fee payment")
+        return Err("Insufficient balance for fee payment");
     }
     Ok(())
 }

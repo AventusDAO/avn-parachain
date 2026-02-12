@@ -8,9 +8,9 @@ use sp_runtime::traits::BadOrigin;
 
 pub fn event_emitted(old_contract: H160, new_contract: H160) -> bool {
     return System::events().iter().any(|a| {
-        return a.event ==
-            RuntimeEvent::Avn(Event::AvnBridgeContractUpdated { old_contract, new_contract })
-    })
+        return a.event
+            == RuntimeEvent::Avn(Event::AvnBridgeContractUpdated { old_contract, new_contract });
+    });
 }
 
 mod test_set_bridge_contract {
@@ -30,7 +30,7 @@ mod test_set_bridge_contract {
 
     impl Context {
         fn dispatch_set_bridge_contract(&self, address: H160) -> DispatchResult {
-            return AVN::set_bridge_contract(self.origin.clone(), address.clone())
+            return AVN::set_bridge_contract(self.origin.clone(), address.clone());
         }
     }
 

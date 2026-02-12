@@ -44,7 +44,7 @@ impl MockData {
         let topic3 = vec![30; 32];
         let topics = vec![topic1, topic2_lhs, topic2_rhs, topic3];
 
-        return AddedValidatorData::parse_bytes(Some(data), topics).unwrap()
+        return AddedValidatorData::parse_bytes(Some(data), topics).unwrap();
     }
 
     fn get_invalid_added_validator_data() -> AddedValidatorData {
@@ -56,11 +56,11 @@ impl MockData {
         let topic3 = topic1.clone();
         let topics = vec![topic1, topic2_lhs, topic2_rhs, topic3];
 
-        return AddedValidatorData::parse_bytes(Some(data), topics).unwrap()
+        return AddedValidatorData::parse_bytes(Some(data), topics).unwrap();
     }
 
     fn get_data() -> Vec<u8> {
-        return into_32_be_bytes(&10000u32.to_le_bytes())
+        return into_32_be_bytes(&10000u32.to_le_bytes());
     }
 
     fn setup() -> Self {
@@ -132,8 +132,8 @@ fn submit_checkevent_result_should_return_expected_result_when_input_is_valid() 
             DEFAULT_INGRESS_COUNTER,
             2
         )));
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
                 eth_event_id: mock_data.event_id.clone(),
                 check_result: mock_data.check_result.clone(),
                 validated_by: mock_data.checked_by.clone()
@@ -163,8 +163,8 @@ fn submit_checkevent_result_should_return_error_when_request_is_signed() {
             ),
             DispatchError::BadOrigin
         );
-        assert!(!System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
+        assert!(!System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
                 eth_event_id: mock_data.event_id.clone(),
                 check_result: mock_data.check_result.clone(),
                 validated_by: mock_data.checked_by.clone()
@@ -204,8 +204,8 @@ fn submit_checkevent_result_should_return_error_when_validator_key_is_invalid() 
             ),
             Error::<TestRuntime>::InvalidKey
         );
-        assert!(!System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
+        assert!(!System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
                 eth_event_id: mock_data.event_id.clone(),
                 check_result: mock_data.check_result.clone(),
                 validated_by: mock_data.checked_by.clone()
@@ -248,8 +248,8 @@ fn submit_checkevent_result_should_return_error_when_event_log_never_been_added(
             ),
             Error::<TestRuntime>::MissingEventToCheck
         );
-        assert!(!System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
+        assert!(!System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
                 eth_event_id: mock_data.event_id.clone(),
                 check_result: mock_data.check_result.clone(),
                 validated_by: mock_data.checked_by.clone()
@@ -280,8 +280,8 @@ fn submit_checkevent_result_should_return_error_when_challenge_window_overflow()
             ),
             Error::<TestRuntime>::Overflow
         );
-        assert!(!System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
+        assert!(!System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventValidated {
                 eth_event_id: mock_data.event_id.clone(),
                 check_result: mock_data.check_result.clone(),
                 validated_by: mock_data.checked_by.clone()
@@ -322,14 +322,14 @@ fn process_event_should_return_expected_result_when_challenge_fails() {
         assert!(process_event_result.is_ok());
         assert_eq!(EthereumEvents::events_pending_challenge().len(), 0);
         assert!(<ProcessedEvents<TestRuntime>>::contains_key(&mock_data.event_id));
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventProcessed {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventProcessed {
                 eth_event_id: mock_data.event_id.clone(),
                 processor: mock_data.validator.account_id,
                 outcome: true,
             })));
-        assert!(!System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(
+        assert!(!System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(
                 crate::Event::<TestRuntime>::ChallengeSucceeded {
                     eth_event_id: mock_data.event_id.clone(),
                     check_result: mock_data.check_result.clone()
@@ -393,14 +393,14 @@ fn process_event_should_return_expected_result_when_challenge_is_successful() {
         assert!(process_event_result.is_ok());
         assert_eq!(EthereumEvents::events_pending_challenge().len(), 0);
         assert!(!<ProcessedEvents<TestRuntime>>::contains_key(&mock_data.event_id));
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventProcessed {
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(crate::Event::<TestRuntime>::EventProcessed {
                 eth_event_id: mock_data.event_id.clone(),
                 processor: mock_data.validator.account_id,
                 outcome: false,
             })));
-        assert!(System::events().iter().any(|a| a.event ==
-            mock::RuntimeEvent::EthereumEvents(
+        assert!(System::events().iter().any(|a| a.event
+            == mock::RuntimeEvent::EthereumEvents(
                 crate::Event::<TestRuntime>::ChallengeSucceeded {
                     eth_event_id: mock_data.event_id.clone(),
                     check_result: CheckResult::Invalid

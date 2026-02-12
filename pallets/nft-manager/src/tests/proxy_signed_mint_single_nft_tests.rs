@@ -31,7 +31,7 @@ fn build_proof(
     relayer: &AccountId,
     signature: Signature,
 ) -> Proof<Signature, AccountId> {
-    return Proof { signer: *signer, relayer: *relayer, signature }
+    return Proof { signer: *signer, relayer: *relayer, signature };
 }
 
 struct Context {
@@ -94,7 +94,7 @@ impl Context {
             unique_external_ref: self.unique_external_ref.clone(),
             royalties: self.royalties.clone(),
             t1_authority: self.t1_authority,
-        }))
+        }));
     }
 
     fn create_signed_mint_single_nft_proof(&self) -> Proof<Signature, AccountId> {
@@ -105,18 +105,18 @@ impl Context {
             &self.unique_external_ref,
             &self.royalties,
             self.t1_authority,
-        )
+        );
     }
 
     fn mint_single_nft_event_emitted(&self) -> bool {
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::SingleNftMinted {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::SingleNftMinted {
                     nft_id: self.nft_id,
                     owner: self.nft_owner_account,
                     authority: self.t1_authority,
                 })
-        })
+        });
     }
 
     fn call_dispatched_event_emitted(
@@ -125,12 +125,12 @@ impl Context {
     ) -> bool {
         let relayer = TestAccount::new([2u8; 32]);
         return System::events().iter().any(|a| {
-            a.event ==
-                Event::NftManager(crate::Event::<TestRuntime>::CallDispatched {
+            a.event
+                == Event::NftManager(crate::Event::<TestRuntime>::CallDispatched {
                     relayer: relayer.account_id(),
                     hash: Hashing::hash_of(call),
                 })
-        })
+        });
     }
 
     pub fn bounded_external_ref(&self) -> BoundedVec<u8, NftExternalRefBound> {
@@ -1248,5 +1248,5 @@ fn create_proof_for_signed_mint_single_nft(
     let data_to_sign = (context, relayer, unique_external_ref, royalties, t1_authority);
     let signature = sign(nft_owner_key_pair, &data_to_sign.encode());
 
-    return build_proof(nft_owner_account, relayer, signature)
+    return build_proof(nft_owner_account, relayer, signature);
 }

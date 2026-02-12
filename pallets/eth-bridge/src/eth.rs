@@ -45,7 +45,7 @@ fn eth_signature_is_valid<T: Config<I>, I: 'static>(
     // verify that the incoming (unverified) pubkey is actually a validator
     if !AVN::<T>::is_validator(&validator.account_id) {
         log::warn!("✋ Account: {:?} is not an authority.", &validator.account_id);
-        return false
+        return false;
     }
 
     let recovered_public_key = recover_public_key_from_ecdsa_signature(signature, &msg_hash);
@@ -55,7 +55,7 @@ fn eth_signature_is_valid<T: Config<I>, I: 'static>(
             &signature,
             &msg_hash
         );
-        return false
+        return false;
     }
 
     match <T as pallet_avn::Config>::EthereumPublicKeyChecker::get_validator_for_eth_public_key(
@@ -85,7 +85,7 @@ pub fn send_tx<T: Config<I>, I: 'static>(
             tx.data.sender,
             tx.request.tx_id
         );
-        return Err(Error::<T, I>::AuthorNotSender.into())
+        return Err(Error::<T, I>::AuthorNotSender.into());
     }
 
     match generate_send_calldata::<T, I>(tx) {
@@ -109,13 +109,13 @@ pub fn corroborate<T: Config<I>, I: 'static>(
             log::warn!("🚨 Transaction {:?} doesn't have the minimum eth confirmations yet, skipping corroboration. Current confirmation: {:?}",
                 tx.request.tx_id, confirmations
             );
-            return Ok((None, None))
+            return Ok((None, None));
         }
 
-        return Ok((status, Some(tx_hash_is_valid)))
+        return Ok((status, Some(tx_hash_is_valid)));
     }
 
-    return Ok((None, None))
+    return Ok((None, None));
 }
 
 fn check_tx_status<T: Config<I>, I: 'static>(
@@ -131,7 +131,7 @@ fn check_tx_status<T: Config<I>, I: 'static>(
                 _ => return Err(Error::<T, I>::InvalidCorroborateResult.into()),
             }
         } else {
-            return Err(Error::<T, I>::CorroborateCallFailed.into())
+            return Err(Error::<T, I>::CorroborateCallFailed.into());
         }
     }
     Err(Error::<T, I>::InvalidCorroborateCalldata.into())
@@ -146,12 +146,12 @@ fn check_tx_hash<T: Config<I>, I: 'static>(
             get_transaction_call_data::<T, I>(tx.data.eth_tx_hash, &author.account_id)
         {
             let expected_call_data = generate_send_calldata::<T, I>(&tx)?;
-            return Ok((hex::encode(expected_call_data) == call_data, Some(num_confirmations)))
+            return Ok((hex::encode(expected_call_data) == call_data, Some(num_confirmations)));
         } else {
-            return Err(Error::<T, I>::ErrorGettingEthereumCallData.into())
+            return Err(Error::<T, I>::ErrorGettingEthereumCallData.into());
         }
     }
-    return Ok((TX_HASH_INVALID, None))
+    return Ok((TX_HASH_INVALID, None));
 }
 
 pub fn encode_confirmations(
@@ -195,7 +195,7 @@ pub fn generate_encoded_lower_proof<T: Config<I>, I: 'static>(
     compact_lower_data.extend_from_slice(&lower_req.params.to_vec());
     compact_lower_data.extend_from_slice(&concatenated_confirmations);
 
-    return compact_lower_data
+    return compact_lower_data;
 }
 
 pub fn abi_encode_function<T: Config<I>, I: 'static>(
@@ -227,9 +227,7 @@ pub fn abi_encode_function<T: Config<I>, I: 'static>(
         constant: false,
     };
 
-    function
-        .encode_input(&tokens?)
-        .map_err(|_| Error::<T, I>::FunctionEncodingError)
+    function.encode_input(&tokens?).map_err(|_| Error::<T, I>::FunctionEncodingError)
 }
 
 pub fn to_param_type(key: &Vec<u8>) -> Option<ParamType> {
@@ -261,7 +259,7 @@ pub fn to_token_type<T: Config<I>, I: 'static>(
         },
         ParamType::FixedBytes(size) => {
             if value.len() != *size {
-                return Err(Error::<T, I>::InvalidBytes)
+                return Err(Error::<T, I>::InvalidBytes);
             }
             Ok(Token::FixedBytes(value.to_vec()))
         },
@@ -291,9 +289,8 @@ fn send_transaction<T: Config<I>, I: 'static>(
     author: &Author<T>,
 ) -> Result<H256, DispatchError> {
     let eth_instance = Instance::<T, I>::get();
-    let proof = author
-        .key
-        .sign(&(&author.account_id, &eth_instance.bridge_contract, &calldata).encode());
+    let proof =
+        author.key.sign(&(&author.account_id, &eth_instance.bridge_contract, &calldata).encode());
     make_ethereum_call::<H256, T, I>(
         &author.account_id,
         "send",
@@ -337,7 +334,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
 
 fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, DispatchError> {
     if result.len() != 64 {
-        return Err(Error::<T, I>::InvalidHashLength.into())
+        return Err(Error::<T, I>::InvalidHashLength.into());
     }
 
     let tx_hash_string = core::str::from_utf8(&result).map_err(|_| Error::<T, I>::InvalidUTF8)?;
@@ -355,7 +352,7 @@ fn process_corroborate_result<T: Config<I>, I: 'static>(
     let result_bytes = hex::decode(&result).map_err(|_| Error::<T, I>::InvalidBytes)?;
 
     if result_bytes.len() != 32 {
-        return Err(Error::<T, I>::InvalidBytesLength.into())
+        return Err(Error::<T, I>::InvalidBytesLength.into());
     }
 
     Ok(result_bytes[31] as i8)

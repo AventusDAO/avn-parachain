@@ -36,8 +36,8 @@ fn simple_non_avt_token_lower_works() {
         assert_eq!(1, Agenda::<TestRuntime>::get(expected_execution_block).len());
 
         // Event emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerRequested {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerRequested {
                 token_id: NON_AVT_TOKEN_ID,
                 from,
                 amount,
@@ -72,8 +72,8 @@ fn simple_non_avt_token_lower_works() {
         );
 
         // Event emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                 token_id: NON_AVT_TOKEN_ID,
                 sender: from,
                 recipient: burn_acc,
@@ -103,8 +103,8 @@ fn lower_id_is_unique() {
         fast_forward_to_block(get_expected_execution_block());
 
         // Event emitted
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                 token_id: NON_AVT_TOKEN_ID,
                 sender,
                 recipient,
@@ -113,8 +113,8 @@ fn lower_id_is_unique() {
                 lower_id: 0
             })));
 
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                 token_id: NON_AVT_TOKEN_ID,
                 sender,
                 recipient,
@@ -123,8 +123,8 @@ fn lower_id_is_unique() {
                 lower_id: 1
             })));
 
-        assert!(System::events().iter().any(|a| a.event ==
-            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
+        assert!(System::events().iter().any(|a| a.event
+            == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenLowered {
                 token_id: NON_AVT_TOKEN_ID,
                 sender,
                 recipient,
@@ -247,8 +247,8 @@ mod cancelling {
             assert_eq!(1, Agenda::<TestRuntime>::get(expected_execution_block).len());
 
             // Event emitted
-            assert!(System::events().iter().any(|a| a.event ==
-                RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerRequested {
+            assert!(System::events().iter().any(|a| a.event
+                == RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerRequested {
                     token_id: NON_AVT_TOKEN_ID,
                     from,
                     amount,

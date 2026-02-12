@@ -18,7 +18,7 @@ pub fn create_default_payment_authorisation(
         proxy_proof,
         0_u64,
         AVT_TOKEN_CONTRACT,
-    )
+    );
 }
 
 pub fn create_payment_authorisation_with_nonce(
@@ -45,7 +45,7 @@ pub fn create_payment_authorisation_with_nonce(
         token,
     };
 
-    return payment_info
+    return payment_info;
 }
 
 pub fn create_payment_authorisation(
@@ -67,7 +67,7 @@ pub fn create_payment_authorisation(
         token,
     };
 
-    return payment_info
+    return payment_info;
 }
 
 mod charging_fees {
@@ -554,13 +554,15 @@ mod for_token_transfer_extrinsics {
         transfer_data: &TokenTransferContext,
         proof: &Proof<Signature, AccountId>,
     ) -> Box<<TestRuntime as Config>::RuntimeCall> {
-        return Box::new(crate::mock::RuntimeCall::TokenManager(TokenManagerCall::signed_transfer {
-            proof: proof.clone(),
-            from: transfer_data.from.clone(),
-            to: transfer_data.to.clone(),
-            token_id: transfer_data.token,
-            amount: transfer_data.amount,
-        }))
+        return Box::new(crate::mock::RuntimeCall::TokenManager(
+            TokenManagerCall::signed_transfer {
+                proof: proof.clone(),
+                from: transfer_data.from.clone(),
+                to: transfer_data.to.clone(),
+                token_id: transfer_data.token,
+                amount: transfer_data.amount,
+            },
+        ));
     }
 
     pub fn get_signed_transfer_proxy_proof(
@@ -586,7 +588,7 @@ mod for_token_transfer_extrinsics {
             signature,
         };
 
-        return proof
+        return proof;
     }
 
     pub fn native_token_transfered_events_emitted() -> bool {
@@ -594,8 +596,8 @@ mod for_token_transfer_extrinsics {
             .into_iter()
             .map(|r| r.event)
             .filter_map(|e| if let RuntimeEvent::Balances(inner) = e { Some(inner) } else { None })
-            .count() >
-            0
+            .count()
+            > 0;
     }
 
     pub fn non_native_token_transfered_events_emitted() -> bool {
@@ -605,8 +607,8 @@ mod for_token_transfer_extrinsics {
             .filter_map(
                 |e| if let RuntimeEvent::TokenManager(inner) = e { Some(inner) } else { None },
             )
-            .count() >
-            0
+            .count()
+            > 0;
     }
 
     mod charging_fees {

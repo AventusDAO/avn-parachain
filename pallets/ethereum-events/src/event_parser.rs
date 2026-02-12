@@ -21,10 +21,10 @@ fn get_value_of(key: String, object: &JsonObject) -> Result<&JsonValue, SimpleEr
     let key_char: Vec<char> = key.chars().collect();
     let value = object.into_iter().find(|v| v.0 == key_char);
     if let Some(value) = value {
-        return Ok(&value.1)
+        return Ok(&value.1);
     }
 
-    return Err(SimpleError::plain_str("key not found in object"))
+    return Err(SimpleError::plain_str("key not found in object"));
 }
 
 pub fn parse_response_to_json(response_body: Vec<u8>) -> Result<(JsonObject, u64), ()> {
@@ -69,7 +69,7 @@ pub fn parse_response_to_json(response_body: Vec<u8>) -> Result<(JsonObject, u64
         );
     })?;
 
-    return Ok((response_json_object.clone(), eth_query_response.num_confirmations))
+    return Ok((response_json_object.clone(), eth_query_response.num_confirmations));
 }
 
 pub fn find_event(
@@ -78,19 +78,18 @@ pub fn find_event(
 ) -> Option<(Option<Vec<u8>>, Vec<Vec<u8>>, H160)> {
     let empty_events = &vec![];
     let events = get_events(response).unwrap_or(empty_events);
-    let event = events
-        .into_iter()
-        .find(|event| topic_matches(event, topic).map_or_else(|_| false, |v| v));
+    let event =
+        events.into_iter().find(|event| topic_matches(event, topic).map_or_else(|_| false, |v| v));
 
     if let Some(event) = event {
         if let Ok(contract_address) = get_contract_address(event) {
             if let Ok((data, topics)) = get_topics_with_data(&event) {
-                return Some((data, topics, contract_address))
+                return Some((data, topics, contract_address));
             }
         }
     }
 
-    return None
+    return None;
 }
 
 pub fn get_status(response: &JsonObject) -> Result<u8, SimpleError> {
@@ -107,7 +106,7 @@ pub fn get_status(response: &JsonObject) -> Result<u8, SimpleError> {
 fn get_topics_with_data(event: &JsonValue) -> Result<(Option<Vec<u8>>, Vec<Vec<u8>>), SimpleError> {
     let topics = get_topics(event)?;
     let data = get_data(event)?;
-    return Ok((data, topics))
+    return Ok((data, topics));
 }
 
 fn get_events(response: &JsonObject) -> Result<&Vec<JsonValue>, SimpleError> {
@@ -116,7 +115,7 @@ fn get_events(response: &JsonObject) -> Result<&Vec<JsonValue>, SimpleError> {
         e
     })?;
 
-    return Ok(events)
+    return Ok(events);
 }
 
 fn get_data(event: &JsonValue) -> Result<Option<Vec<u8>>, SimpleError> {
@@ -129,10 +128,10 @@ fn get_data(event: &JsonValue) -> Result<Option<Vec<u8>>, SimpleError> {
     let bytes = hex_to_bytes(data)?;
 
     if !bytes.is_empty() {
-        return Ok(Some(bytes))
+        return Ok(Some(bytes));
     }
 
-    return Ok(None)
+    return Ok(None);
 }
 
 fn get_topics(event: &JsonValue) -> Result<Vec<Vec<u8>>, SimpleError> {
@@ -149,7 +148,7 @@ fn get_topics(event: &JsonValue) -> Result<Vec<Vec<u8>>, SimpleError> {
         topics_bytes.push(topic_bytes);
     }
 
-    return Ok(topics_bytes)
+    return Ok(topics_bytes);
 }
 
 fn get_event_signature(event: &JsonValue) -> Result<String, SimpleError> {
@@ -157,7 +156,7 @@ fn get_event_signature(event: &JsonValue) -> Result<String, SimpleError> {
     let topics = get_value_of(String::from("topics"), event)?.get_array()?;
     let event_signature = topics[INDEX_EVENT_SIGNATURE_TOPIC].get_string()?;
 
-    return Ok(event_signature)
+    return Ok(event_signature);
 }
 
 fn get_contract_address(event: &JsonValue) -> Result<H160, SimpleError> {
@@ -165,7 +164,7 @@ fn get_contract_address(event: &JsonValue) -> Result<H160, SimpleError> {
     let address = get_value_of(String::from("address"), event)?.get_string()?;
     let bytes = hex_to_bytes(address)?;
 
-    return Ok(H160::from_slice(&bytes))
+    return Ok(H160::from_slice(&bytes));
 }
 
 fn hex_to_bytes(hex_string: String) -> Result<Vec<u8>, SimpleError> {
@@ -175,7 +174,7 @@ fn hex_to_bytes(hex_string: String) -> Result<Vec<u8>, SimpleError> {
     }
 
     return Vec::from_hex(hex_string)
-        .map_or_else(|_error| Err(SimpleError::plain_str("hex_to_bytes error")), |bytes| Ok(bytes))
+        .map_or_else(|_error| Err(SimpleError::plain_str("hex_to_bytes error")), |bytes| Ok(bytes));
 }
 
 fn to_bytes32(hex_topic: String) -> Result<[u8; 32], SimpleError> {
@@ -187,12 +186,12 @@ fn to_bytes32(hex_topic: String) -> Result<[u8; 32], SimpleError> {
     return <[u8; 32]>::from_hex(hex_topic).map_or_else(
         |_error| Err(SimpleError::plain_str("to_bytes32 error")),
         |bytes32| Ok(bytes32),
-    )
+    );
 }
 
 fn topic_matches(event: &JsonValue, topic: H256) -> Result<bool, SimpleError> {
     let event_signature_bytes = to_bytes32(get_event_signature(event)?)?;
-    return Ok(H256(event_signature_bytes) == topic)
+    return Ok(H256(event_signature_bytes) == topic);
 }
 
 #[cfg(test)]
