@@ -66,7 +66,7 @@ fn register_node_and_send_heartbeat(
     if let Some(stake) = stake {
         let owner_balance = Balances::free_balance(&owner);
         Balances::make_free_balance_be(&owner, owner_balance + stake);
-        assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), stake));
+        assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), node_id, stake));
     }
 
     incr_heartbeats(reward_period, vec![node_id], 1);
@@ -76,11 +76,8 @@ fn register_node_and_send_heartbeat(
 fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>, uptime: u64) {
     for node in nodes {
         let node_info = <NodeRegistry<TestRuntime>>::get(&node).unwrap();
-        let single_hb_weight = NodeManager::effective_heartbeat_weight(
-            &node_info,
-            reward_period,
-            NodeManager::time_now_sec(),
-        );
+        let single_hb_weight =
+            NodeManager::effective_heartbeat_weight(&node_info, NodeManager::time_now_sec());
         let weight = single_hb_weight.saturating_mul(uptime.into());
 
         <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
@@ -178,7 +175,7 @@ fn payment_transaction_succeed() {
         );
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_none());
         // The owner has received the reward
-        assert_eq!(Balances::free_balance(&context.owner), reward_amount);
+        assert_eq!(Balances::reserved_balance(&context.owner), reward_amount);
         // The pot has gone down by half
         assert_eq!(
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
@@ -220,7 +217,7 @@ fn multiple_payments_can_be_triggered_in_the_same_block() {
 
         // We should have processed the first batch of payments
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_some());
-        assert_eq!(Balances::free_balance(&context.owner), reward_amount / 2);
+        assert_eq!(Balances::reserved_balance(&context.owner), reward_amount / 2);
 
         // This is a hack: we remove the lock to allow the offchain worker to run again for the same
         // block
@@ -243,7 +240,7 @@ fn multiple_payments_can_be_triggered_in_the_same_block() {
             <NodeUptime<TestRuntime>>::iter_prefix(reward_period_to_pay).next().is_none()
         );
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_none());
-        assert_eq!(Balances::free_balance(&context.owner), reward_amount);
+        assert_eq!(Balances::reserved_balance(&context.owner), reward_amount);
         // The pot has gone down by half
         assert_eq!(
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
@@ -312,18 +309,18 @@ fn payment_is_based_on_uptime() {
         ) * reward_amount;
 
         assert!(
-            Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
+            Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
             "Value {} and {} differs by more than 10",
-            Balances::free_balance(&new_owner),
+            Balances::reserved_balance(&new_owner),
             expected_new_owner_reward
         );
 
         let expected_old_owner_reward = reward_amount - expected_new_owner_reward;
 
         assert!(
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 20,
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 20,
             "Value {} differs by more than 20",
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward)
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
         );
 
         // The pot has gone down by half
@@ -398,16 +395,16 @@ fn payment_works_when_uptime_is_threshold() {
         ) * reward_amount;
 
         assert!(
-            Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
+            Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
             "Values {} differ by more than 10",
-            Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward)
+            Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward)
         );
         let expected_old_owner_reward = reward_amount - expected_new_owner_reward;
 
         assert!(
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 100,
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 100,
             "Value {}  differs by more than 100",
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward)
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
         );
 
         // The pot has gone down by half
@@ -481,9 +478,9 @@ fn payment_works_even_when_uptime_is_over_threshold() {
         ) * reward_amount;
 
         assert!(
-            Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 1,
+            Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 1,
             "Values {} and {} differ by more than 10",
-            Balances::free_balance(&new_owner),
+            Balances::reserved_balance(&new_owner),
             expected_new_owner_reward,
         );
         //The old owner gets a smaller share of the rewards because the total_uptime has now
@@ -494,9 +491,9 @@ fn payment_works_even_when_uptime_is_over_threshold() {
                 (node_count as u128);
 
         assert!(
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward) < 1,
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) < 1,
             "Value {} differs by more than 10",
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward)
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
         );
 
         // The pot should have gone down by half (because we started with reward_amount * 2), but it
@@ -582,17 +579,17 @@ fn threshold_update_is_respected() {
         ) * reward_amount;
 
         assert!(
-            Balances::free_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
+            Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
             "Values {} and {} differ by more than 10",
-            Balances::free_balance(&new_owner),
+            Balances::reserved_balance(&new_owner),
             expected_new_owner_reward
         );
         let expected_old_owner_reward = reward_amount - expected_new_owner_reward;
 
         assert!(
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 100,
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 100,
             "Value {} differs by more than 100",
-            Balances::free_balance(&context.owner).abs_diff(expected_old_owner_reward)
+            Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
         );
 
         // The pot has gone down by half
@@ -628,19 +625,21 @@ fn reward_share_increases_with_genesis_and_stake_bonus() {
         let new_owner = TestAccount::new([111u8; 32]).account_id();
 
         // Ensure 50% genesis bonus
-        TotalRegisteredNodes::<TestRuntime>::put(2000);
+        NextNodeSerialNumber::<TestRuntime>::put(2001);
         let new_node = register_node_and_send_heartbeat(
             context.registrar.clone(),
             new_owner,
             reward_period_to_pay,
             199,
-            Some(new_owner_stake)
+            Some(new_owner_stake),
         );
 
-        let node_uptime_a = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
-        let node_uptime_b = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
+        let node_uptime_a =
+            NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
+        let node_uptime_b =
+            NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
         assert_eq!(node_uptime_a.weight, 100_000_000u128); // Node A: base
-        // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
+                                                           // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
         assert_eq!(node_uptime_b.weight, 450_000_000u128);
 
         let reward_period_length = reward_period_info.length as u64;
@@ -648,11 +647,17 @@ fn reward_share_increases_with_genesis_and_stake_bonus() {
             NodeManager::calculate_uptime_threshold(reward_period_length as u32);
 
         // The node's uptime is exactly the threshold, so they should get the full rewards
-        incr_heartbeats(reward_period_to_pay, vec![context.ocw_node], total_expected_uptime as u64 - 1);
+        incr_heartbeats(
+            reward_period_to_pay,
+            vec![context.ocw_node],
+            total_expected_uptime as u64 - 1,
+        );
         incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
 
-        let node_uptime_a = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
-        let node_uptime_b = NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
+        let node_uptime_a =
+            NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
+        let node_uptime_b =
+            NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
 
         // Node A: base
         assert_eq!(node_uptime_a.weight, 100_000_000u128 * total_expected_uptime as u128);
@@ -666,8 +671,9 @@ fn reward_share_increases_with_genesis_and_stake_bonus() {
         roll_forward((reward_period_length - System::block_number()) + 1);
 
         // Stake before payout
-        let previous_stake_a = OwnerStake::<TestRuntime>::get(&context.owner).unwrap_or_default().amount;
-        let previous_stake_b = OwnerStake::<TestRuntime>::get(&new_owner).unwrap_or_default().amount;
+        let previous_stake_a =
+            NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap().stake.amount;
+        let previous_stake_b = NodeRegistry::<TestRuntime>::get(&new_node).unwrap().stake.amount;
 
         // Baance before payout
         let balance_a_before = Balances::free_balance(&context.owner);
@@ -683,8 +689,9 @@ fn reward_share_increases_with_genesis_and_stake_bonus() {
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // Stake after payout
-        let current_stake_a = OwnerStake::<TestRuntime>::get(&context.owner).unwrap().amount;
-        let current_stake_b = OwnerStake::<TestRuntime>::get(&new_owner).unwrap().amount;
+        let current_stake_a =
+            NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap().stake.amount;
+        let current_stake_b = NodeRegistry::<TestRuntime>::get(&new_node).unwrap().stake.amount;
 
         let balance_a_after = Balances::free_balance(&context.owner);
         let balance_b_after = Balances::free_balance(&new_owner);
@@ -693,18 +700,18 @@ fn reward_share_increases_with_genesis_and_stake_bonus() {
         assert_eq!(current_stake_a, previous_stake_a + 181u128);
         assert_eq!(current_stake_b, previous_stake_b + 818u128);
 
-        // Balances should increase but will be locked
-        assert_eq!(balance_a_after, balance_a_before + 181u128);
-        assert_eq!(balance_b_after, balance_b_before + 818u128);
+        // Balances should not increase because funds are reserved
+        assert_eq!(balance_a_after, balance_a_before);
+        assert_eq!(balance_b_after, balance_b_before);
 
-        // Lock should match staked amount
-        let locks = Balances::locks(&context.owner);
-        assert!(locks.iter().any(|l| l.id == STAKE_LOCK_ID && l.amount == current_stake_a));
-        let locks = Balances::locks(&new_owner);
-        assert!(locks.iter().any(|l| l.id == STAKE_LOCK_ID && l.amount == current_stake_b));
+        // Reserved balance should match staked amount
+        let reserved_a = Balances::reserved_balance(&context.owner);
+        assert_eq!(reserved_a, current_stake_a);
+
+        let reserved_b = Balances::reserved_balance(&new_owner);
+        assert_eq!(reserved_b, current_stake_b);
     });
 }
-
 
 mod fails_when {
     use super::*;

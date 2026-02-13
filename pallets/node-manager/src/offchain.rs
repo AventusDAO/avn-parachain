@@ -210,6 +210,7 @@ impl<T: Config> Pallet<T> {
         }
     }
 
+    // TODO: cleanup old data
     fn record_heartbeat_ocw_submission(
         now: BlockNumberFor<T>,
         reward_period_index: RewardPeriodIndex,

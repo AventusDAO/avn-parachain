@@ -7,10 +7,9 @@ impl<T: Config> Pallet<T> {
     pub fn calculate_node_weight(
         node_id: &NodeId<T>,
         uptime_info: UptimeInfo<BlockNumberFor<T>>,
-        node_info: &NodeInfo<T::SignerId, T::AccountId>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         uptime_threshold: u32,
         reward_period_end_time: u64,
-        reward_period: RewardPeriodIndex,
     ) -> u128 {
         let actual_uptime = uptime_info.count;
         let weight = uptime_info.weight;
@@ -24,7 +23,7 @@ impl<T: Config> Pallet<T> {
             // genesis bonus for all heartbeats. This is ok because we are in this
             // situation because the node managed to send more heartbeats than it should.
             let single_node_weight =
-                Self::effective_heartbeat_weight(node_info, reward_period, reward_period_end_time);
+                Self::effective_heartbeat_weight(node_info, reward_period_end_time);
             single_node_weight.saturating_mul(u128::from(uptime_threshold))
         } else {
             weight
@@ -50,7 +49,7 @@ impl<T: Config> Pallet<T> {
     pub fn pay_reward(
         period: &RewardPeriodIndex,
         node_id: NodeId<T>,
-        node_info: &NodeInfo<T::SignerId, T::AccountId>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         amount: BalanceOf<T>,
     ) -> DispatchResult {
         let node_owner = node_info.owner.clone();
@@ -74,7 +73,8 @@ impl<T: Config> Pallet<T> {
             });
         } else {
             // We are within the auto stake period, auto stake the rewards.
-            Self::do_add_stake(&node_owner, amount).map_err(|_| Error::<T>::AutoStakeFailed)?;
+            Self::do_add_stake(&node_owner, &node_id, amount)
+                .map_err(|_| Error::<T>::AutoStakeFailed)?;
 
             Self::deposit_event(Event::RewardAutoStaked {
                 reward_period: *period,
@@ -104,10 +104,6 @@ impl<T: Config> Pallet<T> {
         LastPaidPointer::<T>::kill();
         <TotalUptime<T>>::remove(period_index);
         <RewardPot<T>>::remove(period_index);
-
-        // We can now remove all owner stake under this period index
-        // TODO NS: Implement onIdle to clean this up
-        // <StakeSnapshot<T>>::remove(period_index);
 
         Self::deposit_event(Event::RewardPayoutCompleted { reward_period_index: period_index });
     }

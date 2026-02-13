@@ -390,14 +390,18 @@ mod given_a_reward_period {
         ext.execute_with(|| {
             let context = Context::default();
             // Set total nodes to update serial number based bonus
-            TotalRegisteredNodes::<TestRuntime>::put(serial_num - 1);
+            NextNodeSerialNumber::<TestRuntime>::put(serial_num);
             register_node(&context);
 
             if stake > 0 {
                 let reward_period = <RewardPeriod<TestRuntime>>::get();
                 let reward_period_len = reward_period.length as u64;
                 Balances::make_free_balance_be(&context.owner, stake * 10u128);
-                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(context.owner.clone()), stake));
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(context.owner.clone()),
+                    context.node_id,
+                    stake
+                ));
                 // Complete a reward period
                 roll_forward((reward_period_len - System::block_number()) + 1);
             }
@@ -430,8 +434,13 @@ mod given_a_reward_period {
             };
 
             let expected_weight = if stake > 0 {
-                let step: u128 = <mock::TestRuntime as pallet::Config>::VirtualNodeStake::get() as u128;
-                FixedU128::from_rational(expected_weight.saturating_mul(step.saturating_add(stake)),step,).saturating_mul_int(1u128)
+                let step: u128 =
+                    <mock::TestRuntime as pallet::Config>::VirtualNodeStake::get() as u128;
+                FixedU128::from_rational(
+                    expected_weight.saturating_mul(step.saturating_add(stake)),
+                    step,
+                )
+                .saturating_mul_int(1u128)
             } else {
                 expected_weight
             };
@@ -493,8 +502,7 @@ mod given_a_reward_period {
                 <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
 
             // No bonus because of expiry, even if serial number is in the bonus range
-            let expected_weight = HEARTBEAT_BASE_WEIGHT ;
-
+            let expected_weight = HEARTBEAT_BASE_WEIGHT;
 
             assert_eq!(uptime_info.weight, expected_weight);
             assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);

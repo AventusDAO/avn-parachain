@@ -5,8 +5,8 @@ use frame_support::{
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
     traits::{
-        Currency, ExistenceRequirement, IsSubType, LockIdentifier, LockableCurrency,
-        StorageVersion, UnixTime, WithdrawReasons,
+        Currency, ExistenceRequirement, IsSubType, LockIdentifier,
+        StorageVersion, UnixTime, WithdrawReasons, ReservableCurrency,
     },
     PalletId,
 };
@@ -75,7 +75,6 @@ pub mod sr25519 {
 #[cfg(not(feature = "std"))]
 use sp_std::prelude::*;
 
-const STAKE_LOCK_ID: LockIdentifier = *b"nodestak";
 const PAYOUT_REWARD_CONTEXT: &'static [u8] = b"NodeManager_RewardPayout";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
 pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
@@ -127,7 +126,7 @@ pub mod pallet {
         _,
         Blake2_128Concat,
         NodeId<T>,
-        NodeInfo<T::SignerId, T::AccountId>,
+        NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         OptionQuery,
     >;
 
@@ -241,34 +240,9 @@ pub mod pallet {
     #[pallet::storage]
     pub type MaxUnstakePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
 
-    /// Current stake of owner
+    /// The next node serial number to be assigned
     #[pallet::storage]
-    pub(super) type OwnerStake<T: Config> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, OwnerStakeInfo<BalanceOf<T>>, OptionQuery>;
-
-    /// DoubleMap storing each node owner's stake for a given reward period.
-    #[pallet::storage]
-    #[pallet::getter(fn owner_stake)]
-    pub(super) type StakeSnapshot<T: Config> = StorageDoubleMap<
-        _,
-        Blake2_128Concat,
-        RewardPeriodIndex,
-        Blake2_128Concat,
-        T::AccountId,
-        BalanceOf<T>,
-        OptionQuery,
-    >;
-
-    /// For each owner, store the reward periods where we created a snapshot.
-    /// This is used to efficiently query the effective stake of an owner for a given reward period.
-    #[pallet::storage]
-    pub type StakeSnapshotPeriods<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        BoundedVec<RewardPeriodIndex, MaxStakeChangesPerPeriod>,
-        ValueQuery,
-    >;
+    pub type NextNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
@@ -301,6 +275,7 @@ pub mod pallet {
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
             assert!(self.reward_period > self.heartbeat_period);
+            assert!(self.unstake_period_sec > 0);
             let default_threshold = Pallet::<T>::get_default_threshold();
 
             RewardAmount::<T>::set(self.reward_amount);
@@ -384,10 +359,20 @@ pub mod pallet {
         SigningKeyUpdated { owner: T::AccountId, node: NodeId<T> },
         /// Auto stake duration has been set
         AutoStakeDurationSet { duration_sec: u64 },
-        /// Node owner added stake
-        StakeAdded { owner: T::AccountId, amount: BalanceOf<T>, new_total: BalanceOf<T> },
-        /// Node owner removed stake
-        StakeRemoved { owner: T::AccountId, amount: BalanceOf<T>, new_total: BalanceOf<T> },
+        /// Node owner added stake to the specified node
+        StakeAdded {
+            owner: T::AccountId,
+            node_id: NodeId<T>,
+            amount: BalanceOf<T>,
+            new_total: BalanceOf<T>,
+        },
+        /// Node owner removed stake from the specified node
+        StakeRemoved {
+            owner: T::AccountId,
+            node_id: NodeId<T>,
+            amount: BalanceOf<T>,
+            new_total: BalanceOf<T>,
+        },
     }
 
     // Pallet Errors
@@ -421,8 +406,6 @@ pub mod pallet {
         TotalUptimeNotFound,
         /// The node uptime for the period was not found
         NodeUptimeNotFound,
-        /// The node owner was not found
-        NodeOwnerNotFound,
         /// The reward payment request is invalid
         InvalidRewardPaymentRequest,
         /// Heartbeat has already been submitted
@@ -469,10 +452,10 @@ pub mod pallet {
         AutoStakeStillActive,
         /// There is no available stake to unstake right now
         NoAvailableStakeToUnstake,
-        /// Stake snapshot full for the specified owner
-        StakeSnapshotFull,
         /// Failed to auto stake reward
         AutoStakeFailed,
+        /// Node is not found
+        NodeNotFound,
     }
 
     #[pallet::config]
@@ -492,7 +475,7 @@ pub mod pallet {
             + IsSubType<Call<Self>>
             + From<Call<Self>>;
         /// The currency type for this module.
-        type Currency: Currency<Self::AccountId> + LockableCurrency<Self::AccountId>;
+        type Currency: Currency<Self::AccountId> + ReservableCurrency<Self::AccountId>;
         // The identifier type for an offchain transaction signer.
         type SignerId: Member
             + Parameter
@@ -724,7 +707,6 @@ pub mod pallet {
                     &node_info,
                     reward_pot.uptime_threshold,
                     reward_pot.reward_end_time,
-                    oldest_period,
                 );
                 let reward_amount =
                     Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
@@ -786,11 +768,8 @@ pub mod pallet {
                     weight: 0,
                 });
 
-                let node_weight = Self::effective_heartbeat_weight(
-                    &node_info,
-                    current_reward_period,
-                    Self::time_now_sec(),
-                );
+                let node_weight =
+                    Self::effective_heartbeat_weight(&node_info, Self::time_now_sec());
 
                 info.count = info.count.saturating_add(1);
                 info.last_reported = now;
@@ -951,14 +930,20 @@ pub mod pallet {
 
         #[pallet::call_index(8)]
         #[pallet::weight(<T as Config>::WeightInfo::add_stake())]
-        pub fn add_stake(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+        pub fn add_stake(
+            origin: OriginFor<T>,
+            node_id: NodeId<T>,
+            amount: BalanceOf<T>,
+        ) -> DispatchResult {
             let owner = ensure_signed(origin)?;
-            // TODO: check if we want to prevent non node owners from staking.
-            ensure!(<OwnedNodesCount<T>>::contains_key(&owner), Error::<T>::NodeOwnerNotFound);
+            ensure!(
+                <OwnedNodes<T>>::contains_key(&owner, &node_id),
+                Error::<T>::NodeNotOwnedByOwner
+            );
 
-            let new_total = Self::do_add_stake(&owner, amount)?;
+            let new_total = Self::do_add_stake(&owner, &node_id, amount)?;
 
-            Self::deposit_event(Event::StakeAdded { owner, amount, new_total });
+            Self::deposit_event(Event::StakeAdded { owner, node_id, amount, new_total });
             Ok(())
         }
 
@@ -966,17 +951,24 @@ pub mod pallet {
         #[pallet::weight(<T as Config>::WeightInfo::remove_stake())]
         pub fn remove_stake(
             origin: OriginFor<T>,
+            node_id: NodeId<T>,
             maybe_amount: Option<BalanceOf<T>>,
         ) -> DispatchResult {
             let owner = ensure_signed(origin)?;
+            ensure!(
+                <OwnedNodes<T>>::contains_key(&owner, &node_id),
+                Error::<T>::NodeNotOwnedByOwner
+            );
+
+            let node_info =
+                NodeRegistry::<T>::get(&node_id).ok_or(Error::<T>::NodeNotRegistered)?;
 
             let now_sec = Self::time_now_sec();
-            let mut stake = OwnerStake::<T>::get(&owner).unwrap_or_default();
-            ensure!(stake.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
+            ensure!(node_info.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
 
-            let current_owner_stake = stake.amount;
+            let mut stake = node_info.stake;
+            let current_stake_amount = stake.amount;
 
-            let mut unstake_state = stake.state.clone();
             let (available, periods_advanced) = stake.available_to_unstake(
                 now_sec,
                 <UnstakePeriodSec<T>>::get(),
@@ -985,7 +977,7 @@ pub mod pallet {
 
             if let Some(amount) = maybe_amount {
                 ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
-                ensure!(current_owner_stake >= amount, Error::<T>::InsufficientStakedBalance);
+                ensure!(current_stake_amount >= amount, Error::<T>::InsufficientStakedBalance);
                 ensure!(amount <= available, Error::<T>::UnstakeRateLimited);
             }
 
@@ -993,27 +985,25 @@ pub mod pallet {
             let amount = maybe_amount.unwrap_or(available);
             ensure!(amount > Zero::zero(), Error::<T>::NoAvailableStakeToUnstake);
 
-            let current_reward_period = RewardPeriod::<T>::get().current;
-
-            // Advance next_unstake_time_sec by the number of full periods we consumed.
-            let new_unstake_time_sec = unstake_state.next_unstake_time_sec.saturating_add(
-                periods_advanced.max(1).saturating_mul(<UnstakePeriodSec<T>>::get()),
+            // Advance next_unstake_time_sec by the number of full periods we consumed if required.
+            let new_unstake_time_sec = stake.next_unstake_time_sec.saturating_add(
+                periods_advanced.saturating_mul(<UnstakePeriodSec<T>>::get()),
             );
 
-            unstake_state.next_unstake_time_sec = new_unstake_time_sec;
+            stake.next_unstake_time_sec = new_unstake_time_sec;
 
             // Remaining allowance after withdrawing amount
-            unstake_state.max_unstake_allowance = available.saturating_sub(amount);
-            stake.state = unstake_state;
+            stake.max_unstake_allowance = available.saturating_sub(amount);
 
-            // Reduce stake + lock
-            let new_total = current_owner_stake.saturating_sub(amount);
+            // Reduce stake
+            let new_total = current_stake_amount.saturating_sub(amount);
             stake.amount = new_total;
-            stake.last_period_updated = current_reward_period;
 
-            Self::update_stake(&owner, stake, current_reward_period)?;
+            NodeRegistry::<T>::insert(&node_id, NodeInfo { stake, ..node_info });
 
-            Self::deposit_event(Event::StakeRemoved { owner, amount, new_total });
+            Self::update_reserves(&owner, amount, StakeOperation::Remove)?;
+
+            Self::deposit_event(Event::StakeRemoved { owner, node_id, amount, new_total });
 
             Ok(())
         }
@@ -1188,7 +1178,7 @@ pub mod pallet {
                 let expected_submission = uptime_info.last_reported +
                     BlockNumberFor::<T>::from(HeartbeatPeriod::<T>::get());
                 ensure!(
-                    frame_system::Pallet::<T>::block_number() > expected_submission,
+                    frame_system::Pallet::<T>::block_number() >= expected_submission,
                     Error::<T>::DuplicateHeartbeat
                 );
                 ensure!(heartbeat_count == uptime_info.count, Error::<T>::InvalidHeartbeat);
@@ -1215,6 +1205,11 @@ pub mod pallet {
                 <OwnedNodes<T>>::remove(owner, node);
                 <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
+
+                // Unreserve stake for this node if there is any
+                if !info.stake.amount.is_zero() {
+                    Self::update_reserves(owner, info.stake.amount, StakeOperation::Remove)?;
+                }
 
                 Self::deposit_event(Event::NodeDeregistered {
                     owner: owner.clone(),
@@ -1255,13 +1250,24 @@ pub mod pallet {
 
             Self::insert_signing_key_index(&node, &signing_key)?;
 
+            let node_serial_number = <NextNodeSerialNumber<T>>::mutate(|n| {
+                let current = *n;
+                *n = n.saturating_add(1);
+                current
+            });
+
             <NodeRegistry<T>>::insert(
                 &node,
-                NodeInfo::<T::SignerId, T::AccountId>::new(
+                NodeInfo::<T::SignerId, T::AccountId, BalanceOf<T>>::new(
                     owner.clone(),
                     signing_key,
-                    total_node_count as u32,
+                    node_serial_number,
                     auto_stake_expiry,
+                    StakeInfo {
+                        amount: Zero::zero(),
+                        next_unstake_time_sec: 0,
+                        max_unstake_allowance: Zero::zero(),
+                    },
                 ),
             );
 
