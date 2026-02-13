@@ -134,7 +134,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 201,
+    spec_version: 202,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -170,27 +170,26 @@ const AVERAGE_ON_INITIALIZE_RATIO: Perbill = Perbill::from_percent(5);
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
 #[docify::export(max_block_weight)]
-/// We allow for 0.5 of a second of compute with a 12 second average block time.
-// TODO set for async backing We allow for 2 seconds of compute with a 6 second average block time.
+/// We allow for 2 seconds of compute with a 12 second average block time.
 const MAXIMUM_BLOCK_WEIGHT: Weight = Weight::from_parts(
-    // TODO set when asynch backing is disabled
-    // WEIGHT_REF_TIME_PER_SECOND.saturating_div(2),
     WEIGHT_REF_TIME_PER_SECOND.saturating_mul(2),
     cumulus_primitives_core::relay_chain::MAX_POV_SIZE as u64,
 );
 
 #[docify::export]
 mod async_backing_params {
-    /// Maximum number of blocks simultaneously accepted by the Runtime, not yet included
-    /// into the relay chain.
-    // TODO Set this value to 3 when enabling asynchronous backing
-    pub(crate) const UNINCLUDED_SEGMENT_CAPACITY: u32 = 1;
+    // Depth of the async backing pipeline.
+    // 1 = sync-ready but no pipelining (effectively DISABLED).
+    // > 1 asynchronous backing is ENABLED.
+    // Must not exceed relay max_candidate_depth.
+    pub(crate) const UNINCLUDED_SEGMENT_CAPACITY: u32 = 3;
     /// How many parachain blocks are processed by the relay chain per parent. Limits the
     /// number of blocks authored per slot.
     pub(crate) const BLOCK_PROCESSING_VELOCITY: u32 = 1;
     /// Relay chain slot duration, in milliseconds.
     pub(crate) const RELAY_CHAIN_SLOT_DURATION_MILLIS: u32 = 6000;
 }
+
 pub(crate) use async_backing_params::*;
 
 #[docify::export]
