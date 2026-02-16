@@ -140,8 +140,8 @@ impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
     type OnTimestampSet = Aura;
-    // TODO update to SLOT_DURATION / 2 to disable asynch backing
-    type MinimumPeriod = ConstU64<0>;
+    // Set to 0 when async backing is enabled
+    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
 }
 
