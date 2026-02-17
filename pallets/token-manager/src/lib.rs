@@ -127,7 +127,7 @@ pub mod pallet {
         /// The units in which we record balances of tokens others than AVT
         type TokenBalance: Member + Parameter + AtLeast32Bit + Default + Copy + MaxEncodedLen;
         /// The type of token identifier
-        /// (a H160 because this is an Ethereum address)
+        /// (H160 because this is an Ethereum address)
         type TokenId: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
         type ProcessedEventsChecker: ProcessedEventsChecker;
         /// A type that can be used to verify signatures
