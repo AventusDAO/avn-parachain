@@ -1723,7 +1723,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avn-node-parachain"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "avn-parachain-runtime",
  "avn-parachain-test-runtime",
@@ -1805,7 +1805,7 @@ dependencies = [
 
 [[package]]
 name = "avn-parachain-runtime"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "avn-runtime-common",
  "cumulus-pallet-aura-ext",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "avn-parachain-test-runtime"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "avn-runtime-common",
  "cumulus-pallet-aura-ext",
@@ -1989,7 +1989,7 @@ dependencies = [
 
 [[package]]
 name = "avn-runtime-common"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-support",
  "log",
@@ -2790,7 +2790,7 @@ checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
 
 [[package]]
 name = "client-extrinsic-utils"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -4757,7 +4757,7 @@ dependencies = [
 
 [[package]]
 name = "external-service"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "alloy",
  "alloy-primitives 1.5.4",
@@ -8225,7 +8225,7 @@ checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
 
 [[package]]
 name = "node-primitives"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "sp-core",
  "sp-runtime",
@@ -8623,7 +8623,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-authors-manager"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -8668,7 +8668,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -8695,7 +8695,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-anchor"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -8723,7 +8723,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-offence-handler"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -8745,7 +8745,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-proxy"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -8774,7 +8774,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-transaction-payment"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -8996,7 +8996,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-cross-chain-voting"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9017,7 +9017,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-cross-chain-voting-runtime-api"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "node-primitives",
  "parity-scale-codec",
@@ -9118,7 +9118,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-eth-bridge"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "alloy-primitives 1.5.4",
  "alloy-sol-types 1.5.4",
@@ -9150,7 +9150,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-eth-bridge-runtime-api"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-support",
  "pallet-avn",
@@ -9164,7 +9164,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-ethereum-events"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "env_logger",
  "frame-benchmarking",
@@ -9392,7 +9392,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-nft-manager"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9515,7 +9515,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-parachain-staking"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "assert_matches",
  "frame-benchmarking",
@@ -9905,7 +9905,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-summary"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "assert_matches",
  "frame-benchmarking",
@@ -9974,7 +9974,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-token-manager"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "enumflags2",
  "frame-benchmarking",
@@ -10088,7 +10088,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-validators-manager"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "frame-benchmarking",
  "frame-election-provider-support",
@@ -15615,7 +15615,7 @@ dependencies = [
 
 [[package]]
 name = "sp-avn-common"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "alloy-primitives 1.5.4",
  "alloy-sol-types 1.5.4",
@@ -16326,7 +16326,7 @@ dependencies = [
 
 [[package]]
 name = "sp-watchtower"
-version = "8.6.2"
+version = "8.7.0"
 dependencies = [
  "derive_more 0.99.17",
  "hex",
