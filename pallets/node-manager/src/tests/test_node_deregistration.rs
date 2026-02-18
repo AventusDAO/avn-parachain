@@ -369,15 +369,18 @@ fn payment_works_some_nodes_deregistered() {
             .into(),
         );
 
-        // The owner should get all rewards minus the nodes that were deregistered
-        let expected_owner_reward_amount =
+        // The owner should get all rewards minus the nodes that were deregistered (minus
+        // app_chain_fee_percentage)
+        let gross_owner_reward_amount: u128 =
             reward_amount / node_count as u128 * (node_count - num_nodes_to_deregister) as u128;
+        let fee_amount = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward_amount;
+        let expected_owner_reward_amount = gross_owner_reward_amount - fee_amount;
         assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward_amount);
 
         // The pot balance should stay the same because all the nodes were deregistered
         assert_eq!(
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
-            initial_pot_balance - expected_owner_reward_amount
+            initial_pot_balance - gross_owner_reward_amount
         );
 
         // The payment for the remaing nodes should succeed

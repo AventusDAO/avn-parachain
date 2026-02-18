@@ -175,7 +175,9 @@ fn payment_transaction_succeed() {
         );
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_none());
         // The owner has received the reward
-        assert_eq!(Balances::reserved_balance(&context.owner), reward_amount);
+        let reward_fee = <AppChainFeePercentage<TestRuntime>>::get() * reward_amount;
+        let net_reward = reward_amount - reward_fee;
+        assert_eq!(Balances::reserved_balance(&context.owner), net_reward);
         // The pot has gone down by half
         assert_eq!(
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
@@ -217,7 +219,10 @@ fn multiple_payments_can_be_triggered_in_the_same_block() {
 
         // We should have processed the first batch of payments
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_some());
-        assert_eq!(Balances::reserved_balance(&context.owner), reward_amount / 2);
+        let gross_owner_reward = reward_amount / 2;
+        let owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward;
+        let expected_owner_reward = gross_owner_reward - owner_fee;
+        assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward);
 
         // This is a hack: we remove the lock to allow the offchain worker to run again for the same
         // block
@@ -240,7 +245,10 @@ fn multiple_payments_can_be_triggered_in_the_same_block() {
             <NodeUptime<TestRuntime>>::iter_prefix(reward_period_to_pay).next().is_none()
         );
         assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_none());
-        assert_eq!(Balances::reserved_balance(&context.owner), reward_amount);
+        let gross_owner_reward = reward_amount;
+        let owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward;
+        let expected_owner_reward = gross_owner_reward - owner_fee;
+        assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward);
         // The pot has gone down by half
         assert_eq!(
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
@@ -303,10 +311,12 @@ fn payment_is_based_on_uptime() {
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
         // The owner has received the reward
         // total_expected_uptime - 1 because we run the OCW
-        let expected_new_owner_reward = Perquintill::from_rational(
+        let gross_new_owner_reward = Perquintill::from_rational(
             total_expected_uptime as u128 - 1,
             total_uptime._total_heartbeats as u128,
         ) * reward_amount;
+        let new_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+        let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
         assert!(
             Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
@@ -315,7 +325,9 @@ fn payment_is_based_on_uptime() {
             expected_new_owner_reward
         );
 
-        let expected_old_owner_reward = reward_amount - expected_new_owner_reward;
+        let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
+        let old_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+        let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
         assert!(
             Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 20,
@@ -389,17 +401,21 @@ fn payment_works_when_uptime_is_threshold() {
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // The owner has received the reward
-        let expected_new_owner_reward = Perquintill::from_rational(
+        let gross_new_owner_reward = Perquintill::from_rational(
             total_expected_uptime as u128,
             total_uptime._total_heartbeats as u128,
         ) * reward_amount;
+        let new_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+        let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
         assert!(
             Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
             "Values {} differ by more than 10",
             Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward)
         );
-        let expected_old_owner_reward = reward_amount - expected_new_owner_reward;
+        let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
+        let old_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+        let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
         assert!(
             Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 100,
@@ -472,27 +488,31 @@ fn payment_works_even_when_uptime_is_over_threshold() {
 
         // The owner has received the reward
         // The system limits the reward to the expected uptime
-        let expected_new_owner_reward = Perquintill::from_rational(
+        let gross_new_owner_reward = Perquintill::from_rational(
             total_expected_uptime as u128,
             total_uptime._total_heartbeats as u128,
         ) * reward_amount;
+        let new_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+        let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
         assert!(
             Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 1,
-            "Values {} and {} differ by more than 10",
+            "Values {} and {} differ by more than 1",
             Balances::reserved_balance(&new_owner),
             expected_new_owner_reward,
         );
         //The old owner gets a smaller share of the rewards because the total_uptime has now
         // increased by the extra uptime
-        let expected_old_owner_reward =
+        let gross_old_owner_reward =
             Perquintill::from_rational(1u128, total_uptime._total_heartbeats as u128) *
                 reward_amount *
                 (node_count as u128);
+        let old_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+        let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
         assert!(
             Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) < 1,
-            "Value {} differs by more than 10",
+            "Value {} differs by more than 1",
             Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
         );
 
@@ -507,11 +527,11 @@ fn payment_works_even_when_uptime_is_over_threshold() {
         // Make sure the pot has gone down by the expected amount
         assert!(
             Balances::free_balance(&NodeManager::compute_reward_account_id())
-                .abs_diff(initial_pot - (expected_new_owner_reward + expected_old_owner_reward)) <
+                .abs_diff(initial_pot - (gross_new_owner_reward + gross_old_owner_reward)) <
                 10,
             "Value {} and {} differs by more than 10",
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
-            expected_new_owner_reward + expected_old_owner_reward
+            initial_pot - (gross_new_owner_reward + gross_old_owner_reward)
         );
 
         System::assert_last_event(
@@ -573,10 +593,12 @@ fn threshold_update_is_respected() {
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
         // The owner has received the reward
-        let expected_new_owner_reward = Perquintill::from_rational(
+        let gross_new_owner_reward = Perquintill::from_rational(
             total_expected_uptime as u128,
             total_uptime._total_heartbeats as u128,
         ) * reward_amount;
+        let new_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+        let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
         assert!(
             Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward) < 10,
@@ -584,7 +606,9 @@ fn threshold_update_is_respected() {
             Balances::reserved_balance(&new_owner),
             expected_new_owner_reward
         );
-        let expected_old_owner_reward = reward_amount - expected_new_owner_reward;
+        let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
+        let old_owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+        let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
         assert!(
             Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <= 100,
@@ -696,9 +720,10 @@ fn reward_share_increases_with_genesis_and_stake_bonus() {
         let balance_a_after = Balances::free_balance(&context.owner);
         let balance_b_after = Balances::free_balance(&new_owner);
 
-        // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) vs 181 (0.18%) (flooring)
-        assert_eq!(current_stake_a, previous_stake_a + 181u128);
-        assert_eq!(current_stake_b, previous_stake_b + 818u128);
+        // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) - 5% fee vs 181 (0.18%) - 5% fee
+        // (flooring)
+        assert_eq!(current_stake_a, previous_stake_a + 172u128);
+        assert_eq!(current_stake_b, previous_stake_b + 778u128);
 
         // Balances should not increase because funds are reserved
         assert_eq!(balance_a_after, balance_a_before);

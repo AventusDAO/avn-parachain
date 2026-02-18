@@ -9,7 +9,7 @@ impl<T: Config> Pallet<T> {
         uptime_info: UptimeInfo<BlockNumberFor<T>>,
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         uptime_threshold: u32,
-        reward_period_end_time: u64,
+        reward_period_end_time: Duration,
     ) -> u128 {
         let actual_uptime = uptime_info.count;
         let weight = uptime_info.weight;
@@ -55,13 +55,20 @@ impl<T: Config> Pallet<T> {
         let node_owner = node_info.owner.clone();
         let reward_pot_account_id = Self::compute_reward_account_id();
 
+        // charge x% to Aventus and pay the rest
+        let appchain_fee = Self::calculate_appchain_fee(amount);
+        let net_reward = amount.saturating_sub(appchain_fee);
+
         // First pay the owner
         T::Currency::transfer(
             &reward_pot_account_id,
             &node_owner,
-            amount,
+            net_reward,
             ExistenceRequirement::KeepAlive,
         )?;
+
+        // Pay the fee to the treasury
+        T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id)?;
 
         if node_info.auto_stake_expiry < Self::time_now_sec() {
             // We are outside the auto stake period, finish paying.
@@ -69,18 +76,18 @@ impl<T: Config> Pallet<T> {
                 reward_period: *period,
                 owner: node_owner,
                 node: node_id,
-                amount,
+                amount: net_reward,
             });
         } else {
             // We are within the auto stake period, auto stake the rewards.
-            Self::do_add_stake(&node_owner, &node_id, amount)
+            Self::do_add_stake(&node_owner, &node_id, net_reward)
                 .map_err(|_| Error::<T>::AutoStakeFailed)?;
 
             Self::deposit_event(Event::RewardAutoStaked {
                 reward_period: *period,
                 owner: node_owner,
                 node: node_id,
-                amount,
+                amount: net_reward,
             });
         }
 
@@ -146,7 +153,12 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Get the current time in seconds
-    pub fn time_now_sec() -> u64 {
+    pub fn time_now_sec() -> Duration {
         T::TimeProvider::now().as_secs()
+    }
+
+    pub fn calculate_appchain_fee(amount: BalanceOf<T>) -> BalanceOf<T> {
+        let fee_percentage = AppChainFeePercentage::<T>::get();
+        fee_percentage.mul_floor(amount)
     }
 }

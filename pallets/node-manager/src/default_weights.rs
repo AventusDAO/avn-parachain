@@ -48,6 +48,8 @@ pub trait WeightInfo {
 	fn set_admin_config_auto_stake_duration() -> Weight;
 	fn set_admin_config_max_unstake_percentage() -> Weight;
 	fn set_admin_config_unstake_period() -> Weight;
+	fn set_admin_config_restricted_unstake_duration() -> Weight;
+	fn set_admin_config_appchain_fee_percentage() -> Weight;
 	fn on_initialise_with_new_reward_period() -> Weight;
 	fn on_initialise_no_reward_period() -> Weight;
 	fn offchain_submit_heartbeat() -> Weight;
@@ -245,6 +247,26 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `NodeManager::UnstakePeriodSec` (r:1 w:1)
 	/// Proof: `NodeManager::UnstakePeriodSec` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	fn set_admin_config_unstake_period() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `212`
+		//  Estimated: `1493`
+		// Minimum execution time: 12_948_000 picoseconds.
+		Weight::from_parts(14_100_000, 1493)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+
+	fn set_admin_config_restricted_unstake_duration() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `212`
+		//  Estimated: `1493`
+		// Minimum execution time: 12_948_000 picoseconds.
+		Weight::from_parts(14_100_000, 1493)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+
+	fn set_admin_config_appchain_fee_percentage() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `212`
 		//  Estimated: `1493`
@@ -575,6 +597,26 @@ impl WeightInfo for () {
 	/// Storage: `NodeManager::UnstakePeriodSec` (r:1 w:1)
 	/// Proof: `NodeManager::UnstakePeriodSec` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	fn set_admin_config_unstake_period() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `212`
+		//  Estimated: `1493`
+		// Minimum execution time: 12_948_000 picoseconds.
+		Weight::from_parts(14_100_000, 1493)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	fn set_admin_config_restricted_unstake_duration() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `212`
+		//  Estimated: `1493`
+		// Minimum execution time: 12_948_000 picoseconds.
+		Weight::from_parts(14_100_000, 1493)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+
+	fn set_admin_config_appchain_fee_percentage() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `212`
 		//  Estimated: `1493`

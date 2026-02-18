@@ -79,7 +79,7 @@ mod stake_and_reward_weight_tests {
             let expiry = now_sec + 10_000;
 
             // Serial in 2001..=5000 => 1.5x
-            let stake_info = StakeInfo::new(0, 0, now_sec + 10_000);
+            let stake_info = StakeInfo::new(0, 0, Some(now_sec + 10_000), None, None);
             let node_info = NodeInfo::new(owner.clone(), signing_key, 3_000u32, expiry, stake_info);
 
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
@@ -104,7 +104,7 @@ mod stake_and_reward_weight_tests {
             Timestamp::set_timestamp(now_sec * 1000);
 
             // expiry in the past => no bonus
-            let stake_info = StakeInfo::new(0, 0, now_sec + 10_000);
+            let stake_info = StakeInfo::new(0, 0, Some(now_sec + 10_000), None, None);
             let node_info = NodeInfo::new(owner, signing_key, 3_000u32, now_sec - 1, stake_info);
 
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
@@ -130,7 +130,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: 0,
-                    stake: StakeInfo::new(0, 0, 0),
+                    stake: StakeInfo::new(0, 0, None, None, None),
                 },
             );
 
@@ -150,7 +150,7 @@ mod stake_and_reward_weight_tests {
             Timestamp::set_timestamp(now_sec * 1000);
 
             // No genesis bonus (serial outside range OR expiry in past)
-            let stake_info = StakeInfo::new(stake_amount, 0, now_sec + 10_000);
+            let stake_info = StakeInfo::new(stake_amount, 0, Some(now_sec + 10_000), None, None);
             let node_info = NodeInfo::new(
                 owner.clone(),
                 get_signing_key(1),
@@ -185,7 +185,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: 0,
-                    stake: StakeInfo::new(0, 0, 0),
+                    stake: StakeInfo::new(0, 0, None, None, None),
                 },
             );
 
@@ -231,7 +231,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: (start_sec + 1) * 1000,
-                    stake: StakeInfo::new(0, 0, 0),
+                    stake: StakeInfo::new(0, 0, None, None, None),
                 },
             );
             OwnedNodesCount::<TestRuntime>::insert(&owner, 1u32);
@@ -279,7 +279,7 @@ mod stake_and_reward_weight_tests {
             // Second unstake in same “week” should be rate-limited
             assert_noop!(
                 NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node, Some(1u128)),
-                Error::<TestRuntime>::UnstakeRateLimited
+                Error::<TestRuntime>::NoAvailableStakeToUnstake
             );
         });
     }
@@ -300,17 +300,22 @@ mod stake_and_reward_weight_tests {
                 register_node(&registrar, &node, &owner, UintAuthorityId(10));
 
                 // Stake something first
-                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), 10_000u128));
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    10_000u128
+                ));
 
                 // Move time past auto-stake expiry so unstake checks reach ZeroAmount branch.
-                let start_sec = 1_000u64;
-                Timestamp::set_timestamp(start_sec * 1000);
-
-                let after_expiry_sec = start_sec + 7 * 24 * 60 * 60 + 1;
-                Timestamp::set_timestamp(after_expiry_sec * 1000);
+                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get() + 1;
+                Timestamp::set_timestamp(expiry_sec * 1000);
 
                 assert_noop!(
-                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node, Some(0u128)),
+                    NodeManager::remove_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node,
+                        Some(0u128)
+                    ),
                     Error::<TestRuntime>::ZeroAmount
                 );
             });
@@ -327,26 +332,40 @@ mod stake_and_reward_weight_tests {
 
                 let owner = get_owner(1);
                 let node = get_node(2);
+                let stake_amount: u128 = 10_000u128;
 
                 Balances::make_free_balance_be(&owner, 100_000 * AVT);
                 register_node(&registrar, &node, &owner, UintAuthorityId(11));
+                // At this point node has auto-stake expiry set to AutoStakeDurationSec.
 
-                // Stake sets next_unstake_time_sec = now + auto_stake_duration
-                let start_sec = 10_000u64;
-                Timestamp::set_timestamp(start_sec * 1000);
-
-                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), 10_000u128));
-
-                // Move time to exactly auto-stake expiry (can_unstake passes),
-                // but NOT enough for 1 unstake period to elapse from next_unstake_time_sec.
-                let expiry_sec = start_sec + 7 * 24 * 60 * 60;
+                // Move time to exactly auto-stake expiry,
+                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
                 Timestamp::set_timestamp(expiry_sec * 1000);
 
-                // available_to_unstake() should return 0, so remove_stake(None) should error.
+                // available_to_unstake() should return 0 because there is no stake, so
+                // remove_stake(None) should error.
                 assert_noop!(
                     NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node, None),
                     Error::<TestRuntime>::NoAvailableStakeToUnstake
                 );
+
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount
+                ));
+
+                // The same remove_stake call (at the same timestamp) should now succeed because
+                // there is a stake.
+                assert_ok!(NodeManager::remove_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node,
+                    None
+                ));
+
+                let post_unstake_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                let expected_unstake = MaxUnstakePercentage::<TestRuntime>::get() * stake_amount;
+                assert_eq!(stake_amount, post_unstake_info.stake.amount + expected_unstake);
             });
     }
 
@@ -361,22 +380,25 @@ mod stake_and_reward_weight_tests {
 
                 let owner = get_owner(1);
                 let node = get_node(3);
+                let stake_amount: u128 = 10_000u128;
 
                 Balances::make_free_balance_be(&owner, 100_000 * AVT);
                 register_node(&registrar, &node, &owner, UintAuthorityId(12));
 
-                let start_sec = 1_000u64;
-                Timestamp::set_timestamp(start_sec * 1000);
-
                 // Stake 10_000 => max unstake per period = 10% = 1_000
-                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), 10_000u128));
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount
+                ));
 
-                // Move to: expiry + 1 unstake period + 1 second => 1 period unlocked
-                let after_expiry_plus_one_period = start_sec
-                    + 7 * 24 * 60 * 60  // auto-stake duration
-                    + 7 * 24 * 60 * 60  // 1 unstake period
-                    + 1;
-                Timestamp::set_timestamp(after_expiry_plus_one_period * 1000);
+                let auto_stake_expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
+                let unstake_period_sec = UnstakePeriodSec::<TestRuntime>::get();
+                // Move to: expiry + unstake period => 2 periods unlocked (at expiry 1 unlock)
+                let t = auto_stake_expiry_sec  // auto-stake duration
+                    + unstake_period_sec; // 1 unstake periods
+
+                Timestamp::set_timestamp(t * 1000);
 
                 // Withdraw less than the max unlocked
                 assert_ok!(NodeManager::remove_stake(
@@ -385,17 +407,27 @@ mod stake_and_reward_weight_tests {
                     Some(400u128)
                 ));
 
-                // Withdraw the remainder of the unlocked allowance (1000 - 400 = 600)
+                let node_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                assert_eq!(
+                    node_info.stake.max_unstake_per_period,
+                    Some(MaxUnstakePercentage::<TestRuntime>::get() * stake_amount)
+                );
+
+                // Withdraw the remainder of the unlocked allowance (2000 - 400 = 1600)
                 assert_ok!(NodeManager::remove_stake(
                     RuntimeOrigin::signed(owner.clone()),
                     node.clone(),
-                    Some(600u128)
+                    Some(1600u128) // assumes 10% max unstake per period
                 ));
 
                 // Another withdrawal in the same period should fail (no allowance left)
                 assert_noop!(
-                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node, Some(1u128)),
-                    Error::<TestRuntime>::UnstakeRateLimited
+                    NodeManager::remove_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node,
+                        Some(1u128)
+                    ),
+                    Error::<TestRuntime>::NoAvailableStakeToUnstake
                 );
             });
     }
@@ -414,34 +446,38 @@ mod stake_and_reward_weight_tests {
 
                 Balances::make_free_balance_be(&owner, 100_000 * AVT);
                 register_node(&registrar, &node, &owner, UintAuthorityId(13));
+                let stake_amount: u128 = 10_000u128;
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount
+                ));
 
-                let start_sec = 5_000u64;
-                Timestamp::set_timestamp(start_sec * 1000);
-
-                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), 10_000u128));
-
-                // next_unstake_time_sec is set to (start + auto_stake_duration)
-                // At expiry time: can_unstake passes but elapsed=0, so available should be 0.
-                let expiry_sec = start_sec + 7 * 24 * 60 * 60;
+                // At expiry time: the first period should unlock
+                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
                 Timestamp::set_timestamp(expiry_sec * 1000);
 
-                assert_noop!(
-                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), None),
-                    Error::<TestRuntime>::NoAvailableStakeToUnstake
-                );
+                assert_ok!(NodeManager::remove_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    None
+                ));
 
                 // Just before 1 full unstake period completes
-                let just_before = expiry_sec + (7 * 24 * 60 * 60) - 1;
+                let just_before = expiry_sec + UnstakePeriodSec::<TestRuntime>::get() - 1;
                 Timestamp::set_timestamp(just_before * 1000);
 
                 assert_noop!(
-                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), Some(1u128)),
-                    Error::<TestRuntime>::UnstakeRateLimited
+                    NodeManager::remove_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        Some(1u128)
+                    ),
+                    Error::<TestRuntime>::NoAvailableStakeToUnstake
                 );
 
                 // Exactly at 1 period boundary => 10% unlocked
-                let exact_boundary = expiry_sec + (7 * 24 * 60 * 60);
-                Timestamp::set_timestamp(exact_boundary * 1000);
+                Timestamp::set_timestamp((just_before + 1) * 1000);
 
                 assert_ok!(NodeManager::remove_stake(
                     RuntimeOrigin::signed(owner.clone()),
@@ -462,21 +498,27 @@ mod stake_and_reward_weight_tests {
 
                 let owner = get_owner(1);
                 let node = get_node(5);
+                let stake_amount: u128 = 10_000u128;
 
                 Balances::make_free_balance_be(&owner, 100_000 * AVT);
                 register_node(&registrar, &node, &owner, UintAuthorityId(14));
 
-                let start_sec = 1_000u64;
-                Timestamp::set_timestamp(start_sec * 1000);
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount
+                ));
 
-                assert_ok!(NodeManager::add_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), 10_000u128));
-
-                // Move to: expiry + 2 periods + 1 second => 20% unlocked = 2,000
-                let t = start_sec
-                    + 7 * 24 * 60 * 60  // auto-stake duration
-                    + 2 * 7 * 24 * 60 * 60  // 2 unstake periods
-                    + 1;
+                let auto_stake_expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
+                let unstake_period_sec = UnstakePeriodSec::<TestRuntime>::get();
+                // Move to: expiry + 2 periods + 1 second => 30% unlocked = 3,000 (due to +1)
+                let t = auto_stake_expiry_sec  // auto-stake duration
+                    + 2 * unstake_period_sec  // 2 unstake periods
+                    + 1; // unlock the third period
                 Timestamp::set_timestamp(t * 1000);
+
+                // At this point, on the first unstake transactions, stake_amount should be
+                // snapshotted and max_unstake_per_period should be set.
 
                 // Withdraw part of the allowance
                 assert_ok!(NodeManager::remove_stake(
@@ -485,31 +527,69 @@ mod stake_and_reward_weight_tests {
                     Some(500u128)
                 ));
 
-                // Immediately withdraw remaining allowance in same timestamp
-                // Remaining should be 1500.
+                let node_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                assert_eq!(
+                    node_info.stake.max_unstake_per_period,
+                    Some(MaxUnstakePercentage::<TestRuntime>::get() * stake_amount)
+                );
+
+                // Immediately withdraw the allowance for the 2nd period.
                 assert_ok!(NodeManager::remove_stake(
                     RuntimeOrigin::signed(owner.clone()),
                     node.clone(),
                     Some(1500u128)
                 ));
 
+                // withdraw the remaining allowance in same timestamp.
+                assert_ok!(NodeManager::remove_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    Some(1000u128)
+                ));
+
                 // No more allowance left until another period passes
                 assert_noop!(
-                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node.clone(), Some(1u128)),
-                    Error::<TestRuntime>::UnstakeRateLimited
+                    NodeManager::remove_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        Some(1u128)
+                    ),
+                    Error::<TestRuntime>::NoAvailableStakeToUnstake
                 );
 
-                // Advance exactly 1 more period; unlocked should be 10% of the *current* stake (now 8_000)
-                // => 800 available.
-                let t2 = t + 7 * 24 * 60 * 60;
+                // Advance exactly 1 more period; unlocked should be 10% of the *current* stake (now
+                // 8_000) => 800 available.
+                let t2 = t + unstake_period_sec;
                 Timestamp::set_timestamp(t2 * 1000);
 
                 assert_ok!(NodeManager::remove_stake(
                     RuntimeOrigin::signed(owner.clone()),
                     node,
-                    Some(800u128)
+                    Some(node_info.stake.max_unstake_per_period.unwrap())
                 ));
+
+                // Advance 1 more period; and try to unstake more than the max.
+                let t2 = t + unstake_period_sec;
+                Timestamp::set_timestamp(t2 * 1000);
+
+                assert_noop!(
+                    NodeManager::remove_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node,
+                        Some(node_info.stake.max_unstake_per_period.unwrap() + 1u128)
+                    ),
+                    Error::<TestRuntime>::NoAvailableStakeToUnstake
+                );
             });
     }
-
 }
+
+/*
+    - Register
+    - Set time past auto-stake expiry
+    - Try to unstake with None (should fail because no stake)
+    - Add stake
+    - Try to unstake with None (should succeed and unstake max allowed)
+    - Check that the unstaked amount matches max unstake percentage of the staked amount
+
+*/

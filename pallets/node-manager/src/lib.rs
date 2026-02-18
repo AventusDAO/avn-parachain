@@ -5,8 +5,7 @@ use frame_support::{
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
     traits::{
-        Currency, ExistenceRequirement, IsSubType, LockIdentifier,
-        StorageVersion, UnixTime, WithdrawReasons, ReservableCurrency,
+        Currency, ExistenceRequirement, IsSubType, ReservableCurrency, StorageVersion, UnixTime,
     },
     PalletId,
 };
@@ -16,8 +15,8 @@ use frame_system::{
 };
 use pallet_avn::{self as avn};
 use sp_application_crypto::RuntimeAppPublic;
-use sp_avn_common::{event_types::Validator, REGISTERED_NODE_KEY};
-use sp_core::MaxEncodedLen;
+use sp_avn_common::{event_types::Validator, FeePaymentHandler, REGISTERED_NODE_KEY};
+use sp_core::{MaxEncodedLen, H160};
 use sp_runtime::{
     offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
     scale_info::TypeInfo,
@@ -230,11 +229,11 @@ pub mod pallet {
 
     /// The auto staking duration in seconds
     #[pallet::storage]
-    pub type AutoStakeDurationSec<T: Config> = StorageValue<_, u64, ValueQuery>;
+    pub type AutoStakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
     /// The unstake period duration in seconds
     #[pallet::storage]
-    pub type UnstakePeriodSec<T: Config> = StorageValue<_, u64, ValueQuery>;
+    pub type UnstakePeriodSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
     /// The maximum percentage of staked balance that can be unstaked at once
     #[pallet::storage]
@@ -244,6 +243,14 @@ pub mod pallet {
     #[pallet::storage]
     pub type NextNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// The duration in seconds for which unstaking is restricted
+    #[pallet::storage]
+    pub type RestrictedUnstakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
+
+    /// The fee charged by the chain to host app chain nodes
+    #[pallet::storage]
+    pub type AppChainFeePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -251,9 +258,11 @@ pub mod pallet {
         pub reward_period: u32,
         pub heartbeat_period: u32,
         pub reward_amount: BalanceOf<T>,
-        pub auto_stake_duration_sec: u64,
+        pub auto_stake_duration_sec: Duration,
         pub max_unstake_percentage: Perbill,
-        pub unstake_period_sec: u64,
+        pub unstake_period_sec: Duration,
+        pub restricted_unstake_duration_sec: Duration,
+        pub app_chain_fee_percentage: Perbill,
     }
 
     impl<T: Config> Default for GenesisConfig<T> {
@@ -267,6 +276,8 @@ pub mod pallet {
                 auto_stake_duration_sec: 180 * 24 * 60 * 60, // 180 days
                 max_unstake_percentage: Perbill::from_percent(10),
                 unstake_period_sec: 7 * 24 * 60 * 60, // 1 week
+                restricted_unstake_duration_sec: 10 * 7 * 24 * 60 * 60, // 10 weeks
+                app_chain_fee_percentage: Perbill::from_percent(5),
             }
         }
     }
@@ -285,6 +296,8 @@ pub mod pallet {
             AutoStakeDurationSec::<T>::set(self.auto_stake_duration_sec);
             MaxUnstakePercentage::<T>::set(self.max_unstake_percentage);
             UnstakePeriodSec::<T>::set(self.unstake_period_sec);
+            RestrictedUnstakeDurationSec::<T>::set(self.restricted_unstake_duration_sec);
+            AppChainFeePercentage::<T>::set(self.app_chain_fee_percentage);
 
             let max_heartbeats = self.reward_period.saturating_div(self.heartbeat_period);
             let uptime_threshold = default_threshold * max_heartbeats;
@@ -352,13 +365,13 @@ pub mod pallet {
         /// A new maximum unstake percentage has been set
         MaxUnstakePercentageSet { percentage: Perbill },
         /// A new unstake period (in seconds) has been set
-        UnstakePeriodSet { duration_sec: u64 },
+        UnstakePeriodSet { duration_sec: Duration },
         /// A node has been deregistered
         NodeDeregistered { owner: T::AccountId, node: NodeId<T> },
         /// A node signing key has been updated
         SigningKeyUpdated { owner: T::AccountId, node: NodeId<T> },
         /// Auto stake duration has been set
-        AutoStakeDurationSet { duration_sec: u64 },
+        AutoStakeDurationSet { duration_sec: Duration },
         /// Node owner added stake to the specified node
         StakeAdded {
             owner: T::AccountId,
@@ -373,6 +386,10 @@ pub mod pallet {
             amount: BalanceOf<T>,
             new_total: BalanceOf<T>,
         },
+        /// The duration for restricted unstaking has been set
+        RestrictedUnstakeDurationSet { duration_sec: Duration },
+        /// The fee percentage for hosting app chain nodes has been set
+        AppChainFeePercentageSet { percentage: Perbill },
     }
 
     // Pallet Errors
@@ -442,8 +459,6 @@ pub mod pallet {
         InsufficientStakedBalance,
         /// Failed to reserve balance for staking
         ReserveFailed,
-        /// You have already unstaked the maximum allowed amount for this period.
-        UnstakeRateLimited,
         /// Duration must be greater than zero
         DurationZero,
         /// There is no stake for the owner
@@ -456,6 +471,10 @@ pub mod pallet {
         AutoStakeFailed,
         /// Node is not found
         NodeNotFound,
+        /// Balance overflow
+        BalanceOverflow,
+        /// Balance underflow
+        BalanceUnderflow,
     }
 
     #[pallet::config]
@@ -489,6 +508,16 @@ pub mod pallet {
         type TimeProvider: UnixTime;
         /// The signature type used by accounts/transactions.
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
+        /// The type of token identifier
+        /// (a H160 because this is an Ethereum address)
+        type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
+        /// Trait to deal with handling the fee charged by the chain to host app chain nodes
+        type AppChainFeeHandler: FeePaymentHandler<
+            AccountId = Self::AccountId,
+            Token = Self::Token,
+            TokenBalance = <Self::Currency as Currency<Self::AccountId>>::Balance,
+            Error = DispatchError,
+        >;
         /// The id of the reward pot.
         #[pallet::constant]
         type RewardPotId: Get<PalletId>;
@@ -535,6 +564,8 @@ pub mod pallet {
             .max(<T as Config>::WeightInfo::set_admin_config_auto_stake_duration())
             .max(<T as Config>::WeightInfo::set_admin_config_max_unstake_percentage())
             .max(<T as Config>::WeightInfo::set_admin_config_unstake_period())
+            .max(<T as Config>::WeightInfo::set_admin_config_restricted_unstake_duration())
+            .max(<T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage())
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
@@ -630,6 +661,22 @@ pub mod pallet {
                         Some(<T as Config>::WeightInfo::set_admin_config_unstake_period()).into()
                     )
                 },
+                AdminConfig::RestrictedUnstakeDuration(duration_sec) => {
+                    <RestrictedUnstakeDurationSec<T>>::mutate(|d| *d = duration_sec.clone());
+                    Self::deposit_event(Event::RestrictedUnstakeDurationSet { duration_sec });
+                    return Ok(Some(
+                        <T as Config>::WeightInfo::set_admin_config_restricted_unstake_duration(),
+                    )
+                    .into())
+                },
+                AdminConfig::AppChainFee(percentage) => {
+                    <AppChainFeePercentage<T>>::mutate(|p| *p = percentage.clone());
+                    Self::deposit_event(Event::AppChainFeePercentageSet { percentage });
+                    return Ok(Some(
+                        <T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage(),
+                    )
+                    .into())
+                },
             }
         }
 
@@ -689,7 +736,7 @@ pub mod pallet {
                     iter = NodeUptime::<T>::iter_prefix(oldest_period);
                     // This is a new payout so validate that the reward pot has enough to pay
                     ensure!(
-                        Self::reward_pot_balance().ge(&BalanceOf::<T>::from(total_reward)),
+                        Self::reward_pot_balance().ge(&total_reward),
                         Error::<T>::InsufficientBalanceForReward
                     );
                 },
@@ -960,44 +1007,53 @@ pub mod pallet {
                 Error::<T>::NodeNotOwnedByOwner
             );
 
+            let now_sec = Self::time_now_sec();
+            // before we read the node, try to snapshot the stake if auto-stake duration has passed.
+            Self::set_max_unstake_per_period_if_required(
+                &node_id,
+                now_sec,
+                <MaxUnstakePercentage<T>>::get(),
+            );
+
             let node_info =
                 NodeRegistry::<T>::get(&node_id).ok_or(Error::<T>::NodeNotRegistered)?;
 
-            let now_sec = Self::time_now_sec();
             ensure!(node_info.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
 
             let mut stake = node_info.stake;
             let current_stake_amount = stake.amount;
 
-            let (available, periods_advanced) = stake.available_to_unstake(
-                now_sec,
-                <UnstakePeriodSec<T>>::get(),
-                <MaxUnstakePercentage<T>>::get(),
-            );
+            let (available, next_unstake) = stake
+                .available_to_unstake(
+                    now_sec,
+                    node_info.auto_stake_expiry,
+                    <UnstakePeriodSec<T>>::get(),
+                )
+                .map_err(|e| match e {
+                    DispatchError::Arithmetic(_) => Error::<T>::BalanceOverflow.into(),
+                    other => other,
+                })?;
 
             if let Some(amount) = maybe_amount {
                 ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
                 ensure!(current_stake_amount >= amount, Error::<T>::InsufficientStakedBalance);
-                ensure!(amount <= available, Error::<T>::UnstakeRateLimited);
+                ensure!(amount <= available, Error::<T>::NoAvailableStakeToUnstake);
             }
 
             // If amount is not specified, unstake what is available now
             let amount = maybe_amount.unwrap_or(available);
             ensure!(amount > Zero::zero(), Error::<T>::NoAvailableStakeToUnstake);
 
-            // Advance next_unstake_time_sec by the number of full periods we consumed if required.
-            let new_unstake_time_sec = stake.next_unstake_time_sec.saturating_add(
-                periods_advanced.saturating_mul(<UnstakePeriodSec<T>>::get()),
-            );
-
-            stake.next_unstake_time_sec = new_unstake_time_sec;
-
-            // Remaining allowance after withdrawing amount
-            stake.max_unstake_allowance = available.saturating_sub(amount);
-
             // Reduce stake
-            let new_total = current_stake_amount.saturating_sub(amount);
+            let new_total = current_stake_amount
+                .checked_sub(&amount)
+                .ok_or(Error::<T>::InsufficientStakedBalance)?;
+
             stake.amount = new_total;
+            stake.next_unstake_time_sec = next_unstake;
+
+            stake.unlocked_stake =
+                available.checked_sub(&amount).ok_or(Error::<T>::BalanceUnderflow)?;
 
             NodeRegistry::<T>::insert(&node_id, NodeInfo { stake, ..node_info });
 
@@ -1239,13 +1295,14 @@ pub mod pallet {
             );
 
             let auto_stake_expiry = Self::calculate_auto_stake_expiry();
+            let staking_restriction_expiry =
+                auto_stake_expiry.saturating_add(<RestrictedUnstakeDurationSec<T>>::get());
 
             <OwnedNodes<T>>::insert(&owner, &node, ());
             <OwnedNodesCount<T>>::mutate(&owner, |count| *count = count.saturating_add(1));
 
-            let total_node_count = <TotalRegisteredNodes<T>>::mutate(|n| {
+            <TotalRegisteredNodes<T>>::mutate(|n| {
                 *n = n.saturating_add(1);
-                *n
             });
 
             Self::insert_signing_key_index(&node, &signing_key)?;
@@ -1263,11 +1320,13 @@ pub mod pallet {
                     signing_key,
                     node_serial_number,
                     auto_stake_expiry,
-                    StakeInfo {
-                        amount: Zero::zero(),
-                        next_unstake_time_sec: 0,
-                        max_unstake_allowance: Zero::zero(),
-                    },
+                    StakeInfo::<BalanceOf<T>>::new(
+                        Zero::zero(),
+                        Zero::zero(),
+                        Some(auto_stake_expiry),
+                        None,
+                        Some(staking_restriction_expiry),
+                    ),
                 ),
             );
 
@@ -1344,7 +1403,7 @@ pub mod pallet {
             Perbill::from_percent(33)
         }
 
-        pub fn calculate_auto_stake_expiry() -> u64 {
+        pub fn calculate_auto_stake_expiry() -> Duration {
             let current_time = Self::time_now_sec();
             current_time.saturating_add(AutoStakeDurationSec::<T>::get())
         }

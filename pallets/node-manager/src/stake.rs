@@ -10,9 +10,9 @@ const TWENTY_FIVE_PERCENT_GENESIS_BONUS: RangeInclusive<u32> = 5001..=10000;
 impl<T: Config> Pallet<T> {
     fn calculate_genesis_bonus(
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
-        timestamp_sec: u64,
+        timestamp_sec: Duration,
     ) -> FixedU128 {
-        if node_info.auto_stake_expiry < timestamp_sec {
+        if node_info.auto_stake_expiry <= timestamp_sec {
             return FixedU128::one() // no bonus
         }
 
@@ -26,6 +26,7 @@ impl<T: Config> Pallet<T> {
         }
     }
 
+    // Use linear bonus calculation.
     fn calculate_stake_bonus(
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
     ) -> FixedU128 {
@@ -62,7 +63,7 @@ impl<T: Config> Pallet<T> {
 
     pub fn compute_reward_weight(
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
-        reward_period_end_time: u64,
+        reward_period_end_time: Duration,
     ) -> RewardWeight {
         let genesis_bonus = Self::calculate_genesis_bonus(node_info, reward_period_end_time);
         let stake_bonus: FixedU128 = Self::calculate_stake_bonus(node_info);
@@ -71,7 +72,7 @@ impl<T: Config> Pallet<T> {
 
     pub fn effective_heartbeat_weight(
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
-        reward_period_end_time: u64,
+        reward_period_end_time: Duration,
     ) -> u128 {
         let weight_factor = Self::compute_reward_weight(node_info, reward_period_end_time);
         weight_factor.to_heartbeat_weight()
@@ -86,36 +87,77 @@ impl<T: Config> Pallet<T> {
         let free = T::Currency::free_balance(&owner);
         ensure!(free >= amount, Error::<T>::InsufficientFreeBalance);
 
-        let node_info = NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotFound)?;
-        let mut stake = node_info.stake;
-        let new_total = stake.amount.saturating_add(amount);
+        // before we read the node, try to snapshot the stake if auto-stake duration has passed.
+        Self::set_max_unstake_per_period_if_required(
+            &node_id,
+            Self::time_now_sec(),
+            <MaxUnstakePercentage<T>>::get(),
+        );
 
-        // If this is the first time we are staking
-        if stake.next_unstake_time_sec == 0 {
-            let expiry = Self::time_now_sec().saturating_add(AutoStakeDurationSec::<T>::get());
-            stake.next_unstake_time_sec = expiry;
-            stake.max_unstake_allowance = Zero::zero();
+        let node_info = NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotFound)?;
+        let mut stake: StakeInfo<BalanceOf<T>> = node_info.stake;
+        let new_total = stake.amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
+
+        // This shouldn't happen because we set it on registration
+        if stake.next_unstake_time_sec.is_none() {
+            let expiry =
+                node_info.auto_stake_expiry.saturating_add(AutoStakeDurationSec::<T>::get());
+
+            log::warn!(
+                "⚠️ Node ({:?}) is missing staking expiry information. Reseting expiry to {:?}.",
+                node_id,
+                expiry
+            );
+
+            stake.next_unstake_time_sec = Some(expiry);
+            stake.staking_restriction_expiry_sec =
+                Some(expiry.saturating_add(<RestrictedUnstakeDurationSec<T>>::get()));
         }
 
         stake.amount = new_total;
 
-        NodeRegistry::<T>::insert(node_id, NodeInfo { stake, ..node_info });
-
         Self::update_reserves(owner, amount, StakeOperation::Add)?;
+        NodeRegistry::<T>::insert(node_id, NodeInfo { stake, ..node_info });
 
         Ok(new_total)
     }
 
-    pub fn update_reserves(owner: &T::AccountId, amount: BalanceOf<T>, op: StakeOperation) -> DispatchResult {
+    pub fn update_reserves(
+        owner: &T::AccountId,
+        amount: BalanceOf<T>,
+        op: StakeOperation,
+    ) -> DispatchResult {
         match op {
-            StakeOperation::Add =>
-                T::Currency::reserve(owner, amount).map_err(|_| Error::<T>::InsufficientFreeBalance.into()),
+            StakeOperation::Add => T::Currency::reserve(owner, amount)
+                .map_err(|_| Error::<T>::InsufficientFreeBalance.into()),
 
             StakeOperation::Remove => {
+                ensure!(
+                    T::Currency::reserved_balance(owner) >= amount,
+                    Error::<T>::InsufficientStakedBalance
+                );
                 let leftover = T::Currency::unreserve(owner, amount);
                 ensure!(leftover.is_zero(), Error::<T>::InsufficientStakedBalance);
                 Ok(())
-            }
+            },
         }
+    }
+
+    pub fn set_max_unstake_per_period_if_required(
+        node_id: &NodeId<T>,
+        now_sec: Duration,
+        max_unstake_percentage: Perbill,
+    ) {
+        NodeRegistry::<T>::mutate(node_id, |maybe_node_info| {
+            if let Some(node_info) = maybe_node_info {
+                if now_sec >= node_info.auto_stake_expiry &&
+                    node_info.stake.max_unstake_per_period.is_none() &&
+                    !node_info.stake.amount.is_zero()
+                {
+                    node_info.stake.max_unstake_per_period =
+                        Some(max_unstake_percentage * node_info.stake.amount);
+                }
+            }
+        });
     }
 }

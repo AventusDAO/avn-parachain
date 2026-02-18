@@ -42,7 +42,19 @@ fn set_registrar<T: Config>(registrar: T::AccountId) {
 
 fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::SignerId {
     let key = T::SignerId::generate_pair(None);
-    <NodeRegistry<T>>::insert(node.clone(), NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64));
+    let stake_expiry = Pallet::<T>::calculate_auto_stake_expiry();
+    let restriction_expiry = stake_expiry.saturating_add(<RestrictedUnstakeDurationSec<T>>::get());
+    let stake_info = StakeInfo::<BalanceOf<T>>::new(
+        Zero::zero(),
+        Zero::zero(),
+        Some(stake_expiry),
+        None,
+        Some(restriction_expiry),
+    );
+    <NodeRegistry<T>>::insert(
+        node.clone(),
+        NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64, stake_info),
+    );
     <OwnedNodes<T>>::insert(owner.clone(), node, ());
     <OwnedNodesCount<T>>::mutate(owner, |count| *count += 1);
 
@@ -52,11 +64,7 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
     let uptime = 1u64;
     let node_info = <NodeRegistry<T>>::get(&node).unwrap();
-    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(
-        &node_info,
-        reward_period_index,
-        Pallet::<T>::time_now_sec(),
-    );
+    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(&node_info, reward_period_index);
     let weight = single_hb_weight.saturating_mul(uptime.into());
 
     <NodeUptime<T>>::mutate(&reward_period_index, &node, |maybe_info| {
@@ -255,6 +263,15 @@ benchmarks! {
         assert!(<UnstakePeriodSec<T>>::get() == new_duration);
     }
 
+    set_admin_config_restricted_unstake_duration {
+        let current_duration = <RestrictedUnstakeDurationSec<T>>::get();
+        let new_duration = current_duration + 16;
+        let config = AdminConfig::RestrictedUnstakeDuration(new_duration);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<RestrictedUnstakeDurationSec<T>>::get() == new_duration);
+    }
+
     on_initialise_with_new_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
         let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();
@@ -340,7 +357,9 @@ benchmarks! {
         let nodes_to_pay = max_batch_size.min(registered_nodes);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, registered_nodes as u128);
         let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
-        let expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+        let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+        let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
+        let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
 
         assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
     }
@@ -391,7 +410,9 @@ benchmarks! {
         let nodes_to_pay = max_batch_size.min(n);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, n as u128);
         let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
-        let expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+        let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+        let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
+        let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
 
         assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
     }
@@ -506,6 +527,7 @@ benchmarks! {
     update_signing_key {
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
+        enable_rewards::<T>();
 
         let owner: T::AccountId = account("owner", 1, 1);
         let node: NodeId<T> = account("node", 2, 2);
@@ -531,12 +553,14 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
         T::Currency::make_free_balance_be(&owner.clone(), 1_000_000u32.into());
-        let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
-    }: add_stake(RawOrigin::Signed(owner.clone()), 100u32.into())
+        let nodes = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
+        let node_id = nodes.first().cloned().unwrap();
+    }: add_stake(RawOrigin::Signed(owner.clone()), node_id.clone(), 100u32.into())
     verify {
-        let stake = OwnerStake::<T>::get(&owner).unwrap();
+        let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
+        let stake = node_info.stake;
         assert!(stake.amount == 100u32.into());
-        assert_last_event::<T>(Event::StakeAdded { owner, amount: 100u32.into(), new_total: stake.amount }.into());
+        assert_last_event::<T>(Event::StakeAdded { owner, node_id, amount: 100u32.into(), new_total: stake.amount }.into());
     }
 
     remove_stake {
@@ -555,15 +579,17 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
         T::Currency::make_free_balance_be(&owner.clone(), 1_000_000u32.into());
-        let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
-        Pallet::<T>::do_add_stake(&owner, 100u32.into()).unwrap();
+        let nodes = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
+        let node_id = nodes.first().cloned().unwrap();
+        Pallet::<T>::do_add_stake(&owner, &node_id, 100u32.into()).unwrap();
         // Go forward in time to make the stake available for unstaking
         pallet_timestamp::Pallet::<T>::set_timestamp(10_000 * 12_000);
-    }: remove_stake(RawOrigin::Signed(owner.clone()), Some(10u32.into()))
+    }: remove_stake(RawOrigin::Signed(owner.clone()), node_id.clone(), Some(10u32.into()))
     verify {
-        let stake = OwnerStake::<T>::get(&owner).unwrap();
+        let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
+        let stake = node_info.stake;
         assert!(stake.amount == (100u32 - 10u32).into());
-        assert_last_event::<T>(Event::StakeRemoved { owner, amount: 10u32.into(), new_total: stake.amount }.into());
+        assert_last_event::<T>(Event::StakeRemoved { owner, node_id, amount: 10u32.into(), new_total: stake.amount }.into());
     }
 }
 
