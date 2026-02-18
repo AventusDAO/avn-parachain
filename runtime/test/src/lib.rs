@@ -29,10 +29,9 @@ use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 use frame_support::{
-    parameter_types,
     traits::{
-        fungible::HoldConsideration, AsEnsureOriginWithArg, ConstU32, Contains, Currency,
-        LinearStoragePrice, OnUnbalanced, PrivilegeCmp,
+        fungible::HoldConsideration, AsEnsureOriginWithArg, Contains, Currency,
+        LinearStoragePrice, PrivilegeCmp,
     },
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
@@ -53,7 +52,7 @@ pub use pallet_avn_proxy::{Event as AvnProxyEvent, ProvableProxy};
 use pallet_eth_bridge_runtime_api::InstanceId;
 use pallet_parachain_staking;
 use sp_avn_common::{
-    constants::{currency::*, time::*},
+    constants::time::*,
     eth::EthBridgeInstance,
     event_discovery::{AdditionalEvents, EthBlockRange, EthereumEventsPartition},
     InnerCallValidator, Proof,
