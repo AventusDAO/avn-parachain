@@ -18,6 +18,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod ethereum_utils;
 mod insert_avn_key;
 mod key;
 
