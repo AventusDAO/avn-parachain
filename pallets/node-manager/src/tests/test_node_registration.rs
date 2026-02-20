@@ -64,7 +64,10 @@ mod node_registration {
             assert_eq!(node_info.stake.unlocked_stake, 0);
             assert_eq!(node_info.stake.next_unstake_time_sec, Some(auto_stake_duration_sec));
             assert_eq!(node_info.stake.max_unstake_per_period, None);
-            assert_eq!(node_info.stake.staking_restriction_expiry_sec, Some(auto_stake_duration_sec + RestrictedUnstakeDurationSec::<TestRuntime>::get()));
+            assert_eq!(
+                node_info.stake.staking_restriction_expiry_sec,
+                Some(auto_stake_duration_sec + RestrictedUnstakeDurationSec::<TestRuntime>::get())
+            );
             // The correct event is emitted
             System::assert_last_event(
                 Event::NodeRegistered { owner: context.owner, node: context.node_id }.into(),

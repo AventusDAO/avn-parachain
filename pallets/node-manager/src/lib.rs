@@ -993,7 +993,13 @@ pub mod pallet {
             let reward_period = RewardPeriod::<T>::get().current;
             let new_total = Self::do_add_stake(&owner, &node_id, amount)?;
 
-            Self::deposit_event(Event::StakeAdded { owner, node_id, reward_period, amount, new_total });
+            Self::deposit_event(Event::StakeAdded {
+                owner,
+                node_id,
+                reward_period,
+                amount,
+                new_total,
+            });
             Ok(())
         }
 
@@ -1063,7 +1069,13 @@ pub mod pallet {
 
             Self::update_reserves(&owner, amount, StakeOperation::Remove)?;
 
-            Self::deposit_event(Event::StakeRemoved { owner, node_id, reward_period, amount, new_total });
+            Self::deposit_event(Event::StakeRemoved {
+                owner,
+                node_id,
+                reward_period,
+                amount,
+                new_total,
+            });
 
             Ok(())
         }

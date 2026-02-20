@@ -30,8 +30,8 @@ use sp_version::RuntimeVersion;
 
 use frame_support::{
     traits::{
-        fungible::HoldConsideration, AsEnsureOriginWithArg, Contains, Currency,
-        LinearStoragePrice, PrivilegeCmp,
+        fungible::HoldConsideration, AsEnsureOriginWithArg, Contains, Currency, LinearStoragePrice,
+        PrivilegeCmp,
     },
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };

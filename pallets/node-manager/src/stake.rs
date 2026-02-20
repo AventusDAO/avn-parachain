@@ -12,7 +12,7 @@ impl<T: Config> Pallet<T> {
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         timestamp_sec: Duration,
     ) -> FixedU128 {
-        if timestamp_sec >= node_info.auto_stake_expiry  {
+        if timestamp_sec >= node_info.auto_stake_expiry {
             return FixedU128::one() // no bonus
         }
 

@@ -82,19 +82,22 @@ mod stake_and_reward_weight_tests {
 
             // Before expiry => bonus applies
             let mut expiry = now_sec + 1;
-            let node_info = NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
+            let node_info =
+                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 150_000_000u128); // 1.5x base weight of 100_000_000
 
             // At expiry bonus does not apply
             expiry = now_sec;
-            let node_info = NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
+            let node_info =
+                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
 
             // After expiry bonus does not apply
             expiry = now_sec - 1;
-            let node_info = NodeInfo::new(owner.clone(), signing_key, node_serial, expiry, stake_info);
+            let node_info =
+                NodeInfo::new(owner.clone(), signing_key, node_serial, expiry, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
         });
@@ -209,7 +212,8 @@ mod stake_and_reward_weight_tests {
                     reward_period: <RewardPeriod<TestRuntime>>::get().current,
                     amount: 1_000u128,
                     new_total: 3_000u128,
-                }.into(),
+                }
+                .into(),
             );
         });
     }
@@ -264,8 +268,7 @@ mod stake_and_reward_weight_tests {
             );
 
             // Move time to: expiry so 10% is available.
-            let after_expiry_sec = start_sec
-                + AutoStakeDurationSec::<TestRuntime>::get();
+            let after_expiry_sec = start_sec + AutoStakeDurationSec::<TestRuntime>::get();
 
             Timestamp::set_timestamp(after_expiry_sec * 1000);
 
