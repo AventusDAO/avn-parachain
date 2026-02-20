@@ -253,7 +253,7 @@ impl<Balance: Copy + AtLeast32BitUnsigned + Zero + Saturating + Debug> StakeInfo
         // If this is first time, initialize boundary at expiry
         let mut next_unstake: Duration = self.next_unstake_time_sec.unwrap_or(auto_stake_expiry);
 
-        if now_sec < next_unstake || self.max_unstake_per_period.is_none() {
+        if now_sec < next_unstake {
             // Not yet time for the next unstake period, so return current allowances.
             return Ok((self.unlocked_stake.min(self.amount), Some(next_unstake)))
         }

@@ -61,7 +61,7 @@ mod stake_and_reward_weight_tests {
     }
 
     #[test]
-    fn genesis_bonus_applies_during_auto_stake_window() {
+    fn genesis_bonus_respects_auto_stake_window() {
         let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
             .with_genesis_config()
             .for_offchain_worker()
@@ -69,6 +69,9 @@ mod stake_and_reward_weight_tests {
         ext.execute_with(|| {
             let owner = get_owner(1);
             let signing_key = get_signing_key(1);
+            // Serial in 2001..=5000 => 1.5x
+            let node_serial = 3_000u32;
+            let stake_info = StakeInfo::new(0, 0, None, None, None);
 
             // owner has 1 node (needed for stake multiplier denominator)
             OwnedNodesCount::<TestRuntime>::insert(&owner, 1u32);
@@ -76,39 +79,24 @@ mod stake_and_reward_weight_tests {
             // Within auto-stake window => genesis bonus applies
             let now_sec: u64 = 10;
             Timestamp::set_timestamp(now_sec * 1000);
-            let expiry = now_sec + 10_000;
 
-            // Serial in 2001..=5000 => 1.5x
-            let stake_info = StakeInfo::new(0, 0, Some(now_sec + 10_000), None, None);
-            let node_info = NodeInfo::new(owner.clone(), signing_key, 3_000u32, expiry, stake_info);
-
+            // Before expiry => bonus applies
+            let mut expiry = now_sec + 1;
+            let node_info = NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
+            assert_eq!(w, 150_000_000u128); // 1.5x base weight of 100_000_000
 
-            // base 1_000_000 * 150%
-            assert_eq!(w, 150_000_000u128);
-        });
-    }
-
-    #[test]
-    fn genesis_bonus_expires_after_auto_stake_window() {
-        let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
-            .with_genesis_config()
-            .for_offchain_worker()
-            .as_externality_with_state();
-        ext.execute_with(|| {
-            let owner = get_owner(1);
-            let signing_key = get_signing_key(1);
-            OwnedNodesCount::<TestRuntime>::insert(&owner, 1u32);
-
-            let now_sec: u64 = 1_000;
-            Timestamp::set_timestamp(now_sec * 1000);
-
-            // expiry in the past => no bonus
-            let stake_info = StakeInfo::new(0, 0, Some(now_sec + 10_000), None, None);
-            let node_info = NodeInfo::new(owner, signing_key, 3_000u32, now_sec - 1, stake_info);
-
+            // At expiry bonus does not apply
+            expiry = now_sec;
+            let node_info = NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
-            assert_eq!(w, 100_000_000u128);
+            assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
+
+            // After expiry bonus does not apply
+            expiry = now_sec - 1;
+            let node_info = NodeInfo::new(owner.clone(), signing_key, node_serial, expiry, stake_info);
+            let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
+            assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
         });
     }
 
@@ -121,14 +109,16 @@ mod stake_and_reward_weight_tests {
         ext.execute_with(|| {
             let owner = get_owner(1);
             let node = get_node(1);
+            // outside genesis bonus range so only stake bonus applies
+            let node_serial = 10_500u32;
             let stake_amount: u128 = 4_000_000_000_000_000_000_000; // 4k AVT with 18 decimals
-                                                                    // Ensure add_stake is allowed
+
             NodeRegistry::<TestRuntime>::insert(
                 &node,
                 NodeInfo {
                     owner: owner.clone(),
                     signing_key: get_signing_key(1),
-                    serial_number: 10_500u32,
+                    serial_number: node_serial,
                     auto_stake_expiry: 0,
                     stake: StakeInfo::new(0, 0, None, None, None),
                 },
@@ -154,7 +144,7 @@ mod stake_and_reward_weight_tests {
             let node_info = NodeInfo::new(
                 owner.clone(),
                 get_signing_key(1),
-                10_500u32,
+                node_serial,
                 now_sec - 1,
                 stake_info,
             );
@@ -199,6 +189,7 @@ mod stake_and_reward_weight_tests {
                 node,
                 2_000u128
             ));
+
             assert_ok!(NodeManager::add_stake(
                 RuntimeOrigin::signed(owner.clone()),
                 node,
@@ -210,6 +201,16 @@ mod stake_and_reward_weight_tests {
 
             let reserved = Balances::reserved_balance(&owner);
             assert_eq!(reserved, 3_000u128);
+
+            System::assert_last_event(
+                Event::StakeAdded {
+                    owner,
+                    node_id: node,
+                    reward_period: <RewardPeriod<TestRuntime>>::get().current,
+                    amount: 1_000u128,
+                    new_total: 3_000u128,
+                }.into(),
+            );
         });
     }
 
@@ -262,11 +263,10 @@ mod stake_and_reward_weight_tests {
                 Error::<TestRuntime>::AutoStakeStillActive
             );
 
-            // Move time to: expiry + 1 unstake period + 1s so 10% is available.
+            // Move time to: expiry so 10% is available.
             let after_expiry_sec = start_sec
-                + 7 * 24 * 60 * 60  // auto-stake window
-                + 7 * 24 * 60 * 60  // 1 unstake period
-                + 1;
+                + AutoStakeDurationSec::<TestRuntime>::get();
+
             Timestamp::set_timestamp(after_expiry_sec * 1000);
 
             // First unstake: max 10% = 1_000
@@ -583,13 +583,3 @@ mod stake_and_reward_weight_tests {
             });
     }
 }
-
-/*
-    - Register
-    - Set time past auto-stake expiry
-    - Try to unstake with None (should fail because no stake)
-    - Add stake
-    - Try to unstake with None (should succeed and unstake max allowed)
-    - Check that the unstaked amount matches max unstake percentage of the staked amount
-
-*/

@@ -44,15 +44,27 @@ mod node_registration {
                 context.origin,
                 context.node_id,
                 context.owner,
-                context.signing_key,
+                context.signing_key.clone(),
             ));
 
             // The node is owned by the owner
             assert!(<OwnedNodes<TestRuntime>>::get(&context.owner, &context.node_id).is_some());
             // The node is registered
-            assert!(<NodeRegistry<TestRuntime>>::get(&context.node_id).is_some());
+            let node_info = <NodeRegistry<TestRuntime>>::get(&context.node_id);
+            assert!(node_info.is_some());
             // Total node counter is increased
             assert_eq!(<TotalRegisteredNodes<TestRuntime>>::get(), 1);
+
+            let auto_stake_duration_sec = AutoStakeDurationSec::<TestRuntime>::get();
+
+            let node_info = node_info.unwrap();
+            assert_eq!(node_info.owner, context.owner);
+            assert_eq!(node_info.signing_key, context.signing_key);
+            assert_eq!(node_info.stake.amount, 0);
+            assert_eq!(node_info.stake.unlocked_stake, 0);
+            assert_eq!(node_info.stake.next_unstake_time_sec, Some(auto_stake_duration_sec));
+            assert_eq!(node_info.stake.max_unstake_per_period, None);
+            assert_eq!(node_info.stake.staking_restriction_expiry_sec, Some(auto_stake_duration_sec + RestrictedUnstakeDurationSec::<TestRuntime>::get()));
             // The correct event is emitted
             System::assert_last_event(
                 Event::NodeRegistered { owner: context.owner, node: context.node_id }.into(),

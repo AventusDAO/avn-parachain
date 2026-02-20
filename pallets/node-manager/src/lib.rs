@@ -76,6 +76,7 @@ use sp_std::prelude::*;
 
 const PAYOUT_REWARD_CONTEXT: &'static [u8] = b"NodeManager_RewardPayout";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
+const MAX_BATCH_SIZE: u32 = 1_000;
 pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
@@ -376,6 +377,7 @@ pub mod pallet {
         StakeAdded {
             owner: T::AccountId,
             node_id: NodeId<T>,
+            reward_period: RewardPeriodIndex,
             amount: BalanceOf<T>,
             new_total: BalanceOf<T>,
         },
@@ -383,6 +385,7 @@ pub mod pallet {
         StakeRemoved {
             owner: T::AccountId,
             node_id: NodeId<T>,
+            reward_period: RewardPeriodIndex,
             amount: BalanceOf<T>,
             new_total: BalanceOf<T>,
         },
@@ -598,7 +601,7 @@ pub mod pallet {
                     )
                 },
                 AdminConfig::BatchSize(size) => {
-                    ensure!(size > 0, Error::<T>::BatchSizeInvalid);
+                    ensure!(size > 0 && size <= MAX_BATCH_SIZE, Error::<T>::BatchSizeInvalid);
                     <MaxBatchSize<T>>::mutate(|s| *s = size.clone());
                     Self::deposit_event(Event::BatchSizeSet { new_size: size });
                     return Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_batch_size())
@@ -682,7 +685,7 @@ pub mod pallet {
 
         /// Offchain call: pay and remove up to `MAX_BATCH_SIZE` nodes in the oldest unpaid period.
         #[pallet::call_index(2)]
-        #[pallet::weight(<T as Config>::WeightInfo::offchain_pay_nodes(1_000))]
+        #[pallet::weight(<T as Config>::WeightInfo::offchain_pay_nodes(MAX_BATCH_SIZE))]
         pub fn offchain_pay_nodes(
             origin: OriginFor<T>,
             reward_period_index: RewardPeriodIndex,
@@ -987,10 +990,10 @@ pub mod pallet {
                 <OwnedNodes<T>>::contains_key(&owner, &node_id),
                 Error::<T>::NodeNotOwnedByOwner
             );
-
+            let reward_period = RewardPeriod::<T>::get().current;
             let new_total = Self::do_add_stake(&owner, &node_id, amount)?;
 
-            Self::deposit_event(Event::StakeAdded { owner, node_id, amount, new_total });
+            Self::deposit_event(Event::StakeAdded { owner, node_id, reward_period, amount, new_total });
             Ok(())
         }
 
@@ -1007,6 +1010,7 @@ pub mod pallet {
                 Error::<T>::NodeNotOwnedByOwner
             );
 
+            let reward_period = RewardPeriod::<T>::get().current;
             let now_sec = Self::time_now_sec();
             // before we read the node, try to snapshot the stake if auto-stake duration has passed.
             Self::set_max_unstake_per_period_if_required(
@@ -1059,7 +1063,7 @@ pub mod pallet {
 
             Self::update_reserves(&owner, amount, StakeOperation::Remove)?;
 
-            Self::deposit_event(Event::StakeRemoved { owner, node_id, amount, new_total });
+            Self::deposit_event(Event::StakeRemoved { owner, node_id, reward_period, amount, new_total });
 
             Ok(())
         }

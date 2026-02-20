@@ -70,7 +70,7 @@ impl<T: Config> Pallet<T> {
         // Pay the fee to the treasury
         T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id)?;
 
-        if node_info.auto_stake_expiry < Self::time_now_sec() {
+        if Self::time_now_sec() >= node_info.auto_stake_expiry {
             // We are outside the auto stake period, finish paying.
             Self::deposit_event(Event::RewardPaid {
                 reward_period: *period,

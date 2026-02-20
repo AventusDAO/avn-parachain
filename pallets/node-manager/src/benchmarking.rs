@@ -560,7 +560,7 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         let stake = node_info.stake;
         assert!(stake.amount == 100u32.into());
-        assert_last_event::<T>(Event::StakeAdded { owner, node_id, amount: 100u32.into(), new_total: stake.amount }.into());
+        assert_last_event::<T>(Event::StakeAdded { owner, node_id, reward_period: reward_period_index, amount: 100u32.into(), new_total: stake.amount }.into());
     }
 
     remove_stake {
@@ -589,7 +589,7 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         let stake = node_info.stake;
         assert!(stake.amount == (100u32 - 10u32).into());
-        assert_last_event::<T>(Event::StakeRemoved { owner, node_id, amount: 10u32.into(), new_total: stake.amount }.into());
+        assert_last_event::<T>(Event::StakeRemoved { owner, node_id, reward_period: reward_period_index, amount: 10u32.into(), new_total: stake.amount }.into());
     }
 }
 

@@ -12,7 +12,7 @@ impl<T: Config> Pallet<T> {
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         timestamp_sec: Duration,
     ) -> FixedU128 {
-        if node_info.auto_stake_expiry <= timestamp_sec {
+        if timestamp_sec >= node_info.auto_stake_expiry  {
             return FixedU128::one() // no bonus
         }
 
@@ -97,22 +97,6 @@ impl<T: Config> Pallet<T> {
         let node_info = NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotFound)?;
         let mut stake: StakeInfo<BalanceOf<T>> = node_info.stake;
         let new_total = stake.amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
-
-        // This shouldn't happen because we set it on registration
-        if stake.next_unstake_time_sec.is_none() {
-            let expiry =
-                node_info.auto_stake_expiry.saturating_add(AutoStakeDurationSec::<T>::get());
-
-            log::warn!(
-                "⚠️ Node ({:?}) is missing staking expiry information. Reseting expiry to {:?}.",
-                node_id,
-                expiry
-            );
-
-            stake.next_unstake_time_sec = Some(expiry);
-            stake.staking_restriction_expiry_sec =
-                Some(expiry.saturating_add(<RestrictedUnstakeDurationSec<T>>::get()));
-        }
 
         stake.amount = new_total;
 
