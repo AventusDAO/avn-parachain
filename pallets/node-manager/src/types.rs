@@ -31,12 +31,7 @@ impl<
             + Saturating,
     > RewardPeriodInfo<B>
 {
-    pub fn new(
-        current: RewardPeriodIndex,
-        first: B,
-        length: u32,
-        uptime_threshold: u32,
-    ) -> RewardPeriodInfo<B> {
+    pub fn new(current: RewardPeriodIndex, first: B, length: u32, uptime_threshold: u32) -> Self {
         RewardPeriodInfo { current, first, length, uptime_threshold }
     }
 
@@ -78,11 +73,7 @@ pub struct RewardPotInfo<Balance> {
 }
 
 impl<Balance: Copy> RewardPotInfo<Balance> {
-    pub fn new(
-        total_reward: Balance,
-        uptime_threshold: u32,
-        reward_end_time: Duration,
-    ) -> RewardPotInfo<Balance> {
+    pub fn new(total_reward: Balance, uptime_threshold: u32, reward_end_time: Duration) -> Self {
         RewardPotInfo { total_reward, uptime_threshold, reward_end_time }
     }
 }
@@ -110,7 +101,7 @@ pub struct UptimeInfo<BlockNumber> {
 }
 
 impl<BlockNumber: Copy> UptimeInfo<BlockNumber> {
-    pub fn new(count: u64, weight: u128, last_reported: BlockNumber) -> UptimeInfo<BlockNumber> {
+    pub fn new(count: u64, weight: u128, last_reported: BlockNumber) -> Self {
         UptimeInfo { count, weight, last_reported }
     }
 }
@@ -147,6 +138,45 @@ impl<AccountId: Clone + FullCodec + MaxEncodedLen + TypeInfo> PaymentPointer<Acc
     Encode,
     Decode,
     DecodeWithMemTracking,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
+pub enum UnstakeRestriction<Balance> {
+    /// Default state. Unstaking is not permitted.
+    #[default]
+    Locked,
+    /// There are no restrictions on unstaking
+    Free,
+    /// A periodic unlock allowance applies until `expires_sec`, after which the node is
+    /// treated identically to `Free`.
+    Periodic {
+        /// Amount unlocked per `unstake_period` (snapshot_amount x `MaxUnstakePercentage`).
+        per_period_allowance: Balance,
+        /// Timestamp at which all restrictions are fully lifted.
+        expires_sec: Duration,
+    },
+}
+
+impl<Balance: Copy> UnstakeRestriction<Balance> {
+    pub fn per_period_allowance(&self) -> Option<Balance> {
+        match self {
+            UnstakeRestriction::Periodic { per_period_allowance, .. } =>
+                Some(*per_period_allowance),
+            _ => None,
+        }
+    }
+}
+
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
     Default,
     Clone,
     PartialEq,
@@ -171,7 +201,7 @@ pub struct NodeInfo<SignerId, AccountId, Balance> {
 impl<
         AccountId: Clone + FullCodec + MaxEncodedLen + TypeInfo,
         SignerId: Clone + FullCodec + MaxEncodedLen + TypeInfo,
-        Balance: Clone + FullCodec + MaxEncodedLen + TypeInfo,
+        Balance: Clone + FullCodec + MaxEncodedLen + TypeInfo + Zero + AtLeast32BitUnsigned + Debug + Copy,
     > NodeInfo<SignerId, AccountId, Balance>
 {
     pub fn new(
@@ -186,6 +216,82 @@ impl<
 
     pub fn can_unstake(&self, now_sec: Duration) -> bool {
         now_sec >= self.auto_stake_expiry
+    }
+
+    pub fn try_snapshot_stake(
+        &mut self,
+        now_sec: Duration,
+        max_pct: Perbill,
+        restriction_duration: Duration,
+    ) {
+        // Already resolved — nothing to do.
+        if !matches!(self.stake.restriction, UnstakeRestriction::Locked) {
+            return
+        }
+        // Expiry not yet reached — stay Locked.
+        if now_sec < self.auto_stake_expiry {
+            return
+        }
+
+        self.stake.restriction = if self.stake.amount.is_zero() {
+            // No stake was present at expiry. User is free to operate without restriction.
+            UnstakeRestriction::Free
+        } else {
+            // Snapshot the stake present at expiry and set up periodic unlock.
+            UnstakeRestriction::Periodic {
+                per_period_allowance: max_pct * self.stake.amount,
+                expires_sec: self.auto_stake_expiry.saturating_add(restriction_duration),
+            }
+        };
+    }
+
+    pub fn available_to_unstake(
+        &self,
+        now_sec: Duration,
+        unstake_period: Duration,
+    ) -> Result<(Balance, Option<Duration>), DispatchError> {
+        if self.stake.amount.is_zero() || unstake_period == 0 {
+            return Ok((Zero::zero(), self.stake.next_unstake_time_sec))
+        }
+
+        match &self.stake.restriction {
+            UnstakeRestriction::Locked => Ok((Zero::zero(), None)),
+            UnstakeRestriction::Free => Ok((self.stake.amount, None)),
+            UnstakeRestriction::Periodic { per_period_allowance, expires_sec } => {
+                // All restrictions lifted — treat as Free.
+                if now_sec >= *expires_sec {
+                    return Ok((self.stake.amount, None))
+                }
+
+                // Determine the boundary of the current unstake period.
+                let next_unstake =
+                    self.stake.next_unstake_time_sec.unwrap_or(self.auto_stake_expiry);
+
+                // Still within the current period return already free allowance only.
+                if now_sec < next_unstake {
+                    return Ok((
+                        self.stake.unlocked_stake.min(self.stake.amount),
+                        Some(next_unstake),
+                    ))
+                }
+
+                let elapsed = now_sec.saturating_sub(next_unstake);
+                let periods = 1u64.saturating_add(elapsed / unstake_period);
+                let newly_unlocked = per_period_allowance.saturating_mul((periods as u32).into());
+                let available = self
+                    .stake
+                    .unlocked_stake
+                    .checked_add(&newly_unlocked)
+                    .ok_or(ArithmeticError::Overflow)?
+                    .min(self.stake.amount);
+
+                let next = next_unstake
+                    .checked_add(periods.saturating_mul(unstake_period))
+                    .ok_or(ArithmeticError::Overflow)?;
+
+                Ok((available, Some(next)))
+            },
+        }
     }
 }
 
@@ -209,81 +315,18 @@ pub struct StakeInfo<Balance> {
     pub unlocked_stake: Balance,
     /// The timestamp (seconds) that represents the next unstaking period.
     pub next_unstake_time_sec: Option<Duration>,
-    /// The max amount that can be unstaked in a period.
-    pub max_unstake_per_period: Option<Balance>,
-    /// The timestamp where all staking restrictions are lifted and user can unstake all without
-    /// limit.
-    pub staking_restriction_expiry_sec: Option<Duration>,
+    /// Unstake restriction state.
+    pub restriction: UnstakeRestriction<Balance>,
 }
 
-impl<Balance: Copy + AtLeast32BitUnsigned + Zero + Saturating + Debug> StakeInfo<Balance> {
+impl<Balance: Copy + Debug> StakeInfo<Balance> {
     pub fn new(
         amount: Balance,
         unlocked_stake: Balance,
         next_unstake_time_sec: Option<Duration>,
-        max_unstake_per_period: Option<Balance>,
-        staking_restriction_expiry_sec: Option<Duration>,
-    ) -> StakeInfo<Balance> {
-        StakeInfo {
-            amount,
-            unlocked_stake,
-            next_unstake_time_sec,
-            max_unstake_per_period,
-            staking_restriction_expiry_sec,
-        }
-    }
-
-    pub fn available_to_unstake(
-        &self,
-        now_sec: Duration,
-        auto_stake_expiry: Duration,
-        unstake_period: Duration,
-    ) -> Result<(Balance, Option<Duration>), DispatchError> {
-        if self.amount.is_zero() || now_sec < auto_stake_expiry || unstake_period == 0 {
-            return Ok((Zero::zero(), self.next_unstake_time_sec))
-        }
-
-        // If all restrictions are lifted, user can unstake everything.
-        if let Some(restriction_expiry) = self.staking_restriction_expiry_sec {
-            if now_sec >= restriction_expiry {
-                return Ok((self.amount, None))
-            }
-        }
-
-        // If this is first time, initialize boundary at expiry
-        let mut next_unstake: Duration = self.next_unstake_time_sec.unwrap_or(auto_stake_expiry);
-
-        if now_sec < next_unstake {
-            // Not yet time for the next unstake period, so return current allowances.
-            return Ok((self.unlocked_stake.min(self.amount), Some(next_unstake)))
-        }
-
-        if self.max_unstake_per_period.is_none() {
-            // We have gone over next unstake but max_unstake_per_period is not set, which means
-            // there was no stake on expiry so allow them to unstake.
-            return Ok((self.unlocked_stake.min(self.amount), None))
-        }
-
-        let elapsed = now_sec.saturating_sub(next_unstake);
-        let periods = 1u64.saturating_add(elapsed / unstake_period);
-
-        // We know max_unstake_per_period is set if we get here but avoid a panic.
-        let newly_unlocked_stake = self
-            .max_unstake_per_period
-            .unwrap_or(Zero::zero())
-            .saturating_mul((periods as u32).into());
-
-        let available = self
-            .unlocked_stake
-            .checked_add(&newly_unlocked_stake)
-            .ok_or(ArithmeticError::Overflow)?
-            .min(self.amount);
-        next_unstake = next_unstake
-            .checked_add(periods.saturating_mul(unstake_period))
-            .ok_or(ArithmeticError::Overflow)?;
-
-        // Return available to unstake and the next unstake time (so caller can persist).
-        Ok((available, Some(next_unstake)))
+        restriction: UnstakeRestriction<Balance>,
+    ) -> Self {
+        StakeInfo { amount, unlocked_stake, next_unstake_time_sec, restriction }
     }
 }
 
@@ -318,15 +361,14 @@ pub enum AdminConfig<AccountId, Balance> {
 )]
 pub struct TotalUptimeInfo {
     /// Total number of uptime reported for reward period
-    // TODO NS: rename _total_heartbeats
-    pub _total_heartbeats: u64,
+    pub total_heartbeats: u64,
     /// Total weight of the total heartbeats reported for reward period
     pub total_weight: u128,
 }
 
 impl TotalUptimeInfo {
-    pub fn new(_total_heartbeats: u64, total_weight: u128) -> TotalUptimeInfo {
-        TotalUptimeInfo { _total_heartbeats, total_weight }
+    pub fn new(total_heartbeats: u64, total_weight: u128) -> TotalUptimeInfo {
+        TotalUptimeInfo { total_heartbeats, total_weight }
     }
 }
 

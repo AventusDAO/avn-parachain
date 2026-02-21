@@ -42,7 +42,7 @@ impl<T: Config> Pallet<T> {
     }
 
     // This function calculated bonus base on VirtualNodeStake interval.
-    // Ex: 2000 AVT = 1 virutal node, 3999 AVT = 1 virtual node, 4000 AVT = 2 virtual nodes...
+    // Ex: 2000 AVT = 1 virtual node, 3999 AVT = 1 virtual node, 4000 AVT = 2 virtual nodes...
     fn calculate_stake_bonus_step(
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
     ) -> FixedU128 {
@@ -84,26 +84,88 @@ impl<T: Config> Pallet<T> {
         amount: BalanceOf<T>,
     ) -> Result<BalanceOf<T>, DispatchError> {
         ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
-        let free = T::Currency::free_balance(&owner);
-        ensure!(free >= amount, Error::<T>::InsufficientFreeBalance);
 
-        // before we read the node, try to snapshot the stake if auto-stake duration has passed.
-        Self::set_max_unstake_per_period_if_required(
-            &node_id,
-            Self::time_now_sec(),
-            <MaxUnstakePercentage<T>>::get(),
-        );
+        let now_sec = Self::time_now_sec();
+        let max_pct = <MaxUnstakePercentage<T>>::get();
+        let restriction_duration = <RestrictedUnstakeDurationSec<T>>::get();
 
-        let node_info = NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotFound)?;
-        let mut stake: StakeInfo<BalanceOf<T>> = node_info.stake;
-        let new_total = stake.amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
-
-        stake.amount = new_total;
+        let node_info =
+            NodeRegistry::<T>::try_mutate(node_id, |maybe| -> Result<_, DispatchError> {
+                let info = maybe.as_mut().ok_or(Error::<T>::NodeNotFound)?;
+                info.try_snapshot_stake(now_sec, max_pct, restriction_duration);
+                info.stake.amount =
+                    info.stake.amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
+                Ok(info.clone())
+            })?;
 
         Self::update_reserves(owner, amount, StakeOperation::Add)?;
-        NodeRegistry::<T>::insert(node_id, NodeInfo { stake, ..node_info });
 
-        Ok(new_total)
+        Ok(node_info.stake.amount)
+    }
+
+    pub fn do_remove_stake(
+        owner: &T::AccountId,
+        node_id: &NodeId<T>,
+        maybe_amount: Option<BalanceOf<T>>,
+    ) -> Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
+        let now_sec = Self::time_now_sec();
+        let max_pct = <MaxUnstakePercentage<T>>::get();
+        let restriction_duration = <RestrictedUnstakeDurationSec<T>>::get();
+        let unstake_period = <UnstakePeriodSec<T>>::get();
+
+        let (amount, new_total) = NodeRegistry::<T>::try_mutate(
+            node_id,
+            |maybe| -> Result<(BalanceOf<T>, BalanceOf<T>), DispatchError> {
+                let info = maybe.as_mut().ok_or(Error::<T>::NodeNotFound)?;
+
+                // Transition out of Locked if expiry has passed.
+                info.try_snapshot_stake(now_sec, max_pct, restriction_duration);
+
+                // Auto-stake period must have ended before any unstake is permitted.
+                ensure!(info.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
+
+                let (available, next_unstake) =
+                    info.available_to_unstake(now_sec, unstake_period).map_err(|e| match e {
+                        DispatchError::Arithmetic(_) => Error::<T>::BalanceOverflow.into(),
+                        other => other,
+                    })?;
+
+                let amount = match maybe_amount {
+                    Some(requested) => {
+                        ensure!(!requested.is_zero(), Error::<T>::ZeroAmount);
+                        ensure!(
+                            info.stake.amount >= requested,
+                            Error::<T>::InsufficientStakedBalance
+                        );
+                        ensure!(requested <= available, Error::<T>::NoAvailableStakeToUnstake);
+                        requested
+                    },
+                    None => {
+                        // Withdraw everything currently available.
+                        ensure!(available > Zero::zero(), Error::<T>::NoAvailableStakeToUnstake);
+                        available
+                    },
+                };
+
+                let new_total = info
+                    .stake
+                    .amount
+                    .checked_sub(&amount)
+                    .ok_or(Error::<T>::InsufficientStakedBalance)?;
+
+                info.stake.amount = new_total;
+                info.stake.next_unstake_time_sec = next_unstake;
+                // Carry forward any allowance not consumed this period.
+                info.stake.unlocked_stake =
+                    available.checked_sub(&amount).ok_or(Error::<T>::BalanceUnderflow)?;
+
+                Ok((amount, new_total))
+            },
+        )?;
+
+        Self::update_reserves(owner, amount, StakeOperation::Remove)?;
+
+        Ok((amount, new_total))
     }
 
     pub fn update_reserves(
@@ -125,23 +187,5 @@ impl<T: Config> Pallet<T> {
                 Ok(())
             },
         }
-    }
-
-    pub fn set_max_unstake_per_period_if_required(
-        node_id: &NodeId<T>,
-        now_sec: Duration,
-        max_unstake_percentage: Perbill,
-    ) {
-        NodeRegistry::<T>::mutate(node_id, |maybe_node_info| {
-            if let Some(node_info) = maybe_node_info {
-                if now_sec >= node_info.auto_stake_expiry &&
-                    node_info.stake.max_unstake_per_period.is_none() &&
-                    !node_info.stake.amount.is_zero()
-                {
-                    node_info.stake.max_unstake_per_period =
-                        Some(max_unstake_percentage * node_info.stake.amount);
-                }
-            }
-        });
     }
 }

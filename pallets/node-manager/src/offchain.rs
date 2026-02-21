@@ -125,24 +125,21 @@ impl<T: Config> Pallet<T> {
     pub fn can_trigger_payment() -> Result<bool, ()> {
         let oldest_period = OldestUnpaidRewardPeriodIndex::<T>::get();
         let current_period = RewardPeriod::<T>::get().current;
-        let last_paid_pointer = LastPaidPointer::<T>::get();
 
+        if oldest_period >= current_period { return Ok(false) }
+
+        let last_paid_pointer = LastPaidPointer::<T>::get();
         if last_paid_pointer.is_some() {
             log::info!("👷 Resuming payment for period: {:?}", oldest_period);
-            return Ok(true)
-        }
-
-        if oldest_period < current_period && last_paid_pointer.is_none() {
+        } else {
             log::info!(
                 "👷 Triggering payment for period: {:?}. Current period: {:?}",
                 oldest_period,
                 current_period
             );
-
-            return Ok(true)
         }
 
-        return Ok(false)
+        return Ok(true)
     }
 
     pub fn get_node_from_signing_key() -> Option<(T::AccountId, T::SignerId)> {

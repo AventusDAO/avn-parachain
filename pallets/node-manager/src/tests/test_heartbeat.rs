@@ -121,7 +121,7 @@ mod given_a_reward_period {
             assert_eq!(uptime_info.count, 1);
             assert_eq!(uptime_info.last_reported, System::block_number());
             assert_eq!(uptime_info.weight, expected_weight);
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period).total_heartbeats, 1);
             System::assert_last_event(
                 Event::HeartbeatReceived {
                     reward_period_index: reward_period,
@@ -240,7 +240,7 @@ mod given_a_reward_period {
                 <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
             assert_eq!(uptime_info.count, 2);
             assert_eq!(uptime_info.last_reported, System::block_number());
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 2);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period).total_heartbeats, 2);
             System::assert_last_event(
                 Event::HeartbeatReceived {
                     reward_period_index: reward_period,
@@ -446,7 +446,7 @@ mod given_a_reward_period {
             };
 
             assert_eq!(uptime_info.weight, expected_weight);
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period).total_heartbeats, 1);
             System::assert_last_event(
                 Event::HeartbeatReceived {
                     reward_period_index: reward_period,
@@ -505,7 +505,7 @@ mod given_a_reward_period {
             let expected_weight = HEARTBEAT_BASE_WEIGHT;
 
             assert_eq!(uptime_info.weight, expected_weight);
-            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period)._total_heartbeats, 1);
+            assert_eq!(<TotalUptime<TestRuntime>>::get(&reward_period).total_heartbeats, 1);
             System::assert_last_event(
                 Event::HeartbeatReceived {
                     reward_period_index: reward_period,
@@ -554,7 +554,7 @@ mod across_multiple_reward_periods {
                 <NodeUptime<TestRuntime>>::get(old_reward_period, &context.node_id).unwrap();
             assert_eq!(uptime_info.count, old_heartbeat_count);
             assert_eq!(
-                <TotalUptime<TestRuntime>>::get(&old_reward_period)._total_heartbeats,
+                <TotalUptime<TestRuntime>>::get(&old_reward_period).total_heartbeats,
                 old_heartbeat_count
             );
 
@@ -562,7 +562,7 @@ mod across_multiple_reward_periods {
                 <NodeUptime<TestRuntime>>::get(new_reward_period, &context.node_id).unwrap();
             assert_eq!(uptime_info.count, new_heartbeat_count);
             assert_eq!(
-                <TotalUptime<TestRuntime>>::get(&new_reward_period)._total_heartbeats,
+                <TotalUptime<TestRuntime>>::get(&new_reward_period).total_heartbeats,
                 new_heartbeat_count
             );
 

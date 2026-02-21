@@ -46,6 +46,7 @@ impl<T: Config> Pallet<T> {
         Ok(ratio.mul_floor(total_rewards_u128).saturated_into())
     }
 
+    // ** Note **: this function will not roll back in case of error, so make sure storage changes are done in the right order.
     pub fn pay_reward(
         period: &RewardPeriodIndex,
         node_id: NodeId<T>,
@@ -54,32 +55,29 @@ impl<T: Config> Pallet<T> {
     ) -> DispatchResult {
         let node_owner = node_info.owner.clone();
         let reward_pot_account_id = Self::compute_reward_account_id();
-
-        // charge x% to Aventus and pay the rest
         let appchain_fee = Self::calculate_appchain_fee(amount);
         let net_reward = amount.saturating_sub(appchain_fee);
 
-        // First pay the owner
+        // First pay the owner, this is the most important step here.
         T::Currency::transfer(
             &reward_pot_account_id,
             &node_owner,
             net_reward,
             ExistenceRequirement::KeepAlive,
         )?;
+        // Include 0 reward payment in this event for better visibility.
+        Self::deposit_event(Event::RewardPaid {
+            reward_period: *period,
+            owner: node_owner.clone(),
+            node: node_id.clone(),
+            amount: net_reward,
+        });
 
         // Pay the fee to the treasury
         T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id)?;
 
-        if Self::time_now_sec() >= node_info.auto_stake_expiry {
-            // We are outside the auto stake period, finish paying.
-            Self::deposit_event(Event::RewardPaid {
-                reward_period: *period,
-                owner: node_owner,
-                node: node_id,
-                amount: net_reward,
-            });
-        } else {
-            // We are within the auto stake period, auto stake the rewards.
+        if Self::time_now_sec() < node_info.auto_stake_expiry && net_reward > Zero::zero() {
+            // Best-effort auto-stake. Failure is tolerated because funds are already in free balance.
             Self::do_add_stake(&node_owner, &node_id, net_reward)
                 .map_err(|_| Error::<T>::AutoStakeFailed)?;
 

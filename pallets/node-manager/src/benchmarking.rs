@@ -82,7 +82,7 @@ fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPerio
     });
 
     <TotalUptime<T>>::mutate(&reward_period_index, |total| {
-        total._total_heartbeats = total._total_heartbeats.saturating_add(1u64);
+        total.total_heartbeats = total.total_heartbeats.saturating_add(1u64);
         total.total_weight = total.total_weight.saturating_add(weight);
     });
 }

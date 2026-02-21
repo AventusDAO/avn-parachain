@@ -98,7 +98,7 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
         });
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
-            total._total_heartbeats = total._total_heartbeats.saturating_add(uptime);
+            total.total_heartbeats = total.total_heartbeats.saturating_add(uptime);
             total.total_weight = total.total_weight.saturating_add(weight);
         });
     }

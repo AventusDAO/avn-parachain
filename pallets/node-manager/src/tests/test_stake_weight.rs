@@ -71,7 +71,7 @@ mod stake_and_reward_weight_tests {
             let signing_key = get_signing_key(1);
             // Serial in 2001..=5000 => 1.5x
             let node_serial = 3_000u32;
-            let stake_info = StakeInfo::new(0, 0, None, None, None);
+            let stake_info = StakeInfo::new(0, 0, None, UnstakeRestriction::Locked);
 
             // owner has 1 node (needed for stake multiplier denominator)
             OwnedNodesCount::<TestRuntime>::insert(&owner, 1u32);
@@ -123,7 +123,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: node_serial,
                     auto_stake_expiry: 0,
-                    stake: StakeInfo::new(0, 0, None, None, None),
+                    stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
                 },
             );
 
@@ -143,7 +143,8 @@ mod stake_and_reward_weight_tests {
             Timestamp::set_timestamp(now_sec * 1000);
 
             // No genesis bonus (serial outside range OR expiry in past)
-            let stake_info = StakeInfo::new(stake_amount, 0, Some(now_sec + 10_000), None, None);
+            let stake_info =
+                StakeInfo::new(stake_amount, 0, Some(now_sec + 10_000), UnstakeRestriction::Locked);
             let node_info = NodeInfo::new(
                 owner.clone(),
                 get_signing_key(1),
@@ -178,7 +179,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: 0,
-                    stake: StakeInfo::new(0, 0, None, None, None),
+                    stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
                 },
             );
 
@@ -236,7 +237,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: (start_sec + 1) * 1000,
-                    stake: StakeInfo::new(0, 0, None, None, None),
+                    stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
                 },
             );
             OwnedNodesCount::<TestRuntime>::insert(&owner, 1u32);
@@ -325,54 +326,6 @@ mod stake_and_reward_weight_tests {
     }
 
     #[test]
-    fn remove_stake_none_fails_when_no_allowance_available() {
-        ExtBuilder::build_default()
-            .with_genesis_config()
-            .as_externality()
-            .execute_with(|| {
-                let registrar = TestAccount::new([1u8; 32]).account_id();
-                setup_registrar(&registrar);
-
-                let owner = get_owner(1);
-                let node = get_node(2);
-                let stake_amount: u128 = 10_000u128;
-
-                Balances::make_free_balance_be(&owner, 100_000 * AVT);
-                register_node(&registrar, &node, &owner, UintAuthorityId(11));
-                // At this point node has auto-stake expiry set to AutoStakeDurationSec.
-
-                // Move time to exactly auto-stake expiry,
-                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
-                Timestamp::set_timestamp(expiry_sec * 1000);
-
-                // available_to_unstake() should return 0 because there is no stake, so
-                // remove_stake(None) should error.
-                assert_noop!(
-                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node, None),
-                    Error::<TestRuntime>::NoAvailableStakeToUnstake
-                );
-
-                assert_ok!(NodeManager::add_stake(
-                    RuntimeOrigin::signed(owner.clone()),
-                    node.clone(),
-                    stake_amount
-                ));
-
-                // The same remove_stake call (at the same timestamp) should now succeed because
-                // there is a stake.
-                assert_ok!(NodeManager::remove_stake(
-                    RuntimeOrigin::signed(owner.clone()),
-                    node,
-                    None
-                ));
-
-                let post_unstake_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
-                let expected_unstake = MaxUnstakePercentage::<TestRuntime>::get() * stake_amount;
-                assert_eq!(stake_amount, post_unstake_info.stake.amount + expected_unstake);
-            });
-    }
-
-    #[test]
     fn unstake_back_to_back_partial_withdrawals_work_until_allowance_exhausted() {
         ExtBuilder::build_default()
             .with_genesis_config()
@@ -412,7 +365,7 @@ mod stake_and_reward_weight_tests {
 
                 let node_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
                 assert_eq!(
-                    node_info.stake.max_unstake_per_period,
+                    node_info.stake.restriction.per_period_allowance(),
                     Some(MaxUnstakePercentage::<TestRuntime>::get() * stake_amount)
                 );
 
@@ -521,7 +474,7 @@ mod stake_and_reward_weight_tests {
                 Timestamp::set_timestamp(t * 1000);
 
                 // At this point, on the first unstake transactions, stake_amount should be
-                // snapshotted and max_unstake_per_period should be set.
+                // snapshotted and per_period_allowance should be set.
 
                 // Withdraw part of the allowance
                 assert_ok!(NodeManager::remove_stake(
@@ -532,7 +485,7 @@ mod stake_and_reward_weight_tests {
 
                 let node_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
                 assert_eq!(
-                    node_info.stake.max_unstake_per_period,
+                    node_info.stake.restriction.per_period_allowance(),
                     Some(MaxUnstakePercentage::<TestRuntime>::get() * stake_amount)
                 );
 
@@ -568,7 +521,7 @@ mod stake_and_reward_weight_tests {
                 assert_ok!(NodeManager::remove_stake(
                     RuntimeOrigin::signed(owner.clone()),
                     node,
-                    Some(node_info.stake.max_unstake_per_period.unwrap())
+                    Some(node_info.stake.restriction.per_period_allowance().unwrap())
                 ));
 
                 // Advance 1 more period; and try to unstake more than the max.
@@ -579,9 +532,58 @@ mod stake_and_reward_weight_tests {
                     NodeManager::remove_stake(
                         RuntimeOrigin::signed(owner.clone()),
                         node,
-                        Some(node_info.stake.max_unstake_per_period.unwrap() + 1u128)
+                        Some(node_info.stake.restriction.per_period_allowance().unwrap() + 1u128)
                     ),
                     Error::<TestRuntime>::NoAvailableStakeToUnstake
+                );
+            });
+    }
+
+    #[test]
+    fn no_stake_on_expiry_allows_unstaking_of_new_stake() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let registrar = TestAccount::new([1u8; 32]).account_id();
+                setup_registrar(&registrar);
+
+                let owner = get_owner(1);
+                let node = get_node(2);
+                let stake_amount: u128 = 100_000u128;
+
+                Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
+                register_node(&registrar, &node, &owner, UintAuthorityId(11));
+                // At this point node has auto-stake expiry set to AutoStakeDurationSec.
+
+                // Move time to exactly auto-stake expiry,
+                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
+                Timestamp::set_timestamp(expiry_sec * 1000);
+
+                // there is no stake, so remove_stake(None) should error.
+                assert_noop!(
+                    NodeManager::remove_stake(RuntimeOrigin::signed(owner.clone()), node, None),
+                    Error::<TestRuntime>::NoAvailableStakeToUnstake
+                );
+
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount
+                ));
+
+                // The same remove_stake call (at the same timestamp) should now succeed because
+                // there is a stake.
+                assert_ok!(NodeManager::remove_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node,
+                    Some(stake_amount)
+                ));
+
+                let post_unstake_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                assert!(
+                    post_unstake_info.stake.amount == 0,
+                    "stake amount should be 0 after unstaking all"
                 );
             });
     }

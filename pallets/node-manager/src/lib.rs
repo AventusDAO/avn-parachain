@@ -478,6 +478,8 @@ pub mod pallet {
         BalanceOverflow,
         /// Balance underflow
         BalanceUnderflow,
+        /// Reward pot snapshot not found for the period
+        RewardPotNotFound,
     }
 
     #[pallet::config]
@@ -697,7 +699,7 @@ pub mod pallet {
             let oldest_period = OldestUnpaidRewardPeriodIndex::<T>::get();
             // Be careful when using current period. Everything here should be based on previous
             // period
-            let RewardPeriodInfo { current, length, .. } = RewardPeriod::<T>::get();
+            let RewardPeriodInfo { current, .. } = RewardPeriod::<T>::get();
 
             // Only pay for completed periods
             ensure!(
@@ -717,14 +719,7 @@ pub mod pallet {
             ensure!(total_uptime.total_weight > 0, Error::<T>::TotalUptimeNotFound);
             ensure!(maybe_node_uptime.is_some(), Error::<T>::NodeUptimeNotFound);
 
-            let reward_pot = RewardPot::<T>::get(&oldest_period).unwrap_or_else(|| {
-                RewardPotInfo::new(
-                    RewardAmount::<T>::get(),
-                    Self::calculate_uptime_threshold(length),
-                    Self::time_now_sec(),
-                )
-            });
-
+            let reward_pot = RewardPot::<T>::get(&oldest_period).ok_or(Error::<T>::RewardPotNotFound)?;
             let total_reward = reward_pot.total_reward;
 
             let mut paid_nodes = Vec::new();
@@ -773,7 +768,7 @@ pub mod pallet {
                         error: e,
                     });
                 }
-
+                // We always move on even if payment fails. Failed payments will be handled offchain.
                 last_node_paid = Some(node.clone());
                 paid_nodes.push(node.clone());
             }
@@ -830,7 +825,7 @@ pub mod pallet {
             });
 
             <TotalUptime<T>>::mutate(&current_reward_period, |total| {
-                total._total_heartbeats = total._total_heartbeats.saturating_add(1);
+                total.total_heartbeats = total.total_heartbeats.saturating_add(1);
                 total.total_weight = total.total_weight.saturating_add(weight);
             });
 
@@ -1017,57 +1012,7 @@ pub mod pallet {
             );
 
             let reward_period = RewardPeriod::<T>::get().current;
-            let now_sec = Self::time_now_sec();
-            // before we read the node, try to snapshot the stake if auto-stake duration has passed.
-            Self::set_max_unstake_per_period_if_required(
-                &node_id,
-                now_sec,
-                <MaxUnstakePercentage<T>>::get(),
-            );
-
-            let node_info =
-                NodeRegistry::<T>::get(&node_id).ok_or(Error::<T>::NodeNotRegistered)?;
-
-            ensure!(node_info.can_unstake(now_sec), Error::<T>::AutoStakeStillActive);
-
-            let mut stake = node_info.stake;
-            let current_stake_amount = stake.amount;
-
-            let (available, next_unstake) = stake
-                .available_to_unstake(
-                    now_sec,
-                    node_info.auto_stake_expiry,
-                    <UnstakePeriodSec<T>>::get(),
-                )
-                .map_err(|e| match e {
-                    DispatchError::Arithmetic(_) => Error::<T>::BalanceOverflow.into(),
-                    other => other,
-                })?;
-
-            if let Some(amount) = maybe_amount {
-                ensure!(!amount.is_zero(), Error::<T>::ZeroAmount);
-                ensure!(current_stake_amount >= amount, Error::<T>::InsufficientStakedBalance);
-                ensure!(amount <= available, Error::<T>::NoAvailableStakeToUnstake);
-            }
-
-            // If amount is not specified, unstake what is available now
-            let amount = maybe_amount.unwrap_or(available);
-            ensure!(amount > Zero::zero(), Error::<T>::NoAvailableStakeToUnstake);
-
-            // Reduce stake
-            let new_total = current_stake_amount
-                .checked_sub(&amount)
-                .ok_or(Error::<T>::InsufficientStakedBalance)?;
-
-            stake.amount = new_total;
-            stake.next_unstake_time_sec = next_unstake;
-
-            stake.unlocked_stake =
-                available.checked_sub(&amount).ok_or(Error::<T>::BalanceUnderflow)?;
-
-            NodeRegistry::<T>::insert(&node_id, NodeInfo { stake, ..node_info });
-
-            Self::update_reserves(&owner, amount, StakeOperation::Remove)?;
+            let (amount, new_total) = Self::do_remove_stake(&owner, &node_id, maybe_amount)?;
 
             Self::deposit_event(Event::StakeRemoved {
                 owner,
@@ -1311,8 +1256,6 @@ pub mod pallet {
             );
 
             let auto_stake_expiry = Self::calculate_auto_stake_expiry();
-            let staking_restriction_expiry =
-                auto_stake_expiry.saturating_add(<RestrictedUnstakeDurationSec<T>>::get());
 
             <OwnedNodes<T>>::insert(&owner, &node, ());
             <OwnedNodesCount<T>>::mutate(&owner, |count| *count = count.saturating_add(1));
@@ -1339,9 +1282,8 @@ pub mod pallet {
                     StakeInfo::<BalanceOf<T>>::new(
                         Zero::zero(),
                         Zero::zero(),
-                        Some(auto_stake_expiry),
                         None,
-                        Some(staking_restriction_expiry),
+                        UnstakeRestriction::Locked,
                     ),
                 ),
             );
