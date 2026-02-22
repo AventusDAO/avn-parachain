@@ -47,9 +47,8 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
     let stake_info = StakeInfo::<BalanceOf<T>>::new(
         Zero::zero(),
         Zero::zero(),
-        Some(stake_expiry),
         None,
-        Some(restriction_expiry),
+        UnstakeRestriction::Locked,
     );
     <NodeRegistry<T>>::insert(
         node.clone(),
