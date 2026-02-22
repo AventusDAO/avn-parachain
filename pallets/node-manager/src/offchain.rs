@@ -126,7 +126,9 @@ impl<T: Config> Pallet<T> {
         let oldest_period = OldestUnpaidRewardPeriodIndex::<T>::get();
         let current_period = RewardPeriod::<T>::get().current;
 
-        if oldest_period >= current_period { return Ok(false) }
+        if oldest_period >= current_period {
+            return Ok(false)
+        }
 
         let last_paid_pointer = LastPaidPointer::<T>::get();
         if last_paid_pointer.is_some() {

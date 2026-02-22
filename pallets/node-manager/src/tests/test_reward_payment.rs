@@ -92,7 +92,7 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
         });
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
-            total._total_heartbeats = total._total_heartbeats.saturating_add(uptime);
+            total.total_heartbeats = total.total_heartbeats.saturating_add(uptime);
             total.total_weight = total.total_weight.saturating_add(weight);
         });
     }
@@ -316,7 +316,7 @@ mod reward {
             // total_expected_uptime - 1 because we run the OCW
             let gross_new_owner_reward = Perquintill::from_rational(
                 total_expected_uptime as u128 - 1,
-                total_uptime._total_heartbeats as u128,
+                total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
                 <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
@@ -409,7 +409,7 @@ mod reward {
             // The owner has received the reward
             let gross_new_owner_reward = Perquintill::from_rational(
                 total_expected_uptime as u128,
-                total_uptime._total_heartbeats as u128,
+                total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
                 <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
@@ -506,7 +506,7 @@ mod reward {
             // The system limits the reward to the expected uptime
             let gross_new_owner_reward = Perquintill::from_rational(
                 total_expected_uptime as u128,
-                total_uptime._total_heartbeats as u128,
+                total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
                 <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
@@ -521,7 +521,7 @@ mod reward {
             //The old owner gets a smaller share of the rewards because the total_uptime has now
             // increased by the extra uptime
             let gross_old_owner_reward =
-                Perquintill::from_rational(1u128, total_uptime._total_heartbeats as u128) *
+                Perquintill::from_rational(1u128, total_uptime.total_heartbeats as u128) *
                     reward_amount *
                     (node_count as u128);
             let old_owner_fee =
@@ -615,7 +615,7 @@ mod reward {
             // The owner has received the reward
             let gross_new_owner_reward = Perquintill::from_rational(
                 total_expected_uptime as u128,
-                total_uptime._total_heartbeats as u128,
+                total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
                 <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
@@ -685,8 +685,9 @@ mod reward {
                 NodeUptime::<TestRuntime>::get(reward_period_to_pay, &context.ocw_node).unwrap();
             let node_uptime_b =
                 NodeUptime::<TestRuntime>::get(reward_period_to_pay, &new_node).unwrap();
-            assert_eq!(node_uptime_a.weight, 100_000_000u128); // Node A: base
-                                                               // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
+            // Node A: base
+            assert_eq!(node_uptime_a.weight, 100_000_000u128);
+            // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
             assert_eq!(node_uptime_b.weight, 450_000_000u128);
 
             let reward_period_length = reward_period_info.length as u64;
@@ -759,6 +760,75 @@ mod reward {
 
             let reserved_b = Balances::reserved_balance(&new_owner);
             assert_eq!(reserved_b, current_stake_b);
+
+            System::assert_has_event(
+                Event::RewardAutoStaked {
+                    reward_period: reward_period_to_pay,
+                    owner: context.owner,
+                    node: context.ocw_node,
+                    amount: 172u128,
+                }
+                .into(),
+            );
+
+            System::assert_has_event(
+                Event::RewardAutoStaked {
+                    reward_period: reward_period_to_pay,
+                    owner: new_owner,
+                    node: new_node,
+                    amount: 778u128,
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn zero_reward_works() {
+        let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let context = Context::new(1 as u8);
+            let reward_period = <RewardPeriod<TestRuntime>>::get();
+            let reward_period_length = reward_period.length as u64;
+            let reward_period_to_pay = reward_period.current;
+
+            // Complete a reward period
+            roll_forward((reward_period_length - System::block_number()) + 1);
+
+            let signature =
+                UintAuthorityId(1).sign(&("DummyProof").encode()).expect("Error signing");
+            let author = mock::AVN::active_validators()[0].clone();
+            // Remove uptime for the node to make the reward 0
+            let node_id = context.ocw_node;
+
+            <NodeUptime<TestRuntime>>::mutate(&reward_period_to_pay, &node_id, |maybe_info| {
+                if let Some(info) = maybe_info.as_mut() {
+                    info.count = 0;
+                    info.last_reported = 0;
+                    info.weight = 0;
+                }
+            });
+
+            assert_ok!(NodeManager::offchain_pay_nodes(
+                RawOrigin::None.into(),
+                reward_period_to_pay,
+                author,
+                signature
+            ));
+
+            System::assert_has_event(
+                Event::RewardPaid {
+                    reward_period: reward_period_to_pay,
+                    owner: context.owner,
+                    node: context.ocw_node,
+                    amount: 0,
+                }
+                .into(),
+            );
         });
     }
 
@@ -905,6 +975,41 @@ mod reward {
                 );
             });
         }
+
+        #[test]
+        fn fails_when_reward_pot_not_found() {
+            let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+                .with_genesis_config()
+                .with_authors()
+                .for_offchain_worker()
+                .as_externality_with_state();
+            ext.execute_with(|| {
+                let node_count = <MaxBatchSize<TestRuntime>>::get();
+                let _ = Context::new(node_count as u8);
+                let reward_period = <RewardPeriod<TestRuntime>>::get();
+                let reward_period_length = reward_period.length as u64;
+                let reward_period_to_pay = reward_period.current;
+
+                // Complete a reward period
+                roll_forward((reward_period_length - System::block_number()) + 1);
+
+                let signature =
+                    UintAuthorityId(1).sign(&("DummyProof").encode()).expect("Error signing");
+                let author = mock::AVN::active_validators()[0].clone();
+                // Remove the reward pot to simulate the error condition
+                <RewardPot<TestRuntime>>::remove(reward_period_to_pay);
+
+                assert_noop!(
+                    NodeManager::offchain_pay_nodes(
+                        RawOrigin::None.into(),
+                        reward_period_to_pay,
+                        author,
+                        signature
+                    ),
+                    Error::<TestRuntime>::RewardPotNotFound
+                );
+            });
+        }
     }
 }
 
@@ -960,7 +1065,7 @@ mod end_2_end {
             let new_owner = TestAccount::new([111u8; 32]).account_id();
             // Fund new owner account so it can stake
             Balances::make_free_balance_be(&new_owner, new_owner_stake * 2);
-            println!("Reward period a : {:?}", reward_period);
+
             // Set a custom reward amount for easier calculations
             <RewardAmount<TestRuntime>>::put(total_reward_per_period);
 
@@ -971,10 +1076,6 @@ mod end_2_end {
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),
                 total_reward_per_period * 1_000_000_000_000u128,
-            );
-            println!(
-                "Reward pot balance before payout: {}",
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
             );
 
             // No stake, no genesis bonus
@@ -1004,10 +1105,7 @@ mod end_2_end {
 
             // Pay out
             complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
-            println!(
-                "Reward pot balance: {}",
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
-            );
+
             let context_node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let new_node_info = NodeRegistry::<TestRuntime>::get(&new_node).unwrap();
 
@@ -1021,7 +1119,6 @@ mod end_2_end {
 
             // Get the new reward period
             let reward_period = <RewardPeriod<TestRuntime>>::get().current;
-            println!("Reward period b : {:?}", reward_period);
 
             // Send half of the required hb's before staking
             incr_heartbeats(reward_period, vec![context.ocw_node], (expected_uptime / 2) as u64);
@@ -1040,31 +1137,43 @@ mod end_2_end {
 
             // Pay out
             complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
-            println!(
-                "Reward pot balance : {}",
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
-            );
+
             let context_node_stake =
                 NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap().stake.amount;
             let new_node_stake = NodeRegistry::<TestRuntime>::get(&new_node).unwrap().stake.amount;
 
+            let gross_new_node_reward = total_reward_per_period * 2 / 3;
+            let gross_context_node_reward = total_reward_per_period / 3;
+            let expected_new_node_net_reward =
+                gross_new_node_reward - NodeManager::calculate_appchain_fee(gross_new_node_reward);
             // Get the remaining 1/3rd of the rewards
-            let expected_node_a_stake = node_reward + (total_reward_per_period / 3);
+            let expected_gross_context_node_stake = node_reward + gross_context_node_reward;
             // 4K stake should give 2 extra virtual nodes (3 in total). But half of the heartbeats
             // were before staking, so we have 1 extra virtual node (2 total) => 2/3rd
             // of the rewards
-            let expected_node_b_stake =
-                new_owner_stake + node_reward + (total_reward_per_period * 2 / 3);
+            let expected_gross_new_node_stake =
+                new_owner_stake + node_reward + gross_new_node_reward;
+
+            // There is no auto staking because we are out of the auto stake period.
+            System::assert_has_event(
+                Event::RewardAutoStaked {
+                    reward_period,
+                    owner: new_owner,
+                    node: new_node,
+                    amount: expected_new_node_net_reward,
+                }
+                .into(),
+            );
 
             assert_eq!(
                 context_node_stake,
-                expected_node_a_stake -
-                    NodeManager::calculate_appchain_fee(total_reward_per_period / 3)
+                expected_gross_context_node_stake -
+                    NodeManager::calculate_appchain_fee(gross_context_node_reward)
             );
             assert_eq!(
                 new_node_stake,
-                expected_node_b_stake -
-                    NodeManager::calculate_appchain_fee(total_reward_per_period * 2 / 3)
+                expected_gross_new_node_stake -
+                    NodeManager::calculate_appchain_fee(gross_new_node_reward)
             );
 
             // Unstaking is still now allowed
@@ -1093,7 +1202,7 @@ mod end_2_end {
             let expected_new_node_max_unstake =
                 <MaxUnstakePercentage<TestRuntime>>::get() * (new_node_info.stake.amount + 1_000);
             assert_eq!(
-                new_node_info.stake.max_unstake_per_period.unwrap(),
+                new_node_info.stake.restriction.per_period_allowance().unwrap(),
                 expected_new_node_max_unstake
             );
             // Remaining allowable unstake can also be claimed
@@ -1152,11 +1261,11 @@ mod end_2_end {
 
             let new_owner_balance_before = Balances::free_balance(&new_owner);
             let previous_stake = NodeRegistry::<TestRuntime>::get(&new_node).unwrap().stake.amount;
-            // Unstake back to back large amounts (> max_unstake_per_period)
+            // Unstake back to back large amounts (> per_period_allowance)
             assert_ok!(NodeManager::remove_stake(
                 RuntimeOrigin::signed(new_owner.clone()),
                 new_node,
-                Some(new_node_info.stake.max_unstake_per_period.unwrap() + 1)
+                Some(new_node_info.stake.restriction.per_period_allowance().unwrap() + 1)
             ));
             assert_ok!(NodeManager::remove_stake(
                 RuntimeOrigin::signed(new_owner.clone()),
@@ -1198,6 +1307,12 @@ mod end_2_end {
 
             // Pay out
             complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+
+            // There is no auto staking because we are out of the auto stake period.
+            assert!(!System::events().iter().any(|e| matches!(e.event,
+                RuntimeEvent::NodeManager(Event::RewardAutoStaked { reward_period: p, .. })
+                if p == reward_period
+            )));
 
             // We are back to sharing rewards equally because all the stake has been removed
             let gross_per_node_reward = total_reward_per_period / 2; // equal share 500
@@ -1243,12 +1358,6 @@ mod end_2_end {
                 new_owner_stake
             );
 
-            println!(
-                "\nContext node: {:?}",
-                NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap()
-            );
-            println!("\nNew node: {:?}", NodeRegistry::<TestRuntime>::get(&new_node).unwrap());
-
             // Unstake everything without changing time
             assert_ok!(NodeManager::remove_stake(
                 RuntimeOrigin::signed(context.owner.clone()),
@@ -1270,6 +1379,3 @@ mod end_2_end {
         });
     }
 }
-
-//2800000000000000000775
-//2800000000000000000775

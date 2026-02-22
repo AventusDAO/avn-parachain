@@ -4,6 +4,7 @@ use frame_support::{assert_noop, assert_ok};
 
 mod stake_and_reward_weight_tests {
     use super::*;
+
     use sp_runtime::testing::UintAuthorityId;
 
     fn get_owner(id: u8) -> AccountId {
@@ -35,29 +36,6 @@ mod stake_and_reward_weight_tests {
             owner.clone(),
             signing_key,
         ));
-    }
-
-    #[test]
-    fn add_stake_fails_when_free_balance_is_insufficient() {
-        ExtBuilder::build_default()
-            .with_genesis_config()
-            .as_externality()
-            .execute_with(|| {
-                let registrar = TestAccount::new([1u8; 32]).account_id();
-                setup_registrar(&registrar);
-
-                let owner = get_owner(1);
-                let node = get_node(3);
-
-                // Give the owner a small balance.
-                Balances::make_free_balance_be(&owner, 100 * AVT);
-                register_node(&registrar, &node, &owner, UintAuthorityId(10));
-
-                assert_noop!(
-                    NodeManager::add_stake(RuntimeOrigin::signed(owner), node, 1_000 * AVT),
-                    Error::<TestRuntime>::InsufficientFreeBalance
-                );
-            });
     }
 
     #[test]
@@ -163,7 +141,7 @@ mod stake_and_reward_weight_tests {
     }
 
     #[test]
-    fn add_stake_increases_existing_lock() {
+    fn reserves_updated_with_stake_changes() {
         let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
             .with_genesis_config()
             .for_offchain_worker()
@@ -194,11 +172,15 @@ mod stake_and_reward_weight_tests {
                 2_000u128
             ));
 
+            assert_eq!(TotalStake::<TestRuntime>::get(&owner), Some(2_000u128));
+
             assert_ok!(NodeManager::add_stake(
                 RuntimeOrigin::signed(owner.clone()),
                 node,
                 1_000u128
             ));
+
+            assert_eq!(TotalStake::<TestRuntime>::get(&owner), Some(3_000u128));
 
             let info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
             assert_eq!(info.stake.amount, 3_000u128);
@@ -216,6 +198,21 @@ mod stake_and_reward_weight_tests {
                 }
                 .into(),
             );
+
+            let auto_stake_expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
+            Timestamp::set_timestamp(auto_stake_expiry_sec * 1000);
+
+            // Withdraw less than the max unlocked
+            assert_ok!(NodeManager::remove_stake(
+                RuntimeOrigin::signed(owner.clone()),
+                node.clone(),
+                Some(400u128)
+            ));
+
+            assert_eq!(TotalStake::<TestRuntime>::get(&owner), Some(2_600u128));
+
+            let reserved = Balances::reserved_balance(&owner);
+            assert_eq!(reserved, 2_600u128);
         });
     }
 
@@ -286,43 +283,6 @@ mod stake_and_reward_weight_tests {
                 Error::<TestRuntime>::NoAvailableStakeToUnstake
             );
         });
-    }
-
-    #[test]
-    fn remove_stake_fails_when_amount_is_zero() {
-        ExtBuilder::build_default()
-            .with_genesis_config()
-            .as_externality()
-            .execute_with(|| {
-                let registrar = TestAccount::new([1u8; 32]).account_id();
-                setup_registrar(&registrar);
-
-                let owner = get_owner(1);
-                let node = get_node(1);
-
-                Balances::make_free_balance_be(&owner, 100_000 * AVT);
-                register_node(&registrar, &node, &owner, UintAuthorityId(10));
-
-                // Stake something first
-                assert_ok!(NodeManager::add_stake(
-                    RuntimeOrigin::signed(owner.clone()),
-                    node.clone(),
-                    10_000u128
-                ));
-
-                // Move time past auto-stake expiry so unstake checks reach ZeroAmount branch.
-                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get() + 1;
-                Timestamp::set_timestamp(expiry_sec * 1000);
-
-                assert_noop!(
-                    NodeManager::remove_stake(
-                        RuntimeOrigin::signed(owner.clone()),
-                        node,
-                        Some(0u128)
-                    ),
-                    Error::<TestRuntime>::ZeroAmount
-                );
-            });
     }
 
     #[test]
@@ -554,7 +514,6 @@ mod stake_and_reward_weight_tests {
 
                 Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
                 register_node(&registrar, &node, &owner, UintAuthorityId(11));
-                // At this point node has auto-stake expiry set to AutoStakeDurationSec.
 
                 // Move time to exactly auto-stake expiry,
                 let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
@@ -586,5 +545,250 @@ mod stake_and_reward_weight_tests {
                     "stake amount should be 0 after unstaking all"
                 );
             });
+    }
+
+    #[test]
+    fn stake_added_during_periodic_restriction_does_not_change_allowance() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let registrar = TestAccount::new([1u8; 32]).account_id();
+                setup_registrar(&registrar);
+
+                let owner = get_owner(1);
+                let node = get_node(2);
+                let stake_amount: u128 = 10_000u128;
+
+                Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
+                register_node(&registrar, &node, &owner, UintAuthorityId(11));
+
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount
+                ));
+
+                // Move time to exactly auto-stake expiry,
+                let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
+                Timestamp::set_timestamp(expiry_sec * 1000);
+
+                assert_ok!(NodeManager::add_stake(
+                    RuntimeOrigin::signed(owner.clone()),
+                    node.clone(),
+                    stake_amount / 2
+                ));
+
+                let info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                assert_eq!(info.stake.amount, 15_000);
+                // Allowance unchanged, snapshotted from original 10_000
+                assert_eq!(info.stake.restriction.per_period_allowance(), Some(1_000));
+            });
+    }
+
+    mod fails_when {
+        use super::*;
+
+        #[test]
+        fn add_stake_fails_when_node_not_owned_by_caller() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(1);
+                    let node = get_node(2);
+                    let stake_amount: u128 = 100_000u128;
+                    register_node(&registrar, &node, &owner, UintAuthorityId(11));
+
+                    let bad_owner = get_owner(12);
+                    Balances::make_free_balance_be(&bad_owner, stake_amount * 2 * AVT);
+
+                    assert_noop!(
+                        NodeManager::add_stake(
+                            RuntimeOrigin::signed(bad_owner),
+                            node,
+                            stake_amount
+                        ),
+                        Error::<TestRuntime>::NodeNotOwnedByOwner
+                    );
+                });
+        }
+
+        #[test]
+        fn remove_stake_fails_when_node_not_owned_by_caller() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    // Setup: owner stakes, attacker tries to remove it
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(1);
+                    let node = get_node(2);
+                    let key = UintAuthorityId(11);
+                    register_node(&registrar, &node, &owner, key);
+
+                    let stake_amount: u128 = 100_000u128;
+                    Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
+                    assert_ok!(NodeManager::add_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        stake_amount
+                    ));
+
+                    // Move time to exactly auto-stake expiry
+                    let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get() + 1;
+                    Timestamp::set_timestamp(expiry_sec * 1000);
+
+                    let bad_owner = get_owner(12);
+
+                    assert_noop!(
+                        NodeManager::remove_stake(RuntimeOrigin::signed(bad_owner), node, None),
+                        Error::<TestRuntime>::NodeNotOwnedByOwner
+                    );
+                });
+        }
+
+        #[test]
+        fn free_balance_is_insufficient() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(1);
+                    let node = get_node(3);
+
+                    // Give the owner a small balance.
+                    Balances::make_free_balance_be(&owner, 100 * AVT);
+                    register_node(&registrar, &node, &owner, UintAuthorityId(10));
+
+                    assert_noop!(
+                        NodeManager::add_stake(RuntimeOrigin::signed(owner), node, 1_000 * AVT),
+                        Error::<TestRuntime>::InsufficientFreeBalance
+                    );
+                });
+        }
+
+        #[test]
+        fn when_unstake_amount_is_zero() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(1);
+                    let node = get_node(1);
+
+                    Balances::make_free_balance_be(&owner, 100_000 * AVT);
+                    register_node(&registrar, &node, &owner, UintAuthorityId(10));
+
+                    // Stake something first
+                    assert_ok!(NodeManager::add_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        10_000u128
+                    ));
+
+                    // Move time past auto-stake expiry so unstake is allowed
+                    let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get() + 1;
+                    Timestamp::set_timestamp(expiry_sec * 1000);
+
+                    assert_noop!(
+                        NodeManager::remove_stake(
+                            RuntimeOrigin::signed(owner.clone()),
+                            node,
+                            Some(0u128)
+                        ),
+                        Error::<TestRuntime>::ZeroAmount
+                    );
+                });
+        }
+
+        #[test]
+        fn when_add_stake_amount_is_zero() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(1);
+                    let node = get_node(1);
+
+                    Balances::make_free_balance_be(&owner, 100_000 * AVT);
+                    register_node(&registrar, &node, &owner, UintAuthorityId(10));
+
+                    assert_noop!(
+                        NodeManager::add_stake(RuntimeOrigin::signed(owner), node, 0u128),
+                        Error::<TestRuntime>::ZeroAmount
+                    );
+                });
+        }
+
+        #[test]
+        fn when_unstake_amount_exceeds_staked_balance() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(1);
+                    let node = get_node(1);
+                    let stake_amount: u128 = 10_000u128;
+
+                    Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
+                    register_node(&registrar, &node, &owner, UintAuthorityId(10));
+
+                    // Stake something first
+                    assert_ok!(NodeManager::add_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        stake_amount
+                    ));
+
+                    // Move time past auto-stake expiry so unstake is allowed
+                    let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get() + 1;
+                    Timestamp::set_timestamp(expiry_sec * 1000);
+
+                    assert_noop!(
+                        NodeManager::remove_stake(
+                            RuntimeOrigin::signed(owner),
+                            node,
+                            Some(stake_amount + 1)
+                        ),
+                        Error::<TestRuntime>::InsufficientStakedBalance
+                    );
+                });
+        }
+
+        #[test]
+        fn non_existant_node_tries_to_add_stake() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let owner = get_owner(1);
+                    let stake_amount: u128 = 10_000u128;
+                    Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
+
+                    let bad_node = TestAccount::new([99u8; 32]).account_id();
+                    assert_noop!(
+                        NodeManager::do_add_stake(&owner, &bad_node, stake_amount),
+                        Error::<TestRuntime>::NodeNotFound
+                    );
+                });
+        }
     }
 }

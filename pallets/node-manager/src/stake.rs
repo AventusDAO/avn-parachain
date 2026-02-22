@@ -98,6 +98,16 @@ impl<T: Config> Pallet<T> {
                 Ok(info.clone())
             })?;
 
+        <TotalStake<T>>::try_mutate(owner, |total| -> Result<_, DispatchError> {
+            *total = Some(
+                total
+                    .unwrap_or_else(Zero::zero)
+                    .checked_add(&amount)
+                    .ok_or(Error::<T>::BalanceOverflow)?,
+            );
+            Ok(())
+        })?;
+
         Self::update_reserves(owner, amount, StakeOperation::Add)?;
 
         Ok(node_info.stake.amount)
@@ -163,6 +173,16 @@ impl<T: Config> Pallet<T> {
             },
         )?;
 
+        <TotalStake<T>>::try_mutate(owner, |total| -> Result<_, DispatchError> {
+            *total = Some(
+                total
+                    .unwrap_or_else(Zero::zero)
+                    .checked_sub(&amount)
+                    .ok_or(Error::<T>::BalanceUnderflow)?,
+            );
+            Ok(())
+        })?;
+
         Self::update_reserves(owner, amount, StakeOperation::Remove)?;
 
         Ok((amount, new_total))
@@ -178,10 +198,6 @@ impl<T: Config> Pallet<T> {
                 .map_err(|_| Error::<T>::InsufficientFreeBalance.into()),
 
             StakeOperation::Remove => {
-                ensure!(
-                    T::Currency::reserved_balance(owner) >= amount,
-                    Error::<T>::InsufficientStakedBalance
-                );
                 let leftover = T::Currency::unreserve(owner, amount);
                 ensure!(leftover.is_zero(), Error::<T>::InsufficientStakedBalance);
                 Ok(())

@@ -252,6 +252,11 @@ pub mod pallet {
     #[pallet::storage]
     pub type AppChainFeePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
 
+    /// The total stake of the owner, across all nodes
+    #[pallet::storage]
+    pub type TotalStake<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, OptionQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -470,8 +475,6 @@ pub mod pallet {
         AutoStakeStillActive,
         /// There is no available stake to unstake right now
         NoAvailableStakeToUnstake,
-        /// Failed to auto stake reward
-        AutoStakeFailed,
         /// Node is not found
         NodeNotFound,
         /// Balance overflow
@@ -719,7 +722,8 @@ pub mod pallet {
             ensure!(total_uptime.total_weight > 0, Error::<T>::TotalUptimeNotFound);
             ensure!(maybe_node_uptime.is_some(), Error::<T>::NodeUptimeNotFound);
 
-            let reward_pot = RewardPot::<T>::get(&oldest_period).ok_or(Error::<T>::RewardPotNotFound)?;
+            let reward_pot =
+                RewardPot::<T>::get(&oldest_period).ok_or(Error::<T>::RewardPotNotFound)?;
             let total_reward = reward_pot.total_reward;
 
             let mut paid_nodes = Vec::new();
@@ -753,6 +757,7 @@ pub mod pallet {
                     reward_pot.uptime_threshold,
                     reward_pot.reward_end_time,
                 );
+
                 let reward_amount =
                     Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
 
@@ -768,7 +773,8 @@ pub mod pallet {
                         error: e,
                     });
                 }
-                // We always move on even if payment fails. Failed payments will be handled offchain.
+                // We always move on even if payment fails. Failed payments will be handled
+                // offchain.
                 last_node_paid = Some(node.clone());
                 paid_nodes.push(node.clone());
             }

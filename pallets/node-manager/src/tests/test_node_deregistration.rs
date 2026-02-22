@@ -391,6 +391,94 @@ fn payment_works_some_nodes_deregistered() {
     });
 }
 
+#[test]
+fn deregistration_returns_reserved_stake() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(1u8);
+        let node = context.registered_nodes[0];
+        let stake_amount = 10_000u128;
+
+        // Give the owner funds and stake them
+        Balances::make_free_balance_be(&context.owner, stake_amount * 2);
+        assert_ok!(NodeManager::add_stake(
+            RuntimeOrigin::signed(context.owner.clone()),
+            node,
+            stake_amount
+        ));
+        assert_eq!(Balances::reserved_balance(&context.owner), stake_amount);
+
+        // Deregister
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node]),
+        ));
+
+        // Reserved balance must be returned to free balance
+        assert_eq!(Balances::reserved_balance(&context.owner), 0);
+        assert_eq!(Balances::free_balance(&context.owner), stake_amount * 2);
+    });
+}
+
+#[test]
+fn deregistration_cleans_up_signing_key_index() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(1u8);
+        let node = context.registered_nodes[0];
+        let node_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+
+        assert!(SigningKeyToNodeId::<TestRuntime>::contains_key(&node_info.signing_key));
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node]),
+        ));
+
+        // Reverse index must be removed
+        assert!(!SigningKeyToNodeId::<TestRuntime>::contains_key(&node_info.signing_key));
+    });
+}
+
+#[test]
+fn signing_key_can_be_reused_after_deregistration() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        // Deregister node A, then register node B with the same signing key
+        let context = Context::new(1u8);
+        let node_a = context.registered_nodes[0];
+        let signing_key = NodeRegistry::<TestRuntime>::get(&node_a).unwrap().signing_key;
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node_a]),
+        ));
+
+        let node_b = TestAccount::new([99u8; 32]).account_id();
+        assert_ok!(NodeManager::register_node(
+            RuntimeOrigin::signed(context.registrar),
+            node_b,
+            context.owner,
+            signing_key,
+        ));
+    });
+}
+
 mod fails_when {
     use super::*;
 

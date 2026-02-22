@@ -46,7 +46,8 @@ impl<T: Config> Pallet<T> {
         Ok(ratio.mul_floor(total_rewards_u128).saturated_into())
     }
 
-    // ** Note **: this function will not roll back in case of error, so make sure storage changes are done in the right order.
+    // ** Note **: this function will not roll back in case of error, so make sure storage changes
+    // are done in the right order.
     pub fn pay_reward(
         period: &RewardPeriodIndex,
         node_id: NodeId<T>,
@@ -54,6 +55,19 @@ impl<T: Config> Pallet<T> {
         amount: BalanceOf<T>,
     ) -> DispatchResult {
         let node_owner = node_info.owner.clone();
+
+        if amount.is_zero() {
+            // Even if the reward is 0, we still want to emit the event for better visibility.
+            Self::deposit_event(Event::RewardPaid {
+                reward_period: *period,
+                owner: node_owner,
+                node: node_id,
+                amount,
+            });
+
+            return Ok(())
+        }
+
         let reward_pot_account_id = Self::compute_reward_account_id();
         let appchain_fee = Self::calculate_appchain_fee(amount);
         let net_reward = amount.saturating_sub(appchain_fee);
@@ -65,7 +79,7 @@ impl<T: Config> Pallet<T> {
             net_reward,
             ExistenceRequirement::KeepAlive,
         )?;
-        // Include 0 reward payment in this event for better visibility.
+
         Self::deposit_event(Event::RewardPaid {
             reward_period: *period,
             owner: node_owner.clone(),
@@ -74,19 +88,26 @@ impl<T: Config> Pallet<T> {
         });
 
         // Pay the fee to the treasury
-        T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id)?;
+        if let Err(e) = T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id) {
+            log::error!("💔 Failed to pay appchain fee of {:?} from reward pot. Node {:?}. Period: {:?}. Error: {:?}", appchain_fee, node_id, period, e);
+        }
 
         if Self::time_now_sec() < node_info.auto_stake_expiry && net_reward > Zero::zero() {
-            // Best-effort auto-stake. Failure is tolerated because funds are already in free balance.
-            Self::do_add_stake(&node_owner, &node_id, net_reward)
-                .map_err(|_| Error::<T>::AutoStakeFailed)?;
-
-            Self::deposit_event(Event::RewardAutoStaked {
-                reward_period: *period,
-                owner: node_owner,
-                node: node_id,
-                amount: net_reward,
-            });
+            // Best-effort auto-stake. Failure is tolerated because funds are already in free
+            // balance.
+            let r = Self::do_add_stake(&node_owner, &node_id, net_reward);
+            match r {
+                Ok(_) => {
+                    Self::deposit_event(Event::RewardAutoStaked {
+                        reward_period: *period,
+                        owner: node_owner,
+                        node: node_id,
+                        amount: net_reward,
+                    });
+                },
+                Err(e) =>
+                    log::error!("💔 Failed to auto-stake reward for node {:?}. Period: {:?}, amount: {:?}. Error: {:?}", node_id, period, net_reward, e),
+            }
         }
 
         Ok(())
