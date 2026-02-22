@@ -1154,7 +1154,7 @@ mod end_2_end {
             let expected_gross_new_node_stake =
                 new_owner_stake + node_reward + gross_new_node_reward;
 
-            // There is no auto staking because we are out of the auto stake period.
+            // Auto-staking still happens because auto_stake_rewards is true (the default).
             System::assert_has_event(
                 Event::RewardAutoStaked {
                     reward_period,
@@ -1298,6 +1298,18 @@ mod end_2_end {
 
             let reward_period = <RewardPeriod<TestRuntime>>::get().current;
 
+            // Disable auto-staking to show rewards flowing to free balance instead
+            assert_ok!(NodeManager::update_auto_stake_preference(
+                RuntimeOrigin::signed(context.owner.clone()),
+                context.ocw_node,
+                false,
+            ));
+            assert_ok!(NodeManager::update_auto_stake_preference(
+                RuntimeOrigin::signed(new_owner.clone()),
+                new_node,
+                false,
+            ));
+
             // Send heartbeats for the new reward period
             incr_heartbeats(reward_period, vec![context.ocw_node], (expected_uptime) as u64);
             incr_heartbeats(reward_period, vec![new_node], (expected_uptime) as u64);
@@ -1308,7 +1320,7 @@ mod end_2_end {
             // Pay out
             complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
 
-            // There is no auto staking because we are out of the auto stake period.
+            // No auto staking because auto_stake_rewards has been explicitly disabled
             assert!(!System::events().iter().any(|e| matches!(e.event,
                 RuntimeEvent::NodeManager(Event::RewardAutoStaked { reward_period: p, .. })
                 if p == reward_period
@@ -1376,6 +1388,138 @@ mod end_2_end {
                 0
             );
             assert_eq!(NodeRegistry::<TestRuntime>::get(&new_node).unwrap().stake.amount, 0);
+        });
+    }
+
+    #[test]
+    fn rewards_are_auto_staked_after_expiry_when_preference_is_enabled() {
+        let (mut ext, pool_state, offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let total_reward = 1_000u128;
+            <RewardAmount<TestRuntime>>::put(total_reward);
+            let context = Context::new(1u8);
+            Balances::make_free_balance_be(
+                &NodeManager::compute_reward_account_id(),
+                total_reward * 1_000_000u128,
+            );
+
+            let first_period = <RewardPeriod<TestRuntime>>::get().current;
+            let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
+            let expected_uptime =
+                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+
+            // Add enough heartbeats for a full reward (Context::new already added 1)
+            incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
+
+            // First payout - within the auto-stake period
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+
+            let node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
+            assert!(node_info.auto_stake_rewards, "auto_stake_rewards should be true by default");
+            let auto_stake_expiry = node_info.auto_stake_expiry;
+            let stake_after_first_payout = node_info.stake.amount;
+            assert!(stake_after_first_payout > 0, "Stake should have been auto-staked in first period");
+
+            // Advance time past the auto_stake_expiry
+            set_timestamp(auto_stake_expiry + 1).unwrap();
+            assert!(NodeManager::time_now_sec() > auto_stake_expiry, "Should be past expiry");
+
+            // Get the new period and add heartbeats
+            let second_period = <RewardPeriod<TestRuntime>>::get().current;
+            incr_heartbeats(second_period, vec![context.ocw_node], expected_uptime as u64);
+
+            // Second payout - PAST the auto_stake_expiry, but auto_stake_rewards is still true
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+
+            let node_info_after = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
+            let stake_after_second_payout = node_info_after.stake.amount;
+            let auto_staked_amount = stake_after_second_payout - stake_after_first_payout;
+
+            // Even though we are past auto_stake_expiry, auto_stake_rewards = true means
+            // rewards are still auto-staked
+            assert!(
+                auto_staked_amount > 0,
+                "Rewards should be auto-staked past auto_stake_expiry when auto_stake_rewards is true"
+            );
+
+            System::assert_has_event(
+                Event::RewardAutoStaked {
+                    reward_period: second_period,
+                    owner: context.owner,
+                    node: context.ocw_node,
+                    amount: auto_staked_amount,
+                }
+                .into(),
+            );
+        });
+    }
+
+    #[test]
+    fn rewards_are_not_auto_staked_after_expiry_when_preference_is_disabled() {
+        let (mut ext, pool_state, offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let total_reward = 1_000u128;
+            <RewardAmount<TestRuntime>>::put(total_reward);
+            let context = Context::new(1u8);
+            Balances::make_free_balance_be(
+                &NodeManager::compute_reward_account_id(),
+                total_reward * 1_000_000u128,
+            );
+
+            let first_period = <RewardPeriod<TestRuntime>>::get().current;
+            let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
+            let expected_uptime =
+                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+
+            incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
+
+            // First payout - within the auto-stake period
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+
+            let node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
+            let auto_stake_expiry = node_info.auto_stake_expiry;
+            let stake_after_first_payout = node_info.stake.amount;
+            assert!(stake_after_first_payout > 0, "Stake should have been auto-staked in first period");
+
+            // Disable auto-staking before expiry
+            assert_ok!(NodeManager::update_auto_stake_preference(
+                RuntimeOrigin::signed(context.owner.clone()),
+                context.ocw_node,
+                false,
+            ));
+
+            // Advance time past the auto_stake_expiry
+            set_timestamp(auto_stake_expiry + 1).unwrap();
+
+            let second_period = <RewardPeriod<TestRuntime>>::get().current;
+            incr_heartbeats(second_period, vec![context.ocw_node], expected_uptime as u64);
+
+            let owner_balance_before = Balances::free_balance(&context.owner);
+
+            // Second payout - PAST the auto_stake_expiry, with auto_stake_rewards = false
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+
+            let node_info_after = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
+
+            // Stake should not have changed
+            assert_eq!(node_info_after.stake.amount, stake_after_first_payout);
+
+            // Reward went to free balance instead
+            assert!(Balances::free_balance(&context.owner) > owner_balance_before);
+
+            // No auto-stake event emitted for this period
+            assert!(!System::events().iter().any(|e| matches!(e.event,
+                RuntimeEvent::NodeManager(Event::RewardAutoStaked { reward_period: p, .. })
+                if p == second_period
+            )));
         });
     }
 }

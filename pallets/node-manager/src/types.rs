@@ -194,6 +194,8 @@ pub struct NodeInfo<SignerId, AccountId, Balance> {
     pub serial_number: u32,
     /// Expiry block number for auto stake
     pub auto_stake_expiry: Duration,
+    /// Whether to automatically stake the node's rewards when the auto_stake_expiry is reached
+    pub auto_stake_rewards: bool,
     /// The stake information for this node
     pub stake: StakeInfo<Balance>,
 }
@@ -209,9 +211,10 @@ impl<
         signing_key: SignerId,
         serial_number: u32,
         auto_stake_expiry: Duration,
+        auto_stake_rewards: bool,
         stake: StakeInfo<Balance>,
     ) -> NodeInfo<SignerId, AccountId, Balance> {
-        NodeInfo { owner, signing_key, serial_number, auto_stake_expiry, stake }
+        NodeInfo { owner, signing_key, serial_number, auto_stake_expiry, auto_stake_rewards, stake }
     }
 
     pub fn can_unstake(&self, now_sec: Duration) -> bool {

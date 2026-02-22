@@ -60,6 +60,9 @@ mod test_reward_payment;
 #[cfg(test)]
 #[path = "tests/test_stake_weight.rs"]
 mod test_stake_weight;
+#[cfg(test)]
+#[path = "tests/test_auto_stake_preference.rs"]
+mod test_auto_stake_preference;
 
 // Definition of the crypto to use for signing
 pub mod sr25519 {
@@ -398,6 +401,12 @@ pub mod pallet {
         RestrictedUnstakeDurationSet { duration_sec: Duration },
         /// The fee percentage for hosting app chain nodes has been set
         AppChainFeePercentageSet { percentage: Perbill },
+        /// Node owner updated auto-stake preference for the specified node
+        AutoStakePreferenceUpdated {
+            owner: T::AccountId,
+            node_id: NodeId<T>,
+            auto_stake_rewards: bool,
+        },
     }
 
     // Pallet Errors
@@ -554,7 +563,8 @@ pub mod pallet {
             let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
             ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
 
-            Self::do_register_node(node, owner, signing_key)?;
+            // Default to auto_stake true
+            Self::do_register_node(node, owner, signing_key, true)?;
             Ok(())
         }
 
@@ -878,8 +888,8 @@ pub mod pallet {
                 Error::<T>::UnauthorizedSignedTransaction
             );
 
-            // Perform the actual registration
-            Self::do_register_node(node, owner, signing_key)?;
+            // Perform the actual registration. Default to auto_stake_rewards = true
+            Self::do_register_node(node, owner, signing_key, true)?;
 
             Ok(())
         }
@@ -1026,6 +1036,34 @@ pub mod pallet {
                 reward_period,
                 amount,
                 new_total,
+            });
+
+            Ok(())
+        }
+
+        #[pallet::call_index(10)]
+        #[pallet::weight(<T as Config>::WeightInfo::update_auto_stake_preference())]
+        pub fn update_auto_stake_preference(
+            origin: OriginFor<T>,
+            node_id: NodeId<T>,
+            auto_stake_rewards: bool,
+        ) -> DispatchResult {
+            let owner = ensure_signed(origin)?;
+            ensure!(
+                <OwnedNodes<T>>::contains_key(&owner, &node_id),
+                Error::<T>::NodeNotOwnedByOwner
+            );
+
+            <NodeRegistry<T>>::try_mutate(&node_id, |maybe_info| -> Result<(), DispatchError> {
+                let info = maybe_info.as_mut().ok_or(Error::<T>::NodeNotFound)?;
+                info.auto_stake_rewards = auto_stake_rewards;
+                Ok(())
+            })?;
+
+            Self::deposit_event(Event::AutoStakePreferenceUpdated {
+                owner,
+                node_id,
+                auto_stake_rewards,
             });
 
             Ok(())
@@ -1254,6 +1292,7 @@ pub mod pallet {
             node: NodeId<T>,
             owner: T::AccountId,
             signing_key: T::SignerId,
+            auto_stake_rewards: bool,
         ) -> DispatchResult {
             ensure!(!<NodeRegistry<T>>::contains_key(&node), Error::<T>::DuplicateNode);
             ensure!(
@@ -1285,6 +1324,7 @@ pub mod pallet {
                     signing_key,
                     node_serial_number,
                     auto_stake_expiry,
+                    auto_stake_rewards,
                     StakeInfo::<BalanceOf<T>>::new(
                         Zero::zero(),
                         Zero::zero(),

@@ -61,21 +61,21 @@ mod stake_and_reward_weight_tests {
             // Before expiry => bonus applies
             let mut expiry = now_sec + 1;
             let node_info =
-                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
+                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, true, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 150_000_000u128); // 1.5x base weight of 100_000_000
 
             // At expiry bonus does not apply
             expiry = now_sec;
             let node_info =
-                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, stake_info);
+                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, true, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
 
             // After expiry bonus does not apply
             expiry = now_sec - 1;
             let node_info =
-                NodeInfo::new(owner.clone(), signing_key, node_serial, expiry, stake_info);
+                NodeInfo::new(owner.clone(), signing_key, node_serial, expiry, true, stake_info);
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
         });
@@ -101,6 +101,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: node_serial,
                     auto_stake_expiry: 0,
+                    auto_stake_rewards: true,
                     stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
                 },
             );
@@ -128,6 +129,7 @@ mod stake_and_reward_weight_tests {
                 get_signing_key(1),
                 node_serial,
                 now_sec - 1,
+                true,
                 stake_info,
             );
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
@@ -157,6 +159,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: 0,
+                    auto_stake_rewards: true,
                     stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
                 },
             );
@@ -234,6 +237,7 @@ mod stake_and_reward_weight_tests {
                     signing_key: get_signing_key(1),
                     serial_number: 10_500u32,
                     auto_stake_expiry: (start_sec + 1) * 1000,
+                    auto_stake_rewards: true,
                     stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
                 },
             );

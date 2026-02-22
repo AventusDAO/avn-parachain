@@ -92,7 +92,11 @@ impl<T: Config> Pallet<T> {
             log::error!("💔 Failed to pay appchain fee of {:?} from reward pot. Node {:?}. Period: {:?}. Error: {:?}", appchain_fee, node_id, period, e);
         }
 
-        if Self::time_now_sec() < node_info.auto_stake_expiry && net_reward > Zero::zero() {
+        if net_reward <= Zero::zero() {
+            return Ok(())
+        }
+
+        if Self::time_now_sec() < node_info.auto_stake_expiry || node_info.auto_stake_rewards {
             // Best-effort auto-stake. Failure is tolerated because funds are already in free
             // balance.
             let r = Self::do_add_stake(&node_owner, &node_id, net_reward);

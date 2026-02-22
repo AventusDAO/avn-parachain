@@ -61,6 +61,7 @@ pub trait WeightInfo {
 	fn update_signing_key() -> Weight;
 	fn add_stake() -> Weight;
 	fn remove_stake() -> Weight;
+	fn update_auto_stake_preference() -> Weight;
 }
 
 /// Weights for pallet_node_manager using the Substrate node and recommended hardware.
@@ -116,6 +117,16 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `NodeManager::StakeSnapshot` (r:0 w:1)
 	/// Proof: `NodeManager::StakeSnapshot` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
 	fn remove_stake() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1078`
+		//  Estimated: `5563`
+		// Minimum execution time: 60_974_000 picoseconds.
+		Weight::from_parts(67_393_000, 5563)
+			.saturating_add(T::DbWeight::get().reads(9_u64))
+			.saturating_add(T::DbWeight::get().writes(5_u64))
+	}
+
+	fn update_auto_stake_preference() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `1078`
 		//  Estimated: `5563`
@@ -870,6 +881,16 @@ impl WeightInfo for () {
 	/// Storage: `NodeManager::StakeSnapshot` (r:0 w:1)
 	/// Proof: `NodeManager::StakeSnapshot` (`max_values`: None, `max_size`: Some(88), added: 2563, mode: `MaxEncodedLen`)
 	fn remove_stake() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1078`
+		//  Estimated: `5563`
+		// Minimum execution time: 60_974_000 picoseconds.
+		Weight::from_parts(67_393_000, 5563)
+			.saturating_add(RocksDbWeight::get().reads(9_u64))
+			.saturating_add(RocksDbWeight::get().writes(5_u64))
+	}
+
+	fn update_auto_stake_preference() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `1078`
 		//  Estimated: `5563`
