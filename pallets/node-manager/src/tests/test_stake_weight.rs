@@ -60,15 +60,27 @@ mod stake_and_reward_weight_tests {
 
             // Before expiry => bonus applies
             let mut expiry = now_sec + 1;
-            let node_info =
-                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, true, stake_info);
+            let node_info = NodeInfo::new(
+                owner.clone(),
+                signing_key.clone(),
+                node_serial,
+                expiry,
+                true,
+                stake_info,
+            );
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 150_000_000u128); // 1.5x base weight of 100_000_000
 
             // At expiry bonus does not apply
             expiry = now_sec;
-            let node_info =
-                NodeInfo::new(owner.clone(), signing_key.clone(), node_serial, expiry, true, stake_info);
+            let node_info = NodeInfo::new(
+                owner.clone(),
+                signing_key.clone(),
+                node_serial,
+                expiry,
+                true,
+                stake_info,
+            );
             let w = NodeManager::effective_heartbeat_weight(&node_info, now_sec);
             assert_eq!(w, 100_000_000u128); // 1.5x base weight of 100_000_000
 

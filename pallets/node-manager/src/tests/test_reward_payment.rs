@@ -1487,7 +1487,10 @@ mod end_2_end {
             let node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let auto_stake_expiry = node_info.auto_stake_expiry;
             let stake_after_first_payout = node_info.stake.amount;
-            assert!(stake_after_first_payout > 0, "Stake should have been auto-staked in first period");
+            assert!(
+                stake_after_first_payout > 0,
+                "Stake should have been auto-staked in first period"
+            );
 
             // Disable auto-staking before expiry
             assert_ok!(NodeManager::update_auto_stake_preference(

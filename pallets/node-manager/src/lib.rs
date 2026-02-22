@@ -46,6 +46,9 @@ mod mock;
 #[path = "tests/test_admin.rs"]
 mod test_admin;
 #[cfg(test)]
+#[path = "tests/test_auto_stake_preference.rs"]
+mod test_auto_stake_preference;
+#[cfg(test)]
 #[path = "tests/test_heartbeat.rs"]
 mod test_heartbeat;
 #[cfg(test)]
@@ -60,9 +63,6 @@ mod test_reward_payment;
 #[cfg(test)]
 #[path = "tests/test_stake_weight.rs"]
 mod test_stake_weight;
-#[cfg(test)]
-#[path = "tests/test_auto_stake_preference.rs"]
-mod test_auto_stake_preference;
 
 // Definition of the crypto to use for signing
 pub mod sr25519 {
