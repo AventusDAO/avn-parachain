@@ -43,7 +43,6 @@ fn set_registrar<T: Config>(registrar: T::AccountId) {
 fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::SignerId {
     let key = T::SignerId::generate_pair(None);
     let stake_expiry = Pallet::<T>::calculate_auto_stake_expiry();
-    let restriction_expiry = stake_expiry.saturating_add(<RestrictedUnstakeDurationSec<T>>::get());
     let stake_info = StakeInfo::<BalanceOf<T>>::new(
         Zero::zero(),
         Zero::zero(),
@@ -52,7 +51,7 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
     );
     <NodeRegistry<T>>::insert(
         node.clone(),
-        NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64, stake_info),
+        NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64, false, stake_info),
     );
     <OwnedNodes<T>>::insert(owner.clone(), node, ());
     <OwnedNodesCount<T>>::mutate(owner, |count| *count += 1);
