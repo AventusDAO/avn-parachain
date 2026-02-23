@@ -83,11 +83,8 @@ fn register_node_and_send_heartbeat(
 fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>, uptime: u64) {
     for node in nodes {
         let node_info = <NodeRegistry<TestRuntime>>::get(&node).unwrap();
-        let single_hb_weight = NodeManager::effective_heartbeat_weight(
-            &node_info,
-            reward_period,
-            NodeManager::time_now_sec(),
-        );
+        let single_hb_weight =
+            NodeManager::effective_heartbeat_weight(&node_info, NodeManager::time_now_sec());
         let weight = single_hb_weight.saturating_mul(uptime.into());
 
         <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
@@ -101,7 +98,7 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
         });
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
-            total._total_heartbeats = total._total_heartbeats.saturating_add(uptime);
+            total.total_heartbeats = total.total_heartbeats.saturating_add(uptime);
             total.total_weight = total.total_weight.saturating_add(weight);
         });
     }
@@ -372,15 +369,18 @@ fn payment_works_some_nodes_deregistered() {
             .into(),
         );
 
-        // The owner should get all rewards minus the nodes that were deregistered
-        let expected_owner_reward_amount =
+        // The owner should get all rewards minus the nodes that were deregistered (minus
+        // app_chain_fee_percentage)
+        let gross_owner_reward_amount: u128 =
             reward_amount / node_count as u128 * (node_count - num_nodes_to_deregister) as u128;
-        assert_eq!(Balances::free_balance(&context.owner), expected_owner_reward_amount);
+        let fee_amount = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward_amount;
+        let expected_owner_reward_amount = gross_owner_reward_amount - fee_amount;
+        assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward_amount);
 
         // The pot balance should stay the same because all the nodes were deregistered
         assert_eq!(
             Balances::free_balance(&NodeManager::compute_reward_account_id()),
-            initial_pot_balance - expected_owner_reward_amount
+            initial_pot_balance - gross_owner_reward_amount
         );
 
         // The payment for the remaing nodes should succeed
@@ -388,6 +388,94 @@ fn payment_works_some_nodes_deregistered() {
         System::assert_last_event(
             Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
         );
+    });
+}
+
+#[test]
+fn deregistration_returns_reserved_stake() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(1u8);
+        let node = context.registered_nodes[0];
+        let stake_amount = 10_000u128;
+
+        // Give the owner funds and stake them
+        Balances::make_free_balance_be(&context.owner, stake_amount * 2);
+        assert_ok!(NodeManager::add_stake(
+            RuntimeOrigin::signed(context.owner.clone()),
+            node,
+            stake_amount
+        ));
+        assert_eq!(Balances::reserved_balance(&context.owner), stake_amount);
+
+        // Deregister
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node]),
+        ));
+
+        // Reserved balance must be returned to free balance
+        assert_eq!(Balances::reserved_balance(&context.owner), 0);
+        assert_eq!(Balances::free_balance(&context.owner), stake_amount * 2);
+    });
+}
+
+#[test]
+fn deregistration_cleans_up_signing_key_index() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(1u8);
+        let node = context.registered_nodes[0];
+        let node_info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+
+        assert!(SigningKeyToNodeId::<TestRuntime>::contains_key(&node_info.signing_key));
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node]),
+        ));
+
+        // Reverse index must be removed
+        assert!(!SigningKeyToNodeId::<TestRuntime>::contains_key(&node_info.signing_key));
+    });
+}
+
+#[test]
+fn signing_key_can_be_reused_after_deregistration() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        // Deregister node A, then register node B with the same signing key
+        let context = Context::new(1u8);
+        let node_a = context.registered_nodes[0];
+        let signing_key = NodeRegistry::<TestRuntime>::get(&node_a).unwrap().signing_key;
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node_a]),
+        ));
+
+        let node_b = TestAccount::new([99u8; 32]).account_id();
+        assert_ok!(NodeManager::register_node(
+            RuntimeOrigin::signed(context.registrar),
+            node_b,
+            context.owner,
+            signing_key,
+        ));
     });
 }
 

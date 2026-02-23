@@ -44,15 +44,25 @@ mod node_registration {
                 context.origin,
                 context.node_id,
                 context.owner,
-                context.signing_key,
+                context.signing_key.clone(),
             ));
 
             // The node is owned by the owner
             assert!(<OwnedNodes<TestRuntime>>::get(&context.owner, &context.node_id).is_some());
             // The node is registered
-            assert!(<NodeRegistry<TestRuntime>>::get(&context.node_id).is_some());
+            let node_info = <NodeRegistry<TestRuntime>>::get(&context.node_id);
+            assert!(node_info.is_some());
             // Total node counter is increased
             assert_eq!(<TotalRegisteredNodes<TestRuntime>>::get(), 1);
+
+            let node_info = node_info.unwrap();
+            assert_eq!(node_info.owner, context.owner);
+            assert_eq!(node_info.signing_key, context.signing_key);
+            assert_eq!(node_info.stake.amount, 0);
+            assert_eq!(node_info.stake.unlocked_stake, 0);
+            assert_eq!(node_info.stake.next_unstake_time_sec, None);
+            assert_eq!(node_info.stake.restriction, UnstakeRestriction::Locked);
+
             // The correct event is emitted
             System::assert_last_event(
                 Event::NodeRegistered { owner: context.owner, node: context.node_id }.into(),
@@ -283,6 +293,76 @@ mod rotating_signing_key {
                     Error::<TestRuntime>::SigningKeyMustBeDifferent
                 );
             })
+        }
+
+        #[test]
+        fn signing_key_already_in_use() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let context = Context::default();
+                    let owner_2 = TestAccount::new([3u8; 32]).account_id();
+                    let node_2 = TestAccount::new([5u8; 32]).account_id();
+
+                    assert_ok!(NodeManager::register_node(
+                        context.origin.clone(),
+                        context.node_id,
+                        context.owner,
+                        context.signing_key.clone(),
+                    ));
+
+                    assert_noop!(
+                        NodeManager::register_node(
+                            context.origin,
+                            node_2,
+                            owner_2,
+                            context.signing_key,
+                        ),
+                        Error::<TestRuntime>::SigningKeyAlreadyInUse
+                    );
+                });
+        }
+
+        #[test]
+        fn reverse_index_points_to_a_different_node() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let context = Context::default();
+
+                    let owner_b = TestAccount::new([3u8; 32]).account_id();
+                    let node_b = TestAccount::new([5u8; 32]).account_id();
+                    let key_b = UintAuthorityId(11);
+
+                    assert_ok!(NodeManager::register_node(
+                        context.origin.clone(),
+                        context.node_id,
+                        context.owner,
+                        context.signing_key.clone(),
+                    ));
+
+                    assert_ok!(NodeManager::register_node(
+                        context.origin.clone(),
+                        node_b.clone(),
+                        owner_b.clone(),
+                        key_b,
+                    ));
+
+                    // Corrupt storage: map key_a to node_b, so removing key_a for node_a should
+                    // fail.
+                    SigningKeyToNodeId::<TestRuntime>::insert(context.signing_key, node_b.clone());
+
+                    assert_noop!(
+                        NodeManager::update_signing_key(
+                            RuntimeOrigin::signed(context.owner),
+                            context.node_id,
+                            UintAuthorityId(12),
+                        ),
+                        Error::<TestRuntime>::InvalidSigningKey
+                    );
+                });
         }
     }
 }

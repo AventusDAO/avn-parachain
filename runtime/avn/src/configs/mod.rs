@@ -573,6 +573,8 @@ impl pallet_node_manager::Config for Runtime {
     type SignedTxLifetime = ConstU32<64>;
     type TimeProvider = pallet_timestamp::Pallet<Runtime>;
     type VirtualNodeStake = VirtualNodeStake;
+    type Token = EthAddress;
+    type AppChainFeeHandler = TokenManager;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
 }
 

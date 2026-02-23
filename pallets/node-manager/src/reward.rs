@@ -7,10 +7,9 @@ impl<T: Config> Pallet<T> {
     pub fn calculate_node_weight(
         node_id: &NodeId<T>,
         uptime_info: UptimeInfo<BlockNumberFor<T>>,
-        node_info: &NodeInfo<T::SignerId, T::AccountId>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         uptime_threshold: u32,
-        reward_period_end_time: u64,
-        reward_period: RewardPeriodIndex,
+        reward_period_end_time: Duration,
     ) -> u128 {
         let actual_uptime = uptime_info.count;
         let weight = uptime_info.weight;
@@ -24,7 +23,7 @@ impl<T: Config> Pallet<T> {
             // genesis bonus for all heartbeats. This is ok because we are in this
             // situation because the node managed to send more heartbeats than it should.
             let single_node_weight =
-                Self::effective_heartbeat_weight(node_info, reward_period, reward_period_end_time);
+                Self::effective_heartbeat_weight(node_info, reward_period_end_time);
             single_node_weight.saturating_mul(u128::from(uptime_threshold))
         } else {
             weight
@@ -47,41 +46,72 @@ impl<T: Config> Pallet<T> {
         Ok(ratio.mul_floor(total_rewards_u128).saturated_into())
     }
 
+    // ** Note **: this function will not roll back in case of error, so make sure storage changes
+    // are done in the right order.
     pub fn pay_reward(
         period: &RewardPeriodIndex,
         node_id: NodeId<T>,
-        node_info: &NodeInfo<T::SignerId, T::AccountId>,
+        node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         amount: BalanceOf<T>,
     ) -> DispatchResult {
         let node_owner = node_info.owner.clone();
-        let reward_pot_account_id = Self::compute_reward_account_id();
 
-        // First pay the owner
-        T::Currency::transfer(
-            &reward_pot_account_id,
-            &node_owner,
-            amount,
-            ExistenceRequirement::KeepAlive,
-        )?;
-
-        if node_info.auto_stake_expiry < Self::time_now_sec() {
-            // We are outside the auto stake period, finish paying.
+        if amount.is_zero() {
+            // Even if the reward is 0, we still want to emit the event for better visibility.
             Self::deposit_event(Event::RewardPaid {
                 reward_period: *period,
                 owner: node_owner,
                 node: node_id,
                 amount,
             });
-        } else {
-            // We are within the auto stake period, auto stake the rewards.
-            Self::do_add_stake(&node_owner, amount).map_err(|_| Error::<T>::AutoStakeFailed)?;
 
-            Self::deposit_event(Event::RewardAutoStaked {
-                reward_period: *period,
-                owner: node_owner,
-                node: node_id,
-                amount,
-            });
+            return Ok(())
+        }
+
+        let reward_pot_account_id = Self::compute_reward_account_id();
+        let appchain_fee = Self::calculate_appchain_fee(amount);
+        let net_reward = amount.saturating_sub(appchain_fee);
+
+        // First pay the owner, this is the most important step here.
+        T::Currency::transfer(
+            &reward_pot_account_id,
+            &node_owner,
+            net_reward,
+            ExistenceRequirement::KeepAlive,
+        )?;
+
+        Self::deposit_event(Event::RewardPaid {
+            reward_period: *period,
+            owner: node_owner.clone(),
+            node: node_id.clone(),
+            amount: net_reward,
+        });
+
+        // Pay the fee to the treasury
+        if let Err(e) = T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id) {
+            log::error!("💔 Failed to pay appchain fee of {:?} from reward pot. Node {:?}. Period: {:?}. Error: {:?}", appchain_fee, node_id, period, e);
+        }
+
+        if net_reward <= Zero::zero() {
+            return Ok(())
+        }
+
+        if Self::time_now_sec() < node_info.auto_stake_expiry || node_info.auto_stake_rewards {
+            // Best-effort auto-stake. Failure is tolerated because funds are already in free
+            // balance.
+            let r = Self::do_add_stake(&node_owner, &node_id, net_reward);
+            match r {
+                Ok(_) => {
+                    Self::deposit_event(Event::RewardAutoStaked {
+                        reward_period: *period,
+                        owner: node_owner,
+                        node: node_id,
+                        amount: net_reward,
+                    });
+                },
+                Err(e) =>
+                    log::error!("💔 Failed to auto-stake reward for node {:?}. Period: {:?}, amount: {:?}. Error: {:?}", node_id, period, net_reward, e),
+            }
         }
 
         Ok(())
@@ -104,10 +134,6 @@ impl<T: Config> Pallet<T> {
         LastPaidPointer::<T>::kill();
         <TotalUptime<T>>::remove(period_index);
         <RewardPot<T>>::remove(period_index);
-
-        // We can now remove all owner stake under this period index
-        // TODO NS: Implement onIdle to clean this up
-        // <StakeSnapshot<T>>::remove(period_index);
 
         Self::deposit_event(Event::RewardPayoutCompleted { reward_period_index: period_index });
     }
@@ -150,7 +176,12 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Get the current time in seconds
-    pub fn time_now_sec() -> u64 {
+    pub fn time_now_sec() -> Duration {
         T::TimeProvider::now().as_secs()
+    }
+
+    pub fn calculate_appchain_fee(amount: BalanceOf<T>) -> BalanceOf<T> {
+        let fee_percentage = AppChainFeePercentage::<T>::get();
+        fee_percentage.mul_floor(amount)
     }
 }

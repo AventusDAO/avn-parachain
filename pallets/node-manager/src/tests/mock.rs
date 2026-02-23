@@ -63,6 +63,8 @@ impl Config for TestRuntime {
     type TimeProvider = pallet_timestamp::Pallet<TestRuntime>;
     type SignedTxLifetime = ConstU32<64>;
     type VirtualNodeStake = VirtualNodeStake;
+    type Token = H160;
+    type AppChainFeeHandler = Self;
     type WeightInfo = ();
 }
 
@@ -200,9 +202,11 @@ impl ExtBuilder {
             max_batch_size: 10u32,
             heartbeat_period: 5u32,
             reward_amount: 20 * AVT,
-            auto_stake_duration_sec: 3600u64,
+            auto_stake_duration_sec: 180 * 24 * 60 * 60,
             max_unstake_percentage: Perbill::from_percent(10),
             unstake_period_sec: 7 * 24 * 60 * 60,
+            restricted_unstake_duration_sec: 10 * 7 * 24 * 60 * 60,
+            app_chain_fee_percentage: Perbill::from_percent(5),
         }
         .assimilate_storage(&mut self.storage);
         self
@@ -303,4 +307,29 @@ pub fn mock_get_finalised_block(state: &mut OffchainState, response: &Option<Vec
         sent: true,
         ..Default::default()
     });
+}
+
+impl FeePaymentHandler for TestRuntime {
+    type Token = H160;
+    type TokenBalance = u128;
+    type AccountId = AccountId;
+    type Error = DispatchError;
+
+    fn pay_fee(
+        _token: &Self::Token,
+        _amount: &Self::TokenBalance,
+        _payer: &Self::AccountId,
+        _recipient: &Self::AccountId,
+    ) -> Result<(), Self::Error> {
+        return Ok(())
+    }
+
+    fn pay_treasury(
+        amount: &Self::TokenBalance,
+        payer: &Self::AccountId,
+    ) -> Result<(), Self::Error> {
+        let balance = Balances::free_balance(payer);
+        Balances::make_free_balance_be(&payer, balance.saturating_sub(*amount));
+        Ok(())
+    }
 }

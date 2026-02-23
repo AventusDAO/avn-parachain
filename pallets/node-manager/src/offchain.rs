@@ -108,42 +108,40 @@ impl<T: Config> Pallet<T> {
 
     pub fn try_get_node_author(block_number: BlockNumberFor<T>) -> Option<Author<T>> {
         let setup_result = AVN::<T>::pre_run_setup(block_number, OCW_ID.to_vec());
-        if let Err(_) = setup_result {
-            return None
+        if let Ok((this_author, _)) = setup_result {
+            let is_primary = AVN::<T>::is_primary_for_block(block_number, &this_author.account_id);
+
+            if is_primary.is_err() {
+                log::error!("💔 Error checking if author is Primary");
+                return None
+            }
+
+            return Some(this_author)
         }
 
-        let (this_author, _) = setup_result.expect("We have an author");
-        let is_primary = AVN::<T>::is_primary_for_block(block_number, &this_author.account_id);
-
-        if is_primary.is_err() {
-            log::error!("💔 Error checking if author is Primary");
-            return None
-        }
-
-        return Some(this_author)
+        return None
     }
 
     pub fn can_trigger_payment() -> Result<bool, ()> {
         let oldest_period = OldestUnpaidRewardPeriodIndex::<T>::get();
         let current_period = RewardPeriod::<T>::get().current;
-        let last_paid_pointer = LastPaidPointer::<T>::get();
 
-        if last_paid_pointer.is_some() {
-            log::info!("👷 Resuming payment for period: {:?}", oldest_period);
-            return Ok(true)
+        if oldest_period >= current_period {
+            return Ok(false)
         }
 
-        if oldest_period < current_period && last_paid_pointer.is_none() {
+        let last_paid_pointer = LastPaidPointer::<T>::get();
+        if last_paid_pointer.is_some() {
+            log::info!("👷 Resuming payment for period: {:?}", oldest_period);
+        } else {
             log::info!(
                 "👷 Triggering payment for period: {:?}. Current period: {:?}",
                 oldest_period,
                 current_period
             );
-
-            return Ok(true)
         }
 
-        return Ok(false)
+        return Ok(true)
     }
 
     pub fn get_node_from_signing_key() -> Option<(T::AccountId, T::SignerId)> {
@@ -210,6 +208,7 @@ impl<T: Config> Pallet<T> {
         }
     }
 
+    // TODO: cleanup old data
     fn record_heartbeat_ocw_submission(
         now: BlockNumberFor<T>,
         reward_period_index: RewardPeriodIndex,
