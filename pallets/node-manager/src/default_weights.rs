@@ -468,18 +468,20 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes((2_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(b.into()))
 	}
-	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
-	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(112), added: 2587, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::SigningKeyToNodeId` (r:2 w:1)
+	/// Proof: `NodeManager::SigningKeyToNodeId` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	fn update_signing_key() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `381`
-		//  Estimated: `3577`
-		// Minimum execution time: 18_085_000 picoseconds.
-		Weight::from_parts(19_443_000, 3577)
-			.saturating_add(T::DbWeight::get().reads(2_u64))
-			.saturating_add(T::DbWeight::get().writes(1_u64))
+		//  Measured:  `570`
+		//  Estimated: `6100`
+		// Minimum execution time: 26_142_000 picoseconds.
+		Weight::from_parts(27_711_000, 6100)
+			.saturating_add(T::DbWeight::get().reads(4_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 }
 
@@ -818,18 +820,20 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes((2_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(b.into()))
 	}
-	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
-	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(112), added: 2587, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::SigningKeyToNodeId` (r:2 w:1)
+	/// Proof: `NodeManager::SigningKeyToNodeId` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	fn update_signing_key() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `381`
-		//  Estimated: `3577`
-		// Minimum execution time: 18_085_000 picoseconds.
-		Weight::from_parts(19_443_000, 3577)
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
+		//  Measured:  `570`
+		//  Estimated: `6100`
+		// Minimum execution time: 26_142_000 picoseconds.
+		Weight::from_parts(27_711_000, 6100)
+			.saturating_add(RocksDbWeight::get().reads(4_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `NodeManager::OwnedNodesCount` (r:1 w:0)
 	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)

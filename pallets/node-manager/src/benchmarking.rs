@@ -42,7 +42,6 @@ fn set_registrar<T: Config>(registrar: T::AccountId) {
 
 fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::SignerId {
     let key = T::SignerId::generate_pair(None);
-    let stake_expiry = Pallet::<T>::calculate_auto_stake_expiry();
     let stake_info = StakeInfo::<BalanceOf<T>>::new(
         Zero::zero(),
         Zero::zero(),
@@ -588,6 +587,22 @@ benchmarks! {
         let stake = node_info.stake;
         assert!(stake.amount == (100u32 - 10u32).into());
         assert_last_event::<T>(Event::StakeRemoved { owner, node_id, reward_period: reward_period_index, amount: 10u32.into(), new_total: stake.amount }.into());
+    }
+
+    update_auto_stake_preference {
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+        enable_rewards::<T>();
+
+        let owner: T::AccountId = account("owner", 1, 1);
+        let node_id: NodeId<T> = account("node", 2, 2);
+        register_new_node::<T>(node_id.clone(), owner.clone());
+        let preference = NodeRegistry::<T>::get(&node_id).unwrap().auto_stake_rewards;
+    }: update_auto_stake_preference(RawOrigin::Signed(owner.clone()), node_id.clone(), !preference)
+    verify {
+        let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
+        assert_eq!(node_info.auto_stake_rewards, !preference);
+        assert_last_event::<T>(Event::AutoStakePreferenceUpdated {owner, node_id, auto_stake_rewards: !preference}.into());
     }
 }
 
