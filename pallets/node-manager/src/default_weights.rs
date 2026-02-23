@@ -125,15 +125,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(9_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
-
+	/// Storage: `NodeManager::OwnedNodes` (r:1 w:0)
+	/// Proof: `NodeManager::OwnedNodes` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
 	fn update_auto_stake_preference() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1078`
-		//  Estimated: `5563`
-		// Minimum execution time: 60_974_000 picoseconds.
-		Weight::from_parts(67_393_000, 5563)
-			.saturating_add(T::DbWeight::get().reads(9_u64))
-			.saturating_add(T::DbWeight::get().writes(5_u64))
+		//  Measured:  `607`
+		//  Estimated: `3656`
+		// Minimum execution time: 18_030_000 picoseconds.
+		Weight::from_parts(18_848_000, 3656)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -893,14 +896,17 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(9_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
-
+	/// Storage: `NodeManager::OwnedNodes` (r:1 w:0)
+	/// Proof: `NodeManager::OwnedNodes` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
 	fn update_auto_stake_preference() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1078`
-		//  Estimated: `5563`
-		// Minimum execution time: 60_974_000 picoseconds.
-		Weight::from_parts(67_393_000, 5563)
-			.saturating_add(RocksDbWeight::get().reads(9_u64))
-			.saturating_add(RocksDbWeight::get().writes(5_u64))
+		//  Measured:  `607`
+		//  Estimated: `3656`
+		// Minimum execution time: 18_030_000 picoseconds.
+		Weight::from_parts(18_848_000, 3656)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }
