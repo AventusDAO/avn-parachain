@@ -38,7 +38,7 @@ use sp_avn_common::{
     avn_tests_helpers::ethereum_converters::*,
     eth::EthereumId,
     event_types::{EthEventId, LiftedData, ValidEvents},
-    OnIdleHandler,
+    NoopAssetManager, NoopAssetRegistry, OnIdleHandler,
 };
 use sp_core::{sr25519, ConstU64, Pair, H256};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
@@ -110,6 +110,8 @@ impl token_manager::Config for TestRuntime {
     type OnIdleHandler = TestOnIdleHandler;
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
+    type AssetRegistry = NoopAssetRegistry;
+    type AssetManager = NoopAssetManager;
 }
 
 parameter_types! {

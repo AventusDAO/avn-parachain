@@ -24,6 +24,7 @@ use sp_runtime::{
     MultiSignature,
 };
 use sp_std::{boxed::Box, vec::Vec};
+use serde::{Deserialize, Serialize};
 
 pub const OPEN_BYTES_TAG: &'static [u8] = b"<Bytes>";
 pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
@@ -487,5 +488,265 @@ impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
 
     pub fn session_id(&self) -> BoundedVec<u8, VotingSessionIdBound> {
         BoundedVec::truncate_from(self.encode())
+    }
+}
+
+/// The `Asset` enum represents all types of assets available in Aventus
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Deserialize,
+    Eq,
+    Encode,
+    MaxEncodedLen,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Serialize,
+    TypeInfo,
+)]
+#[cfg_attr(feature = "std", serde(rename_all = "camelCase"))]
+pub enum Asset {
+    #[default]
+    Avt,
+    ForeignAsset(u32),
+}
+
+/// No-op asset registry for runtimes that do not use `orml_asset_registry`.
+/// All lookups return `None` / `Ok(None)`.
+pub struct NoopAssetRegistry;
+
+impl orml_traits::asset_registry::Inspect<orml_traits::asset_registry::AvnAssetLocation>
+    for NoopAssetRegistry
+{
+    type AssetId = primitives::CurrencyId;
+    type Balance = primitives::Balance;
+    type CustomMetadata = orml_traits::asset_registry::AvnAssetMetadata;
+    type StringLimit = sp_core::ConstU32<0>;
+
+    fn asset_id(
+        _location: &orml_traits::asset_registry::AvnAssetLocation,
+    ) -> Option<primitives::CurrencyId> {
+        None
+    }
+
+    fn metadata(
+        _asset_id: &primitives::CurrencyId,
+    ) -> Option<
+        orml_traits::asset_registry::AssetMetadata<
+            primitives::Balance,
+            orml_traits::asset_registry::AvnAssetMetadata,
+            orml_traits::asset_registry::AvnAssetLocation,
+            sp_core::ConstU32<0>,
+        >,
+    > {
+        None
+    }
+
+    fn metadata_by_location(
+        _location: &orml_traits::asset_registry::AvnAssetLocation,
+    ) -> Option<
+        orml_traits::asset_registry::AssetMetadata<
+            primitives::Balance,
+            orml_traits::asset_registry::AvnAssetMetadata,
+            orml_traits::asset_registry::AvnAssetLocation,
+            sp_core::ConstU32<0>,
+        >,
+    > {
+        None
+    }
+
+    fn location(
+        _asset_id: &primitives::CurrencyId,
+    ) -> Result<Option<orml_traits::asset_registry::AvnAssetLocation>, sp_runtime::DispatchError>
+    {
+        Ok(None)
+    }
+}
+
+/// No-op asset manager for runtimes that do not use `orml_currencies`.
+/// Balance queries return zero; all mutating operations return an error.
+pub struct NoopAssetManager;
+
+impl<AccountId> orml_traits::MultiCurrency<AccountId> for NoopAssetManager {
+    type CurrencyId = primitives::CurrencyId;
+    type Balance = primitives::Balance;
+
+    fn minimum_balance(_currency_id: primitives::CurrencyId) -> primitives::Balance {
+        0
+    }
+
+    fn total_issuance(_currency_id: primitives::CurrencyId) -> primitives::Balance {
+        0
+    }
+
+    fn total_balance(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn free_balance(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn ensure_can_withdraw(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _amount: primitives::Balance,
+    ) -> sp_runtime::DispatchResult {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+
+    fn transfer(
+        _currency_id: primitives::CurrencyId,
+        _from: &AccountId,
+        _to: &AccountId,
+        _amount: primitives::Balance,
+        _existence_requirement: frame_support::traits::ExistenceRequirement,
+    ) -> sp_runtime::DispatchResult {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+
+    fn deposit(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _amount: primitives::Balance,
+    ) -> sp_runtime::DispatchResult {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+
+    fn withdraw(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _amount: primitives::Balance,
+        _existence_requirement: frame_support::traits::ExistenceRequirement,
+    ) -> sp_runtime::DispatchResult {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+
+    fn can_slash(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> bool {
+        false
+    }
+
+    fn slash(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _amount: primitives::Balance,
+    ) -> primitives::Balance {
+        0
+    }
+}
+
+impl<AccountId> orml_traits::MultiReservableCurrency<AccountId> for NoopAssetManager {
+    fn can_reserve(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> bool {
+        false
+    }
+
+    fn slash_reserved(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn reserved_balance(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn reserve(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> sp_runtime::DispatchResult {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+
+    fn unreserve(
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn repatriate_reserved(
+        _currency_id: primitives::CurrencyId,
+        _slashed: &AccountId,
+        _beneficiary: &AccountId,
+        _value: primitives::Balance,
+        _status: frame_support::traits::BalanceStatus,
+    ) -> Result<primitives::Balance, sp_runtime::DispatchError> {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+}
+
+impl<AccountId> orml_traits::NamedMultiReservableCurrency<AccountId> for NoopAssetManager {
+    type ReserveIdentifier = [u8; 8];
+
+    fn slash_reserved_named(
+        _id: &[u8; 8],
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn reserved_balance_named(
+        _id: &[u8; 8],
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn reserve_named(
+        _id: &[u8; 8],
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> sp_runtime::DispatchResult {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
+    }
+
+    fn unreserve_named(
+        _id: &[u8; 8],
+        _currency_id: primitives::CurrencyId,
+        _who: &AccountId,
+        _value: primitives::Balance,
+    ) -> primitives::Balance {
+        0
+    }
+
+    fn repatriate_reserved_named(
+        _id: &[u8; 8],
+        _currency_id: primitives::CurrencyId,
+        _slashed: &AccountId,
+        _beneficiary: &AccountId,
+        _value: primitives::Balance,
+        _status: frame_support::traits::BalanceStatus,
+    ) -> Result<primitives::Balance, sp_runtime::DispatchError> {
+        Err(sp_runtime::DispatchError::Other("NoopAssetManager: no asset manager configured"))
     }
 }

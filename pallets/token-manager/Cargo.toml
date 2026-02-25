@@ -28,6 +28,9 @@ frame-support.workspace = true
 frame-system.workspace = true
 pallet-avn.workspace = true
 
+#orml
+orml-traits = { workspace = true }
+
 # Optional imports for benchmarking
 frame-benchmarking = { optional = true, workspace = true }
 
@@ -62,6 +65,7 @@ std = [
 	"pallet-timestamp/std",
 	"log/std",
 	"enumflags2/std",
+	"orml-traits/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

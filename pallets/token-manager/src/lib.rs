@@ -43,9 +43,10 @@ use pallet_avn::{
     self as avn, AccountToBytesConverter, BridgeInterface, BridgeInterfaceNotification,
     CollatorPayoutDustHandler, OnGrowthLiftedHandler, ProcessedEventsChecker,
 };
-use sp_avn_common::eth::{concat_lower_data, LowerParams};
 
 use sp_avn_common::{
+    eth::{concat_lower_data, LowerParams},
+    primitives::CurrencyId,
     event_types::{
         AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
         LowerRevertedData, ProcessedEventHandler, TokenInterface,
@@ -57,11 +58,12 @@ use sp_runtime::{
     scale_info::TypeInfo,
     traits::{
         AccountIdConversion, AtLeast32Bit, CheckedAdd, Dispatchable, Hash, IdentifyAccount, Member,
-        Saturating, Verify, Zero,
+        Saturating, Verify, Zero, CheckedSub
     },
     Perbill,
 };
 use sp_std::prelude::*;
+use orml_traits::{NamedMultiReservableCurrency, asset_registry::{Inspect, AvnAssetMetadata, AvnAssetLocation}, MultiCurrency};
 
 type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
@@ -158,6 +160,19 @@ pub mod pallet {
         type OnIdleHandler: OnIdleHandler<BlockNumberFor<Self>, Weight>;
         type AccountToBytesConvert: pallet_avn::AccountToBytesConverter<Self::AccountId>;
         type TimeProvider: UnixTime;
+         /// Manages *known* assets (including native and non native tokens)
+        type AssetManager: NamedMultiReservableCurrency<
+            Self::AccountId,
+            Balance = BalanceOf<Self>,
+            CurrencyId = CurrencyId,
+            ReserveIdentifier = [u8; 8],
+        >;
+        /// Provides information about *known* assets (including native and non native tokens)
+        type AssetRegistry: Inspect<AvnAssetLocation,
+            AssetId = CurrencyId,
+            Balance = BalanceOf<Self>,
+            CustomMetadata = AvnAssetMetadata,
+        >;
     }
 
     #[pallet::pallet]
@@ -300,6 +315,7 @@ pub mod pallet {
         LoweringDisabled,
         InvalidLiftRequest,
         InvalidEthAddress,
+        InvalidToken,
     }
 
     #[pallet::storage]
@@ -716,6 +732,116 @@ impl<T: Config> Pallet<T> {
     }
 
     fn settle_lower(
+        token_id: T::TokenId,
+        from: &T::AccountId,
+        to: &T::AccountId,
+        amount: u128,
+        t1_recipient: H160,
+        lower_id: LowerId,
+    ) -> DispatchResult {
+        if token_id == Self::avt_token_contract().into() {
+            let lower_amount = <BalanceOf<T> as TryFrom<u128>>::try_from(amount)
+                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
+            // Note: Keep account alive when balance is lower than existence requirement,
+            // so the SystemNonce will not be reset just in case if any logic relies on the
+            // SystemNonce. However all zero AVT account balances will be kept in our
+            // runtime storage.
+            let imbalance = <T as pallet::Config>::Currency::withdraw(
+                &from,
+                lower_amount,
+                WithdrawReasons::TRANSFER,
+                ExistenceRequirement::KeepAlive,
+            )?;
+
+            if imbalance.peek() == BalanceOf::<T>::zero() {
+                Err(Error::<T>::LowerFailed)?
+            }
+
+            // Decreases the total issued AVT when this negative imbalance is dropped
+            // so that total issued AVT becomes equal to total supply once again.
+            drop(imbalance);
+
+            Self::deposit_event(Event::<T>::AvtLowered {
+                sender: from.clone(),
+                recipient: to.clone(),
+                amount,
+                t1_recipient,
+                lower_id,
+            });
+        } else {
+            let lower_amount = <T::TokenBalance as TryFrom<u128>>::try_from(amount)
+                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
+            let sender_balance = Self::balance((token_id, from));
+            ensure!(sender_balance >= lower_amount, Error::<T>::InsufficientSenderBalance);
+
+            <Balances<T>>::mutate((token_id, from), |balance| *balance -= lower_amount);
+
+            Self::deposit_event(Event::<T>::TokenLowered {
+                token_id,
+                sender: from.clone(),
+                recipient: to.clone(),
+                amount,
+                t1_recipient,
+                lower_id,
+            });
+        }
+
+        let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
+        let t2_timestamp: u64 = T::TimeProvider::now().as_secs();
+        let lower_params = concat_lower_data(
+            lower_id,
+            token_id.into(),
+            &amount,
+            &t1_recipient,
+            t2_sender,
+            t2_timestamp,
+        );
+
+        <LowersPendingProof<T>>::insert(lower_id, &lower_params);
+        T::BridgeInterface::generate_lower_proof(lower_id, &lower_params, PALLET_ID.to_vec())?;
+
+        Ok(())
+    }
+
+    fn settle_token_transfer(
+        token_id: &T::TokenId,
+        from: &T::AccountId,
+        to: &T::AccountId,
+        amount: &T::TokenBalance,
+    ) -> DispatchResult {
+        ensure!(*token_id != Self::avt_token_contract().into(), Error::<T>::InvalidToken);
+        if *amount == T::TokenBalance::zero() || from == to {
+            return Ok(()); //noop
+        }
+
+        if let Some(asset) = T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
+            let amount_u128 = TryInto::<u128>::try_into(*amount)
+                .map_err(|_| Error::<T>::AmountOverflow)?;
+            let x = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
+                .map_err(|_| Error::<T>::AmountOverflow)?;
+            T::AssetManager::transfer(asset, from, to, x, ExistenceRequirement::KeepAlive)?;
+        } else {
+            <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
+                *balance = balance.checked_sub(amount).ok_or(Error::<T>::InsufficientSenderBalance)?;
+                Ok(())
+            })?;
+
+            <Balances<T>>::try_mutate((token_id, to), |balance| -> DispatchResult {
+                *balance = balance.checked_add(amount).ok_or(Error::<T>::AmountOverflow)?;
+                Ok(())
+            })?;
+
+            Self::deposit_event(Event::<T>::TokenTransferred {
+                token_id: token_id.clone(),
+                sender: from.clone(),
+                recipient: to.clone(),
+                token_balance: amount.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    fn settle_token_lower(
         token_id: T::TokenId,
         from: &T::AccountId,
         to: &T::AccountId,
@@ -1260,20 +1386,16 @@ impl<T: Config> FeePaymentHandler for Pallet<T> {
 // TODO: The implementation feels too specific to PM, try to generalise it
 impl<T: Config> TokenInterface<T::TokenId, T::AccountId> for Pallet<T> {
     fn process_lift(event: &EthEvent) -> DispatchResult {
-        return match &event.event_data {
-            EventData::LogLiftedToPredictionMarket(d) => {
-                let lifted_data = LiftedData::new(d.token_contract, d.receiver_address, d.amount);
-                return Self::process_lift(event, &lifted_data)
-            },
-            EventData::LogErc20Transfer(d) => {
-                let lifted_data = LiftedData::new(d.token_contract, d.receiver_address, d.amount);
-                return Self::process_lift(event, &lifted_data)
-            },
-
+        let lifted_data = match &event.event_data {
+            EventData::LogLiftedToPredictionMarket(d) =>
+                LiftedData::new(d.token_contract, d.receiver_address, d.amount),
+            EventData::LogErc20Transfer(d) =>
+                LiftedData::new(d.token_contract, d.receiver_address, d.amount),
             // Any other event should not be calling this hook, they should use the regular lift
             // pathway
-            _ => Err(Error::<T>::InvalidLiftRequest)?,
-        }
+            _ => return Err(Error::<T>::InvalidLiftRequest)?,
+        };
+        Self::process_lift(event, &lifted_data)
     }
 
     fn deposit_tokens(

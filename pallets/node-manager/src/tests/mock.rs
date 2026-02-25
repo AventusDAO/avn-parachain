@@ -206,7 +206,7 @@ impl ExtBuilder {
             max_unstake_percentage: Perbill::from_percent(10),
             unstake_period_sec: 7 * 24 * 60 * 60,
             restricted_unstake_duration_sec: 10 * 7 * 24 * 60 * 60,
-            app_chain_fee_percentage: Perbill::from_percent(5),
+            app_chain_fee_percentage: Perbill::from_percent(0),
         }
         .assimilate_storage(&mut self.storage);
         self

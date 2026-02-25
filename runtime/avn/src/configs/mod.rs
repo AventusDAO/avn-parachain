@@ -25,7 +25,7 @@ use frame_support::{
     dispatch::DispatchClass,
     pallet_prelude::EnsureOrigin,
     parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, TransformOrigin, VariantCountOf},
+    traits::{ConstBool, ConstU32, ConstU64, Contains, TransformOrigin, VariantCountOf},
     weights::{ConstantMultiplier, Weight},
     PalletId,
 };
@@ -38,25 +38,27 @@ use polkadot_runtime_common::{
     xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
 };
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_runtime::Perbill;
 use sp_version::RuntimeVersion;
 
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
 use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
-    constants::{currency::*, time::*},
+    Asset, constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
     NODE_MANAGER_PALLET_ID,
 };
 use sp_core::{ConstU128, H160};
-use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
+use sp_runtime::{traits::{AccountIdConversion, ConvertInto}, Perbill, transaction_validity::TransactionPriority};
+use orml_traits::{parameter_type_with_key,
+    asset_registry::{AvnAssetMetadata, AvnAssetLocation}
+};
 
 // Local module imports
 use crate::{
     fungible,
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
-    AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
-    AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, EnsureSigned, EthBridge,
+    Amount, AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
+    AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, CurrencyId, EnsureSigned, EthBridge,
     Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
     Moment, NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
@@ -64,8 +66,8 @@ use crate::{
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
     SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
     ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
+    VERSION, OrmlTokens, asset_registry::AvnAssetProcessor, AssetManager, AssetRegistry,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -157,10 +159,12 @@ impl pallet_authorship::Config for Runtime {
 
 parameter_types! {
     pub const ExistentialDeposit: Balance = EXISTENTIAL_DEPOSIT;
+    pub const MaxLocks: u32 = 50;
+    pub const MaxReserves: u32 = 50;
 }
 
 impl pallet_balances::Config for Runtime {
-    type MaxLocks = ConstU32<50>;
+    type MaxLocks = MaxLocks;
     /// The type for recording an account's balance.
     type Balance = Balance;
     /// The ubiquitous event type.
@@ -169,7 +173,7 @@ impl pallet_balances::Config for Runtime {
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
     type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
-    type MaxReserves = ConstU32<50>;
+    type MaxReserves = MaxReserves;
     type ReserveIdentifier = [u8; 8];
     type RuntimeHoldReason = RuntimeHoldReason;
     type RuntimeFreezeReason = RuntimeFreezeReason;
@@ -486,6 +490,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
+    type AssetRegistry = AssetRegistry;
+    type AssetManager = AssetManager;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -722,6 +728,69 @@ impl pallet_summary_watchtower::Config for Runtime {
     type WeightInfo = ();
 }
 
+parameter_types! {
+    pub AvnTreasuryAccount: AccountId = AvnTreasuryPotId::get().into_account_truncating();
+}
+
+pub struct CurrencyHooks<R>(sp_std::marker::PhantomData<R>);
+impl<C: orml_tokens::Config> orml_traits::currency::MutationHooks<AccountId, CurrencyId, Balance>
+    for CurrencyHooks<C>
+{
+    type OnDust = orml_tokens::TransferDust<Runtime, AvnTreasuryAccount>;
+    type OnKilledTokenAccount = ();
+    type OnNewTokenAccount = ();
+    type OnSlash = ();
+    type PostDeposit = ();
+    type PostTransfer = ();
+    type PreDeposit = ();
+    type PreTransfer = ();
+}
+
+impl orml_tokens::Config for Runtime {
+    type Amount = Amount;
+    type Balance = Balance;
+    type CurrencyHooks = CurrencyHooks<Runtime>;
+    type CurrencyId = CurrencyId;
+    type DustRemovalWhitelist = DustRemovalWhitelist;
+    type RuntimeEvent = RuntimeEvent;
+    type ExistentialDeposits = OrmlExistentialDeposits;
+    type MaxLocks = MaxLocks;
+    type MaxReserves = MaxReserves;
+    type ReserveIdentifier = [u8; 8];
+    type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const AssetRegistryStringLimit: u32 = 1024;
+}
+
+impl orml_asset_registry::Config for Runtime {
+    type AssetId = CurrencyId;
+    type AuthorityOrigin = EnsureRoot<AccountId>;
+    type Balance = Balance;
+    type CustomMetadata = AvnAssetMetadata;
+    type RuntimeEvent = RuntimeEvent;
+    type StringLimit = AssetRegistryStringLimit;
+    type AssetProcessor = AvnAssetProcessor;
+    type AssetLocation = AvnAssetLocation;
+    type WeightInfo = ();
+}
+
+/// ORML currency adapter to abstract over the currency implementation used in the runtime.
+pub type BasicCurrencyAdapter<R, B> =
+    orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
+
+parameter_types! {
+    pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
+}
+
+impl orml_currencies::Config for Runtime {
+    type GetNativeCurrencyId = GetNativeCurrencyId;
+    type MultiCurrency = OrmlTokens;
+    type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances>;
+    type WeightInfo = ();
+}
+
 pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
 impl<R> OnUnbalanced<fungible::Credit<R::AccountId, pallet_balances::Pallet<R>>> for DealWithFees<R>
 where
@@ -790,4 +859,52 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
         #[cfg(not(feature = "runtime-benchmarks"))]
         pallet_node_manager::TotalRegisteredNodes::<Runtime>::get()
     }
+}
+
+// Accounts protected from being deleted due to a too low amount of funds.
+const IMMORTAL_ACCOUNTS: &[PalletId] = &[
+    AvnTreasuryPotId::get(),
+    NodeManagerPalletId::get(),
+    RewardPotId::get(),
+];
+pub struct DustRemovalWhitelist;
+
+impl Contains<AccountId> for DustRemovalWhitelist
+where
+    frame_support::PalletId: sp_runtime::traits::AccountIdConversion<AccountId>,
+{
+    fn contains(ai: &AccountId) -> bool {
+        if let Some(pallet_id) = frame_support::PalletId::try_from_sub_account::<u128>(ai) {
+            return IMMORTAL_ACCOUNTS.contains(&pallet_id.0);
+        }
+
+        for pallet_id in IMMORTAL_ACCOUNTS {
+            let pallet_acc: AccountId = pallet_id.into_account_truncating();
+
+            if pallet_acc == *ai {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+parameter_type_with_key! {
+    pub OrmlExistentialDeposits: |currency_id: CurrencyId| -> Balance {
+        match currency_id {
+            Asset::Avt => EXISTENTIAL_DEPOSIT,
+            Asset::ForeignAsset(id) => {
+                // let maybe_metadata = <
+                // pallet_pm_eth_asset_registry::Pallet<Runtime> as prediction_market_primitives::traits::InspectEthAsset
+                // >::metadata(&Asset::ForeignAsset(*id));
+
+                // if let Some(metadata) = maybe_metadata {
+                //     return metadata.existential_deposit;
+                // }
+
+                FOREIGN_ASSET_DEFAULT_ED
+            }
+        }
+    };
 }
