@@ -1,5 +1,5 @@
 //! # Avn proxy pallet
-// Copyright 2022 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 //! The avnProxy pallet is responsible for proxying transactions to a list of whitelisted pallets.
 //! The target pallets are responsible for validating the transaction and should not make any
@@ -68,7 +68,7 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
 
         /// The type of token identifier
-        /// (a H160 because this is an Ethereum address)
+        /// (H160 because this is an Ethereum address)
         type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
 
         /// A handler to process relayer fee payments

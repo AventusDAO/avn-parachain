@@ -1,3 +1,10 @@
+// Copyright 2026 Aventus DAO Ltd
+
+//! Low-level types used throughout the parachain code.
+
+#![warn(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 use sp_runtime::{
     generic,
     traits::{BlakeTwo256, IdentifyAccount, Verify},

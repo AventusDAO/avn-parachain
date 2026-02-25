@@ -1,5 +1,5 @@
 // This file is part of Aventus.
-// Copyright (C) 2026 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -145,8 +145,8 @@ impl pallet_timestamp::Config for Runtime {
     type OnTimestampSet = ();
     #[cfg(not(feature = "runtime-benchmarks"))]
     type OnTimestampSet = Aura;
-    // TODO update to SLOT_DURATION / 2 to disable asynch backing
-    type MinimumPeriod = ConstU64<0>;
+    // Set to 0 when async backing is enabled
+    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
 }
 
@@ -256,6 +256,10 @@ impl cumulus_pallet_xcmp_queue::Config for Runtime {
     type ControllerOriginConverter = XcmOriginToTransactDispatchOrigin;
     type WeightInfo = ();
     type PriceForSiblingDelivery = NoPriceForMessageDelivery<ParaId>;
+}
+
+impl cumulus_pallet_xcmp_queue::migration::v5::V5Config for Runtime {
+    type ChannelList = ParachainSystem;
 }
 
 parameter_types! {

@@ -1,4 +1,4 @@
-//Copyright 2025 Aventus Network Services (UK) Ltd.
+//Copyright 2026 Aventus DAO Ltd
 
 use crate::{self as authors_manager, *};
 use frame_support::{
