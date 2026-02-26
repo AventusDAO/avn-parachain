@@ -140,8 +140,8 @@ impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
     type OnTimestampSet = Aura;
-    // TODO update to SLOT_DURATION / 2 to disable asynch backing
-    type MinimumPeriod = ConstU64<0>;
+    // Set to 0 when async backing is enabled
+    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
     type WeightInfo = ();
 }
 
@@ -251,6 +251,10 @@ impl cumulus_pallet_xcmp_queue::Config for Runtime {
     type ControllerOriginConverter = XcmOriginToTransactDispatchOrigin;
     type WeightInfo = ();
     type PriceForSiblingDelivery = NoPriceForMessageDelivery<ParaId>;
+}
+
+impl cumulus_pallet_xcmp_queue::migration::v5::V5Config for Runtime {
+    type ChannelList = ParachainSystem;
 }
 
 parameter_types! {
