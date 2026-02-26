@@ -9150,7 +9150,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-node-manager"
-version = "8.6.2"
+version = "8.6.3"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9688,7 +9688,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-summary-watchtower"
-version = "8.6.2"
+version = "8.6.3"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9938,7 +9938,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-watchtower"
-version = "8.6.2"
+version = "8.6.3"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
