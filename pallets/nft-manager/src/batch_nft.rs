@@ -49,7 +49,7 @@ pub fn generate_batch_id<T: Config>(unique_id: NftUniqueId) -> U256 {
 pub fn generate_batch_nft_id<T: Config>(batch_id: &NftBatchId, sales_index: &u64) -> U256 {
     let mut data_to_hash = BATCH_NFT_ID_CONTEXT.to_vec();
 
-    let mut batch_id_be = batch_id.to_big_endian();
+    let batch_id_be = batch_id.to_big_endian();
     data_to_hash.append(&mut batch_id_be.to_vec());
     data_to_hash.append(&mut sales_index.to_be_bytes().to_vec());
 
