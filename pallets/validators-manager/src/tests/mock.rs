@@ -1,4 +1,4 @@
-//Copyright 2022 Aventus Network Services (UK) Ltd.
+//Copyright 2026 Aventus DAO Ltd
 
 use crate::{self as validators_manager, *};
 use frame_support::{

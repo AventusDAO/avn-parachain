@@ -1,5 +1,5 @@
 // This file is part of Aventus.
-// Copyright (C) 2022 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

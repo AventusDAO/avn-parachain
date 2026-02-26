@@ -1,4 +1,4 @@
-//Copyright 2022 Aventus Network Services.
+//Copyright 2026 Aventus DAO Ltd
 
 #![cfg(test)]
 

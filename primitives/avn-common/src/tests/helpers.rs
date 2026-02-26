@@ -1,4 +1,4 @@
-// Copyright 2025 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 pub mod ethereum_converters {
     use sp_std::vec::Vec;

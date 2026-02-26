@@ -1,5 +1,5 @@
 // This file is part of Aventus.
-// Copyright (C) 2022 Aventus Network Services (UK) Ltd.
+// Copyright 2026 Aventus DAO Ltd
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -129,7 +129,7 @@ pub mod pallet {
         /// The units in which we record balances of tokens others than AVT
         type TokenBalance: Member + Parameter + AtLeast32Bit + Default + Copy + MaxEncodedLen;
         /// The type of token identifier
-        /// (a H160 because this is an Ethereum address)
+        /// (H160 because this is an Ethereum address)
         type TokenId: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
         type ProcessedEventsChecker: ProcessedEventsChecker;
         /// A type that can be used to verify signatures

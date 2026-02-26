@@ -7,7 +7,7 @@ ARG IMAGE_NAME
 
 # TODO: add io.aventus.image.source
 LABEL io.aventus.image.authors="devops@aventus.io" \
-	io.aventus.image.vendor="Aventus Network Services" \
+	io.aventus.image.vendor="Aventus DAO Ltd" \
 	io.aventus.image.title="${IMAGE_NAME}" \
 	io.aventus.image.description="AvN parachain" \
 	io.aventus.image.revision="${VCS_REF}" \
