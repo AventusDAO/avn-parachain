@@ -13,7 +13,7 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 pub struct AuthorsManagerMigrations<T>(PhantomData<T>);
 impl<T: Config> OnRuntimeUpgrade for AuthorsManagerMigrations<T> {
     fn on_runtime_upgrade() -> Weight {
-        let current = Pallet::<T>::current_storage_version();
+        let current = Pallet::<T>::in_code_storage_version();
         let onchain = Pallet::<T>::on_chain_storage_version();
 
         log::info!(

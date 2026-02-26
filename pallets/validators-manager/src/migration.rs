@@ -11,7 +11,7 @@ use sp_runtime::TryRuntimeError;
 pub struct ValidatorsManagerMigrations<T>(PhantomData<T>);
 impl<T: Config> OnRuntimeUpgrade for ValidatorsManagerMigrations<T> {
     fn on_runtime_upgrade() -> Weight {
-        let current = Pallet::<T>::current_storage_version();
+        let current = Pallet::<T>::in_code_storage_version();
         let onchain = Pallet::<T>::on_chain_storage_version();
 
         log::info!(

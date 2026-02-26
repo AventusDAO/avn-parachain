@@ -119,7 +119,10 @@ pub type Executive = frame_executive::Executive<
             Runtime,
             pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
         >,
+        cumulus_pallet_xcmp_queue::migration::v4::MigrationToV4<Runtime>,
         cumulus_pallet_xcmp_queue::migration::v5::MigrateV4ToV5<Runtime>,
+        pallet_xcm::migration::MigrateToLatestXcmVersion<Runtime>,
+        cumulus_pallet_aura_ext::migration::MigrateV0ToV1<Runtime>,
     ),
 >;
 
@@ -137,7 +140,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 203,
+    spec_version: 204,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
