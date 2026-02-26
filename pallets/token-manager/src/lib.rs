@@ -673,6 +673,20 @@ pub mod pallet {
 
             return Ok(())
         }
+
+        /// Transfer an amount of token with token_id from sender to receiver with a proof
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::signed_transfer())]
+        pub fn transfer(
+            origin: OriginFor<T>,
+            to: T::AccountId,
+            token_id: T::TokenId,
+            amount: T::TokenBalance,
+        ) -> DispatchResult {
+            let from = ensure_signed(origin)?;
+            Self::settle_transfer(&token_id, &from, &to, &amount)?;
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
@@ -684,52 +698,52 @@ pub mod pallet {
 }
 
 impl<T: Config> Pallet<T> {
-    fn settle_transfer(
-        token_id: &T::TokenId,
-        from: &T::AccountId,
-        to: &T::AccountId,
-        amount: &T::TokenBalance,
-    ) -> DispatchResult {
-        if *token_id == Self::avt_token_contract().into() {
-            // First convert TokenBalance to u128
-            let amount_u128 = TryInto::<u128>::try_into(*amount)
-                .map_err(|_| Error::<T>::ErrorConvertingTokenBalance)?;
-            // Then convert to Balance
-            let transfer_amount = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
-                .or_else(|_error| Err(Error::<T>::ErrorConvertingToBalance))?;
+    // fn settle_transfer(
+    //     token_id: &T::TokenId,
+    //     from: &T::AccountId,
+    //     to: &T::AccountId,
+    //     amount: &T::TokenBalance,
+    // ) -> DispatchResult {
+    //     if *token_id == Self::avt_token_contract().into() {
+    //         // First convert TokenBalance to u128
+    //         let amount_u128 = TryInto::<u128>::try_into(*amount)
+    //             .map_err(|_| Error::<T>::ErrorConvertingTokenBalance)?;
+    //         // Then convert to Balance
+    //         let transfer_amount = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
+    //             .or_else(|_error| Err(Error::<T>::ErrorConvertingToBalance))?;
 
-            <T as pallet::Config>::Currency::transfer(
-                from,
-                to,
-                transfer_amount,
-                ExistenceRequirement::KeepAlive,
-            )?;
-        } else {
-            let sender_balance = Self::balance((token_id, from));
-            ensure!(sender_balance >= *amount, Error::<T>::InsufficientSenderBalance);
+    //         <T as pallet::Config>::Currency::transfer(
+    //             from,
+    //             to,
+    //             transfer_amount,
+    //             ExistenceRequirement::KeepAlive,
+    //         )?;
+    //     } else {
+    //         let sender_balance = Self::balance((token_id, from));
+    //         ensure!(sender_balance >= *amount, Error::<T>::InsufficientSenderBalance);
 
-            if from != to {
-                // If we are transfering to ourselves, we need to be careful when reading the
-                // balance because `Self::balance((token_id, from))` ==
-                // `Self::balance((token_id, to))` hence the if statement.
-                let receiver_balance = Self::balance((token_id, to));
-                ensure!(receiver_balance.checked_add(amount).is_some(), Error::<T>::AmountOverflow);
-            }
+    //         if from != to {
+    //             // If we are transfering to ourselves, we need to be careful when reading the
+    //             // balance because `Self::balance((token_id, from))` ==
+    //             // `Self::balance((token_id, to))` hence the if statement.
+    //             let receiver_balance = Self::balance((token_id, to));
+    //             ensure!(receiver_balance.checked_add(amount).is_some(), Error::<T>::AmountOverflow);
+    //         }
 
-            <Balances<T>>::mutate((token_id, from), |balance| *balance -= *amount);
+    //         <Balances<T>>::mutate((token_id, from), |balance| *balance -= *amount);
 
-            <Balances<T>>::mutate((token_id, to), |balance| *balance += *amount);
+    //         <Balances<T>>::mutate((token_id, to), |balance| *balance += *amount);
 
-            Self::deposit_event(Event::<T>::TokenTransferred {
-                token_id: token_id.clone(),
-                sender: from.clone(),
-                recipient: to.clone(),
-                token_balance: amount.clone(),
-            });
-        }
+    //         Self::deposit_event(Event::<T>::TokenTransferred {
+    //             token_id: token_id.clone(),
+    //             sender: from.clone(),
+    //             recipient: to.clone(),
+    //             token_balance: amount.clone(),
+    //         });
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     fn settle_lower(
         token_id: T::TokenId,
@@ -803,42 +817,45 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    fn settle_token_transfer(
+    fn settle_transfer(
         token_id: &T::TokenId,
         from: &T::AccountId,
         to: &T::AccountId,
         amount: &T::TokenBalance,
     ) -> DispatchResult {
-        ensure!(*token_id != Self::avt_token_contract().into(), Error::<T>::InvalidToken);
+        //ensure!(*token_id != Self::avt_token_contract().into(), Error::<T>::InvalidToken);
         if *amount == T::TokenBalance::zero() || from == to {
-            return Ok(()); //noop
+            return Ok(());
         }
 
-        if let Some(asset) = T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
-            let amount_u128 = TryInto::<u128>::try_into(*amount)
-                .map_err(|_| Error::<T>::AmountOverflow)?;
-            let x = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
-                .map_err(|_| Error::<T>::AmountOverflow)?;
-            T::AssetManager::transfer(asset, from, to, x, ExistenceRequirement::KeepAlive)?;
-        } else {
-            <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
-                *balance = balance.checked_sub(amount).ok_or(Error::<T>::InsufficientSenderBalance)?;
-                Ok(())
-            })?;
+        match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
+            Some(asset) => {
+                let amount_u128 = TryInto::<u128>::try_into(*amount)
+                    .map_err(|_| Error::<T>::AmountOverflow)?;
+                let amount_balance = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
+                    .map_err(|_| Error::<T>::AmountOverflow)?;
+                T::AssetManager::transfer(asset, from, to, amount_balance, ExistenceRequirement::KeepAlive)
+            }
+            None => {
+                <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
+                    *balance = balance.checked_sub(amount).ok_or(Error::<T>::InsufficientSenderBalance)?;
+                    Ok(())
+                })?;
 
-            <Balances<T>>::try_mutate((token_id, to), |balance| -> DispatchResult {
-                *balance = balance.checked_add(amount).ok_or(Error::<T>::AmountOverflow)?;
-                Ok(())
-            })?;
+                <Balances<T>>::try_mutate((token_id, to), |balance| -> DispatchResult {
+                    *balance = balance.checked_add(amount).ok_or(Error::<T>::AmountOverflow)?;
+                    Ok(())
+                })?;
 
-            Self::deposit_event(Event::<T>::TokenTransferred {
-                token_id: token_id.clone(),
-                sender: from.clone(),
-                recipient: to.clone(),
-                token_balance: amount.clone(),
-            });
+                Self::deposit_event(Event::<T>::TokenTransferred {
+                    token_id: *token_id,
+                    sender: from.clone(),
+                    recipient: to.clone(),
+                    token_balance: *amount,
+                });
+                Ok(())
+            }
         }
-        Ok(())
     }
 
     fn settle_token_lower(

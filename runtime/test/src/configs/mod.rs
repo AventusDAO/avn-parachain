@@ -43,7 +43,7 @@ use runtime_common::OperationalFeeMultiplier;
 
 use sp_avn_common::{
     constants::{currency::*, time::*},
-    event_discovery::filters::{AllEventsFilter, NoEventsFilter},
+    event_discovery::filters::{AllEventsFilter, NoEventsFilter}, NoopAssetRegistry, NoopAssetManager,
 };
 use sp_core::{ConstU128, H160};
 use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
@@ -511,6 +511,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
+    type AssetRegistry = NoopAssetRegistry;
+    type AssetManager = NoopAssetManager;
 }
 
 impl pallet_nft_manager::Config for Runtime {
