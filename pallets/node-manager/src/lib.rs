@@ -286,7 +286,7 @@ pub mod pallet {
                 max_unstake_percentage: Perbill::from_percent(10),
                 unstake_period_sec: 7 * 24 * 60 * 60, // 1 week
                 restricted_unstake_duration_sec: 10 * 7 * 24 * 60 * 60, // 10 weeks
-                app_chain_fee_percentage: Perbill::from_percent(5),
+                app_chain_fee_percentage: Perbill::from_percent(0),
             }
         }
     }
