@@ -13,7 +13,7 @@ use sp_core::{H160, H256};
 
 use hex_literal::hex;
 use sp_avn_common::{eth::EthereumNetwork, primitives::AccountId};
-use sp_runtime::{traits::ConstU32, BoundedVec};
+use sp_runtime::{Perbill, {traits::ConstU32, BoundedVec}};
 
 /// Generate the session keys from individual elements.
 ///
@@ -131,7 +131,11 @@ pub(crate) fn testnet_genesis(
             "maxBatchSize": 10u32,
             "heartbeatPeriod": 10u32,
             "rewardAmount": 20 * AVT,
-            "autoStakeDurationSec": 3600u64,
+            "autoStakeDurationSec": 60 * 5 as u64, // 5 min
+            "maxUnstakePercentage": Perbill::from_percent(10),
+            "unstakePeriodSec": 60u64, // 1 min
+            "restrictedUnstakeDurationSec": 60 * 10 as u64, // 10 min
+            "appChainFeePercentage": Perbill::from_percent(0),
         }
     })
 }

@@ -602,6 +602,133 @@ mod stake_and_reward_weight_tests {
             });
     }
 
+    mod try_snapshot_stake_tests {
+        use super::*;
+
+        fn make_node(
+            auto_stake_expiry: Duration,
+            restriction: UnstakeRestriction<u128>,
+            amount: u128,
+        ) -> NodeInfo<UintAuthorityId, AccountId, u128> {
+            NodeInfo::new(
+                get_owner(1),
+                get_signing_key(1),
+                10_500u32,
+                auto_stake_expiry,
+                true,
+                StakeInfo::new(amount, 0, None, restriction),
+            )
+        }
+
+        #[test]
+        fn periodic_before_expiry_stays_periodic() {
+            let expires_sec = 2000u64;
+            let mut node = make_node(
+                500u64,
+                UnstakeRestriction::Periodic { per_period_allowance: 1_000u128, expires_sec },
+                10_000u128,
+            );
+            node.try_snapshot_stake(expires_sec - 1, Perbill::from_percent(10), 1500u64);
+            assert!(matches!(node.stake.restriction, UnstakeRestriction::Periodic { .. }));
+        }
+
+        #[test]
+        fn periodic_at_exact_expiry_becomes_free() {
+            let expires_sec = 2000u64;
+            let mut node = make_node(
+                500u64,
+                UnstakeRestriction::Periodic { per_period_allowance: 1_000u128, expires_sec },
+                10_000u128,
+            );
+            node.try_snapshot_stake(expires_sec, Perbill::from_percent(10), 1500u64);
+            assert_eq!(node.stake.restriction, UnstakeRestriction::Free);
+        }
+
+        #[test]
+        fn periodic_past_expiry_becomes_free() {
+            let expires_sec = 2000u64;
+            let mut node = make_node(
+                500u64,
+                UnstakeRestriction::Periodic { per_period_allowance: 1_000u128, expires_sec },
+                10_000u128,
+            );
+            node.try_snapshot_stake(expires_sec + 100, Perbill::from_percent(10), 1500u64);
+            assert_eq!(node.stake.restriction, UnstakeRestriction::Free);
+        }
+
+        #[test]
+        fn free_restriction_stays_free() {
+            let mut node = make_node(500u64, UnstakeRestriction::Free, 10_000u128);
+            node.try_snapshot_stake(5000u64, Perbill::from_percent(10), 1500u64);
+            assert_eq!(node.stake.restriction, UnstakeRestriction::Free);
+        }
+
+        #[test]
+        fn locked_before_auto_stake_expiry_stays_locked() {
+            let auto_stake_expiry = 1000u64;
+            let mut node = make_node(auto_stake_expiry, UnstakeRestriction::Locked, 10_000u128);
+            node.try_snapshot_stake(auto_stake_expiry - 1, Perbill::from_percent(10), 500u64);
+            assert_eq!(node.stake.restriction, UnstakeRestriction::Locked);
+        }
+
+        #[test]
+        fn periodic_restriction_promoted_to_free_in_storage_after_expiry() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+
+                    let owner = get_owner(7);
+                    let node = get_node(7);
+                    let stake_amount: u128 = 10_000u128;
+
+                    Balances::make_free_balance_be(&owner, stake_amount * 2 * AVT);
+                    register_node(&registrar, &node, &owner, UintAuthorityId(20));
+
+                    assert_ok!(NodeManager::add_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        stake_amount
+                    ));
+
+                    // Move to auto-stake expiry and trigger Locked -> Periodic via add_stake.
+                    let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
+                    let restriction_duration_sec = RestrictedUnstakeDurationSec::<TestRuntime>::get();
+                    Timestamp::set_timestamp(expiry_sec * 1000);
+
+                    assert_ok!(NodeManager::add_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        1u128
+                    ));
+
+                    let info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                    assert!(
+                        matches!(info.stake.restriction, UnstakeRestriction::Periodic { .. }),
+                        "expected Periodic after auto-stake expiry"
+                    );
+
+                    // Move past the full restriction period and trigger Periodic -> Free.
+                    Timestamp::set_timestamp((expiry_sec + restriction_duration_sec) * 1000);
+
+                    assert_ok!(NodeManager::add_stake(
+                        RuntimeOrigin::signed(owner.clone()),
+                        node.clone(),
+                        1u128
+                    ));
+
+                    let info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                    assert_eq!(
+                        info.stake.restriction,
+                        UnstakeRestriction::Free,
+                        "expected Free after restriction period expired"
+                    );
+                });
+        }
+    }
+
     mod fails_when {
         use super::*;
 

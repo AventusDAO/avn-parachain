@@ -227,10 +227,18 @@ impl<
         max_pct: Perbill,
         restriction_duration: Duration,
     ) {
-        // Already resolved — nothing to do.
-        if !matches!(self.stake.restriction, UnstakeRestriction::Locked) {
-            return
+        match &self.stake.restriction {
+            // Periodic restriction has fully expired — promote to Free.
+            UnstakeRestriction::Periodic { expires_sec, .. } if now_sec >= *expires_sec => {
+                self.stake.restriction = UnstakeRestriction::Free;
+                return
+            },
+            // Already resolved or restriction not yet expired — nothing to do.
+            UnstakeRestriction::Free | UnstakeRestriction::Periodic { .. } => return,
+            // Locked — fall through to snapshot logic below.
+            UnstakeRestriction::Locked => {},
         }
+
         // Expiry not yet reached — stay Locked.
         if now_sec < self.auto_stake_expiry {
             return

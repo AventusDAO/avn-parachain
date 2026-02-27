@@ -745,10 +745,10 @@ mod reward {
             let balance_a_after = Balances::free_balance(&context.owner);
             let balance_b_after = Balances::free_balance(&new_owner);
 
-            // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) - 5% fee vs 181 (0.18%) - 5% fee
+            // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) - 0% fee vs 181 (0.18%) - 0% fee
             // (flooring)
-            assert_eq!(current_stake_a, previous_stake_a + 172u128);
-            assert_eq!(current_stake_b, previous_stake_b + 778u128);
+            assert_eq!(current_stake_a, previous_stake_a + 181u128);
+            assert_eq!(current_stake_b, previous_stake_b + 818u128);
 
             // Balances should not increase because funds are reserved
             assert_eq!(balance_a_after, balance_a_before);
@@ -766,7 +766,7 @@ mod reward {
                     reward_period: reward_period_to_pay,
                     owner: context.owner,
                     node: context.ocw_node,
-                    amount: 172u128,
+                    amount: 181u128,
                 }
                 .into(),
             );
@@ -776,7 +776,7 @@ mod reward {
                     reward_period: reward_period_to_pay,
                     owner: new_owner,
                     node: new_node,
-                    amount: 778u128,
+                    amount: 818u128,
                 }
                 .into(),
             );
