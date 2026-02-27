@@ -100,7 +100,7 @@ impl ChainClient for EvmClient {
         Ok(out.to_vec())
     }
 
-    async fn send_transaction(&self, to: H160, data: Vec<u8>) -> anyhow::Result<H256> {
+    async fn send_transaction(&self, to: H160, data: Vec<u8>) -> Result<H256> {
         let to = AlloyAddress::from_slice(to.as_bytes());
         let input = AlloyBytes::from(data);
         let tx_hash = EvmClient::send_transaction_data(self, to, input).await?;
