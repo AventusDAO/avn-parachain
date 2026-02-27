@@ -228,14 +228,14 @@ impl<
         restriction_duration: Duration,
     ) {
         match &self.stake.restriction {
-            // Periodic restriction has fully expired — promote to Free.
+            // Periodic restriction has fully expired - promote to Free.
             UnstakeRestriction::Periodic { expires_sec, .. } if now_sec >= *expires_sec => {
                 self.stake.restriction = UnstakeRestriction::Free;
                 return
             },
-            // Already resolved or restriction not yet expired — nothing to do.
+            // Already resolved or restriction not yet expired - nothing to do.
             UnstakeRestriction::Free | UnstakeRestriction::Periodic { .. } => return,
-            // Locked — fall through to snapshot logic below.
+            // Locked - fall through to snapshot logic below.
             UnstakeRestriction::Locked => {},
         }
 
