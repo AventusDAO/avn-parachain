@@ -695,7 +695,8 @@ mod stake_and_reward_weight_tests {
 
                     // Move to auto-stake expiry and trigger Locked -> Periodic via add_stake.
                     let expiry_sec = AutoStakeDurationSec::<TestRuntime>::get();
-                    let restriction_duration_sec = RestrictedUnstakeDurationSec::<TestRuntime>::get();
+                    let restriction_duration_sec =
+                        RestrictedUnstakeDurationSec::<TestRuntime>::get();
                     Timestamp::set_timestamp(expiry_sec * 1000);
 
                     assert_ok!(NodeManager::add_stake(

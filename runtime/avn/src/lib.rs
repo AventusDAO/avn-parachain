@@ -9,12 +9,12 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 extern crate alloc;
 
 pub mod apis;
+pub mod asset_registry;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 mod configs;
 pub mod governance;
 pub mod proxy_config;
-pub mod asset_registry;
 
 use core::cmp::Ordering;
 
@@ -65,7 +65,9 @@ use sp_avn_common::{
 };
 
 use crate::apis::RUNTIME_API_VERSIONS;
-pub(crate) use sp_avn_common::primitives::{Amount, Balance, BlockNumber, Hash, Moment, Nonce, CurrencyId};
+pub(crate) use sp_avn_common::primitives::{
+    Amount, Balance, BlockNumber, CurrencyId, Hash, Moment, Nonce,
+};
 pub use sp_avn_common::{
     constants::{currency::*, time::*},
     primitives::{AccountId, Signature},

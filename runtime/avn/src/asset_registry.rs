@@ -1,6 +1,8 @@
-use crate::{Balance, CurrencyId, configs::AssetRegistryStringLimit};
+use crate::{configs::AssetRegistryStringLimit, Balance, CurrencyId};
 use codec::{Decode, Encode, MaxEncodedLen};
-use orml_traits::asset_registry::{AssetMetadata, AssetProcessor, AvnAssetMetadata, AvnAssetLocation};
+use orml_traits::asset_registry::{
+    AssetMetadata, AssetProcessor, AvnAssetLocation, AvnAssetMetadata,
+};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
 
@@ -10,14 +12,25 @@ use sp_runtime::DispatchError;
 /// Implements orml_traits::asset_registry::AssetProcessor. We use an Asset enum for our AssetId.
 pub struct AvnAssetProcessor;
 
-impl AssetProcessor<CurrencyId, AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, AssetRegistryStringLimit>>
-    for AvnAssetProcessor
+impl
+    AssetProcessor<
+        CurrencyId,
+        AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, AssetRegistryStringLimit>,
+    > for AvnAssetProcessor
 {
     fn pre_register(
         id: Option<CurrencyId>,
-        metadata: AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, AssetRegistryStringLimit>,
+        metadata: AssetMetadata<
+            Balance,
+            AvnAssetMetadata,
+            AvnAssetLocation,
+            AssetRegistryStringLimit,
+        >,
     ) -> Result<
-        (CurrencyId, AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, AssetRegistryStringLimit>),
+        (
+            CurrencyId,
+            AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, AssetRegistryStringLimit>,
+        ),
         DispatchError,
     > {
         match id {
@@ -28,7 +41,12 @@ impl AssetProcessor<CurrencyId, AssetMetadata<Balance, AvnAssetMetadata, AvnAsse
 
     fn post_register(
         _id: CurrencyId,
-        _asset_metadata: AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, AssetRegistryStringLimit>,
+        _asset_metadata: AssetMetadata<
+            Balance,
+            AvnAssetMetadata,
+            AvnAssetLocation,
+            AssetRegistryStringLimit,
+        >,
     ) -> Result<(), DispatchError> {
         Ok(())
     }

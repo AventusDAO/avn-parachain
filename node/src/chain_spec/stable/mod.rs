@@ -13,7 +13,7 @@ use sp_core::{H160, H256};
 
 use hex_literal::hex;
 use sp_avn_common::{eth::EthereumNetwork, primitives::AccountId};
-use sp_runtime::{Perbill, {traits::ConstU32, BoundedVec}};
+use sp_runtime::{traits::ConstU32, BoundedVec, Perbill};
 
 /// Generate the session keys from individual elements.
 ///

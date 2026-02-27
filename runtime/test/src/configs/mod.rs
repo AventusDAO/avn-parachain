@@ -43,7 +43,8 @@ use runtime_common::OperationalFeeMultiplier;
 
 use sp_avn_common::{
     constants::{currency::*, time::*},
-    event_discovery::filters::{AllEventsFilter, NoEventsFilter}, NoopAssetRegistry, NoopAssetManager,
+    event_discovery::filters::{AllEventsFilter, NoEventsFilter},
+    NoopAssetManager, NoopAssetRegistry,
 };
 use sp_core::{ConstU128, H160};
 use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};

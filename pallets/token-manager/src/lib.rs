@@ -44,26 +44,29 @@ use pallet_avn::{
     CollatorPayoutDustHandler, OnGrowthLiftedHandler, ProcessedEventsChecker,
 };
 
+use orml_traits::{
+    asset_registry::{AvnAssetLocation, AvnAssetMetadata, Inspect},
+    MultiCurrency, NamedMultiReservableCurrency,
+};
 use sp_avn_common::{
     eth::{concat_lower_data, LowerParams},
-    primitives::CurrencyId,
     event_types::{
         AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
         LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
+    primitives::CurrencyId,
     verify_signature, CallDecoder, FeePaymentHandler, InnerCallValidator, OnIdleHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
     scale_info::TypeInfo,
     traits::{
-        AccountIdConversion, AtLeast32Bit, CheckedAdd, Dispatchable, Hash, IdentifyAccount, Member,
-        Saturating, Verify, Zero, CheckedSub
+        AccountIdConversion, AtLeast32Bit, CheckedAdd, CheckedSub, Dispatchable, Hash,
+        IdentifyAccount, Member, Saturating, Verify, Zero,
     },
     Perbill,
 };
 use sp_std::prelude::*;
-use orml_traits::{NamedMultiReservableCurrency, asset_registry::{Inspect, AvnAssetMetadata, AvnAssetLocation}, MultiCurrency};
 
 type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
@@ -160,7 +163,7 @@ pub mod pallet {
         type OnIdleHandler: OnIdleHandler<BlockNumberFor<Self>, Weight>;
         type AccountToBytesConvert: pallet_avn::AccountToBytesConverter<Self::AccountId>;
         type TimeProvider: UnixTime;
-         /// Manages *known* assets (including native and non native tokens)
+        /// Manages *known* assets (including native and non native tokens)
         type AssetManager: NamedMultiReservableCurrency<
             Self::AccountId,
             Balance = BalanceOf<Self>,
@@ -168,7 +171,8 @@ pub mod pallet {
             ReserveIdentifier = [u8; 8],
         >;
         /// Provides information about *known* assets (including native and non native tokens)
-        type AssetRegistry: Inspect<AvnAssetLocation,
+        type AssetRegistry: Inspect<
+            AvnAssetLocation,
             AssetId = CurrencyId,
             Balance = BalanceOf<Self>,
             CustomMetadata = AvnAssetMetadata,
@@ -705,20 +709,27 @@ impl<T: Config> Pallet<T> {
         amount: &T::TokenBalance,
     ) -> DispatchResult {
         if *amount == T::TokenBalance::zero() || from == to {
-            return Ok(());
+            return Ok(())
         }
 
         match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
             Some(asset) => {
-                let amount_u128 = TryInto::<u128>::try_into(*amount)
-                    .map_err(|_| Error::<T>::AmountOverflow)?;
+                let amount_u128 =
+                    TryInto::<u128>::try_into(*amount).map_err(|_| Error::<T>::AmountOverflow)?;
                 let amount_balance = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
                     .map_err(|_| Error::<T>::AmountOverflow)?;
-                T::AssetManager::transfer(asset, from, to, amount_balance, ExistenceRequirement::KeepAlive)
-            }
+                T::AssetManager::transfer(
+                    asset,
+                    from,
+                    to,
+                    amount_balance,
+                    ExistenceRequirement::KeepAlive,
+                )
+            },
             None => {
                 <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
-                    *balance = balance.checked_sub(amount).ok_or(Error::<T>::InsufficientSenderBalance)?;
+                    *balance =
+                        balance.checked_sub(amount).ok_or(Error::<T>::InsufficientSenderBalance)?;
                     Ok(())
                 })?;
 
@@ -734,7 +745,7 @@ impl<T: Config> Pallet<T> {
                     token_balance: *amount,
                 });
                 Ok(())
-            }
+            },
         }
     }
 

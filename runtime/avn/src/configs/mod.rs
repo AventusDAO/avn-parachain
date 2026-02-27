@@ -40,34 +40,41 @@ use polkadot_runtime_common::{
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_version::RuntimeVersion;
 
+use orml_traits::{
+    asset_registry::{AvnAssetLocation, AvnAssetMetadata},
+    parameter_type_with_key,
+};
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
 use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
-    Asset, constants::{currency::*, time::*},
+    constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
-    NODE_MANAGER_PALLET_ID,
+    Asset, NODE_MANAGER_PALLET_ID,
 };
 use sp_core::{ConstU128, H160};
-use sp_runtime::{traits::{AccountIdConversion, ConvertInto}, Perbill, transaction_validity::TransactionPriority};
-use orml_traits::{parameter_type_with_key,
-    asset_registry::{AvnAssetMetadata, AvnAssetLocation}
+use sp_runtime::{
+    traits::{AccountIdConversion, ConvertInto},
+    transaction_validity::TransactionPriority,
+    Perbill,
 };
 
 // Local module imports
 use crate::{
+    asset_registry::AvnAssetProcessor,
     fungible,
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
-    Amount, AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
-    AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, CurrencyId, EnsureSigned, EthBridge,
-    Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
-    Moment, NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
+    AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn,
+    AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
+    BlockNumber, ConsensusHook, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
+    HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
+    Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
     SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
     ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION, OrmlTokens, asset_registry::AvnAssetProcessor, AssetManager, AssetRegistry,
+    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -781,8 +788,7 @@ impl orml_asset_registry::Config for Runtime {
 }
 
 /// ORML currency adapter to abstract over the currency implementation used in the runtime.
-pub type BasicCurrencyAdapter<R, B> =
-    orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
+pub type BasicCurrencyAdapter<R, B> = orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
 
 parameter_types! {
     pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
@@ -866,11 +872,8 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
 }
 
 // Accounts protected from being deleted due to a too low amount of funds.
-const IMMORTAL_ACCOUNTS: &[PalletId] = &[
-    AvnTreasuryPotId::get(),
-    NodeManagerPalletId::get(),
-    RewardPotId::get(),
-];
+const IMMORTAL_ACCOUNTS: &[PalletId] =
+    &[AvnTreasuryPotId::get(), NodeManagerPalletId::get(), RewardPotId::get()];
 pub struct DustRemovalWhitelist;
 
 impl Contains<AccountId> for DustRemovalWhitelist
@@ -879,14 +882,14 @@ where
 {
     fn contains(ai: &AccountId) -> bool {
         if let Some(pallet_id) = frame_support::PalletId::try_from_sub_account::<u128>(ai) {
-            return IMMORTAL_ACCOUNTS.contains(&pallet_id.0);
+            return IMMORTAL_ACCOUNTS.contains(&pallet_id.0)
         }
 
         for pallet_id in IMMORTAL_ACCOUNTS {
             let pallet_acc: AccountId = pallet_id.into_account_truncating();
 
             if pallet_acc == *ai {
-                return true;
+                return true
             }
         }
 

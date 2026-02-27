@@ -12,6 +12,7 @@ use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
 use frame_support::PalletId;
+use serde::{Deserialize, Serialize};
 use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
     crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed},
@@ -24,7 +25,6 @@ use sp_runtime::{
     MultiSignature,
 };
 use sp_std::{boxed::Box, vec::Vec};
-use serde::{Deserialize, Serialize};
 
 pub const OPEN_BYTES_TAG: &'static [u8] = b"<Bytes>";
 pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
@@ -591,10 +591,7 @@ impl<AccountId> orml_traits::MultiCurrency<AccountId> for NoopAssetManager {
         0
     }
 
-    fn free_balance(
-        _currency_id: primitives::CurrencyId,
-        _who: &AccountId,
-    ) -> primitives::Balance {
+    fn free_balance(_currency_id: primitives::CurrencyId, _who: &AccountId) -> primitives::Balance {
         0
     }
 
