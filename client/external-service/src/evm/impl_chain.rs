@@ -93,7 +93,7 @@ impl ChainClient for EvmClient {
         Ok(input.map(|b| b.to_vec()))
     }
 
-    async fn read_call(&self, to: H160, data: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    async fn read_call(&self, to: H160, data: Vec<u8>) -> Result<Vec<u8>> {
         let to = AlloyAddress::from_slice(to.as_bytes());
         let input = AlloyBytes::from(data);
         let out = EvmClient::call(self, to, input).await?;
