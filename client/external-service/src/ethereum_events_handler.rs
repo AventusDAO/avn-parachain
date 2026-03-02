@@ -1,7 +1,7 @@
 use crate::{
     chain::{ChainClient, ChainLog, LogFilter},
     evm::client::EvmClient,
-    timer::Timer,
+    timer::OperationTimer,
     ETH_FINALITY,
 };
 use futures::future::try_join_all;
@@ -430,7 +430,7 @@ where
         &mut self,
         wanted_chain_id: u64,
     ) -> Result<Arc<EvmClient>, AppError> {
-        let _init_time = Timer::new("ethereum-event-handler EVM client initialization");
+        let _init_time = OperationTimer::new("ethereum-event-handler EVM client initialization");
         log::info!("⛓️  avn-events-handler: evm client init start");
 
         for eth_node_url in self.eth_node_urls.iter() {
@@ -663,8 +663,10 @@ where
             Some((range, partition_id)) => {
                 log::info!("Getting events for range starting at: {:?}", range.start_block);
 
-                if is_evm_block_finalised(evm.as_ref(), range.end_block() as u64, ETH_FINALITY)
-                    .await?
+                if evm
+                    .is_block_finalised(range.end_block() as u64, ETH_FINALITY)
+                    .await
+                    .map_err(|e| format!("Failed to check EVM finality: {e:?}"))?
                 {
                     process_events(
                         evm.as_ref(),
@@ -943,16 +945,4 @@ where
         partition.id()
     );
     Ok(())
-}
-
-pub async fn is_evm_block_finalised(
-    evm: &EvmClient,
-    current_block_num: u64,
-    num_blocks_to_wait: u64,
-) -> Result<bool, String> {
-    let latest_block = evm
-        .block_number()
-        .await
-        .map_err(|e| format!("Failed to get latest block number: {:?}", e))?;
-    Ok(latest_block >= current_block_num + num_blocks_to_wait)
 }

@@ -1,14 +1,11 @@
 use sp_core::{H160, H256};
 
-pub type ChainAddress = sp_core::H160;
-pub type ChainHash = sp_core::H256;
-
 #[derive(Clone, Debug)]
 pub struct ChainLog {
-    pub address: ChainAddress,
-    pub topics: Vec<ChainHash>,
+    pub address: sp_core::H160,
+    pub topics: Vec<sp_core::H256>,
     pub data: Vec<u8>,
-    pub transaction_hash: Option<ChainHash>,
+    pub transaction_hash: Option<sp_core::H256>,
     pub block_number: Option<u64>,
 }
 
@@ -22,8 +19,8 @@ pub struct ChainReceipt {
 pub struct LogFilter {
     pub from_block: u64,
     pub to_block: u64,
-    pub addresses: Vec<ChainAddress>,
-    pub topics: [Option<Vec<ChainHash>>; 4],
+    pub addresses: Vec<sp_core::H160>,
+    pub topics: [Option<Vec<sp_core::H256>>; 4],
 }
 
 #[async_trait::async_trait]

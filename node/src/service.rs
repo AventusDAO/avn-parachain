@@ -6,7 +6,6 @@ use runtime_common::opaque::{Block, Hash};
 use sc_client_api::Backend;
 use sp_core::offchain::OffchainStorage;
 use std::{sync::Arc, time::Duration};
-use url::Url;
 
 // Cumulus Imports
 use cumulus_client_cli::CollatorOptions;
@@ -41,7 +40,7 @@ use substrate_prometheus_endpoint::Registry;
 
 use crate::{avn_config::*, RuntimeApi};
 use cumulus_client_service::ParachainHostFunctions;
-use external_service::signing::{KeystoreSignerProvider, SignerProvider};
+use external_service::node_integration::{self, NodeDeps};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 
 #[docify::export(wasm_executor)]
@@ -401,46 +400,22 @@ pub async fn start_parachain_node(
             _ => Err("Keystore must be local"),
         }?;
 
-        let eth_rpc_url_str = avn_cli_config
-            .ethereum_node_urls
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "".to_string());
-
-        let evm_rpc_url: Url = eth_rpc_url_str
-            .parse()
-            .map_err(|e| sc_service::Error::Other(format!("invalid eth rpc url: {e:?}")))?;
-
-        let chain: Arc<dyn external_service::chain::ChainClient> = Arc::new(
-            external_service::evm::client::EvmClient::new_http(evm_rpc_url.as_str())
-                .map_err(|e| sc_service::Error::Other(format!("evm client init failed: {e:?}")))?,
-        );
-
-        let signer_provider: Arc<dyn SignerProvider> =
-            Arc::new(KeystoreSignerProvider::new(keystore_path.clone(), evm_rpc_url.clone()));
-
-        let avn_state = external_service::server::AppState::<Block, _> {
+        let node_deps = NodeDeps::<Block, _> {
             keystore: params.keystore_container.local_keystore(),
             keystore_path: keystore_path.clone(),
             avn_port: avn_port.clone(),
-            chain,
-            signer_provider,
+            eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
             client: client.clone(),
-            _block: Default::default(),
+            offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
+                transaction_pool.clone(),
+            ),
         };
 
-        let eth_event_handler_config =
-            external_service::ethereum_events_handler::EthEventHandlerConfig::<Block, _> {
-                keystore: params.keystore_container.local_keystore(),
-                keystore_path: keystore_path.clone(),
-                avn_port: avn_port.clone(),
-                eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
-                evm_clients: Default::default(),
-                client: client.clone(),
-                offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
-                    transaction_pool.clone(),
-                ),
-            };
+        let avn_state = node_integration::build_app_state(&node_deps).map_err(|e| {
+            sc_service::Error::Other(format!("external-service init failed: {e:?}"))
+        })?;
+
+        let eth_event_handler_config = node_integration::build_eth_event_handler_config(node_deps);
 
         task_manager.spawn_essential_handle().spawn(
             "external-service",

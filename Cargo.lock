@@ -1777,7 +1777,6 @@ dependencies = [
  "sc-tracing",
  "sc-transaction-pool",
  "sc-transaction-pool-api",
- "secp256k1 0.31.1",
  "serde",
  "serde_json",
  "sp-api",
@@ -1800,7 +1799,6 @@ dependencies = [
  "substrate-frame-rpc-system",
  "substrate-prometheus-endpoint",
  "tempfile",
- "url",
 ]
 
 [[package]]

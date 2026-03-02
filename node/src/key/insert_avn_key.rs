@@ -20,8 +20,8 @@
 
 //! Implementation of the `insert` subcommand
 
-use super::ethereum_utils::eth_address_from_private_key_hex;
 use clap::{Parser, ValueEnum};
+use external_service::eth_utils::eth_address_from_private_key_hex;
 use sc_cli::{
     utils, with_crypto_scheme, CryptoScheme, Error, KeystoreParams, SharedParams, SubstrateCli,
 };

@@ -21,14 +21,12 @@ codec = { workspace = true, default-features = true }
 serde = { features = ["derive"], workspace = true, default-features = true }
 hex-literal = "0.4.1"
 hex = { workspace = true, default-features = true }
-secp256k1 = { version = "0.31.1", features = ["recovery"] }
 serde_json = { version = "1.0.111", features = ["arbitrary_precision"] }
 cfg-if = "0.1"
 docify = "0.2.8"
 futures = "0.3.28"
 jsonrpsee.workspace = true
 log = { workspace = true, default-features = true }
-url = "2"
 
 # Local
 runtime-common.workspace = true

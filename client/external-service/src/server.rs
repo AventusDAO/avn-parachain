@@ -1,6 +1,6 @@
 use crate::{
     chain::ChainClient, eth_signing::sign_digest_from_keystore, keystore_utils::*,
-    signing::SignerProvider, timer::Timer,
+    signing::SignerProvider, timer::OperationTimer,
 };
 use anyhow::Result;
 use axum::{
@@ -98,7 +98,7 @@ async fn send<Block: BlockT, ClientT>(
 where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
-    let _t = Timer::new("eth/send");
+    let _t = OperationTimer::new("eth/send");
 
     let send_request = EthTransaction::decode(&mut &body[..])
         .map_err(|e| server_error(format!("Error decoding EthTransaction: {e:?}")))?;
@@ -130,7 +130,7 @@ async fn view<Block: BlockT, ClientT>(
 where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
-    let _t = Timer::new("eth/view");
+    let _t = OperationTimer::new("eth/view");
 
     let view_request = EthTransaction::decode(&mut &body[..])
         .map_err(|e| server_error(format!("Error decoding EthTransaction: {e:?}")))?;
@@ -154,7 +154,7 @@ async fn query<Block: BlockT, ClientT>(
 where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
-    let _t = Timer::new("eth/query");
+    let _t = OperationTimer::new("eth/query");
 
     let request = EthTransaction::decode(&mut &body[..])
         .map_err(|e| server_error(format!("Error decoding EthTransaction: {e:?}")))?;
