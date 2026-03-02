@@ -318,6 +318,7 @@ pub mod pallet {
         InvalidLiftRequest,
         InvalidEthAddress,
         InvalidToken,
+        AvtNotRegisteredAsKnownAsset,
     }
 
     #[pallet::storage]
@@ -672,7 +673,7 @@ pub mod pallet {
 
         /// Transfer an amount of token with token_id from sender to receiver with a proof
         #[pallet::call_index(12)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::signed_transfer())]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::transfer())]
         pub fn transfer(
             origin: OriginFor<T>,
             to: T::AccountId,
@@ -949,17 +950,16 @@ impl<T: Config> Pallet<T> {
     fn process_avt_growth_lift(event: &EthEvent, data: &AvtGrowthLiftedData) -> DispatchResult {
         let event_id = &event.event_id;
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
+        let avt_token_id: T::TokenId = Self::avt_token_contract().into();
         ensure!(event_validity, Error::<T>::NoTier1EventForLogAvtGrowthLifted);
-
-        if data.amount == 0 {
-            Err(Error::<T>::AmountIsZero)?
-        }
+        ensure!(data.amount != 0, Error::<T>::AmountIsZero);
+        ensure!(T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(avt_token_id.into())).is_some(), Error::<T>::AvtNotRegisteredAsKnownAsset);
 
         let treasury_share = T::TreasuryGrowthPercentage::get() * data.amount;
 
         // Send a portion of the funds to the treasury
         let treasury_amount = Self::credit_user_balance(
-            Self::avt_token_contract().into(),
+            avt_token_id,
             &Self::compute_treasury_account_id(),
             treasury_share,
         )?;

@@ -39,6 +39,7 @@ use core::marker::PhantomData;
 pub trait WeightInfo {
 	fn proxy_with_non_avt_token() -> Weight;
 	fn signed_transfer() -> Weight;
+	fn transfer() -> Weight;
 	fn schedule_direct_lower() -> Weight;
 	fn execute_avt_lower() -> Weight;
 	fn execute_non_avt_lower() -> Weight;
@@ -82,6 +83,19 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(189_006_000, 6108)
 			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
+	}
+	/// Storage: `TokenManager::AVTTokenContract` (r:1 w:0)
+	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::Balances` (r:2 w:2)
+	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	fn transfer() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `657`
+		//  Estimated: `6108`
+		// Minimum execution time: 183_825_000 picoseconds.
+		Weight::from_parts(151_006_000, 5708)
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 	/// Storage: `TokenManager::LowersDisabled` (r:1 w:0)
 	/// Proof: `TokenManager::LowersDisabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
@@ -267,6 +281,19 @@ impl WeightInfo for () {
 		Weight::from_parts(189_006_000, 6108)
 			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
+	}
+	/// Storage: `TokenManager::AVTTokenContract` (r:1 w:0)
+	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::Balances` (r:2 w:2)
+	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	fn transfer() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `657`
+		//  Estimated: `6108`
+		// Minimum execution time: 183_825_000 picoseconds.
+		Weight::from_parts(151_006_000, 5708)
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `TokenManager::LowersDisabled` (r:1 w:0)
 	/// Proof: `TokenManager::LowersDisabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
