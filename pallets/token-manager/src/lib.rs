@@ -32,8 +32,7 @@ use frame_support::{
             v3::{Anon as ScheduleAnon, Named as ScheduleNamed, TaskName},
             DispatchTime, HARD_DEADLINE,
         },
-        Currency, ExistenceRequirement, Get, Imbalance, IsSubType, QueryPreimage, StorePreimage,
-        UnixTime, WithdrawReasons,
+        Currency, ExistenceRequirement, Get, IsSubType, QueryPreimage, StorePreimage, UnixTime,
     },
     BoundedVec, PalletId, Parameter,
 };
@@ -70,13 +69,12 @@ use sp_std::prelude::*;
 
 type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
-type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
-    <T as frame_system::Config>::AccountId,
->>::PositiveImbalance;
 
 type CallOf<T> = <T as Config>::RuntimeCall;
 pub type LowerId = u32;
 pub type LowerDataLimit = ConstU32<10000>; // Max lower proof len. 10kB
+
+mod utils;
 
 mod benchmarking;
 pub mod default_weights;
@@ -405,7 +403,7 @@ pub mod pallet {
             <LowerSchedulePeriod<T>>::put(self.lower_schedule_period);
             for (token_id, recipient, amount) in self.balances.clone().into_iter() {
                 let key: (T::TokenId, T::AccountId) = (token_id.into(), recipient);
-                let val: T::TokenBalance = <T::TokenBalance as TryFrom<u128>>::try_from(amount)
+                let val: T::TokenBalance = Pallet::<T>::u128_to_token_balance(amount)
                     .unwrap_or_else(|_| <T::TokenBalance>::default());
                 Balances::<T>::insert(key, val);
             }
@@ -509,11 +507,12 @@ pub mod pallet {
             t1_recipient: H160,
             lower_id: LowerId,
         ) -> DispatchResultWithPostInfo {
-            let _ = ensure_root(origin)?;
+            ensure_root(origin)?;
             ensure!(<LowersDisabled<T>>::get() == false, Error::<T>::LoweringDisabled);
 
             Self::settle_lower(token_id, &from, &to_account_id, amount, t1_recipient, lower_id)?;
 
+            // TODO: NS - replace with process known token vs unknown tokens
             let final_weight = if token_id == Self::avt_token_contract().into() {
                 <T as pallet::Config>::WeightInfo::execute_avt_lower()
             } else {
@@ -606,23 +605,17 @@ pub mod pallet {
 
             ensure!(<LowersDisabled<T>>::get() == false, Error::<T>::LoweringDisabled);
 
-            if <LowersReadyToClaim<T>>::contains_key(lower_id) {
-                let lower = <LowersReadyToClaim<T>>::take(lower_id).expect("lower exists");
+            if let Some(lower) = <LowersReadyToClaim<T>>::take(lower_id) {
                 Self::regenerate_proof(lower_id, lower.params)?;
-
                 Self::deposit_event(Event::<T>::RegeneratingLowerProof { lower_id, requester });
-
-                return Ok(().into())
-            } else if <FailedLowerProofs<T>>::contains_key(lower_id) {
-                let lower_params = <FailedLowerProofs<T>>::take(lower_id).expect("lower exists");
+            } else if let Some(lower_params) = <FailedLowerProofs<T>>::take(lower_id) {
                 Self::regenerate_proof(lower_id, lower_params)?;
-
                 Self::deposit_event(Event::<T>::RegeneratingFailedLowerProof {
                     lower_id,
                     requester,
                 });
             } else {
-                Err(Error::<T>::InvalidLowerId)?
+                return Err(Error::<T>::InvalidLowerId.into())
             }
 
             Ok(().into())
@@ -634,7 +627,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             new_period: BlockNumberFor<T>,
         ) -> DispatchResult {
-            let _ = ensure_root(origin)?;
+            ensure_root(origin)?;
 
             <LowerSchedulePeriod<T>>::put(new_period);
             Self::deposit_event(Event::<T>::LowerSchedulePeriodUpdated { new_period });
@@ -645,7 +638,7 @@ pub mod pallet {
         #[pallet::call_index(10)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::toggle_lowering())]
         pub fn toggle_lowering(origin: OriginFor<T>, enabled: bool) -> DispatchResult {
-            let _ = ensure_root(origin)?;
+            ensure_root(origin)?;
 
             <LowersDisabled<T>>::put(!enabled);
 
@@ -664,8 +657,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             new_address: H160,
         ) -> DispatchResult {
-            let _ = ensure_root(origin)?;
-            //ensure new_address is not 0
+            ensure_root(origin)?;
             ensure!(new_address != H160::zero(), Error::<T>::InvalidEthAddress);
 
             let old_address = <AVTTokenContract<T>>::get();
@@ -714,10 +706,7 @@ impl<T: Config> Pallet<T> {
 
         match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
             Some(asset) => {
-                let amount_u128 =
-                    TryInto::<u128>::try_into(*amount).map_err(|_| Error::<T>::AmountOverflow)?;
-                let amount_balance = <BalanceOf<T> as TryFrom<u128>>::try_from(amount_u128)
-                    .map_err(|_| Error::<T>::AmountOverflow)?;
+                let amount_balance = Self::into_balance(*amount)?;
                 T::AssetManager::transfer(
                     asset,
                     from,
@@ -744,6 +733,7 @@ impl<T: Config> Pallet<T> {
                     recipient: to.clone(),
                     token_balance: *amount,
                 });
+
                 Ok(())
             },
         }
@@ -757,51 +747,47 @@ impl<T: Config> Pallet<T> {
         t1_recipient: H160,
         lower_id: LowerId,
     ) -> DispatchResult {
-        if token_id == Self::avt_token_contract().into() {
-            let lower_amount = <BalanceOf<T> as TryFrom<u128>>::try_from(amount)
-                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
-            // Note: Keep account alive when balance is lower than existence requirement,
-            // so the SystemNonce will not be reset just in case if any logic relies on the
-            // SystemNonce. However all zero AVT account balances will be kept in our
-            // runtime storage.
-            let imbalance = <T as pallet::Config>::Currency::withdraw(
-                &from,
-                lower_amount,
-                WithdrawReasons::TRANSFER,
-                ExistenceRequirement::KeepAlive,
-            )?;
+        match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((token_id).into())) {
+            Some(asset) => {
+                let amount_balance = Self::u128_to_balance(amount)?;
+                // Note: Keep account alive when balance is lower than existence requirement,
+                // so the SystemNonce will not be reset just in case if any logic relies on the
+                // SystemNonce. However all zero AVT account balances will be kept in our
+                // runtime storage.
+                T::AssetManager::withdraw(
+                    asset,
+                    from,
+                    amount_balance,
+                    ExistenceRequirement::KeepAlive,
+                )?;
 
-            if imbalance.peek() == BalanceOf::<T>::zero() {
-                Err(Error::<T>::LowerFailed)?
-            }
+                Self::deposit_event(Event::<T>::AvtLowered {
+                    sender: from.clone(),
+                    recipient: to.clone(),
+                    amount,
+                    t1_recipient,
+                    lower_id,
+                });
+            },
+            None => {
+                let lower_amount = Self::u128_to_token_balance(amount)?;
 
-            // Decreases the total issued AVT when this negative imbalance is dropped
-            // so that total issued AVT becomes equal to total supply once again.
-            drop(imbalance);
+                <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
+                    *balance = balance
+                        .checked_sub(&lower_amount)
+                        .ok_or(Error::<T>::InsufficientSenderBalance)?;
+                    Ok(())
+                })?;
 
-            Self::deposit_event(Event::<T>::AvtLowered {
-                sender: from.clone(),
-                recipient: to.clone(),
-                amount,
-                t1_recipient,
-                lower_id,
-            });
-        } else {
-            let lower_amount = <T::TokenBalance as TryFrom<u128>>::try_from(amount)
-                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
-            let sender_balance = Self::balance((token_id, from));
-            ensure!(sender_balance >= lower_amount, Error::<T>::InsufficientSenderBalance);
-
-            <Balances<T>>::mutate((token_id, from), |balance| *balance -= lower_amount);
-
-            Self::deposit_event(Event::<T>::TokenLowered {
-                token_id,
-                sender: from.clone(),
-                recipient: to.clone(),
-                amount,
-                t1_recipient,
-                lower_id,
-            });
+                Self::deposit_event(Event::<T>::TokenLowered {
+                    token_id,
+                    sender: from.clone(),
+                    recipient: to.clone(),
+                    amount,
+                    t1_recipient,
+                    lower_id,
+                });
+            },
         }
 
         let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
@@ -819,111 +805,6 @@ impl<T: Config> Pallet<T> {
         T::BridgeInterface::generate_lower_proof(lower_id, &lower_params, PALLET_ID.to_vec())?;
 
         Ok(())
-    }
-
-    fn settle_token_lower(
-        token_id: T::TokenId,
-        from: &T::AccountId,
-        to: &T::AccountId,
-        amount: u128,
-        t1_recipient: H160,
-        lower_id: LowerId,
-    ) -> DispatchResult {
-        if token_id == Self::avt_token_contract().into() {
-            let lower_amount = <BalanceOf<T> as TryFrom<u128>>::try_from(amount)
-                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
-            // Note: Keep account alive when balance is lower than existence requirement,
-            // so the SystemNonce will not be reset just in case if any logic relies on the
-            // SystemNonce. However all zero AVT account balances will be kept in our
-            // runtime storage.
-            let imbalance = <T as pallet::Config>::Currency::withdraw(
-                &from,
-                lower_amount,
-                WithdrawReasons::TRANSFER,
-                ExistenceRequirement::KeepAlive,
-            )?;
-
-            if imbalance.peek() == BalanceOf::<T>::zero() {
-                Err(Error::<T>::LowerFailed)?
-            }
-
-            // Decreases the total issued AVT when this negative imbalance is dropped
-            // so that total issued AVT becomes equal to total supply once again.
-            drop(imbalance);
-
-            Self::deposit_event(Event::<T>::AvtLowered {
-                sender: from.clone(),
-                recipient: to.clone(),
-                amount,
-                t1_recipient,
-                lower_id,
-            });
-        } else {
-            let lower_amount = <T::TokenBalance as TryFrom<u128>>::try_from(amount)
-                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
-            let sender_balance = Self::balance((token_id, from));
-            ensure!(sender_balance >= lower_amount, Error::<T>::InsufficientSenderBalance);
-
-            <Balances<T>>::mutate((token_id, from), |balance| *balance -= lower_amount);
-
-            Self::deposit_event(Event::<T>::TokenLowered {
-                token_id,
-                sender: from.clone(),
-                recipient: to.clone(),
-                amount,
-                t1_recipient,
-                lower_id,
-            });
-        }
-
-        let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
-        let t2_timestamp: u64 = T::TimeProvider::now().as_secs();
-        let lower_params = concat_lower_data(
-            lower_id,
-            token_id.into(),
-            &amount,
-            &t1_recipient,
-            t2_sender,
-            t2_timestamp,
-        );
-
-        <LowersPendingProof<T>>::insert(lower_id, &lower_params);
-        T::BridgeInterface::generate_lower_proof(lower_id, &lower_params, PALLET_ID.to_vec())?;
-
-        Ok(())
-    }
-
-    fn credit_avt_balance(
-        recipient_account_id: &T::AccountId,
-        raw_amount: u128,
-    ) -> Result<BalanceOf<T>, Error<T>> {
-        let amount = <BalanceOf<T> as TryFrom<u128>>::try_from(raw_amount)
-            .or_else(|_| Err(Error::<T>::AmountOverflow))?;
-
-        let imbalance: PositiveImbalanceOf<T> =
-            <T as pallet::Config>::Currency::deposit_creating(recipient_account_id, amount);
-
-        ensure!(imbalance.peek() != BalanceOf::<T>::zero(), Error::<T>::DepositFailed);
-
-        drop(imbalance);
-
-        Ok(amount)
-    }
-
-    fn credit_token_balance(
-        token_id: T::TokenId,
-        recipient_account_id: &T::AccountId,
-        raw_amount: u128,
-    ) -> Result<T::TokenBalance, Error<T>> {
-        let amount = <T::TokenBalance as TryFrom<u128>>::try_from(raw_amount)
-            .or_else(|_| Err(Error::<T>::AmountOverflow))?;
-
-        <Balances<T>>::try_mutate((token_id, recipient_account_id.clone()), |balance| {
-            *balance = balance.checked_add(&amount).ok_or(Error::<T>::AmountOverflow)?;
-            Ok(())
-        })?;
-
-        Ok(amount)
     }
 
     fn process_token_deposit(
@@ -931,12 +812,12 @@ impl<T: Config> Pallet<T> {
         recipient_account_id: T::AccountId,
         raw_amount: u128,
     ) -> DispatchResult {
-        let amount = Self::credit_token_balance(token_id, &recipient_account_id, raw_amount)?;
-
+        let amount = Self::credit_user_balance(token_id, &recipient_account_id, raw_amount)?;
+        let token_balance = Self::into_token_balance(amount)?;
         Self::deposit_event(Event::<T>::TokensDeposited {
             token_id,
             recipient: recipient_account_id,
-            token_balance: amount,
+            token_balance,
         });
 
         Ok(())
@@ -1035,30 +916,29 @@ impl<T: Config> Pallet<T> {
 
     fn process_lift(event: &EthEvent, data: &LiftedData) -> DispatchResult {
         let event_id = &event.event_id;
-        let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
-        ensure!(event_validity, Error::<T>::NoTier1EventForLogLifted);
+        ensure!(
+            T::ProcessedEventsChecker::processed_event_exists(event_id),
+            Error::<T>::NoTier1EventForLogLifted
+        );
 
         ensure!(data.amount != 0, Error::<T>::AmountIsZero);
 
         let recipient_account_id = Self::decode_recipient(&data.receiver_address)?;
 
+        let token_id: T::TokenId = data.token_contract.into();
+        let amount = Self::credit_user_balance(token_id, &recipient_account_id, data.amount)?;
         if data.token_contract == Self::avt_token_contract() {
-            let credited = Self::credit_avt_balance(&recipient_account_id, data.amount)?;
-
             Self::deposit_event(Event::<T>::AVTLifted {
                 recipient: recipient_account_id,
-                amount: credited,
+                amount,
                 eth_tx_hash: event_id.transaction_hash,
             });
         } else {
-            let token_id: T::TokenId = data.token_contract.into();
-            let credited =
-                Self::credit_token_balance(token_id, &recipient_account_id, data.amount)?;
-
+            let token_balance = Self::into_token_balance(amount)?;
             Self::deposit_event(Event::<T>::TokenLifted {
                 token_id,
                 recipient: recipient_account_id,
-                token_balance: credited,
+                token_balance,
                 eth_tx_hash: event_id.transaction_hash,
             });
         }
@@ -1078,13 +958,16 @@ impl<T: Config> Pallet<T> {
         let treasury_share = T::TreasuryGrowthPercentage::get() * data.amount;
 
         // Send a portion of the funds to the treasury
-        let treasury_amount =
-            Self::credit_avt_balance(&Self::compute_treasury_account_id(), treasury_share)?;
+        let treasury_amount = Self::credit_user_balance(
+            Self::avt_token_contract().into(),
+            &Self::compute_treasury_account_id(),
+            treasury_share,
+        )?;
 
         // Now let the runtime know we have a lift so we can payout collators
-        let remaining_amount =
-            <BalanceOf<T> as TryFrom<u128>>::try_from(data.amount - treasury_share)
-                .or_else(|_error| Err(Error::<T>::AmountOverflow))?;
+        let remaining_amount = Self::u128_to_balance(
+            data.amount.checked_sub(treasury_share).ok_or(Error::<T>::AmountOverflow)?,
+        )?;
 
         Self::deposit_event(Event::<T>::AVTGrowthLifted {
             treasury_share: treasury_amount,
@@ -1122,15 +1005,15 @@ impl<T: Config> Pallet<T> {
         let event_id = &event.event_id;
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
         ensure!(event_validity, Error::<T>::NoTier1EventForLogLowerReverted);
-
-        Self::remove_used_lower(data.lower_id)?;
-        let t2_refunded_sender = Self::decode_recipient(&data.receiver_address)?;
-
         ensure!(data.amount != 0, Error::<T>::AmountIsZero);
 
-        if data.token_contract == Self::avt_token_contract() {
-            let amount = Self::credit_avt_balance(&t2_refunded_sender, data.amount)?;
+        let t2_refunded_sender = Self::decode_recipient(&data.receiver_address)?;
+        let token_id: T::TokenId = data.token_contract.into();
 
+        Self::remove_used_lower(data.lower_id)?;
+        let amount = Self::credit_user_balance(token_id, &t2_refunded_sender, data.amount)?;
+
+        if data.token_contract == Self::avt_token_contract() {
             Self::deposit_event(Event::<T>::AVTLowerReverted {
                 t2_refunded_sender,
                 amount,
@@ -1139,13 +1022,11 @@ impl<T: Config> Pallet<T> {
                 t1_reverted_recipient: data.t1_recipient,
             });
         } else {
-            let token_id: T::TokenId = data.token_contract.into();
-            let amount = Self::credit_token_balance(token_id, &t2_refunded_sender, data.amount)?;
-
+            let token_balance = Self::into_token_balance(amount)?;
             Self::deposit_event(Event::<T>::TokenLowerReverted {
                 token_id,
                 t2_refunded_sender,
-                amount,
+                amount: token_balance,
                 eth_tx_hash: event_id.transaction_hash,
                 lower_id: data.lower_id,
                 t1_reverted_recipient: data.t1_recipient,
@@ -1153,20 +1034,6 @@ impl<T: Config> Pallet<T> {
         }
 
         Ok(())
-    }
-
-    /// The account ID of the AvN treasury.
-    /// This actually does computation. If you need to keep using it, then make sure you cache
-    /// the value and only call this once.
-    pub fn compute_treasury_account_id() -> T::AccountId {
-        T::AvnTreasuryPotId::get().into_account_truncating()
-    }
-
-    /// The total amount of funds stored in this pallet
-    pub fn treasury_balance() -> BalanceOf<T> {
-        // Must never be less than 0 but better be safe.
-        <T as pallet::Config>::Currency::free_balance(&Self::compute_treasury_account_id())
-            .saturating_sub(<T as pallet::Config>::Currency::minimum_balance())
     }
 
     fn schedule_lower(

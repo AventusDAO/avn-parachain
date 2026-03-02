@@ -28,7 +28,7 @@ frame-support.workspace = true
 frame-system.workspace = true
 pallet-avn.workspace = true
 
-#orml
+# orml
 orml-traits = { workspace = true }
 
 # Optional imports for benchmarking
@@ -46,6 +46,11 @@ pallet-scheduler = { workspace = true, default-features = true }
 pallet-preimage = { workspace = true, default-features = true }
 sp-state-machine = { default-features = true, workspace = true }
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
+
+# orml dependencies for testing
+orml-currencies = { workspace = true, default-features = true }
+orml-asset-registry = { workspace = true, default-features = true}
+orml-tokens = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]

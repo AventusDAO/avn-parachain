@@ -1034,8 +1034,8 @@ fn avn_test_regular_call_gas_costs_paid_correctly() {
                 RuntimeEvent::TokenManager(
                     crate::Event::<TestRuntime>::TokenTransferred {
                         token_id,
-                        sender: sender,
-                        recipient: recipient,
+                        sender: _,
+                        recipient: _,
                         token_balance: DEFAULT_AMOUNT,
                         ..
                     }
