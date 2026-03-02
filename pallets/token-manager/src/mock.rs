@@ -43,7 +43,7 @@ use sp_avn_common::{
     eth::EthereumId,
     event_types::{EthEventId, LiftedData, ValidEvents},
     primitives::Amount,
-    Asset, NoopAssetManager, NoopAssetRegistry, OnIdleHandler,
+    Asset, OnIdleHandler,
 };
 use sp_core::{sr25519, ConstU64, Pair, H256};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
@@ -492,7 +492,6 @@ impl ExtBuilder {
     }
 
     pub fn with_genesis_config(mut self) -> Self {
-        println!("\nAVT token contract: {:?}\n", AVT_TOKEN_CONTRACT);
         let _ = token_manager::GenesisConfig::<TestRuntime> {
             _phantom: Default::default(),
             lower_account_id: H256::random(),

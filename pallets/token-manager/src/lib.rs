@@ -75,7 +75,6 @@ pub type LowerId = u32;
 pub type LowerDataLimit = ConstU32<10000>; // Max lower proof len. 10kB
 
 mod utils;
-
 mod benchmarking;
 pub mod default_weights;
 pub mod migration;
@@ -707,6 +706,7 @@ impl<T: Config> Pallet<T> {
 
         match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
             Some(asset) => {
+                // No need to emit an event, AssetManager will emit one for Native and Known assets.
                 let amount_balance = Self::into_balance(*amount)?;
                 T::AssetManager::transfer(
                     asset,
