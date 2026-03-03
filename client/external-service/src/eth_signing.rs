@@ -1,8 +1,8 @@
 // Copyright 2026 Aventus DAO Ltd
 
+use crate::keystore_utils::{get_eth_address_bytes_from_keystore, get_priv_key};
 use alloy::signers::local::PrivateKeySigner;
 use anyhow::Result;
-use crate::keystore_utils::{get_eth_address_bytes_from_keystore, get_priv_key};
 use std::path::PathBuf;
 
 pub(crate) fn eth_priv_key_from_keystore(keystore_path: &PathBuf) -> Result<[u8; 32]> {
