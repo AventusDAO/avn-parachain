@@ -28,7 +28,6 @@ impl<T: Config> Pallet<T> {
         recipient: &T::AccountId,
         raw_amount: u128,
     ) -> Result<BalanceOf<T>, Error<T>> {
-        // TODO: NS - adjust decimal balance to 18 places first
         let amount_balance = Self::u128_to_balance(raw_amount)?;
         T::AssetManager::deposit(asset, recipient, amount_balance)
             .map_err(|_| Error::<T>::DepositFailed)?;
@@ -56,7 +55,6 @@ impl<T: Config> Pallet<T> {
         from: &T::AccountId,
         raw_amount: u128,
     ) -> Result<(), Error<T>> {
-        // TODO: NS - adjust decimal balance back to the original token's decimal places first
         let amount_balance = Self::u128_to_balance(raw_amount)?;
         T::AssetManager::withdraw(
             asset,
