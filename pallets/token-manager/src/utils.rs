@@ -7,9 +7,79 @@ impl<T: Config> Pallet<T> {
         raw_amount: u128,
     ) -> Result<BalanceOf<T>, Error<T>> {
         match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(token_id.into())) {
-            Some(asset) => Ok(Self::credit_known_asset(asset, recipient, raw_amount)?),
-            None => Ok(Self::credit_unknown_token(token_id, recipient, raw_amount)?),
+            Some(asset) => Ok(Self::mint_known_token(asset, recipient, raw_amount)?),
+            None => Ok(Self::mint_unknown_token(token_id, recipient, raw_amount)?),
         }
+    }
+
+    pub fn debit_user_balance(
+        token_id: T::TokenId,
+        from: &T::AccountId,
+        raw_amount: u128,
+    ) -> Result<(), Error<T>> {
+        match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(token_id.into())) {
+            Some(asset) => Ok(Self::burn_known_token(asset, from, raw_amount)?),
+            None => Ok(Self::burn_unknown_token(token_id, from, raw_amount)?),
+        }
+    }
+
+    fn mint_known_token(
+        asset: CurrencyId,
+        recipient: &T::AccountId,
+        raw_amount: u128,
+    ) -> Result<BalanceOf<T>, Error<T>> {
+        // TODO: NS - adjust decimal balance to 18 places first
+        let amount_balance = Self::u128_to_balance(raw_amount)?;
+        T::AssetManager::deposit(asset, recipient, amount_balance)
+            .map_err(|_| Error::<T>::DepositFailed)?;
+        Ok(amount_balance)
+    }
+
+    fn mint_unknown_token(
+        token_id: T::TokenId,
+        recipient: &T::AccountId,
+        raw_amount: u128,
+    ) -> Result<BalanceOf<T>, Error<T>> {
+        let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
+        let amount_balance = Self::u128_to_balance(raw_amount)?;
+
+        <Balances<T>>::try_mutate((token_id, recipient.clone()), |balance| {
+            *balance =
+                balance.checked_add(&amount_token_balance).ok_or(Error::<T>::AmountOverflow)?;
+            Ok(())
+        })?;
+        Ok(amount_balance)
+    }
+
+    fn burn_known_token(
+        asset: CurrencyId,
+        from: &T::AccountId,
+        raw_amount: u128,
+    ) -> Result<(), Error<T>> {
+        // TODO: NS - adjust decimal balance back to the original token's decimal places first
+        let amount_balance = Self::u128_to_balance(raw_amount)?;
+        T::AssetManager::withdraw(
+            asset,
+            from,
+            amount_balance,
+            ExistenceRequirement::KeepAlive,
+        )
+        .map_err(|_| Error::<T>::InsufficientSenderBalance)?;
+        Ok(())
+    }
+
+    fn burn_unknown_token(
+        token_id: T::TokenId,
+        from: &T::AccountId,
+        raw_amount: u128,
+    ) -> Result<(), Error<T>> {
+        let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
+        <Balances<T>>::try_mutate((token_id, from.clone()), |balance| {
+            *balance =
+                balance.checked_sub(&amount_token_balance).ok_or(Error::<T>::InsufficientSenderBalance)?;
+            Ok(())
+        })?;
+        Ok(())
     }
 
     /// Convert a `u128` raw amount to `BalanceOf<T>`.
@@ -48,32 +118,5 @@ impl<T: Config> Pallet<T> {
         // Must never be less than 0 but better be safe.
         <T as pallet::Config>::Currency::free_balance(&Self::compute_treasury_account_id())
             .saturating_sub(<T as pallet::Config>::Currency::minimum_balance())
-    }
-
-    fn credit_known_asset(
-        asset: CurrencyId,
-        recipient: &T::AccountId,
-        raw_amount: u128,
-    ) -> Result<BalanceOf<T>, Error<T>> {
-        let amount_balance = Self::u128_to_balance(raw_amount)?;
-        T::AssetManager::deposit(asset, recipient, amount_balance)
-            .map_err(|_| Error::<T>::DepositFailed)?;
-        Ok(amount_balance)
-    }
-
-    fn credit_unknown_token(
-        token_id: T::TokenId,
-        recipient: &T::AccountId,
-        raw_amount: u128,
-    ) -> Result<BalanceOf<T>, Error<T>> {
-        let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
-        let amount_balance = Self::u128_to_balance(raw_amount)?;
-
-        <Balances<T>>::try_mutate((token_id, recipient.clone()), |balance| {
-            *balance =
-                balance.checked_add(&amount_token_balance).ok_or(Error::<T>::AmountOverflow)?;
-            Ok(())
-        })?;
-        Ok(amount_balance)
     }
 }

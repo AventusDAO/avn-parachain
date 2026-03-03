@@ -757,6 +757,7 @@ impl<C: orml_tokens::Config> orml_traits::currency::MutationHooks<AccountId, Cur
     type PreTransfer = ();
 }
 
+// This is the "storage" pallet for known tokens
 impl orml_tokens::Config for Runtime {
     type Amount = Amount;
     type Balance = Balance;
@@ -775,6 +776,7 @@ parameter_types! {
     pub const AssetRegistryStringLimit: u32 = 1024;
 }
 
+// This pallets is used to store metadata about known tokens
 impl orml_asset_registry::Config for Runtime {
     type AssetId = CurrencyId;
     type AuthorityOrigin = EnsureRoot<AccountId>;
@@ -783,6 +785,7 @@ impl orml_asset_registry::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type StringLimit = AssetRegistryStringLimit;
     type AssetProcessor = AvnAssetProcessor;
+    // Determines if this is an Eth asset or an XCM asset
     type AssetLocation = AvnAssetLocation;
     type WeightInfo = ();
 }
@@ -794,9 +797,12 @@ parameter_types! {
     pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
 }
 
+// This pallet provides an unified interface to manage the usage of known tokens
 impl orml_currencies::Config for Runtime {
     type GetNativeCurrencyId = GetNativeCurrencyId;
+    // handler for non native, known tokens
     type MultiCurrency = OrmlTokens;
+    // handler for the native token (AVT) based on balances pallet
     type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances>;
     type WeightInfo = ();
 }
@@ -902,13 +908,10 @@ parameter_type_with_key! {
         match currency_id {
             Asset::Avt => EXISTENTIAL_DEPOSIT,
             Asset::ForeignAsset(id) => {
-                // let maybe_metadata = <
-                // pallet_pm_eth_asset_registry::Pallet<Runtime> as prediction_market_primitives::traits::InspectEthAsset
-                // >::metadata(&Asset::ForeignAsset(*id));
-
-                // if let Some(metadata) = maybe_metadata {
-                //     return metadata.existential_deposit;
-                // }
+                let maybe_metadata = <orml_asset_registry::Pallet<Runtime> as orml_traits::asset_registry::Inspect>::metadata(&Asset::ForeignAsset(*id));
+                if let Some(metadata) = maybe_metadata {
+                    return metadata.existential_deposit;
+                }
 
                 FOREIGN_ASSET_DEFAULT_ED
             }

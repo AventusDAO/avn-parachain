@@ -318,6 +318,7 @@ pub mod pallet {
         InvalidEthAddress,
         InvalidToken,
         AvtNotRegisteredAsKnownAsset,
+        WithdrawFailed,
     }
 
     #[pallet::storage]
@@ -744,51 +745,29 @@ impl<T: Config> Pallet<T> {
         token_id: T::TokenId,
         from: &T::AccountId,
         to: &T::AccountId,
-        amount: u128,
+        raw_amount: u128,
         t1_recipient: H160,
         lower_id: LowerId,
     ) -> DispatchResult {
-        match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((token_id).into())) {
-            Some(asset) => {
-                let amount_balance = Self::u128_to_balance(amount)?;
-                // Note: Keep account alive when balance is lower than existence requirement,
-                // so the SystemNonce will not be reset just in case if any logic relies on the
-                // SystemNonce. However all zero AVT account balances will be kept in our
-                // runtime storage.
-                T::AssetManager::withdraw(
-                    asset,
-                    from,
-                    amount_balance,
-                    ExistenceRequirement::KeepAlive,
-                )?;
+        Self::debit_user_balance(token_id, &from, raw_amount)?;
 
-                Self::deposit_event(Event::<T>::AvtLowered {
-                    sender: from.clone(),
-                    recipient: to.clone(),
-                    amount,
-                    t1_recipient,
-                    lower_id,
-                });
-            },
-            None => {
-                let lower_amount = Self::u128_to_token_balance(amount)?;
-
-                <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
-                    *balance = balance
-                        .checked_sub(&lower_amount)
-                        .ok_or(Error::<T>::InsufficientSenderBalance)?;
-                    Ok(())
-                })?;
-
-                Self::deposit_event(Event::<T>::TokenLowered {
-                    token_id,
-                    sender: from.clone(),
-                    recipient: to.clone(),
-                    amount,
-                    t1_recipient,
-                    lower_id,
-                });
-            },
+        if token_id == Self::avt_token_contract().into() {
+            Self::deposit_event(Event::<T>::AvtLowered {
+                sender: from.clone(),
+                recipient: to.clone(),
+                amount: raw_amount,
+                t1_recipient,
+                lower_id,
+            });
+        } else {
+            Self::deposit_event(Event::<T>::TokenLowered {
+                token_id,
+                sender: from.clone(),
+                recipient: to.clone(),
+                amount: raw_amount,
+                t1_recipient,
+                lower_id,
+            });
         }
 
         let t2_sender = H256::from(T::AccountToBytesConvert::into_bytes(from));
@@ -796,7 +775,7 @@ impl<T: Config> Pallet<T> {
         let lower_params = concat_lower_data(
             lower_id,
             token_id.into(),
-            &amount,
+            &raw_amount,
             &t1_recipient,
             t2_sender,
             t2_timestamp,
@@ -928,6 +907,7 @@ impl<T: Config> Pallet<T> {
 
         let token_id: T::TokenId = data.token_contract.into();
         let amount = Self::credit_user_balance(token_id, &recipient_account_id, data.amount)?;
+
         if data.token_contract == Self::avt_token_contract() {
             Self::deposit_event(Event::<T>::AVTLifted {
                 recipient: recipient_account_id,

@@ -22,7 +22,6 @@ use crate::{
 use frame_support::{assert_err, assert_noop, assert_ok};
 use frame_system::RawOrigin;
 use hex_literal::hex;
-use pallet_balances::Error as BalancesError;
 use sp_runtime::DispatchError;
 
 const USE_RECEIVER_WITH_EXISTING_AMOUNT: bool = true;
@@ -371,7 +370,7 @@ fn avn_test_lower_avt_token_should_fail_when_sender_does_not_have_enough_avt_tok
         });
 
         assert!(dispatch_result.is_some());
-        assert_err!(dispatch_result.unwrap(), BalancesError::<TestRuntime, _>::InsufficientBalance);
+        assert_err!(dispatch_result.unwrap(), Error::<TestRuntime>::InsufficientSenderBalance);
     });
 }
 

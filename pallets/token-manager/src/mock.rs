@@ -24,7 +24,6 @@ use frame_support::{
     weights::{Weight, WeightToFee as WeightToFeeT},
     PalletId,
 };
-use frame_system::DefaultConfig;
 
 use frame_system::{self as system, limits, EnsureRoot};
 use sp_state_machine::BasicExternalities;
@@ -37,7 +36,7 @@ use orml_traits::{
 use pallet_avn::BridgeInterfaceNotification;
 use pallet_parachain_staking::{self as parachain_staking};
 use pallet_session as session;
-use pallet_transaction_payment::CurrencyAdapter;
+use pallet_transaction_payment::FungibleAdapter;
 use sp_avn_common::{
     avn_tests_helpers::{ethereum_converters::*, utilities::TestAccountIdPK},
     eth::EthereumId,
@@ -231,7 +230,7 @@ parameter_types! {
 }
 impl pallet_transaction_payment::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
-    type OnChargeTransaction = CurrencyAdapter<Balances, ()>;
+    type OnChargeTransaction = FungibleAdapter<Balances, ()>;
     type LengthToFee = TransactionByteFee;
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
