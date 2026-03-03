@@ -1,7 +1,5 @@
-use crate::{
-    chain::ChainClient, eth_signing::sign_digest_from_keystore, keystore_utils::*,
-    signing::SignerProvider, timer::OperationTimer,
-};
+// Copyright 2026 Aventus DAO Ltd
+
 use anyhow::Result;
 use axum::{
     body::Bytes as AxumBytes,
@@ -11,6 +9,9 @@ use axum::{
     Router,
 };
 use codec::{Decode, Encode};
+use crate::{
+    chain::ChainClient, keystore_utils::*, signing::SignerProvider, timer::OperationTimer,
+};
 use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
@@ -247,6 +248,14 @@ where
 
     validate_authorisation_token(&state.keystore, &headers, &msg_bytes)?;
 
-    sign_digest_from_keystore(&state.keystore_path, &msg_bytes)
+    let digest: &[u8; 32] = msg_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| server_error("digest must be 32 bytes"))?;
+
+    state
+        .signer_provider
+        .sign_digest(digest)
+        .await
         .map_err(|e| server_error(format!("{e:?}")))
 }
