@@ -106,6 +106,43 @@ pub type TxExtension = cumulus_pallet_weight_reclaim::StorageWeightReclaim<
 pub type UncheckedExtrinsic =
     generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
 
+// Re-export FilterResult for the node to use
+#[cfg(feature = "std")]
+pub use sp_avn_common::FilterResult;
+
+/// Checks if a call is allowed through the public RPC filter.
+/// Currently only balance transfers are permitted.
+#[cfg(feature = "std")]
+fn is_allowed_call(call: &RuntimeCall) -> bool {
+    matches!(
+        call,
+        RuntimeCall::Balances(pallet_balances::Call::transfer_allow_death { .. }) |
+            RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive { .. }) |
+            RuntimeCall::Balances(pallet_balances::Call::transfer_all { .. })
+    )
+}
+
+/// Checks if an encoded extrinsic is allowed through the transaction filter.
+///
+/// Used by public RPC nodes to restrict which extrinsics can be submitted.
+#[cfg(feature = "std")]
+pub fn is_extrinsic_allowed(encoded: &[u8]) -> FilterResult {
+    use codec::Decode;
+
+    match UncheckedExtrinsic::decode(&mut &encoded[..]) {
+        Ok(xt) =>
+            if is_allowed_call(&xt.function) {
+                FilterResult::Allowed
+            } else {
+                FilterResult::DisallowedCall
+            },
+        Err(e) => {
+            log::debug!(target: "tx-filter", "Decode failed: {:?}", e);
+            FilterResult::Malformed
+        },
+    }
+}
+
 /// Executive: handles dispatch to the various modules.
 pub type Executive = frame_executive::Executive<
     Runtime,

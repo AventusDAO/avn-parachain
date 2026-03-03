@@ -1,13 +1,14 @@
 // Copyright 2026 Aventus DAO Ltd
 
-use async_trait::async_trait;
 use crate::{
     chain::ChainClient,
     eth_signing::{eth_priv_key_from_keystore, signer_from_keystore},
     evm::client::EvmClient,
     keystore_utils::get_eth_address_bytes_from_keystore,
 };
-use sp_core::ecdsa;
+use async_trait::async_trait;
+use codec::Encode;
+use sp_core::{ecdsa, Pair};
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use url::Url;
@@ -35,10 +36,14 @@ impl KeystoreSignerProvider {
     }
 
     fn load_signing_key(&self) -> anyhow::Result<CachedKey> {
-        let eth_address: [u8; 20] = get_eth_address_bytes_from_keystore(&self.keystore_path)?;
-        let eth_address_hex = hex::encode(eth_address);
+        let eth_address: Vec<u8> = get_eth_address_bytes_from_keystore(&self.keystore_path)?;
+        if eth_address.len() != 20 {
+            anyhow::bail!("eth address must be 20 bytes");
+        }
+        let eth_address_hex = hex::encode(&eth_address);
         let priv_key = eth_priv_key_from_keystore(&self.keystore_path)?;
-        let ecdsa_pair = ecdsa::Pair::from_seed(&priv_key);
+        let ecdsa_pair = ecdsa::Pair::from_seed_slice(&priv_key)
+            .map_err(|_| anyhow::anyhow!("private key must be 32 bytes"))?;
 
         Ok(CachedKey { eth_address_hex, ecdsa_pair })
     }
@@ -47,13 +52,13 @@ impl KeystoreSignerProvider {
         {
             let guard = self.key_cache.read().await;
             if guard.is_some() {
-                return Ok(());
+                return Ok(())
             }
         }
 
         let mut guard = self.key_cache.write().await;
         if guard.is_some() {
-            return Ok(());
+            return Ok(())
         }
 
         *guard = Some(self.load_signing_key()?);
@@ -67,13 +72,13 @@ impl crate::signing::SignerProvider for KeystoreSignerProvider {
         {
             let guard = self.client_cache.read().await;
             if let Some(client) = guard.as_ref() {
-                return Ok(Arc::clone(client));
+                return Ok(Arc::clone(client))
             }
         }
 
         let mut guard = self.client_cache.write().await;
         if let Some(client) = guard.as_ref() {
-            return Ok(Arc::clone(client));
+            return Ok(Arc::clone(client))
         }
 
         self.ensure_signing_key().await?;
@@ -96,9 +101,7 @@ impl crate::signing::SignerProvider for KeystoreSignerProvider {
         self.ensure_signing_key().await?;
 
         let guard = self.key_cache.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Key cache not initialised"))?;
+        let keys = guard.as_ref().ok_or_else(|| anyhow::anyhow!("Key cache not initialised"))?;
 
         let sig = keys.ecdsa_pair.sign_prehashed(digest);
         Ok(hex::encode(sig.encode()))

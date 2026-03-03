@@ -59,6 +59,16 @@ pub struct AvnRunCmd {
     /// URL for connecting with an ethereum node
     #[arg(long = "ethereum-node-url", value_name = "ETH URL", num_args = 0..=32)]
     pub eth_node_urls: Vec<String>,
+
+    /// Enable the transaction filter: reject extrinsics at the node (e.g. for public RPC)
+    /// before they enter the pool, using the runtime's call filter policy.
+    #[arg(long = "enable-transaction-filter")]
+    pub enable_transaction_filter: bool,
+
+    /// When the transaction filter is enabled, log each rejected extrinsic (disallowed or
+    /// malformed). No effect if --enable-transaction-filter is not set.
+    #[arg(long = "transaction-filter-log-rejections")]
+    pub transaction_filter_log_rejections: bool,
 }
 
 impl std::ops::Deref for AvnRunCmd {

@@ -27,6 +27,20 @@ use sp_std::{boxed::Box, vec::Vec};
 pub const OPEN_BYTES_TAG: &'static [u8] = b"<Bytes>";
 pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
 
+/// Result of checking an extrinsic against the transaction filter.
+///
+/// Used by both runtime (to return filter results) and node (to process them).
+/// Placed here for no_std compatibility so runtime wasm can use it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+pub enum FilterResult {
+    /// Extrinsic is allowed through the filter.
+    Allowed,
+    /// Extrinsic decoded but call is not in the allow list.
+    DisallowedCall,
+    /// Extrinsic failed to decode (fail secure: treat as rejected).
+    Malformed,
+}
+
 #[path = "tests/helpers.rs"]
 pub mod avn_tests_helpers;
 #[cfg(feature = "runtime-benchmarks")]
@@ -41,6 +55,8 @@ pub mod ocw_lock;
 #[cfg(test)]
 #[path = "tests/test_event_discovery.rs"]
 pub mod test_event_discovery;
+#[cfg(feature = "std")]
+pub mod transaction_filter;
 
 /// Ingress counter type for a counter that can sign the same message with a different signature
 /// each time
