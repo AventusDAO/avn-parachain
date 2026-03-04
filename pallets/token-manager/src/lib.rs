@@ -74,10 +74,10 @@ type CallOf<T> = <T as Config>::RuntimeCall;
 pub type LowerId = u32;
 pub type LowerDataLimit = ConstU32<10000>; // Max lower proof len. 10kB
 
-mod utils;
 mod benchmarking;
 pub mod default_weights;
 pub mod migration;
+mod utils;
 pub use default_weights::WeightInfo;
 
 #[cfg(test)]
@@ -127,7 +127,14 @@ pub mod pallet {
         /// Currency type for lifting
         type Currency: Currency<Self::AccountId>;
         /// The units in which we record balances of tokens others than AVT
-        type TokenBalance: Member + Parameter + AtLeast32Bit + Default + Copy + MaxEncodedLen;
+        type TokenBalance: Member
+            + Parameter
+            + AtLeast32Bit
+            + Default
+            + Copy
+            + MaxEncodedLen
+            + Into<BalanceOf<Self>>
+            + From<BalanceOf<Self>>;
         /// The type of token identifier
         /// (H160 because this is an Ethereum address)
         type TokenId: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
@@ -514,7 +521,7 @@ pub mod pallet {
             Self::settle_lower(token_id, &from, &to_account_id, amount, t1_recipient, lower_id)?;
 
             // TODO: NS - replace with process known token vs unknown tokens
-            let final_weight = if token_id == Self::avt_token_contract().into() {
+            let final_weight = if Self::is_avt_token(token_id) {
                 <T as pallet::Config>::WeightInfo::execute_avt_lower()
             } else {
                 <T as pallet::Config>::WeightInfo::execute_non_avt_lower()
@@ -708,12 +715,11 @@ impl<T: Config> Pallet<T> {
         match T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum((*token_id).into())) {
             Some(asset) => {
                 // No need to emit an event, AssetManager will emit one for Native and Known assets.
-                let amount_balance = Self::into_balance(*amount)?;
                 T::AssetManager::transfer(
                     asset,
                     from,
                     to,
-                    amount_balance,
+                    (*amount).into(),
                     ExistenceRequirement::KeepAlive,
                 )
             },
@@ -751,7 +757,7 @@ impl<T: Config> Pallet<T> {
     ) -> DispatchResult {
         Self::debit_user_balance(token_id, &from, raw_amount)?;
 
-        if token_id == Self::avt_token_contract().into() {
+        if Self::is_avt_token(token_id) {
             Self::deposit_event(Event::<T>::AvtLowered {
                 sender: from.clone(),
                 recipient: to.clone(),
@@ -793,11 +799,10 @@ impl<T: Config> Pallet<T> {
         raw_amount: u128,
     ) -> DispatchResult {
         let amount = Self::credit_user_balance(token_id, &recipient_account_id, raw_amount)?;
-        let token_balance = Self::into_token_balance(amount)?;
         Self::deposit_event(Event::<T>::TokensDeposited {
             token_id,
             recipient: recipient_account_id,
-            token_balance,
+            token_balance: amount.into(),
         });
 
         Ok(())
@@ -908,18 +913,17 @@ impl<T: Config> Pallet<T> {
         let token_id: T::TokenId = data.token_contract.into();
         let amount = Self::credit_user_balance(token_id, &recipient_account_id, data.amount)?;
 
-        if data.token_contract == Self::avt_token_contract() {
+        if Self::is_avt_token(token_id) {
             Self::deposit_event(Event::<T>::AVTLifted {
                 recipient: recipient_account_id,
                 amount,
                 eth_tx_hash: event_id.transaction_hash,
             });
         } else {
-            let token_balance = Self::into_token_balance(amount)?;
             Self::deposit_event(Event::<T>::TokenLifted {
                 token_id,
                 recipient: recipient_account_id,
-                token_balance,
+                token_balance: amount.into(),
                 eth_tx_hash: event_id.transaction_hash,
             });
         }
@@ -933,7 +937,10 @@ impl<T: Config> Pallet<T> {
         let avt_token_id: T::TokenId = Self::avt_token_contract().into();
         ensure!(event_validity, Error::<T>::NoTier1EventForLogAvtGrowthLifted);
         ensure!(data.amount != 0, Error::<T>::AmountIsZero);
-        ensure!(T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(avt_token_id.into())).is_some(), Error::<T>::AvtNotRegisteredAsKnownAsset);
+        ensure!(
+            T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(avt_token_id.into())).is_some(),
+            Error::<T>::AvtNotRegisteredAsKnownAsset
+        );
 
         let treasury_share = T::TreasuryGrowthPercentage::get() * data.amount;
 
@@ -972,12 +979,7 @@ impl<T: Config> Pallet<T> {
     }
 
     fn remove_used_lower(lower_id: LowerId) -> DispatchResult {
-        ensure!(
-            LowersReadyToClaim::<T>::contains_key(lower_id) == true,
-            Error::<T>::InvalidLowerId
-        );
-        LowersReadyToClaim::<T>::remove(lower_id);
-
+        ensure!(LowersReadyToClaim::<T>::take(lower_id).is_some(), Error::<T>::InvalidLowerId);
         Ok(())
     }
 
@@ -993,7 +995,7 @@ impl<T: Config> Pallet<T> {
         Self::remove_used_lower(data.lower_id)?;
         let amount = Self::credit_user_balance(token_id, &t2_refunded_sender, data.amount)?;
 
-        if data.token_contract == Self::avt_token_contract() {
+        if Self::is_avt_token(token_id) {
             Self::deposit_event(Event::<T>::AVTLowerReverted {
                 t2_refunded_sender,
                 amount,
@@ -1002,11 +1004,10 @@ impl<T: Config> Pallet<T> {
                 t1_reverted_recipient: data.t1_recipient,
             });
         } else {
-            let token_balance = Self::into_token_balance(amount)?;
             Self::deposit_event(Event::<T>::TokenLowerReverted {
                 token_id,
                 t2_refunded_sender,
-                amount: token_balance,
+                amount: amount.into(),
                 eth_tx_hash: event_id.transaction_hash,
                 lower_id: data.lower_id,
                 t1_reverted_recipient: data.t1_recipient,

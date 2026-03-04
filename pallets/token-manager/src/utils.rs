@@ -40,14 +40,12 @@ impl<T: Config> Pallet<T> {
         raw_amount: u128,
     ) -> Result<BalanceOf<T>, Error<T>> {
         let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
-        let amount_balance = Self::u128_to_balance(raw_amount)?;
-
         <Balances<T>>::try_mutate((token_id, recipient.clone()), |balance| {
             *balance =
                 balance.checked_add(&amount_token_balance).ok_or(Error::<T>::AmountOverflow)?;
             Ok(())
         })?;
-        Ok(amount_balance)
+        Ok(amount_token_balance.into())
     }
 
     fn burn_known_token(
@@ -56,13 +54,8 @@ impl<T: Config> Pallet<T> {
         raw_amount: u128,
     ) -> Result<(), Error<T>> {
         let amount_balance = Self::u128_to_balance(raw_amount)?;
-        T::AssetManager::withdraw(
-            asset,
-            from,
-            amount_balance,
-            ExistenceRequirement::KeepAlive,
-        )
-        .map_err(|_| Error::<T>::InsufficientSenderBalance)?;
+        T::AssetManager::withdraw(asset, from, amount_balance, ExistenceRequirement::AllowDeath)
+            .map_err(|_| Error::<T>::InsufficientSenderBalance)?;
         Ok(())
     }
 
@@ -73,11 +66,16 @@ impl<T: Config> Pallet<T> {
     ) -> Result<(), Error<T>> {
         let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
         <Balances<T>>::try_mutate((token_id, from.clone()), |balance| {
-            *balance =
-                balance.checked_sub(&amount_token_balance).ok_or(Error::<T>::InsufficientSenderBalance)?;
+            *balance = balance
+                .checked_sub(&amount_token_balance)
+                .ok_or(Error::<T>::InsufficientSenderBalance)?;
             Ok(())
         })?;
         Ok(())
+    }
+
+    pub fn is_avt_token(token_id: T::TokenId) -> bool {
+        token_id == Self::avt_token_contract().into()
     }
 
     /// Convert a `u128` raw amount to `BalanceOf<T>`.
@@ -88,20 +86,6 @@ impl<T: Config> Pallet<T> {
     /// Convert a `u128` raw amount to `T::TokenBalance`.
     pub fn u128_to_token_balance(amount: u128) -> Result<T::TokenBalance, Error<T>> {
         <T::TokenBalance as TryFrom<u128>>::try_from(amount).map_err(|_| Error::<T>::AmountOverflow)
-    }
-
-    /// Convert a `T::TokenBalance` to `BalanceOf<T>` via the `u128` intermediate.
-    pub fn into_balance(amount: T::TokenBalance) -> Result<BalanceOf<T>, Error<T>> {
-        let raw = TryInto::<u128>::try_into(amount).map_err(|_| Error::<T>::AmountOverflow)?;
-
-        Self::u128_to_balance(raw)
-    }
-
-    /// Convert a `BalanceOf<T>` to `T::TokenBalance` via the `u128` intermediate.
-    pub fn into_token_balance(amount: BalanceOf<T>) -> Result<T::TokenBalance, Error<T>> {
-        let raw = TryInto::<u128>::try_into(amount).or_else(|_| Err(Error::<T>::AmountOverflow))?;
-
-        Self::u128_to_token_balance(raw)
     }
 
     /// The account ID of the AvN treasury.

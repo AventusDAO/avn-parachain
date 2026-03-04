@@ -23,7 +23,7 @@ use frame_support::{
     derive_impl,
     dispatch::DispatchClass,
     parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, TransformOrigin, VariantCountOf},
+    traits::{ConstBool, ConstU32, ConstU64, Contains, TransformOrigin, VariantCountOf},
     weights::{ConstantMultiplier, Weight},
     PalletId,
 };
@@ -44,21 +44,31 @@ use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{AllEventsFilter, NoEventsFilter},
-    NoopAssetManager, NoopAssetRegistry,
+    Asset,
 };
 use sp_core::{ConstU128, H160};
-use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
+use sp_runtime::{
+    traits::{AccountIdConversion, ConvertInto},
+    transaction_validity::TransactionPriority,
+};
 use sp_watchtower::NoopWatchtower;
+
+use orml_traits::{
+    asset_registry::{AvnAssetLocation, AvnAssetMetadata},
+    parameter_type_with_key,
+};
 
 // Local module imports
 use crate::{
+    asset_registry::AvnAssetProcessor,
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
-    AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance,
-    Balances, Block, BlockNumber, ConsensusHook, EnsureSigned, EthBridge, EthSecondBridge, Hash,
-    Historical, HoldConsideration, ImOnlineId, LinearStoragePrice, MainEthBridge, MessageQueue,
-    Moment, NftManager, Nonce, Offences, Ordering, OriginCaller, PalletInfo, ParachainStaking,
-    ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime, RuntimeCall,
-    RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler,
+    AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn, AvnId,
+    AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook,
+    CurrencyId, EnsureSigned, EthBridge, EthSecondBridge, Hash, Historical, HoldConsideration,
+    ImOnlineId, LinearStoragePrice, MainEthBridge, MessageQueue, Moment, NftManager, Nonce,
+    Offences, Ordering, OriginCaller, OrmlTokens, PalletInfo, ParachainStaking, ParachainSystem,
+    Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent,
+    RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler,
     SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, Timestamp, TokenManager,
     TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee, XcmpQueue,
     AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
@@ -154,6 +164,8 @@ impl pallet_authorship::Config for Runtime {
 
 parameter_types! {
     pub const ExistentialDeposit: Balance = EXISTENTIAL_DEPOSIT;
+    pub const MaxLocks: u32 = 50;
+    pub const MaxReserves: u32 = 50;
 }
 
 impl pallet_balances::Config for Runtime {
@@ -512,8 +524,8 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
-    type AssetRegistry = NoopAssetRegistry;
-    type AssetManager = NoopAssetManager;
+    type AssetRegistry = AssetRegistry;
+    type AssetManager = AssetManager;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -619,6 +631,74 @@ impl pallet_assets::Config for Runtime {
 }
 
 parameter_types! {
+    pub AvnTreasuryAccount: AccountId = AvnTreasuryPotId::get().into_account_truncating();
+}
+
+pub struct CurrencyHooks<R>(sp_std::marker::PhantomData<R>);
+impl<C: orml_tokens::Config> orml_traits::currency::MutationHooks<AccountId, CurrencyId, Balance>
+    for CurrencyHooks<C>
+{
+    type OnDust = orml_tokens::TransferDust<Runtime, AvnTreasuryAccount>;
+    type OnKilledTokenAccount = ();
+    type OnNewTokenAccount = ();
+    type OnSlash = ();
+    type PostDeposit = ();
+    type PostTransfer = ();
+    type PreDeposit = ();
+    type PreTransfer = ();
+}
+
+// This is the "storage" pallet for known tokens
+impl orml_tokens::Config for Runtime {
+    type Amount = Amount;
+    type Balance = Balance;
+    type CurrencyHooks = CurrencyHooks<Runtime>;
+    type CurrencyId = CurrencyId;
+    type DustRemovalWhitelist = DustRemovalWhitelist;
+    type RuntimeEvent = RuntimeEvent;
+    type ExistentialDeposits = OrmlExistentialDeposits;
+    type MaxLocks = MaxLocks;
+    type MaxReserves = MaxReserves;
+    type ReserveIdentifier = [u8; 8];
+    type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const AssetRegistryStringLimit: u32 = 1024;
+}
+
+// This pallets is used to store metadata about known tokens
+impl orml_asset_registry::Config for Runtime {
+    type AssetId = CurrencyId;
+    type AuthorityOrigin = EnsureRoot<AccountId>;
+    type Balance = Balance;
+    type CustomMetadata = AvnAssetMetadata;
+    type RuntimeEvent = RuntimeEvent;
+    type StringLimit = AssetRegistryStringLimit;
+    type AssetProcessor = AvnAssetProcessor;
+    // Determines if this is an Eth asset or an XCM asset
+    type AssetLocation = AvnAssetLocation;
+    type WeightInfo = ();
+}
+
+/// ORML currency adapter to abstract over the currency implementation used in the runtime.
+pub type BasicCurrencyAdapter<R, B> = orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
+
+parameter_types! {
+    pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
+}
+
+// This pallet provides an unified interface to manage the usage of known tokens
+impl orml_currencies::Config for Runtime {
+    type GetNativeCurrencyId = GetNativeCurrencyId;
+    // handler for non native, known tokens
+    type MultiCurrency = OrmlTokens;
+    // handler for the native token (AVT) based on balances pallet
+    type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances>;
+    type WeightInfo = ();
+}
+
+parameter_types! {
     pub MaximumSchedulerWeight: Weight = RuntimeBlockWeights::get().max_block;
     pub const MaxScheduledPerBlock: u32 = 50;
     pub const NoPreimagePostponement: Option<u32> = Some(10);
@@ -674,4 +754,45 @@ impl pallet_preimage::Config for Runtime {
         PreimageHoldReason,
         LinearStoragePrice<PreimageBaseDeposit, PreimageByteDeposit, Balance>,
     >;
+}
+
+// Accounts protected from being deleted due to a too low amount of funds.
+const IMMORTAL_ACCOUNTS: &[PalletId] = &[AvnTreasuryPotId::get(), RewardPotId::get()];
+pub struct DustRemovalWhitelist;
+
+impl Contains<AccountId> for DustRemovalWhitelist
+where
+    frame_support::PalletId: sp_runtime::traits::AccountIdConversion<AccountId>,
+{
+    fn contains(ai: &AccountId) -> bool {
+        if let Some(pallet_id) = frame_support::PalletId::try_from_sub_account::<u128>(ai) {
+            return IMMORTAL_ACCOUNTS.contains(&pallet_id.0)
+        }
+
+        for pallet_id in IMMORTAL_ACCOUNTS {
+            let pallet_acc: AccountId = pallet_id.into_account_truncating();
+
+            if pallet_acc == *ai {
+                return true
+            }
+        }
+
+        false
+    }
+}
+
+parameter_type_with_key! {
+    pub OrmlExistentialDeposits: |currency_id: CurrencyId| -> Balance {
+        match currency_id {
+            Asset::Avt => EXISTENTIAL_DEPOSIT,
+            Asset::ForeignAsset(id) => {
+                let maybe_metadata = <orml_asset_registry::Pallet<Runtime> as orml_traits::asset_registry::Inspect<AvnAssetLocation>>::metadata(&Asset::ForeignAsset(*id));
+                if let Some(metadata) = maybe_metadata {
+                    return metadata.existential_deposit;
+                }
+
+                1
+            }
+        }
+    };
 }
