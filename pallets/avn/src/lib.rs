@@ -76,7 +76,7 @@ pub mod sr25519 {
     pub type AuthorityId = app_sr25519::Public;
 }
 
-const AVN_SERVICE_CALL_EXPIRY: u32 = 300_000;
+const EXTERNAL_SERVICE_CALL_EXPIRY: u32 = 300_000;
 
 // used in benchmarks and weights calculation only
 // TODO: centralise this with MaximumValidatorsBound
@@ -270,7 +270,7 @@ impl<T: Config> Pallet<T> {
         let avn_block_generation_in_millisec = 12_000 as u32;
         let delay: u32 = 5;
         let lock_expiry_in_blocks =
-            (AVN_SERVICE_CALL_EXPIRY / avn_block_generation_in_millisec) + delay;
+            (EXTERNAL_SERVICE_CALL_EXPIRY / avn_block_generation_in_millisec) + delay;
         return lock_expiry_in_blocks
     }
 
@@ -528,8 +528,8 @@ impl<T: Config> Pallet<T> {
         url_path: String,
     ) -> Result<Vec<u8>, DispatchError> {
         // TODO: Make this configurable
-        let deadline =
-            sp_io::offchain::timestamp().add(Duration::from_millis(AVN_SERVICE_CALL_EXPIRY as u64));
+        let deadline = sp_io::offchain::timestamp()
+            .add(Duration::from_millis(EXTERNAL_SERVICE_CALL_EXPIRY as u64));
         let url = format!(
             "http://127.0.0.1:{}/{}",
             Self::get_external_service_port_number(),
