@@ -59,8 +59,8 @@ impl<T: Config> Pallet<T> {
             ) {
                 log::info!(
                     "🛠️  Sending heartbeat for reward period: {:?}, block number: {:?}",
-                    block_number,
-                    current_reward_period
+                    current_reward_period,
+                    block_number
                 );
 
                 let signature = signing_key
@@ -94,12 +94,12 @@ impl<T: Config> Pallet<T> {
 
                         log::info!(
                             "🛠️  heartbeat transaction sent. Reward period: {:?}, Block number: {:?}",
-                            block_number, current_reward_period);
+                            current_reward_period, block_number);
                     },
                     None => {
                         log::error!(
                             "💔 Error signing heartbeat transaction. Reward period: {:?}, Block number: {:?}",
-                            block_number, current_reward_period);
+                            current_reward_period, block_number);
                     },
                 }
             }
