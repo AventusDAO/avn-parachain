@@ -479,40 +479,19 @@ pub async fn start_parachain_node(
             sc_service::Error::Other(format!("external-service init failed: {e:?}"))
         })?;
 
-        let eth_event_handler_config = node_integration::build_eth_event_handler_config(node_deps);
-
         task_manager.spawn_essential_handle().spawn(
             "external-service",
             None,
             external_service::server::start(avn_state),
         );
 
-        task_manager.spawn_essential_handle().spawn(
-            "eth-events-handler",
-            None,
-            external_service::ethereum_events_handler::start_eth_event_handler(
-                eth_event_handler_config,
-            ),
-        );
-
         if validator {
             let eth_event_handler_config =
-                avn_service::ethereum_events_handler::EthEventHandlerConfig::<Block, _> {
-                    keystore: params.keystore_container.local_keystore(),
-                    keystore_path: keystore_path.clone(),
-                    avn_port: avn_port.clone(),
-                    eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
-                    web3_data_mutexes: Default::default(),
-                    client: client.clone(),
-                    offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
-                        transaction_pool.clone(),
-                    ),
-                };
-
+                node_integration::build_eth_event_handler_config(node_deps);
             task_manager.spawn_essential_handle().spawn(
                 "eth-events-handler",
                 None,
-                avn_service::ethereum_events_handler::start_eth_event_handler(
+                external_service::ethereum_events_handler::start_eth_event_handler(
                     eth_event_handler_config,
                 ),
             );

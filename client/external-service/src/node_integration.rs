@@ -6,12 +6,12 @@ use crate::{
     signing::{KeystoreSignerProvider, SignerProvider},
 };
 use anyhow::{anyhow, Context, Result};
-use node_primitives::AccountId;
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
 use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sp_api::ApiExt;
+use sp_avn_common::primitives::AccountId;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;

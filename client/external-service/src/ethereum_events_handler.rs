@@ -5,7 +5,6 @@ use crate::{
     ETH_FINALITY,
 };
 use futures::future::try_join_all;
-use node_primitives::AccountId;
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
 use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
