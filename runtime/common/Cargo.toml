@@ -11,14 +11,15 @@ repository.workspace = true
 
 
 [dependencies]
-codec = { workspace = true, features = ["derive"] }
 log.workspace = true
-scale-info.workspace = true
 smallvec.workspace = true
 
-# Substrate
-frame-support = { features = ["experimental"], workspace = true }
-sp-runtime.workspace = true
+# Polkadot SDK
+codec = { workspace = true, features = ["derive"] }
+scale-info.workspace = true
+polkadot-sdk = { workspace = true, default-features = false, features =  ["runtime"]}
+
+# AvN
 sp-avn-common.workspace = true
 
 [features]
@@ -30,14 +31,13 @@ std = [
 	"codec/std",
 	"log/std",
 	"scale-info/std",
-	"sp-runtime/std",
 	"sp-avn-common/std",
-	"frame-support/std",
+	"polkadot-sdk/std",
 ]
 runtime-benchmarks = [
-	"frame-support/runtime-benchmarks",
+	"polkadot-sdk/runtime-benchmarks",
 ]
 
 try-runtime = [
-	"frame-support/try-runtime",
+	"polkadot-sdk/try-runtime",
 ]

@@ -3,14 +3,14 @@
 
 pub mod weights;
 
+use polkadot_sdk::sp_runtime::{generic, traits::BlakeTwo256};
 use smallvec::smallvec;
-use sp_runtime::{generic, traits::BlakeTwo256};
 
-use frame_support::{
+use polkadot_sdk::frame_support::{
     parameter_types,
     weights::{WeightToFeeCoefficient, WeightToFeeCoefficients, WeightToFeePolynomial},
 };
-pub use sp_runtime::{MultiAddress, Perbill, Permill};
+pub use polkadot_sdk::sp_runtime::{MultiAddress, Perbill, Permill};
 
 pub use sp_avn_common::primitives::{AccountId, Signature};
 use sp_avn_common::primitives::{Balance, BlockNumber};
@@ -30,12 +30,12 @@ pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
 /// to even the core data structures.
 pub mod opaque {
     use super::*;
-    use sp_runtime::{
+    use polkadot_sdk::sp_runtime::{
         generic,
         traits::{BlakeTwo256, Hash as HashT},
     };
 
-    pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
+    pub use polkadot_sdk::sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
     /// Opaque block header type.
     pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
     /// Opaque block type.
