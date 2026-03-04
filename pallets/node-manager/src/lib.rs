@@ -1114,10 +1114,10 @@ pub mod pallet {
         }
 
         fn offchain_worker(n: BlockNumberFor<T>) {
-            log::info!("🌐 OCW for node manager");
+            log::info!("🛠️  OCW for node manager");
 
             if <RewardEnabled<T>>::get() == false {
-                log::warn!("🌐 OCW - rewards are disabled, skipping");
+                log::warn!("🛠️  OCW - rewards are disabled, skipping");
                 return
             }
 

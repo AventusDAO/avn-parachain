@@ -123,24 +123,29 @@ pub mod pallet {
                 return
             }
 
-            let maybe_node_info = T::Watchtowers::get_node_from_local_signing_keys();
-            let (watchtower, signing_key) = match maybe_node_info {
-                Some(info) => info,
-                None => return,
-            };
+            if sp_io::offchain::is_validator() {
+                log::debug!("🛠️  Node is validator, skipping watchtower validation.");
+                return
+            }
 
             if let Some((proposal_id, root_data)) = RootInfo::<T>::get() {
                 let finalised_block = AVN::<T>::get_finalised_block_from_external_service();
                 if let Ok(finalised_block) = finalised_block {
                     if root_data.root_id.range.to_block > finalised_block {
                         log::debug!(
-                            "Root data to_block {:?} is greater than finalised block {:?}, skipping validation for now.",
+                            "🛠️  Root data to_block {:?} is greater than finalised block {:?}, skipping validation for now.",
                             root_data.root_id.range.to_block,
                             finalised_block
                         );
                         return
                     }
                 }
+
+                let maybe_node_info = T::Watchtowers::get_node_from_local_signing_keys();
+                let (watchtower, signing_key) = match maybe_node_info {
+                    Some(info) => info,
+                    None => return,
+                };
 
                 Self::process_pending_validation(
                     proposal_id,
