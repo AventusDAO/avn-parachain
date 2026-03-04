@@ -414,24 +414,6 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             ensure_none(origin)?;
 
-            // // Only Active internal proposals can be voted on with unsigned txs
-            // ensure!(
-            //     ActiveInternalProposal::<T>::get() == Some(proposal_id),
-            //     Error::<T>::InvalidProposalForUnsignedVote
-            // );
-
-            // let voter_signing_key = match T::Watchtowers::get_node_signing_key(&watchtower) {
-            //     Some(key) => key,
-            //     None => return Err(Error::<T>::VoterSigningKeyNotFound.into()),
-            // };
-
-            // if !Self::offchain_signature_is_valid(
-            //     &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &watchtower),
-            //     &voter_signing_key,
-            //     &signature,
-            // ) {
-            //     return Err(Error::<T>::UnauthorizedUnsignedTransaction.into())
-            // }
             Self::validate_unsigned_vote(proposal_id, watchtower.clone(), signature, in_favor)?;
 
             let finalised = Self::process_vote(&watchtower, proposal_id, in_favor)?;

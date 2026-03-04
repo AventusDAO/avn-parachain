@@ -14,7 +14,7 @@ const OC_HB_DB_PREFIX: &[u8] = b"tnf/node-manager-heartbeat/";
 impl<T: Config> Pallet<T> {
     pub fn trigger_payment_if_required(reward_period_index: RewardPeriodIndex, author: Author<T>) {
         if Self::can_trigger_payment().unwrap_or(false) {
-            log::info!("🌐 Triggering payment for period: {:?}", reward_period_index);
+            log::info!("🛠️  Triggering payment for period: {:?}", reward_period_index);
 
             let signature = author.key.sign(&(PAYOUT_REWARD_CONTEXT, reward_period_index).encode());
 
@@ -58,7 +58,7 @@ impl<T: Config> Pallet<T> {
                 heartbeat_count,
             ) {
                 log::info!(
-                    "🌐 Sending heartbeat for reward period: {:?}, block number: {:?}",
+                    "🛠️  Sending heartbeat for reward period: {:?}, block number: {:?}",
                     block_number,
                     current_reward_period
                 );
@@ -93,7 +93,7 @@ impl<T: Config> Pallet<T> {
                         }
 
                         log::info!(
-                            "🌐 heartbeat transaction sent. Reward period: {:?}, Block number: {:?}",
+                            "🛠️  heartbeat transaction sent. Reward period: {:?}, Block number: {:?}",
                             block_number, current_reward_period);
                     },
                     None => {
@@ -132,10 +132,10 @@ impl<T: Config> Pallet<T> {
 
         let last_paid_pointer = LastPaidPointer::<T>::get();
         if last_paid_pointer.is_some() {
-            log::info!("👷 Resuming payment for period: {:?}", oldest_period);
+            log::info!("🛠️  Resuming payment for period: {:?}", oldest_period);
         } else {
             log::info!(
-                "👷 Triggering payment for period: {:?}. Current period: {:?}",
+                "🛠️  Triggering payment for period: {:?}. Current period: {:?}",
                 oldest_period,
                 current_period
             );
@@ -151,8 +151,8 @@ impl<T: Config> Pallet<T> {
         // Attempt to read the CLI-provided node ID (only happens on startup).
         let maybe_node_id = Self::get_cli_node_id_from_local_storage();
         if let Some(cli_node_id) = maybe_node_id {
-            log::info!(
-                "🌐 Setting NodeId {:?} in pallet local storage",
+            log::debug!(
+                "🛠️  Setting NodeId {:?} in pallet local storage",
                 hex::encode(cli_node_id.encode())
             );
             if Self::record_formatted_node_id(cli_node_id).is_ok() {
@@ -171,12 +171,12 @@ impl<T: Config> Pallet<T> {
         // If we get here, we were not successful in finding the nodeId in the local storage
         // We will search all registered nodes using the local signing key
         if let Some((node_id, signing_key)) = Self::search_node_id_by_signing_key(&local_keys) {
-            log::info!("🔐 NodeId found, storing in local db for next time.");
+            log::debug!("🛠️  NodeId found, storing in local db for next time.");
             let _ = Self::record_formatted_node_id(node_id.clone());
             return Some((node_id, signing_key))
         }
 
-        log::error!("💔 Unable to find a valid nodeId.");
+        log::debug!("🛠️  Unable to find a valid nodeId.");
         None
     }
 
