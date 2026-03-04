@@ -41,26 +41,6 @@ impl<T: Config> Pallet<T> {
         FixedU128::one().saturating_add(ratio)
     }
 
-    // This function calculated bonus base on VirtualNodeStake interval.
-    // Ex: 2000 AVT = 1 virtual node, 3999 AVT = 1 virtual node, 4000 AVT = 2 virtual nodes...
-    fn calculate_stake_bonus_step(
-        node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
-    ) -> FixedU128 {
-        let stake_amount = node_info.stake.amount;
-        let step = T::VirtualNodeStake::get();
-
-        if stake_amount.is_zero() || step.is_zero() {
-            return FixedU128::one()
-        }
-
-        // virtual = floor(node_stake / step)
-        let virtual_nodes: u128 = (stake_amount / step).unique_saturated_into();
-
-        // multiplier = 1 + virtual
-        let inner = virtual_nodes.saturating_add(1u128);
-        FixedU128::from_inner(inner.saturating_mul(FixedU128::accuracy()))
-    }
-
     pub fn compute_reward_weight(
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         reward_period_end_time: Duration,
