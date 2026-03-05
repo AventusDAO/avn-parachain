@@ -136,6 +136,21 @@ pub(crate) fn testnet_genesis(
             "unstakePeriodSec": 60u64, // 1 min
             "restrictedUnstakeDurationSec": 60 * 10 as u64, // 10 min
             "appChainFeePercentage": Perbill::from_percent(0),
-        }
+        },
+        "assetRegistry": {
+            "assets": {
+                "decimals": 18,
+                "name": "AVT Test",
+                "symbol": "AVT",
+                "existential_deposit": 0,
+                "location": {
+                    "Ethereum": avt_token_contract,
+                },
+                "additional": {
+                    "appchain_native": false
+                }
+            },
+            "lastAssetId": 0u32,
+        },
     })
 }

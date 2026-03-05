@@ -14,6 +14,7 @@ pub mod asset_registry;
 mod benchmarks;
 mod configs;
 pub mod governance;
+pub mod migrations;
 pub mod proxy_config;
 
 use core::cmp::Ordering;
@@ -154,6 +155,7 @@ pub type Executive = frame_executive::Executive<
     Runtime,
     AllPalletsWithSystem,
     (
+        migrations::register_avt_token::RegisterAvtToken<Runtime>,
         pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
         pallet_session::migrations::v1::MigrateV0ToV1<
             Runtime,
