@@ -152,9 +152,7 @@ cumulus-pallet-weight-reclaim = { version = "0.2.0", default-features = false }
 parachain-info = { version = "0.20.0", package = "staging-parachain-info", default-features = false }
 parachains-common = { version = "21.0.1", default-features = false }
 
-# polkadot-sdk = { path = "umbrella", default-features = false, version = "0.12.2" }
 polkadot-sdk = { version = "2503.2.0", default-features = false }
-
 
 # AvN pallets
 sp-avn-common = { path = "./primitives/avn-common", default-features = false }
