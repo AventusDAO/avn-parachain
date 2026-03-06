@@ -451,7 +451,7 @@ parameter_types! {
     pub const TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub const EthAutoSubmitSummaries: bool = true;
     pub const EthereumInstanceId: u8 = 1u8;
-    pub const ExternalValidationEnabled: bool = true;
+    pub const ExternalValidationEnabled: bool = false;
 }
 
 impl pallet_summary::Config for Runtime {
