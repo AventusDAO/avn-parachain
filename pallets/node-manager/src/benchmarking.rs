@@ -624,7 +624,7 @@ benchmarks! {
         let amount: u128 = 1_234_567_890_000_000_000u128;
 
         PendingMintAmount::<T>::insert(reward_period_index, amount);
-        MintSubmitted::<T>::insert(reward_period_index, false);
+        SubmittedMints::<T>::insert(reward_period_index, false);
 
         let signature = author
             .key
@@ -638,11 +638,13 @@ benchmarks! {
         signature
     )
     verify {
-        assert!(MintSubmitted::<T>::get(reward_period_index));
-        assert!(PendingMintAmount::<T>::get(reward_period_index).is_none());
+        assert!(SubmittedMints::<T>::get(reward_period_index));
+        assert_eq!(PendingMintAmount::<T>::get(reward_period_index), Some(amount));
         assert!(RewardPeriodToTxId::<T>::get(reward_period_index).is_some());
 
         let tx_id = RewardPeriodToTxId::<T>::get(reward_period_index).expect("tx id should exist");
+        assert_eq!(TxIdToRewardPeriod::<T>::get(tx_id), Some(reward_period_index));
+
         assert_last_event::<T>(
             Event::MintSubmitted {
                 reward_period_index,
