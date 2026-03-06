@@ -327,18 +327,7 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn trigger_mint_if_required(author: Author<T>) {
-        let current = RewardPeriod::<T>::get().current;
-        if current == 0 {
-            return
-        }
-
-        let period = current - 1;
-
-        if SubmittedMints::<T>::get(period) {
-            return
-        }
-
-        let Some(amount) = PendingMintAmount::<T>::get(period) else {
+        let Some((period, amount)) = Self::next_mint_period_to_submit() else {
         return
     };
 
@@ -364,6 +353,8 @@ impl<T: Config> Pallet<T> {
             if let Err(e) = SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
                 log::error!("💔 Error submitting mint tx. Period: {:?}, Err: {:?}", period, e);
             }
+        } else {
+            log::error!("💔 Error signing mint tx. Period: {:?}", period);
         }
     }
 }
