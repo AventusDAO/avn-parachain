@@ -42,7 +42,6 @@ pub trait WeightInfo {
 	fn set_admin_config_reward_period() -> Weight;
 	fn set_admin_config_reward_batch_size() -> Weight;
 	fn set_admin_config_reward_heartbeat() -> Weight;
-	fn set_admin_config_reward_amount() -> Weight;
 	fn set_admin_config_reward_enabled() -> Weight;
 	fn set_admin_config_min_threshold() -> Weight;
 	fn set_admin_config_auto_stake_duration() -> Weight;
@@ -202,17 +201,6 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Minimum execution time: 14_659_000 picoseconds.
 		Weight::from_parts(16_309_000, 1505)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
-			.saturating_add(T::DbWeight::get().writes(1_u64))
-	}
-	/// Storage: `NodeManager::RewardAmount` (r:1 w:1)
-	/// Proof: `NodeManager::RewardAmount` (`max_values`: Some(1), `max_size`: Some(16), added: 511, mode: `MaxEncodedLen`)
-	fn set_admin_config_reward_amount() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `162`
-		//  Estimated: `1501`
-		// Minimum execution time: 13_051_000 picoseconds.
-		Weight::from_parts(14_290_000, 1501)
-			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:1)
@@ -560,17 +548,6 @@ impl WeightInfo for () {
 		// Minimum execution time: 14_659_000 picoseconds.
 		Weight::from_parts(16_309_000, 1505)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
-	}
-	/// Storage: `NodeManager::RewardAmount` (r:1 w:1)
-	/// Proof: `NodeManager::RewardAmount` (`max_values`: Some(1), `max_size`: Some(16), added: 511, mode: `MaxEncodedLen`)
-	fn set_admin_config_reward_amount() -> Weight {
-		// Proof Size summary in bytes:
-		//  Measured:  `162`
-		//  Estimated: `1501`
-		// Minimum execution time: 13_051_000 picoseconds.
-		Weight::from_parts(14_290_000, 1501)
-			.saturating_add(RocksDbWeight::get().reads(1_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:1)

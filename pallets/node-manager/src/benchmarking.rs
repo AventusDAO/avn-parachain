@@ -61,7 +61,8 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
     let uptime = 1u64;
     let node_info = <NodeRegistry<T>>::get(&node).unwrap();
-    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(&node_info, reward_period_index);
+    let single_hb_weight =
+        Pallet::<T>::effective_heartbeat_weight(&node_info, Pallet::<T>::time_now_sec());
     let weight = single_hb_weight.saturating_mul(uptime.into());
 
     <NodeUptime<T>>::mutate(&reward_period_index, &node, |maybe_info| {
@@ -203,16 +204,6 @@ benchmarks! {
         assert!(<HeartbeatPeriod<T>>::get() == new_heartbeat);
     }
 
-    set_admin_config_reward_amount {
-        let current_amount = <RewardAmount<T>>::get();
-        let new_amount = current_amount + 1u32.into();
-        let config = AdminConfig::RewardAmount(new_amount);
-
-    }: set_admin_config(RawOrigin::Root, config.clone())
-    verify {
-        assert!(<RewardAmount<T>>::get() == new_amount);
-    }
-
     set_admin_config_reward_enabled {
         let current_flag = <RewardEnabled<T>>::get();
         let new_flag = !current_flag;
@@ -277,12 +268,34 @@ benchmarks! {
     verify {
         let new_reward_period_index = reward_period.current + 1u64;
         let new_reward_period = <RewardPeriod<T>>::get();
-        assert!(new_reward_period_index== new_reward_period.current);
-        assert_last_event::<T>(Event::NewRewardPeriodStarted {
-            reward_period_index: new_reward_period_index,
-            reward_period_length: reward_period.length,
-            uptime_threshold: new_reward_period.uptime_threshold,
-            previous_period_reward: RewardAmount::<T>::get()}.into());
+
+        assert!(new_reward_period_index == new_reward_period.current);
+
+        let started_event: <T as Config>::RuntimeEvent =
+            Event::NewRewardPeriodStarted {
+                reward_period_index: new_reward_period_index,
+                reward_period_length: reward_period.length,
+                uptime_threshold: new_reward_period.uptime_threshold,
+                previous_period_reward: RewardAmount::<T>::get(),
+            }
+            .into();
+
+        let started_event_system: <T as frame_system::Config>::RuntimeEvent = started_event.into();
+
+        let events = frame_system::Pallet::<T>::events();
+        assert!(events.iter().any(|r| r.event == started_event_system));
+
+        assert_last_event::<T>(
+            Event::MintCalculated {
+                reward_period_index: reward_period.current,
+                active_nodes: 0,
+                years: 0,
+                period_seconds: (reward_period.length as u64)
+                    .saturating_mul(T::SecondsPerBlock::get()),
+                amount: 0,
+            }
+            .into(),
+        );
     }
 
     on_initialise_no_reward_period {
@@ -605,7 +618,7 @@ benchmarks! {
         assert_last_event::<T>(Event::AutoStakePreferenceUpdated {owner, node_id, auto_stake_rewards: !preference}.into());
     }
 
-        offchain_mint_rewards {
+    offchain_mint_rewards {
         enable_rewards::<T>();
 
         let author = create_author::<T>();

@@ -190,10 +190,6 @@ pub mod pallet {
     #[pallet::storage]
     pub type HeartbeatPeriod<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// The total amount to pay out for each period
-    #[pallet::storage]
-    pub type RewardAmount<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
-
     /// Map of reward pot amounts for each reward period.
     #[pallet::storage]
     pub(super) type RewardPot<T: Config> = StorageMap<
@@ -312,7 +308,6 @@ pub mod pallet {
         pub max_batch_size: u32,
         pub reward_period: u32,
         pub heartbeat_period: u32,
-        pub reward_amount: BalanceOf<T>,
         pub auto_stake_duration_sec: Duration,
         pub max_unstake_percentage: Perbill,
         pub unstake_period_sec: Duration,
@@ -327,7 +322,6 @@ pub mod pallet {
                 max_batch_size: 1,
                 reward_period: 2,
                 heartbeat_period: 1,
-                reward_amount: Default::default(),
                 auto_stake_duration_sec: 180 * 24 * 60 * 60, // 180 days
                 max_unstake_percentage: Perbill::from_percent(10),
                 unstake_period_sec: 7 * 24 * 60 * 60, // 1 week
@@ -343,8 +337,6 @@ pub mod pallet {
             assert!(self.reward_period > self.heartbeat_period);
             assert!(self.unstake_period_sec > 0);
             let default_threshold = Pallet::<T>::get_default_threshold();
-
-            RewardAmount::<T>::set(self.reward_amount);
             MaxBatchSize::<T>::set(self.max_batch_size);
             HeartbeatPeriod::<T>::set(self.heartbeat_period);
             MinUptimeThreshold::<T>::set(Some(default_threshold));
@@ -379,7 +371,6 @@ pub mod pallet {
             reward_period_index: RewardPeriodIndex,
             reward_period_length: u32,
             uptime_threshold: u32,
-            previous_period_reward: BalanceOf<T>,
         },
         /// We finished paying all nodes for a particular period.
         RewardPayoutCompleted { reward_period_index: RewardPeriodIndex },
@@ -411,8 +402,6 @@ pub mod pallet {
         HeartbeatPeriodSet { new_heartbeat_period: u32 },
         /// A new heartbeat has been received
         HeartbeatReceived { reward_period_index: RewardPeriodIndex, node: NodeId<T> },
-        /// A new reward amount is set
-        RewardAmountSet { new_amount: BalanceOf<T> },
         /// Reward payment has been toggled
         RewardToggled { enabled: bool },
         /// A new minimum uptime threshold has been set
@@ -510,8 +499,8 @@ pub mod pallet {
         NodeNotRegistered,
         /// Failed to aquire a lock on the Offchain db
         FailedToAcquireOcwDbLock,
-        /// The reward amount is 0
-        RewardAmountZero,
+        /// The reward has not been confirmed to have been minted yet
+        RewardNotConfirmed,
         /// The sender is not the signer
         SenderIsNotSigner,
         /// Proxy signature failed to verification
@@ -647,7 +636,6 @@ pub mod pallet {
             .max(<T as Config>::WeightInfo::set_admin_config_reward_period())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_batch_size())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat())
-            .max(<T as Config>::WeightInfo::set_admin_config_reward_amount())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_enabled())
             .max(<T as Config>::WeightInfo::set_admin_config_min_threshold())
             .max(<T as Config>::WeightInfo::set_admin_config_auto_stake_duration())
@@ -658,7 +646,7 @@ pub mod pallet {
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
-            config: AdminConfig<T::AccountId, BalanceOf<T>>,
+            config: AdminConfig<T::AccountId>,
         ) -> DispatchResultWithPostInfo {
             ensure_root(origin)?;
 
@@ -701,14 +689,6 @@ pub mod pallet {
                     Self::deposit_event(Event::HeartbeatPeriodSet { new_heartbeat_period: period });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat()).into()
-                    )
-                },
-                AdminConfig::RewardAmount(amount) => {
-                    ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::RewardAmountZero);
-                    <RewardAmount<T>>::mutate(|a| *a = amount.clone());
-                    Self::deposit_event(Event::RewardAmountSet { new_amount: amount });
-                    return Ok(
-                        Some(<T as Config>::WeightInfo::set_admin_config_reward_amount()).into()
                     )
                 },
                 AdminConfig::RewardToggle(enabled) => {
@@ -794,8 +774,10 @@ pub mod pallet {
             let total_uptime = TotalUptime::<T>::get(&oldest_period);
             let maybe_node_uptime = NodeUptime::<T>::iter_prefix(oldest_period).next();
 
-            if total_uptime.total_weight == 0 && maybe_node_uptime.is_none() {
-                // No nodes to pay for this period so complete it
+            if total_uptime.total_weight == 0 &&
+                maybe_node_uptime.is_none() &&
+                !PendingMintAmount::<T>::contains_key(oldest_period)
+            {
                 Self::complete_reward_payout(oldest_period);
                 return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
             }
@@ -806,6 +788,11 @@ pub mod pallet {
             let reward_pot =
                 RewardPot::<T>::get(&oldest_period).ok_or(Error::<T>::RewardPotNotFound)?;
             let total_reward = reward_pot.total_reward;
+
+            ensure!(
+                !PendingMintAmount::<T>::contains_key(oldest_period),
+                Error::<T>::RewardNotConfirmed
+            );
 
             let mut paid_nodes = Vec::new();
             let mut last_node_paid: Option<T::AccountId> = None;
@@ -1232,12 +1219,10 @@ pub mod pallet {
                 let reward_period = reward_period.update(n, uptime_threshold);
                 RewardPeriod::<T>::mutate(|p| *p = reward_period);
 
-                // take a snapshot of the reward pot amount to pay for the previous reward period
-                let reward_amount = RewardAmount::<T>::get();
                 <RewardPot<T>>::insert(
                     previous_index,
                     RewardPotInfo::<BalanceOf<T>>::new(
-                        reward_amount,
+                        Zero::zero(),
                         previous_uptime_threshold,
                         Self::time_now_sec(),
                     ),
@@ -1247,7 +1232,6 @@ pub mod pallet {
                     reward_period_index: reward_period.current,
                     reward_period_length: reward_period.length,
                     uptime_threshold: reward_period.uptime_threshold,
-                    previous_period_reward: reward_amount,
                 });
 
                 let n_active: u32 = ActiveNodesCount::<T>::get(previous_index);
@@ -1269,8 +1253,10 @@ pub mod pallet {
                     amount: mint_amount,
                 });
 
-                PendingMintAmount::<T>::insert(previous_index, mint_amount);
-                SubmittedMints::<T>::insert(previous_index, false);
+                if mint_amount > 0 {
+                    PendingMintAmount::<T>::insert(previous_index, mint_amount);
+                    SubmittedMints::<T>::insert(previous_index, false);
+                }
 
                 ActiveNodesCount::<T>::insert(reward_period.current, 0u32);
 
@@ -1627,6 +1613,15 @@ pub mod pallet {
 
             let amount = PendingMintAmount::<T>::get(reward_period_index)
                 .ok_or(Error::<T>::PendingMintNotFound)?;
+
+            let amount_balance: BalanceOf<T> =
+                amount.try_into().map_err(|_| Error::<T>::MintAmountConversionFailed)?;
+
+            RewardPot::<T>::try_mutate(reward_period_index, |maybe_pot| -> DispatchResult {
+                let pot = maybe_pot.as_mut().ok_or(Error::<T>::RewardPotNotFound)?;
+                pot.total_reward = amount_balance;
+                Ok(())
+            })?;
 
             Self::credit_reward_pot(amount)?;
             Self::clear_mint_tracking(reward_period_index, tx_id);

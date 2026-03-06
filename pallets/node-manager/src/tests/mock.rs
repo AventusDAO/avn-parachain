@@ -205,7 +205,6 @@ impl ExtBuilder {
             reward_period: 200u32,
             max_batch_size: 10u32,
             heartbeat_period: 5u32,
-            reward_amount: 20 * AVT,
             auto_stake_duration_sec: 180 * 24 * 60 * 60,
             max_unstake_percentage: Perbill::from_percent(10),
             unstake_period_sec: 7 * 24 * 60 * 60,
