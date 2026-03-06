@@ -9,11 +9,13 @@ use crate::chain_spec::{
 };
 use avn_parachain_runtime::{self as avn_runtime};
 
+use codec::Encode;
 use sp_core::{H160, H256};
 
 use hex_literal::hex;
-use sp_avn_common::{eth::EthereumNetwork, primitives::AccountId};
+use sp_avn_common::{eth::EthereumNetwork, primitives::AccountId, Asset};
 use sp_runtime::{traits::ConstU32, BoundedVec, Perbill};
+use orml_traits::asset_registry::{AvnAssetLocation, AvnAssetMetadata, AssetMetadata};
 
 /// Generate the session keys from individual elements.
 ///
@@ -56,6 +58,17 @@ pub(crate) fn testnet_genesis(
     } else {
         vec![]
     };
+
+    let asset_metadata: AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, ConstU32<1024>> = AssetMetadata {
+        decimals: 18,
+        name: "AVT Test".as_bytes().to_vec().try_into().unwrap(),
+        symbol: "AVT".as_bytes().to_vec().try_into().unwrap(),
+        existential_deposit: 0,
+        location: Some(AvnAssetLocation::Ethereum(avt_token_contract)),
+        additional: AvnAssetMetadata { appchain_native: false },
+    };
+
+    let asset_registry_config = vec![("Avt", asset_metadata.encode())];
 
     serde_json::json!({
         "balances": {
@@ -138,19 +151,8 @@ pub(crate) fn testnet_genesis(
             "appChainFeePercentage": Perbill::from_percent(0),
         },
         "assetRegistry": {
-            "assets": {
-                "decimals": 18,
-                "name": "AVT Test",
-                "symbol": "AVT",
-                "existential_deposit": 0,
-                "location": {
-                    "Ethereum": avt_token_contract,
-                },
-                "additional": {
-                    "appchain_native": false
-                }
-            },
-            "lastAssetId": 0u32,
+            "assets": asset_registry_config,
+            "lastAssetId": "Avt",
         },
     })
 }
