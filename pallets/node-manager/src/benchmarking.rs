@@ -604,6 +604,53 @@ benchmarks! {
         assert_eq!(node_info.auto_stake_rewards, !preference);
         assert_last_event::<T>(Event::AutoStakePreferenceUpdated {owner, node_id, auto_stake_rewards: !preference}.into());
     }
+
+        offchain_mint_rewards {
+        enable_rewards::<T>();
+
+        let author = create_author::<T>();
+
+        // We need a completed period, so current must be > reward_period_index
+        let reward_period_index: RewardPeriodIndex = 0u64;
+        let current_period: RewardPeriodIndex = 1u64;
+
+        <RewardPeriod<T>>::put(RewardPeriodInfo::new(
+            current_period,
+            0u32.into(),
+            1000u32,
+            100u32,
+        ));
+
+        let amount: u128 = 1_234_567_890_000_000_000u128;
+
+        PendingMintAmount::<T>::insert(reward_period_index, amount);
+        MintSubmitted::<T>::insert(reward_period_index, false);
+
+        let signature = author
+            .key
+            .sign(&(MINT_REWARDS_CONTEXT, reward_period_index, amount).encode())
+            .expect("Error signing");
+    }: offchain_mint_rewards(
+        RawOrigin::None,
+        reward_period_index,
+        amount,
+        author.clone(),
+        signature
+    )
+    verify {
+        assert!(MintSubmitted::<T>::get(reward_period_index));
+        assert!(PendingMintAmount::<T>::get(reward_period_index).is_none());
+        assert!(RewardPeriodToTxId::<T>::get(reward_period_index).is_some());
+
+        let tx_id = RewardPeriodToTxId::<T>::get(reward_period_index).expect("tx id should exist");
+        assert_last_event::<T>(
+            Event::MintSubmitted {
+                reward_period_index,
+                amount,
+                tx_id,
+            }.into()
+        );
+    }
 }
 
 impl_benchmark_test_suite!(

@@ -52,6 +52,7 @@ pub trait WeightInfo {
 	fn set_admin_config_appchain_fee_percentage() -> Weight;
 	fn on_initialise_with_new_reward_period() -> Weight;
 	fn on_initialise_no_reward_period() -> Weight;
+	fn offchain_mint_rewards() -> Weight;
 	fn offchain_submit_heartbeat() -> Weight;
 	fn offchain_pay_nodes(b: u32, ) -> Weight;
 	fn pay_nodes_constant_batch_size(n: u32, ) -> Weight;
@@ -486,6 +487,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
+
+	 fn offchain_mint_rewards() -> Weight {
+        Weight::from_parts(50_000_000, 0)
+            .saturating_add(T::DbWeight::get().reads(4_u64))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
+    }
 }
 
 // For backwards compatibility and tests.
@@ -909,4 +916,10 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
+
+	 fn offchain_mint_rewards() -> Weight {
+        Weight::from_parts(50_000_000, 0)
+            			.saturating_add(RocksDbWeight::get().reads(4_u64))
+							.saturating_add(RocksDbWeight::get().writes(3_u64))
+    }
 }

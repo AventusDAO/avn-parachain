@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 use crate::*;
 use sp_runtime::{
     traits::{AtLeast32BitUnsigned, Zero},
