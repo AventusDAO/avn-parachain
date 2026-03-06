@@ -1234,8 +1234,7 @@ pub mod pallet {
                     uptime_threshold: reward_period.uptime_threshold,
                 });
 
-                let n_active: u32 = ActiveNodesCount::<T>::get(previous_index);
-                ActiveNodesCount::<T>::remove(previous_index);
+                let n_active: u32 = ActiveNodesCount::<T>::take(previous_index);
 
                 let launch = LaunchTimestampSec::<T>::get().unwrap_or(Self::time_now_sec());
                 let now_sec = Self::time_now_sec();
