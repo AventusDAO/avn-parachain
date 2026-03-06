@@ -1608,9 +1608,9 @@ pub mod pallet {
 
         pub fn process_mint_success(tx_id: EthereumId) -> DispatchResult {
             let reward_period_index =
-                TxIdToRewardPeriod::<T>::get(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
+                TxIdToRewardPeriod::<T>::take(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
 
-            let amount = PendingMintAmount::<T>::get(reward_period_index)
+            let amount = PendingMintAmount::<T>::take(reward_period_index)
                 .ok_or(Error::<T>::PendingMintNotFound)?;
 
             let amount_balance: BalanceOf<T> =
