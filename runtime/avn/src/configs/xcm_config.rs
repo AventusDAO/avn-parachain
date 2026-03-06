@@ -3,15 +3,20 @@ use super::{
     WeightToFee, XcmpQueue,
 };
 use crate::{AllPalletsWithSystem, ParachainInfo, PolkadotXcm};
-use frame_support::{
-    parameter_types,
-    traits::{ConstU32, Contains, Disabled, Everything, Nothing},
-    weights::Weight,
-};
-use frame_system::EnsureRoot;
 use pallet_xcm::XcmPassthrough;
-use polkadot_parachain_primitives::primitives::Sibling;
-use polkadot_runtime_common::impls::ToAuthor;
+use polkadot_sdk::{
+    frame_support::{
+        parameter_types,
+        traits::{ConstU32, Contains, Disabled, Everything, Nothing},
+        weights::Weight,
+    },
+    frame_system::EnsureRoot,
+    polkadot_parachain_primitives::primitives::Sibling,
+    polkadot_runtime_common::impls::ToAuthor,
+    staging_xcm as xcm, staging_xcm_builder as xcm_builder, staging_xcm_executor as xcm_executor,
+    *,
+};
+
 use xcm::latest::prelude::*;
 use xcm_builder::{
     AccountId32Aliases, AllowExplicitUnpaidExecutionFrom, AllowTopLevelPaidExecutionFrom,
@@ -155,7 +160,7 @@ pub type LocalOriginToLocation = SignedToAccountId32<RuntimeOrigin, AccountId, R
 /// queues.
 pub type XcmRouter = WithUniqueTopic<(
     // Two routers - use UMP to communicate with the relay chain:
-    cumulus_primitives_utility::ParentAsUmp<ParachainSystem, (), ()>,
+    polkadot_sdk::cumulus_primitives_utility::ParentAsUmp<ParachainSystem, (), ()>,
     // ..and XCMP to communicate with the sibling chains.
     XcmpQueue,
 )>;

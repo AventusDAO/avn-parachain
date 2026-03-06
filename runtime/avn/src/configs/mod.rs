@@ -20,36 +20,42 @@ mod xcm_config;
 // use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
 use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
-use frame_support::{
-    derive_impl,
-    dispatch::DispatchClass,
-    pallet_prelude::EnsureOrigin,
-    parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, TransformOrigin, VariantCountOf},
-    weights::{ConstantMultiplier, Weight},
-    PalletId,
-};
-use frame_system::{
-    limits::{BlockLength, BlockWeights},
-    EnsureRoot,
-};
-use parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling};
-use polkadot_runtime_common::{
-    xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
-};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_runtime::Perbill;
-use sp_version::RuntimeVersion;
+
+use polkadot_sdk::{staging_parachain_info as parachain_info, *};
+#[cfg(not(feature = "runtime-benchmarks"))]
+use polkadot_sdk::{staging_xcm_builder as xcm_builder, staging_xcm_executor as xcm_executor};
 
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
+use polkadot_sdk::{
+    frame_support::{
+        derive_impl,
+        dispatch::DispatchClass,
+        parameter_types,
+        traits::{ConstBool, ConstU32, ConstU64, EnsureOrigin, TransformOrigin, VariantCountOf},
+        weights::{ConstantMultiplier, Weight},
+        PalletId,
+    },
+    frame_system::{
+        limits::{BlockLength, BlockWeights},
+        EnsureRoot,
+    },
+    parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling},
+    polkadot_runtime_common::{
+        xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
+    },
+};
 use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
     NODE_MANAGER_PALLET_ID,
 };
+
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority, Perbill};
+use sp_version::RuntimeVersion;
+
 use sp_core::{ConstU128, H160};
-use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
 
 // Local module imports
 use crate::{
