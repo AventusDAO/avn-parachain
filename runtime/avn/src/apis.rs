@@ -16,20 +16,24 @@
 
 // External crates imports
 use alloc::vec::Vec;
-use frame_support::{
-    genesis_builder_helper::{build_state, get_preset},
-    weights::Weight,
+use polkadot_sdk::{
+    frame_support::{
+        genesis_builder_helper::{build_state, get_preset},
+        weights::Weight,
+    },
+    pallet_aura::Authorities,
+    pallet_transaction_payment, pallet_transaction_payment_rpc_runtime_api,
+    sp_api::{self, impl_runtime_apis},
+    sp_consensus_aura::{self, sr25519::AuthorityId as AuraId},
+    sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata, H160},
+    sp_runtime::{
+        traits::Block as BlockT,
+        transaction_validity::{TransactionSource, TransactionValidity},
+        ApplyExtrinsicResult,
+    },
+    sp_version::RuntimeVersion,
+    *,
 };
-use pallet_aura::Authorities;
-use sp_api::impl_runtime_apis;
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata, H160};
-use sp_runtime::{
-    traits::Block as BlockT,
-    transaction_validity::{TransactionSource, TransactionValidity},
-    ApplyExtrinsicResult,
-};
-use sp_version::RuntimeVersion;
 
 // Local module imports
 use super::{
@@ -331,7 +335,7 @@ impl_runtime_apis! {
             Vec<frame_support::traits::StorageInfo>,
         ) {
             use frame_benchmarking::BenchmarkList;
-            use frame_support::traits::StorageInfoTrait;
+            use polkadot_sdk::frame_support::traits::StorageInfoTrait;
             use frame_system_benchmarking::Pallet as SystemBench;
             use cumulus_pallet_session_benchmarking::Pallet as SessionBench;
             use super::*;
@@ -346,7 +350,7 @@ impl_runtime_apis! {
         #[allow(non_local_definitions)]
         fn dispatch_benchmark(
             config: frame_benchmarking::BenchmarkConfig
-        ) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, sp_runtime::RuntimeString> {
+        ) -> Result<Vec<frame_benchmarking::BenchmarkBatch>, alloc::string::String> {
             use frame_benchmarking::{BenchmarkError, BenchmarkBatch};
             use super::*;
 
@@ -365,7 +369,7 @@ impl_runtime_apis! {
             use cumulus_pallet_session_benchmarking::Pallet as SessionBench;
             impl cumulus_pallet_session_benchmarking::Config for Runtime {}
 
-            use frame_support::traits::WhitelistedStorageKeys;
+            use polkadot_sdk::frame_support::traits::WhitelistedStorageKeys;
             let whitelist = AllPalletsWithSystem::whitelisted_storage_keys();
 
             let mut batches = Vec::<BenchmarkBatch>::new();
