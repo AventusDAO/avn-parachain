@@ -331,12 +331,21 @@ impl<T: Config> Pallet<T> {
         if current == 0 {
             return
         }
+
         let period = current - 1;
 
         if SubmittedMints::<T>::get(period) {
             return
         }
-        let Some(amount) = PendingMintAmount::<T>::get(period) else { return; };
+
+        let Some(amount) = PendingMintAmount::<T>::get(period) else {
+        return
+    };
+
+        // Don't submit no-op mint transactions.
+        if amount == 0 {
+            return
+        }
 
         log::info!("🛠️  Triggering mint for period {:?}, amount {:?}", period, amount);
 
