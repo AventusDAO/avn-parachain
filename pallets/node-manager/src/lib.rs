@@ -1,4 +1,13 @@
+// Copyright 2026 Aventus DAO Ltd
+
 #![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(not(feature = "std"))]
+use alloc::string::ToString;
+
+use crate::mint::issuance_per_day_lut_avt;
 use codec::{Decode, DecodeWithMemTracking, Encode, FullCodec};
 use frame_support::{
     dispatch::DispatchResult,
@@ -13,9 +22,12 @@ use frame_system::{
     offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::*,
 };
-use pallet_avn::{self as avn};
+use pallet_avn::{self as avn, BridgeInterface, BridgeInterfaceNotification};
 use sp_application_crypto::RuntimeAppPublic;
-use sp_avn_common::{event_types::Validator, FeePaymentHandler, REGISTERED_NODE_KEY};
+use sp_avn_common::{
+    eth::EthereumId, event_types::Validator, BridgeContractMethod, FeePaymentHandler,
+    REGISTERED_NODE_KEY,
+};
 use sp_core::{MaxEncodedLen, H160};
 use sp_runtime::{
     offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
@@ -28,6 +40,7 @@ use sp_runtime::{
     DispatchError, Perbill, Perquintill, RuntimeDebug, Saturating,
 };
 
+pub mod mint;
 pub mod offchain;
 pub mod reward;
 pub mod stake;
@@ -78,8 +91,13 @@ pub mod sr25519 {
 use sp_std::prelude::*;
 
 const PAYOUT_REWARD_CONTEXT: &'static [u8] = b"NodeManager_RewardPayout";
+const MINT_REWARDS_CONTEXT: &'static [u8] = b"NodeManager_MintRewards";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
 const MAX_BATCH_SIZE: u32 = 1_000;
+const N_CAP: u32 = 36_000;
+const AVT_DECIMALS: u128 = 1_000_000_000_000_000_000u128;
+const SECONDS_PER_DAY: u64 = 86_400;
+const SECONDS_PER_YEAR: u64 = 365 * SECONDS_PER_DAY;
 pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
@@ -102,6 +120,8 @@ pub type AVN<T> = avn::Pallet<T>;
 pub type Author<T> =
     Validator<<T as avn::Config>::AuthorityId, <T as frame_system::Config>::AccountId>;
 pub use pallet::*;
+
+const PALLET_ID: &'static [u8; 12] = b"node-manager";
 
 pub(crate) type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
@@ -172,10 +192,6 @@ pub mod pallet {
     /// The heartbeat period in blocks
     #[pallet::storage]
     pub type HeartbeatPeriod<T: Config> = StorageValue<_, u32, ValueQuery>;
-
-    /// The total amount to pay out for each period
-    #[pallet::storage]
-    pub type RewardAmount<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     /// Map of reward pot amounts for each reward period.
     #[pallet::storage]
@@ -260,13 +276,42 @@ pub mod pallet {
     pub type TotalStake<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, OptionQuery>;
 
+    /// Number of nodes that reached the uptime threshold in a reward period (ie: "active" node
+    /// count)
+    #[pallet::storage]
+    pub(super) type ActiveNodesCount<T: Config> =
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, u32, ValueQuery>;
+
+    /// The mint amount calculated for a complete period and still awaiting confirmation
+    #[pallet::storage]
+    pub(super) type PendingMintAmount<T: Config> =
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, u128, OptionQuery>;
+
+    /// Is mint tx submitted for this period
+    #[pallet::storage]
+    pub(super) type SubmittedMints<T: Config> =
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, bool, ValueQuery>;
+
+    /// Reward period to TX ID mapping
+    #[pallet::storage]
+    pub(super) type RewardPeriodToTxId<T: Config> =
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, EthereumId, OptionQuery>;
+
+    /// TX ID to reward period mapping
+    #[pallet::storage]
+    pub(super) type TxIdToRewardPeriod<T: Config> =
+        StorageMap<_, Blake2_128Concat, EthereumId, RewardPeriodIndex, OptionQuery>;
+
+    /// Launch time used for reward year/halving calculation
+    #[pallet::storage]
+    pub(super) type LaunchTimestampSec<T: Config> = StorageValue<_, u64, OptionQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
         pub max_batch_size: u32,
         pub reward_period: u32,
         pub heartbeat_period: u32,
-        pub reward_amount: BalanceOf<T>,
         pub auto_stake_duration_sec: Duration,
         pub max_unstake_percentage: Perbill,
         pub unstake_period_sec: Duration,
@@ -281,7 +326,6 @@ pub mod pallet {
                 max_batch_size: 1,
                 reward_period: 2,
                 heartbeat_period: 1,
-                reward_amount: Default::default(),
                 auto_stake_duration_sec: 180 * 24 * 60 * 60, // 180 days
                 max_unstake_percentage: Perbill::from_percent(10),
                 unstake_period_sec: 7 * 24 * 60 * 60, // 1 week
@@ -297,8 +341,6 @@ pub mod pallet {
             assert!(self.reward_period > self.heartbeat_period);
             assert!(self.unstake_period_sec > 0);
             let default_threshold = Pallet::<T>::get_default_threshold();
-
-            RewardAmount::<T>::set(self.reward_amount);
             MaxBatchSize::<T>::set(self.max_batch_size);
             HeartbeatPeriod::<T>::set(self.heartbeat_period);
             MinUptimeThreshold::<T>::set(Some(default_threshold));
@@ -333,7 +375,6 @@ pub mod pallet {
             reward_period_index: RewardPeriodIndex,
             reward_period_length: u32,
             uptime_threshold: u32,
-            previous_period_reward: BalanceOf<T>,
         },
         /// We finished paying all nodes for a particular period.
         RewardPayoutCompleted { reward_period_index: RewardPeriodIndex },
@@ -365,8 +406,6 @@ pub mod pallet {
         HeartbeatPeriodSet { new_heartbeat_period: u32 },
         /// A new heartbeat has been received
         HeartbeatReceived { reward_period_index: RewardPeriodIndex, node: NodeId<T> },
-        /// A new reward amount is set
-        RewardAmountSet { new_amount: BalanceOf<T> },
         /// Reward payment has been toggled
         RewardToggled { enabled: bool },
         /// A new minimum uptime threshold has been set
@@ -407,6 +446,20 @@ pub mod pallet {
             node_id: NodeId<T>,
             auto_stake_rewards: bool,
         },
+        /// Mint amount was calculated for a completed reward period
+        MintCalculated {
+            reward_period_index: RewardPeriodIndex,
+            active_nodes: u32,
+            years: u32,
+            period_seconds: u64,
+            amount: u128,
+        },
+        /// Mint transaction was submitted to T1
+        MintSubmitted { reward_period_index: RewardPeriodIndex, amount: u128, tx_id: EthereumId },
+        /// Submitted mint confirmed on T1 and credited on T2
+        MintConfirmed { reward_period_index: RewardPeriodIndex, amount: u128, tx_id: EthereumId },
+        /// Submitted mint failed on T1
+        MintFailed { reward_period_index: RewardPeriodIndex, tx_id: EthereumId },
     }
 
     // Pallet Errors
@@ -450,8 +503,8 @@ pub mod pallet {
         NodeNotRegistered,
         /// Failed to aquire a lock on the Offchain db
         FailedToAcquireOcwDbLock,
-        /// The reward amount is 0
-        RewardAmountZero,
+        /// The reward has not been confirmed to have been minted yet
+        RewardNotConfirmed,
         /// The sender is not the signer
         SenderIsNotSigner,
         /// Proxy signature failed to verification
@@ -492,6 +545,12 @@ pub mod pallet {
         BalanceUnderflow,
         /// Reward pot snapshot not found for the period
         RewardPotNotFound,
+        /// Calculated mint amount for the period not found
+        PendingMintNotFound,
+        /// No reward period found for the supplied bridge tx id
+        MintTxNotFound,
+        /// Amount could not be converted into local balance type
+        MintAmountConversionFailed,
     }
 
     #[pallet::config]
@@ -538,6 +597,9 @@ pub mod pallet {
         /// The id of the reward pot.
         #[pallet::constant]
         type RewardPotId: Get<PalletId>;
+        /// Expected seconds per block, used to scale reward-period mint.
+        #[pallet::constant]
+        type SecondsPerBlock: Get<u64>;
         /// The lifetime (in blocks) of a signed transaction.
         #[pallet::constant]
         type SignedTxLifetime: Get<u32>;
@@ -546,6 +608,8 @@ pub mod pallet {
         type VirtualNodeStake: Get<BalanceOf<Self>>;
         /// The weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
+        /// An Ethereum bridge provider
+        type BridgeInterface: avn::BridgeInterface;
     }
 
     #[pallet::call]
@@ -576,7 +640,6 @@ pub mod pallet {
             .max(<T as Config>::WeightInfo::set_admin_config_reward_period())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_batch_size())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat())
-            .max(<T as Config>::WeightInfo::set_admin_config_reward_amount())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_enabled())
             .max(<T as Config>::WeightInfo::set_admin_config_min_threshold())
             .max(<T as Config>::WeightInfo::set_admin_config_auto_stake_duration())
@@ -587,7 +650,7 @@ pub mod pallet {
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
-            config: AdminConfig<T::AccountId, BalanceOf<T>>,
+            config: AdminConfig<T::AccountId>,
         ) -> DispatchResultWithPostInfo {
             ensure_root(origin)?;
 
@@ -630,14 +693,6 @@ pub mod pallet {
                     Self::deposit_event(Event::HeartbeatPeriodSet { new_heartbeat_period: period });
                     return Ok(
                         Some(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat()).into()
-                    )
-                },
-                AdminConfig::RewardAmount(amount) => {
-                    ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::RewardAmountZero);
-                    <RewardAmount<T>>::mutate(|a| *a = amount.clone());
-                    Self::deposit_event(Event::RewardAmountSet { new_amount: amount });
-                    return Ok(
-                        Some(<T as Config>::WeightInfo::set_admin_config_reward_amount()).into()
                     )
                 },
                 AdminConfig::RewardToggle(enabled) => {
@@ -710,8 +765,6 @@ pub mod pallet {
             ensure_none(origin)?;
 
             let oldest_period = OldestUnpaidRewardPeriodIndex::<T>::get();
-            // Be careful when using current period. Everything here should be based on previous
-            // period
             let RewardPeriodInfo { current, .. } = RewardPeriod::<T>::get();
 
             // Only pay for completed periods
@@ -722,19 +775,26 @@ pub mod pallet {
 
             let total_uptime = TotalUptime::<T>::get(&oldest_period);
             let maybe_node_uptime = NodeUptime::<T>::iter_prefix(oldest_period).next();
+            let mint_pending = Self::mint_pending_for_period(oldest_period);
 
-            if total_uptime.total_weight == 0 && maybe_node_uptime.is_none() {
-                // No nodes to pay for this period so complete it
-                Self::complete_reward_payout(oldest_period);
-                return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
+            if maybe_node_uptime.is_none() {
+                ensure!(total_uptime.total_weight == 0, Error::<T>::TotalUptimeNotFound);
+
+                if !mint_pending {
+                    Self::complete_reward_payout(oldest_period);
+                    return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1)).into())
+                } else {
+                    return Err(Error::<T>::RewardNotConfirmed.into())
+                }
             }
 
             ensure!(total_uptime.total_weight > 0, Error::<T>::TotalUptimeNotFound);
-            ensure!(maybe_node_uptime.is_some(), Error::<T>::NodeUptimeNotFound);
 
             let reward_pot =
                 RewardPot::<T>::get(&oldest_period).ok_or(Error::<T>::RewardPotNotFound)?;
             let total_reward = reward_pot.total_reward;
+
+            ensure!(Self::can_pay_period(oldest_period), Error::<T>::RewardNotConfirmed);
 
             let mut paid_nodes = Vec::new();
             let mut last_node_paid: Option<T::AccountId> = None;
@@ -783,6 +843,7 @@ pub mod pallet {
                         error: e,
                     });
                 }
+
                 // We always move on even if payment fails. Failed payments will be handled
                 // offchain.
                 last_node_paid = Some(node.clone());
@@ -797,9 +858,7 @@ pub mod pallet {
                 Self::complete_reward_payout(oldest_period);
             }
 
-            return Ok(
-                Some(<T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32)).into()
-            )
+            Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32)).into())
         }
 
         /// Offchain call: Submit heartbeat to show node is still alive
@@ -817,32 +876,47 @@ pub mod pallet {
 
             Self::validate_heartbeats(node.clone(), reward_period_index, heartbeat_count)?;
 
-            let current_reward_period = RewardPeriod::<T>::get().current;
-            // if we pass validation we have a registered node but double check
+            let reward_period = RewardPeriod::<T>::get();
+            let current_reward_period = reward_period.current;
+
+            // If we pass validation we have a registered node but double check
             let node_info = NodeRegistry::<T>::get(&node).ok_or(Error::<T>::NodeNotRegistered)?;
             let now = frame_system::Pallet::<T>::block_number();
 
-            let weight = <NodeUptime<T>>::mutate(&current_reward_period, &node, |maybe_info| {
-                let info = maybe_info.get_or_insert_with(|| UptimeInfo {
-                    count: 0,
-                    last_reported: now,
-                    weight: 0,
+            // Threshold is stored as u32; we compare counts as u64 in UptimeInfo.
+            let uptime_threshold: u64 = reward_period.uptime_threshold as u64;
+
+            // Mutate per-node uptime and (if needed) bump ActiveNodesCount when threshold is first
+            // reached.
+            let (node_weight, reached_threshold_now) =
+                <NodeUptime<T>>::mutate(&current_reward_period, &node, |maybe_info| {
+                    let info = maybe_info.get_or_insert_with(|| UptimeInfo {
+                        count: 0,
+                        last_reported: now,
+                        weight: 0,
+                    });
+
+                    let node_weight =
+                        Self::effective_heartbeat_weight(&node_info, Self::time_now_sec());
+
+                    info.count = info.count.saturating_add(1);
+                    info.last_reported = now;
+                    info.weight = info.weight.saturating_add(node_weight);
+
+                    // Because validate_heartbeats enforces `count < threshold` before increment,
+                    // the moment we hit `== threshold` is exactly once per period.
+                    let reached_threshold_now = info.count == uptime_threshold;
+
+                    (node_weight, reached_threshold_now)
                 });
 
-                let node_weight =
-                    Self::effective_heartbeat_weight(&node_info, Self::time_now_sec());
-
-                info.count = info.count.saturating_add(1);
-                info.last_reported = now;
-                info.weight = info.weight.saturating_add(node_weight);
-
-                // the total uptime for the period
-                node_weight
-            });
+            if reached_threshold_now {
+                ActiveNodesCount::<T>::mutate(current_reward_period, |c| *c = c.saturating_add(1));
+            }
 
             <TotalUptime<T>>::mutate(&current_reward_period, |total| {
                 total.total_heartbeats = total.total_heartbeats.saturating_add(1);
-                total.total_weight = total.total_weight.saturating_add(weight);
+                total.total_weight = total.total_weight.saturating_add(node_weight);
             });
 
             Self::deposit_event(Event::HeartbeatReceived {
@@ -966,8 +1040,6 @@ pub mod pallet {
             let owner = current_info.owner;
 
             ensure!(who == registrar || who == owner, Error::<T>::UnauthorizedSigningKeyUpdate);
-            // We could remove this and use the check below to catch all cases but this is more user
-            // friendly
             ensure!(
                 current_info.signing_key != new_signing_key,
                 Error::<T>::SigningKeyMustBeDifferent
@@ -1068,6 +1140,55 @@ pub mod pallet {
 
             Ok(())
         }
+
+        #[pallet::call_index(11)]
+        #[pallet::weight(<T as Config>::WeightInfo::offchain_mint_rewards())]
+        pub fn offchain_mint_rewards(
+            origin: OriginFor<T>,
+            reward_period_index: RewardPeriodIndex,
+            amount: u128,
+            author: Author<T>,
+            signature: <T::AuthorityId as RuntimeAppPublic>::Signature,
+        ) -> DispatchResult {
+            ensure_none(origin)?;
+
+            ensure!(
+                AVN::<T>::signature_is_valid(
+                    &(MINT_REWARDS_CONTEXT, reward_period_index, amount),
+                    &author,
+                    &signature,
+                ),
+                Error::<T>::UnauthorizedSignedTransaction
+            );
+
+            ensure!(amount > 0, Error::<T>::ZeroAmount);
+
+            let current = RewardPeriod::<T>::get().current;
+            ensure!(reward_period_index < current, Error::<T>::InvalidRewardPaymentRequest);
+
+            let expected = PendingMintAmount::<T>::get(reward_period_index)
+                .ok_or(Error::<T>::PendingMintNotFound)?;
+            ensure!(expected == amount, Error::<T>::InvalidRewardPaymentRequest);
+
+            ensure!(
+                !SubmittedMints::<T>::get(reward_period_index),
+                Error::<T>::InvalidRewardPaymentRequest
+            );
+
+            ensure!(
+                !RewardPeriodToTxId::<T>::contains_key(reward_period_index),
+                Error::<T>::InvalidRewardPaymentRequest
+            );
+
+            let tx_id = Self::send_mint_to_ethereum(amount)?;
+            SubmittedMints::<T>::insert(reward_period_index, true);
+            RewardPeriodToTxId::<T>::insert(reward_period_index, tx_id);
+            TxIdToRewardPeriod::<T>::insert(tx_id, reward_period_index);
+
+            Self::deposit_event(Event::MintSubmitted { reward_period_index, amount, tx_id });
+
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
@@ -1079,22 +1200,28 @@ pub mod pallet {
                 return <T as Config>::WeightInfo::on_initialise_no_reward_period()
             }
 
+            if LaunchTimestampSec::<T>::get().is_none() {
+                LaunchTimestampSec::<T>::put(Self::time_now_sec());
+            }
+
             let reward_period = RewardPeriod::<T>::get();
             let previous_index = reward_period.current;
             let previous_uptime_threshold = reward_period.uptime_threshold;
 
             if reward_period.should_update(n) {
-                let uptime_threshold = Self::calculate_uptime_threshold(reward_period.length);
+                let prev_length_blocks = reward_period.length;
+                let period_seconds =
+                    (prev_length_blocks as u64).saturating_mul(T::SecondsPerBlock::get());
+
+                let uptime_threshold = Self::calculate_uptime_threshold(prev_length_blocks);
 
                 let reward_period = reward_period.update(n, uptime_threshold);
                 RewardPeriod::<T>::mutate(|p| *p = reward_period);
 
-                // take a snapshot of the reward pot amount to pay for the previous reward period
-                let reward_amount = RewardAmount::<T>::get();
                 <RewardPot<T>>::insert(
                     previous_index,
                     RewardPotInfo::<BalanceOf<T>>::new(
-                        reward_amount,
+                        Zero::zero(),
                         previous_uptime_threshold,
                         Self::time_now_sec(),
                     ),
@@ -1104,28 +1231,59 @@ pub mod pallet {
                     reward_period_index: reward_period.current,
                     reward_period_length: reward_period.length,
                     uptime_threshold: reward_period.uptime_threshold,
-                    previous_period_reward: reward_amount,
                 });
+
+                let n_active: u32 = ActiveNodesCount::<T>::take(previous_index);
+
+                let launch = LaunchTimestampSec::<T>::get().unwrap_or(Self::time_now_sec());
+                let now_sec = Self::time_now_sec();
+
+                let years = ((now_sec.saturating_sub(launch)) / SECONDS_PER_YEAR) as u32;
+                let mint_amount: u128 =
+                    Self::calculate_period_mint_amount(n_active, years, period_seconds);
+
+                Self::deposit_event(Event::MintCalculated {
+                    reward_period_index: previous_index,
+                    active_nodes: n_active,
+                    years,
+                    period_seconds,
+                    amount: mint_amount,
+                });
+
+                if mint_amount > 0 {
+                    PendingMintAmount::<T>::insert(previous_index, mint_amount);
+                    SubmittedMints::<T>::insert(previous_index, false);
+                }
+
+                ActiveNodesCount::<T>::insert(reward_period.current, 0u32);
 
                 return <T as Config>::WeightInfo::on_initialise_with_new_reward_period()
             }
 
-            return <T as Config>::WeightInfo::on_initialise_no_reward_period()
+            <T as Config>::WeightInfo::on_initialise_no_reward_period()
         }
 
         fn offchain_worker(n: BlockNumberFor<T>) {
             log::info!("🛠️  OCW for node manager");
 
-            if <RewardEnabled<T>>::get() == false {
+            if !RewardEnabled::<T>::get() {
                 log::warn!("🛠️  OCW - rewards are disabled, skipping");
                 return
             }
 
-            let maybe_author = Self::try_get_node_author(n);
-            if let Some(author) = maybe_author {
+            if let Some(author) = Self::try_get_node_author(n) {
+                Self::trigger_mint_if_required(author.clone());
+
                 let oldest_unpaid_period = OldestUnpaidRewardPeriodIndex::<T>::get();
-                Self::trigger_payment_if_required(oldest_unpaid_period, author);
-                // If this is an author node, we don't need to send a heartbeat
+                if Self::can_pay_period(oldest_unpaid_period) {
+                    Self::trigger_payment_if_required(oldest_unpaid_period, author);
+                } else {
+                    log::info!(
+                        "🛠️  OCW - skipping payment for period {:?}, mint still pending",
+                        oldest_unpaid_period
+                    );
+                }
+
                 return
             }
 
@@ -1136,12 +1294,14 @@ pub mod pallet {
     #[pallet::validate_unsigned]
     impl<T: Config> ValidateUnsigned for Pallet<T> {
         type Call = Call<T>;
+
         fn validate_unsigned(source: TransactionSource, call: &Self::Call) -> TransactionValidity {
             if <RewardEnabled<T>>::get() == false {
                 return InvalidTransaction::Custom(ERROR_CODE_REWARD_DISABLED).into()
             }
 
             let reduce_priority: TransactionPriority = TransactionPriority::from(1000u64);
+
             match call {
                 Call::offchain_pay_nodes { reward_period_index, author, signature } => {
                     // Discard unsinged tx's not coming from the local OCW.
@@ -1203,7 +1363,7 @@ pub mod pallet {
                                 .into()
                             }
 
-                            return ValidTransaction::with_tag_prefix("NodeManagerHeartbeat")
+                            ValidTransaction::with_tag_prefix("NodeManagerHeartbeat")
                                 .and_provides(call)
                                 .priority(TransactionPriority::max_value() - reduce_priority)
                                 .longevity(64_u64)
@@ -1211,6 +1371,27 @@ pub mod pallet {
                         },
                         _ => InvalidTransaction::Custom(ERROR_CODE_INVALID_NODE).into(),
                     }
+                },
+                Call::offchain_mint_rewards { reward_period_index, amount, author, signature } => {
+                    match source {
+                        TransactionSource::Local | TransactionSource::InBlock => {},
+                        _ => return InvalidTransaction::Call.into(),
+                    }
+
+                    if !AVN::<T>::signature_is_valid(
+                        &(MINT_REWARDS_CONTEXT, reward_period_index, amount),
+                        author,
+                        signature,
+                    ) {
+                        return InvalidTransaction::BadProof.into()
+                    }
+
+                    ValidTransaction::with_tag_prefix("NodeManagerMint")
+                        .and_provides((call, reward_period_index))
+                        .priority(TransactionPriority::max_value() - reduce_priority)
+                        .longevity(64_u64)
+                        .propagate(false)
+                        .build()
                 },
                 _ => InvalidTransaction::Call.into(),
             }
@@ -1224,6 +1405,7 @@ pub mod pallet {
             heartbeat_count: u64,
         ) -> DispatchResult {
             ensure!(<NodeRegistry<T>>::contains_key(&node), Error::<T>::NodeNotRegistered);
+
             let reward_period = RewardPeriod::<T>::get();
             let current_reward_period = reward_period.current;
             let maybe_uptime_info = <NodeUptime<T>>::get(reward_period_index, &node);
@@ -1277,6 +1459,7 @@ pub mod pallet {
                     node: node.clone(),
                 });
             }
+
             Ok(())
         }
 
@@ -1354,7 +1537,8 @@ pub mod pallet {
                 signature,
                 signature_valid
             );
-            return signature_valid
+
+            signature_valid
         }
 
         pub fn get_encoded_call_param(
@@ -1412,6 +1596,85 @@ pub mod pallet {
             current_time.saturating_add(AutoStakeDurationSec::<T>::get())
         }
 
+        pub fn calculate_period_mint_amount(
+            n_active: u32,
+            years: u32,
+            period_seconds: u64,
+        ) -> u128 {
+            let n = n_active.min(N_CAP);
+
+            let day_avt_year1: u128 = issuance_per_day_lut_avt(n);
+            let day_avt = if years >= 128 { 0 } else { day_avt_year1 >> years };
+            let day_wei: u128 = day_avt.saturating_mul(AVT_DECIMALS);
+
+            day_wei
+                .saturating_mul(period_seconds as u128)
+                .saturating_div(SECONDS_PER_DAY as u128)
+        }
+
+        pub fn process_mint_success(tx_id: EthereumId) -> DispatchResult {
+            let reward_period_index =
+                TxIdToRewardPeriod::<T>::take(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
+
+            let amount = PendingMintAmount::<T>::get(reward_period_index)
+                .ok_or(Error::<T>::PendingMintNotFound)?;
+
+            let amount_balance: BalanceOf<T> =
+                amount.try_into().map_err(|_| Error::<T>::MintAmountConversionFailed)?;
+
+            RewardPot::<T>::try_mutate(reward_period_index, |maybe_pot| -> DispatchResult {
+                let pot = maybe_pot.as_mut().ok_or(Error::<T>::RewardPotNotFound)?;
+                pot.total_reward = amount_balance;
+                Ok(())
+            })?;
+
+            Self::credit_reward_pot(amount)?;
+            Self::clear_mint_tracking(reward_period_index, tx_id);
+
+            Self::deposit_event(Event::MintConfirmed { reward_period_index, amount, tx_id });
+
+            Ok(())
+        }
+
+        pub fn process_mint_failure(tx_id: EthereumId) -> DispatchResult {
+            let reward_period_index =
+                TxIdToRewardPeriod::<T>::get(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
+
+            // Allow OCW to retry later by marking as not submitted again.
+            SubmittedMints::<T>::insert(reward_period_index, false);
+
+            RewardPeriodToTxId::<T>::remove(reward_period_index);
+            TxIdToRewardPeriod::<T>::remove(tx_id);
+
+            Self::deposit_event(Event::MintFailed { reward_period_index, tx_id });
+
+            Ok(())
+        }
+
+        pub fn next_mint_period_to_submit() -> Option<(RewardPeriodIndex, u128)> {
+            let current = RewardPeriod::<T>::get().current;
+
+            for period in 0..current {
+                if let Some(amount) = PendingMintAmount::<T>::get(period) {
+                    if !SubmittedMints::<T>::get(period) &&
+                        !RewardPeriodToTxId::<T>::contains_key(period)
+                    {
+                        return Some((period, amount))
+                    }
+                }
+            }
+
+            None
+        }
+
+        fn mint_pending_for_period(period: RewardPeriodIndex) -> bool {
+            PendingMintAmount::<T>::contains_key(period)
+        }
+
+        fn can_pay_period(period: RewardPeriodIndex) -> bool {
+            !Self::mint_pending_for_period(period)
+        }
+
         /// Insert signing key reverse index. Fails if key already belongs to another node.
         fn insert_signing_key_index(node: &NodeId<T>, signing_key: &T::SignerId) -> DispatchResult {
             if let Some(existing_node) = SigningKeyToNodeId::<T>::get(signing_key) {
@@ -1447,6 +1710,32 @@ pub mod pallet {
 
             Ok(())
         }
+
+        fn send_mint_to_ethereum(amount: u128) -> Result<EthereumId, DispatchError> {
+            let function_name: &[u8] = BridgeContractMethod::MintRewards.name_as_bytes();
+            let params = vec![(b"uint128".to_vec(), amount.to_string().into_bytes())];
+
+            let tx_id = T::BridgeInterface::publish(function_name, &params, PALLET_ID.to_vec())
+                .map_err(|e| DispatchError::Other(e.into()))?;
+
+            Ok(tx_id)
+        }
+
+        fn credit_reward_pot(amount: u128) -> DispatchResult {
+            let amount_balance: BalanceOf<T> =
+                amount.try_into().map_err(|_| Error::<T>::MintAmountConversionFailed)?;
+
+            let reward_pot = Self::compute_reward_account_id();
+            drop(T::Currency::deposit_creating(&reward_pot, amount_balance));
+
+            Ok(())
+        }
+
+        fn clear_mint_tracking(reward_period_index: RewardPeriodIndex, tx_id: EthereumId) {
+            PendingMintAmount::<T>::remove(reward_period_index);
+            RewardPeriodToTxId::<T>::remove(reward_period_index);
+            TxIdToRewardPeriod::<T>::remove(tx_id);
+        }
     }
 
     impl<T: Config> InnerCallValidator for Pallet<T> {
@@ -1461,7 +1750,27 @@ pub mod pallet {
                 .is_ok()
             }
 
-            return false
+            false
+        }
+    }
+
+    impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
+        fn process_result(
+            tx_id: EthereumId,
+            caller_id: Vec<u8>,
+            succeeded: bool,
+        ) -> DispatchResult {
+            if caller_id.as_slice() != b"node-manager" {
+                return Ok(())
+            }
+
+            if succeeded {
+                Self::process_mint_success(tx_id)?;
+            } else {
+                Self::process_mint_failure(tx_id)?;
+            }
+
+            Ok(())
         }
     }
 }

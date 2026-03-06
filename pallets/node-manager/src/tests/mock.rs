@@ -50,6 +50,8 @@ frame_support::construct_runtime!(
 parameter_types! {
     pub const RewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
     pub const VirtualNodeStake: u128 = 2000 * AVT;
+    pub const SignedTxLifetime: u32 = 64;
+    pub const SecondsPerBlock: u64 = 12;
 }
 
 impl Config for TestRuntime {
@@ -57,15 +59,17 @@ impl Config for TestRuntime {
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type SignerId = UintAuthorityId;
-    type Public = AccountId;
+    type Public = <Signature as Verify>::Signer;
+    type TimeProvider = Timestamp;
     type Signature = Signature;
-    type RewardPotId = RewardPotId;
-    type TimeProvider = pallet_timestamp::Pallet<TestRuntime>;
-    type SignedTxLifetime = ConstU32<64>;
-    type VirtualNodeStake = VirtualNodeStake;
     type Token = H160;
-    type AppChainFeeHandler = Self;
+    type AppChainFeeHandler = MockFeeHandler;
+    type RewardPotId = RewardPotId;
+    type SecondsPerBlock = SecondsPerBlock;
+    type SignedTxLifetime = SignedTxLifetime;
+    type VirtualNodeStake = VirtualNodeStake;
     type WeightInfo = ();
+    type BridgeInterface = MockBridgeInterface;
 }
 
 parameter_types! {
@@ -201,7 +205,6 @@ impl ExtBuilder {
             reward_period: 200u32,
             max_batch_size: 10u32,
             heartbeat_period: 5u32,
-            reward_amount: 20 * AVT,
             auto_stake_duration_sec: 180 * 24 * 60 * 60,
             max_unstake_percentage: Perbill::from_percent(10),
             unstake_period_sec: 7 * 24 * 60 * 60,
@@ -330,6 +333,64 @@ impl FeePaymentHandler for TestRuntime {
     ) -> Result<(), Self::Error> {
         let balance = Balances::free_balance(payer);
         Balances::make_free_balance_be(&payer, balance.saturating_sub(*amount));
+        Ok(())
+    }
+}
+
+pub struct MockBridgeInterface;
+
+impl avn::BridgeInterface for MockBridgeInterface {
+    fn publish(
+        _function_name: &[u8],
+        _params: &[(Vec<u8>, Vec<u8>)],
+        _caller_id: Vec<u8>,
+    ) -> Result<EthereumId, DispatchError> {
+        Ok(1u32)
+    }
+
+    fn generate_lower_proof(
+        _tx_id: EthereumId,
+        _params: &[u8; sp_avn_common::eth::PACKED_LOWER_V2_PARAMS_SIZE],
+        _caller_id: Vec<u8>,
+    ) -> Result<(), DispatchError> {
+        Ok(())
+    }
+
+    fn read_bridge_contract(
+        _caller_id: Vec<u8>,
+        _function_name: &[u8],
+        _params: &[(Vec<u8>, Vec<u8>)],
+        _at_block: Option<u32>,
+    ) -> Result<Vec<u8>, DispatchError> {
+        Ok(vec![])
+    }
+
+    fn latest_finalised_ethereum_block() -> Result<u32, DispatchError> {
+        Ok(0)
+    }
+}
+
+pub struct MockFeeHandler;
+
+impl FeePaymentHandler for MockFeeHandler {
+    type AccountId = AccountId;
+    type Token = H160;
+    type TokenBalance = u128;
+    type Error = DispatchError;
+
+    fn pay_fee(
+        _token: &Self::Token,
+        _amount: &Self::TokenBalance,
+        _payer: &Self::AccountId,
+        _recipient: &Self::AccountId,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn pay_treasury(
+        _amount: &Self::TokenBalance,
+        _payer: &Self::AccountId,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 }

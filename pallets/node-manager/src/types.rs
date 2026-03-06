@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 use crate::*;
 use sp_runtime::{
     traits::{AtLeast32BitUnsigned, Zero},
@@ -342,12 +344,11 @@ impl<Balance: Copy + Debug> StakeInfo<Balance> {
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, Clone, PartialEq)]
-pub enum AdminConfig<AccountId, Balance> {
+pub enum AdminConfig<AccountId> {
     NodeRegistrar(AccountId),
     RewardPeriod(u32),
     BatchSize(u32),
     Heartbeat(u32),
-    RewardAmount(Balance),
     RewardToggle(bool),
     MinUptimeThreshold(Perbill),
     AutoStakeDuration(Duration),

@@ -61,7 +61,8 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
     let uptime = 1u64;
     let node_info = <NodeRegistry<T>>::get(&node).unwrap();
-    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(&node_info, reward_period_index);
+    let single_hb_weight =
+        Pallet::<T>::effective_heartbeat_weight(&node_info, Pallet::<T>::time_now_sec());
     let weight = single_hb_weight.saturating_mul(uptime.into());
 
     <NodeUptime<T>>::mutate(&reward_period_index, &node, |maybe_info| {
@@ -203,16 +204,6 @@ benchmarks! {
         assert!(<HeartbeatPeriod<T>>::get() == new_heartbeat);
     }
 
-    set_admin_config_reward_amount {
-        let current_amount = <RewardAmount<T>>::get();
-        let new_amount = current_amount + 1u32.into();
-        let config = AdminConfig::RewardAmount(new_amount);
-
-    }: set_admin_config(RawOrigin::Root, config.clone())
-    verify {
-        assert!(<RewardAmount<T>>::get() == new_amount);
-    }
-
     set_admin_config_reward_enabled {
         let current_flag = <RewardEnabled<T>>::get();
         let new_flag = !current_flag;
@@ -277,12 +268,34 @@ benchmarks! {
     verify {
         let new_reward_period_index = reward_period.current + 1u64;
         let new_reward_period = <RewardPeriod<T>>::get();
-        assert!(new_reward_period_index== new_reward_period.current);
-        assert_last_event::<T>(Event::NewRewardPeriodStarted {
-            reward_period_index: new_reward_period_index,
-            reward_period_length: reward_period.length,
-            uptime_threshold: new_reward_period.uptime_threshold,
-            previous_period_reward: RewardAmount::<T>::get()}.into());
+
+        assert!(new_reward_period_index == new_reward_period.current);
+
+        let started_event: <T as Config>::RuntimeEvent =
+            Event::NewRewardPeriodStarted {
+                reward_period_index: new_reward_period_index,
+                reward_period_length: reward_period.length,
+                uptime_threshold: new_reward_period.uptime_threshold,
+                previous_period_reward: RewardAmount::<T>::get(),
+            }
+            .into();
+
+        let started_event_system: <T as frame_system::Config>::RuntimeEvent = started_event.into();
+
+        let events = frame_system::Pallet::<T>::events();
+        assert!(events.iter().any(|r| r.event == started_event_system));
+
+        assert_last_event::<T>(
+            Event::MintCalculated {
+                reward_period_index: reward_period.current,
+                active_nodes: 0,
+                years: 0,
+                period_seconds: (reward_period.length as u64)
+                    .saturating_mul(T::SecondsPerBlock::get()),
+                amount: 0,
+            }
+            .into(),
+        );
     }
 
     on_initialise_no_reward_period {
@@ -603,6 +616,55 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         assert_eq!(node_info.auto_stake_rewards, !preference);
         assert_last_event::<T>(Event::AutoStakePreferenceUpdated {owner, node_id, auto_stake_rewards: !preference}.into());
+    }
+
+    offchain_mint_rewards {
+        enable_rewards::<T>();
+
+        let author = create_author::<T>();
+
+        // We need a completed period, so current must be > reward_period_index
+        let reward_period_index: RewardPeriodIndex = 0u64;
+        let current_period: RewardPeriodIndex = 1u64;
+
+        <RewardPeriod<T>>::put(RewardPeriodInfo::new(
+            current_period,
+            0u32.into(),
+            1000u32,
+            100u32,
+        ));
+
+        let amount: u128 = 1_234_567_890_000_000_000u128;
+
+        PendingMintAmount::<T>::insert(reward_period_index, amount);
+        SubmittedMints::<T>::insert(reward_period_index, false);
+
+        let signature = author
+            .key
+            .sign(&(MINT_REWARDS_CONTEXT, reward_period_index, amount).encode())
+            .expect("Error signing");
+    }: offchain_mint_rewards(
+        RawOrigin::None,
+        reward_period_index,
+        amount,
+        author.clone(),
+        signature
+    )
+    verify {
+        assert!(SubmittedMints::<T>::get(reward_period_index));
+        assert_eq!(PendingMintAmount::<T>::get(reward_period_index), Some(amount));
+        assert!(RewardPeriodToTxId::<T>::get(reward_period_index).is_some());
+
+        let tx_id = RewardPeriodToTxId::<T>::get(reward_period_index).expect("tx id should exist");
+        assert_eq!(TxIdToRewardPeriod::<T>::get(tx_id), Some(reward_period_index));
+
+        assert_last_event::<T>(
+            Event::MintSubmitted {
+                reward_period_index,
+                amount,
+                tx_id,
+            }.into()
+        );
     }
 }
 

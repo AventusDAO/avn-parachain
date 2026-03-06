@@ -181,40 +181,6 @@ mod heartbeat {
     }
 }
 
-mod reward_amount {
-    use super::*;
-
-    #[test]
-    fn can_be_set() {
-        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
-        ext.execute_with(|| {
-            let current_amount = RewardAmount::<TestRuntime>::get();
-            let new_amount = current_amount + 1;
-
-            let config = AdminConfig::RewardAmount(new_amount);
-            assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
-            System::assert_last_event(Event::RewardAmountSet { new_amount }.into());
-        });
-    }
-
-    mod fails_to_be_set_when {
-        use super::*;
-        #[test]
-        fn amount_is_zero() {
-            let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
-            ext.execute_with(|| {
-                let new_amount: BalanceOf<TestRuntime> = 0u128;
-
-                let config = AdminConfig::RewardAmount(new_amount);
-                assert_noop!(
-                    NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
-                    Error::<TestRuntime>::RewardAmountZero
-                );
-            });
-        }
-    }
-}
-
 mod reward_enabled {
     use super::*;
 
