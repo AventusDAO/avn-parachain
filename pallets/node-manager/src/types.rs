@@ -68,7 +68,7 @@ pub struct RewardPotInfo<Balance> {
     pub total_reward: Balance,
     /// The minimum number of uptime reports required to earn full reward
     pub uptime_threshold: u32,
-    /// The last timestamp of the previous reward period, used to calculate gensis bonus
+    /// The last timestamp of the previous reward period, used to calculate genesis bonus
     pub reward_end_time: Duration,
 }
 
