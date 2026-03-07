@@ -103,7 +103,7 @@ pub fn staging_dev_testnet_config() -> ChainSpec {
         // SUDO account
         hex!["20ef357ca657d8cce8fcfc2e230871347fc68b1451a575eaedb9797616101608"].into(),
         // AVT contract
-        H160(hex!("93ba86eCfDDD9CaAAc29bE83aCE5A3188aC47730")),
+        H160(hex!("dB1Cff52f66195f0a5Bd3db91137db98cfc54AE6")),
         // AVN contract
         H160(hex!("0Dd31348e68b6400bf8BdE84a1AaF733D9fCBf9B")),
         // TODO update this if needed with the nft contracts
