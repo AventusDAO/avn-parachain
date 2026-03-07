@@ -53,8 +53,9 @@ pub mod eth_key_actions;
 pub mod event_discovery;
 pub mod event_types;
 pub mod http_data_codec;
+pub mod node;
 pub mod ocw_lock;
-pub mod primitives;
+pub use node as primitives;
 #[cfg(test)]
 #[path = "tests/test_event_discovery.rs"]
 pub mod test_event_discovery;
