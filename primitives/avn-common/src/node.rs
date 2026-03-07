@@ -24,6 +24,9 @@ pub type AccountId = <<Signature as Verify>::Signer as IdentifyAccount>::Account
 /// Balance of an account.
 pub type Balance = u128;
 
+/// Signed counter-part of Balance
+pub type Amount = i128;
+
 /// Type used for expressing timestamp.
 pub type Moment = u64;
 
@@ -35,7 +38,12 @@ pub type Hash = sp_core::H256;
 
 /// Header type.
 pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
+
 /// Block type.
 pub type Block = generic::Block<Header, OpaqueExtrinsic>;
+
 /// Block ID.
 pub type BlockId = generic::BlockId<Block>;
+
+/// Currency identifier type.
+pub type CurrencyId = crate::Asset;

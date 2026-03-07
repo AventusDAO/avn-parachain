@@ -1827,6 +1827,10 @@ dependencies = [
  "frame-try-runtime",
  "hex-literal",
  "log",
+ "orml-asset-registry",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
  "pallet-assets",
  "pallet-aura",
  "pallet-authority-discovery",
@@ -1921,6 +1925,10 @@ dependencies = [
  "frame-try-runtime",
  "hex-literal",
  "log",
+ "orml-asset-registry",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
  "pallet-assets",
  "pallet-aura",
  "pallet-authority-discovery",
@@ -4623,7 +4631,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7560,9 +7568,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.22"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "loom"
@@ -8500,6 +8508,97 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "orml-asset-registry"
+version = "1.4.0"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "orml-traits",
+ "pallet-xcm",
+ "parity-scale-codec",
+ "polkadot-runtime-common",
+ "scale-info",
+ "serde",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+ "staging-xcm",
+ "staging-xcm-builder",
+ "staging-xcm-executor",
+]
+
+[[package]]
+name = "orml-currencies"
+version = "1.4.0"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "orml-traits",
+ "orml-utilities",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "orml-tokens"
+version = "1.4.0"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "orml-traits",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-arithmetic",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "orml-traits"
+version = "1.4.0"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+dependencies = [
+ "frame-support",
+ "impl-trait-for-tuples",
+ "num-traits",
+ "orml-utilities",
+ "parity-scale-codec",
+ "paste 1.0.15",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+ "staging-xcm",
+]
+
+[[package]]
+name = "orml-utilities"
+version = "1.4.0"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+dependencies = [
+ "frame-support",
+ "parity-scale-codec",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
 ]
 
 [[package]]
@@ -10028,6 +10127,10 @@ dependencies = [
  "frame-system",
  "hex-literal",
  "log",
+ "orml-asset-registry",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
  "pallet-avn",
  "pallet-balances",
  "pallet-eth-bridge",
@@ -12250,7 +12353,7 @@ checksum = "f8650aabb6c35b860610e9cff5dc1af886c9e25073b7b1712a68972af4281302"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -12283,7 +12386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.98",
@@ -13112,7 +13215,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.14",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -15703,6 +15806,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "libsecp256k1",
  "log",
+ "orml-traits",
  "parity-scale-codec",
  "sc-transaction-pool-api",
  "scale-info",
@@ -17115,7 +17219,7 @@ dependencies = [
  "fastrand 2.3.0",
  "once_cell",
  "rustix 0.38.42",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -17733,7 +17837,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if 0.1.10",
  "digest 0.10.7",
  "rand 0.8.5",
  "static_assertions",
@@ -18843,15 +18947,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
