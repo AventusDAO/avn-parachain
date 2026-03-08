@@ -678,7 +678,7 @@ pub mod pallet {
             return Ok(())
         }
 
-        /// Transfer an amount of token with token_id from sender to receiver with a proof
+        /// Transfer an amount of token with token_id from sender to receiver
         #[pallet::call_index(12)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::transfer())]
         pub fn transfer(
