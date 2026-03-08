@@ -5,26 +5,32 @@ use frame_support::{
     derive_impl,
     pallet_prelude::*,
     parameter_types,
-    traits::{
-        ConstU16, ConstU32, ConstU64, Currency, EqualPrivilegeOnly, Everything,
-        ExistenceRequirement,
-    },
+    traits::{ConstU32, ConstU64, Currency, EqualPrivilegeOnly, Everything, ExistenceRequirement},
     PalletId,
 };
 
-use frame_system::{self as system, limits::BlockWeights, DefaultConfig, EnsureRoot};
+use frame_system::{self as system, limits::BlockWeights, EnsureRoot};
+use hex_literal::hex;
 use pallet_avn::BridgeInterfaceNotification;
 use pallet_avn_proxy::{self as avn_proxy, ProvableProxy};
 use pallet_session::{self as session, historical as pallet_session_historical};
 use scale_info::TypeInfo;
-use sp_avn_common::{FeePaymentHandler, InnerCallValidator, Proof};
-use sp_core::{sr25519, Pair, H256};
+use sp_avn_common::{
+    avn_tests_helpers::utilities::TestAccountIdPK,
+    eth::EthereumId,
+    primitives::{Amount, Balance, CurrencyId},
+    Asset, FeePaymentHandler, InnerCallValidator, Proof,
+};
+use sp_core::{sr25519, Pair, H160, H256};
 
-use sp_avn_common::eth::EthereumId;
+use orml_traits::{
+    asset_registry::{AssetProcessor, AvnAssetLocation, AvnAssetMetadata},
+    parameter_type_with_key,
+};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
-    traits::{BlakeTwo256, ConvertInto, IdentityLookup, Verify},
+    traits::{ConvertInto, IdentityLookup, Verify},
     BuildStorage, Perbill, Saturating,
 };
 use std::sync::Arc;
@@ -32,18 +38,17 @@ use std::sync::Arc;
 type Block = frame_system::mocking::MockBlock<TestRuntime>;
 
 pub type Signature = sr25519::Signature;
-pub type Balance = u128;
+
 pub type AccountId = <Signature as Verify>::Signer;
 pub type SessionIndex = u32;
 pub type Extrinsic = TestXt<RuntimeCall, ()>;
-pub const BASE_FEE: u64 = 12;
 
+pub const AVT_TOKEN_CONTRACT: H160 = H160(hex!("dB1Cff52f66195f0a5Bd3db91137db98cfc54AE6"));
+pub const BASE_FEE: u64 = 12;
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 const MAX_BLOCK_WEIGHT: Weight =
     Weight::from_parts(2_000_000_000_000 as u64, 0).set_proof_size(u64::MAX);
 pub const INITIAL_BALANCE: Balance = 1_000_000_000_000;
-pub const ONE_AVT: Balance = 1_000000_000000_000000u128;
-pub const HUNDRED_AVT: Balance = 100 * ONE_AVT;
 
 // TODO: Refactor this struct to be reused in all tests
 pub struct TestAccount {
@@ -98,18 +103,6 @@ pub fn setup_balance<T: Config>(account: &T::AccountId) {
     );
 }
 
-pub fn ensure_fee_payment_possible<T: Config>(
-    chain_id: ChainId,
-    account: &T::AccountId,
-) -> Result<(), &'static str> {
-    let fee = Pallet::<T>::checkpoint_fee(chain_id);
-    let balance = T::Currency::free_balance(account);
-    if balance < fee {
-        return Err("Insufficient balance for fee payment")
-    }
-    Ok(())
-}
-
 thread_local! {
     pub static MOCK_FEE_HANDLER_SHOULD_FAIL: RefCell<bool> = RefCell::new(false);
     // validator accounts (aka public addresses, public keys-ish)
@@ -118,10 +111,6 @@ thread_local! {
         validator_id_2(),
         validator_id_3(),
     ]));
-}
-
-pub fn set_mock_fee_handler_should_fail(should_fail: bool) {
-    MOCK_FEE_HANDLER_SHOULD_FAIL.with(|f| *f.borrow_mut() = should_fail);
 }
 
 frame_support::construct_runtime!(
@@ -138,6 +127,9 @@ frame_support::construct_runtime!(
         Historical: pallet_session_historical,
         Scheduler: pallet_scheduler,
         Timestamp: pallet_timestamp,
+        AssetRegistry: orml_asset_registry,
+        AssetManager: orml_currencies,
+        Tokens: orml_tokens,
     }
 );
 
@@ -230,6 +222,8 @@ impl pallet_token_manager::Config for TestRuntime {
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
+    type AssetRegistry = AssetRegistry;
+    type AssetManager = AssetManager;
 }
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
@@ -237,6 +231,7 @@ impl pallet_balances::Config for TestRuntime {
     type Balance = Balance;
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
+    type ReserveIdentifier = [u8; 8];
 }
 
 #[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
@@ -340,6 +335,77 @@ impl Config for TestRuntime {
     type Currency = Balances;
     type DefaultCheckpointFee = DefaultCheckpointFee;
 }
+
+type AssetMetadata = orml_traits::asset_registry::AssetMetadata<
+    Balance,
+    AvnAssetMetadata,
+    AvnAssetLocation,
+    ConstU32<1024>,
+>;
+type BasicCurrencyAdapter<R, B> = orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
+
+pub struct NoopAssetProcessor {}
+impl AssetProcessor<CurrencyId, AssetMetadata> for NoopAssetProcessor {
+    fn pre_register(
+        id: Option<CurrencyId>,
+        asset_metadata: AssetMetadata,
+    ) -> Result<(CurrencyId, AssetMetadata), DispatchError> {
+        assert!(id.is_some(), "Id must be set");
+        Ok((id.unwrap(), asset_metadata))
+    }
+}
+
+parameter_types! {
+    pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
+}
+
+impl orml_currencies::Config for TestRuntime {
+    type GetNativeCurrencyId = GetNativeCurrencyId;
+    type MultiCurrency = Tokens;
+    type NativeCurrency = BasicCurrencyAdapter<TestRuntime, Balances>;
+    type WeightInfo = ();
+}
+
+impl orml_asset_registry::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
+    type CustomMetadata = AvnAssetMetadata;
+    type AssetId = CurrencyId;
+    type AuthorityOrigin = EnsureRoot<TestAccountIdPK>;
+    type Balance = Balance;
+    type StringLimit = ConstU32<1024>;
+    type AssetProcessor = NoopAssetProcessor;
+    type AssetLocation = AvnAssetLocation;
+    type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const MaxLocks: u32 = 50;
+    pub const MaxReserves: u32 = 50;
+}
+
+parameter_type_with_key! {
+    pub ExistentialDeposits: |currency_id: CurrencyId| -> Balance {
+        match currency_id {
+            Asset::Avt => ExistentialDeposit::get().into(),
+            _ => 1
+        }
+    };
+}
+
+impl orml_tokens::Config for TestRuntime {
+    type Amount = Amount;
+    type Balance = Balance;
+    type CurrencyId = CurrencyId;
+    type DustRemovalWhitelist = Everything;
+    type RuntimeEvent = RuntimeEvent;
+    type ExistentialDeposits = ExistentialDeposits;
+    type MaxLocks = MaxLocks;
+    type MaxReserves = MaxReserves;
+    type CurrencyHooks = ();
+    type ReserveIdentifier = [u8; 8];
+    type WeightInfo = ();
+}
+
 // Test Avn proxy configuration logic
 #[derive(
     Copy,
@@ -395,7 +461,17 @@ impl InnerCallValidator for TestAvnProxyConfig {
 pub fn new_test_ext() -> sp_io::TestExternalities {
     let keystore = MemoryKeystore::new();
     let mut t = system::GenesisConfig::<TestRuntime>::default().build_storage().unwrap();
-    pallet_balances::GenesisConfig::<TestRuntime> {
+
+    let _ = pallet_token_manager::GenesisConfig::<TestRuntime> {
+        _phantom: Default::default(),
+        lower_account_id: H256::random(),
+        avt_token_contract: AVT_TOKEN_CONTRACT,
+        lower_schedule_period: 10,
+        balances: vec![],
+    }
+    .assimilate_storage(&mut t);
+
+    let _ = pallet_balances::GenesisConfig::<TestRuntime> {
         balances: vec![
             (create_account_id(1), INITIAL_BALANCE),
             (create_account_id(2), INITIAL_BALANCE),
@@ -403,8 +479,25 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
         ],
         dev_accounts: None,
     }
-    .assimilate_storage(&mut t)
-    .unwrap();
+    .assimilate_storage(&mut t);
+
+    let _ = orml_asset_registry::GenesisConfig::<TestRuntime> {
+        assets: vec![(
+            Asset::Avt,
+            AssetMetadata {
+                decimals: 18,
+                name: "AVT Test".as_bytes().to_vec().try_into().unwrap(),
+                symbol: "AVT".as_bytes().to_vec().try_into().unwrap(),
+                existential_deposit: 0,
+                location: Some(AvnAssetLocation::Ethereum(AVT_TOKEN_CONTRACT)),
+                additional: AvnAssetMetadata { appchain_native: false },
+            }
+            .encode(),
+        )],
+        last_asset_id: Asset::Avt,
+    }
+    .assimilate_storage(&mut t);
+
     let mut ext = sp_io::TestExternalities::new(t);
     ext.register_extension(KeystoreExt(Arc::new(keystore)));
     ext.execute_with(|| System::set_block_number(1));
@@ -447,9 +540,9 @@ impl FeePaymentHandler for TestRuntime {
 
     fn pay_fee(
         _token: &Self::Token,
-        amount: &Self::TokenBalance,
-        payer: &Self::AccountId,
-        recipient: &Self::AccountId,
+        _amount: &Self::TokenBalance,
+        _payer: &Self::AccountId,
+        _recipient: &Self::AccountId,
     ) -> Result<(), Self::Error> {
         Ok(())
     }

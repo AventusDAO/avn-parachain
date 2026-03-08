@@ -39,6 +39,7 @@ impl<T: Config> Pallet<T> {
         recipient: &T::AccountId,
         raw_amount: u128,
     ) -> Result<BalanceOf<T>, Error<T>> {
+        ensure!(!Self::is_native_token(token_id), Error::<T>::NativeTokenNotRegistered);
         let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
         <Balances<T>>::try_mutate((token_id, recipient.clone()), |balance| {
             *balance =
@@ -64,6 +65,7 @@ impl<T: Config> Pallet<T> {
         from: &T::AccountId,
         raw_amount: u128,
     ) -> Result<(), Error<T>> {
+        ensure!(!Self::is_native_token(token_id), Error::<T>::NativeTokenNotRegistered);
         let amount_token_balance = Self::u128_to_token_balance(raw_amount)?;
         <Balances<T>>::try_mutate((token_id, from.clone()), |balance| {
             *balance = balance
@@ -74,7 +76,7 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    pub fn is_avt_token(token_id: T::TokenId) -> bool {
+    pub fn is_native_token(token_id: T::TokenId) -> bool {
         token_id == Self::avt_token_contract().into()
     }
 

@@ -462,7 +462,7 @@ parameter_types! {
     pub const TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub const EthAutoSubmitSummaries: bool = true;
     pub const EthereumInstanceId: u8 = 1u8;
-    pub const ExternalValidationEnabled: bool = true;
+    pub const ExternalValidationEnabled: bool = false;
 }
 
 impl pallet_summary::Config for Runtime {
@@ -908,7 +908,8 @@ parameter_type_with_key! {
         match currency_id {
             Asset::Avt => EXISTENTIAL_DEPOSIT,
             Asset::ForeignAsset(id) => {
-                let maybe_metadata = <orml_asset_registry::Pallet<Runtime> as orml_traits::asset_registry::Inspect<AvnAssetLocation>>::metadata(&Asset::ForeignAsset(*id));
+                let maybe_metadata =
+                    <orml_asset_registry::Pallet<Runtime> as orml_traits::asset_registry::Inspect<AvnAssetLocation>>::metadata(&Asset::ForeignAsset(*id));
                 if let Some(metadata) = maybe_metadata {
                     return metadata.existential_deposit;
                 }

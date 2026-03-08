@@ -8,11 +8,13 @@ use alloc::{
     string::{String, ToString},
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
 use frame_support::PalletId;
-use serde::{Deserialize, Serialize};
 use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
     crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed},
@@ -516,17 +518,16 @@ impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
     Decode,
     DecodeWithMemTracking,
     Default,
-    Deserialize,
     Eq,
     Encode,
     MaxEncodedLen,
     Ord,
     PartialEq,
     PartialOrd,
-    Serialize,
     TypeInfo,
 )]
-#[cfg_attr(feature = "std", serde(rename_all = "camelCase"))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(all(feature = "std", feature = "serde"), serde(rename_all = "camelCase"))]
 pub enum Asset {
     #[default]
     Avt,
