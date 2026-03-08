@@ -333,6 +333,7 @@ impl AssetProcessor<CurrencyId, AssetMetadata> for NoopAssetProcessor {
         id: Option<CurrencyId>,
         asset_metadata: AssetMetadata,
     ) -> Result<(CurrencyId, AssetMetadata), DispatchError> {
+        assert!(id.is_some(), "Id must be set");
         Ok((id.unwrap(), asset_metadata))
     }
 }

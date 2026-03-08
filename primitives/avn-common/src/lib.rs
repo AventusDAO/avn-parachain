@@ -516,16 +516,15 @@ impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
     Decode,
     DecodeWithMemTracking,
     Default,
-    Deserialize,
     Eq,
     Encode,
     MaxEncodedLen,
     Ord,
     PartialEq,
     PartialOrd,
-    Serialize,
     TypeInfo,
 )]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "std", serde(rename_all = "camelCase"))]
 pub enum Asset {
     #[default]
