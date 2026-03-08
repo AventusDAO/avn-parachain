@@ -31,6 +31,7 @@ frame-benchmarking = { optional = true, workspace = true }
 [dev-dependencies]
 libsecp256k1 = { version = "0.7.0", default-features = false, features =["hmac","static-context"]}
 hex = { workspace = true, default-features = true }
+hex-literal = { workspace = true, default-features = true }
 sp-io = { default-features = true, workspace = true }
 sp-keystore = { default-features = true, workspace = true }
 pallet-balances = { workspace = true, default-features = true }
@@ -43,6 +44,11 @@ pallet-eth-bridge = { workspace = true, default-features = true }
 pallet-avn = { workspace = true, default-features = true }
 parking_lot.workspace = true
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
+
+orml-currencies = { workspace = true, default-features = true }
+orml-asset-registry = { workspace = true, default-features = true}
+orml-tokens = { workspace = true, default-features = true }
+orml-traits = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -62,6 +68,8 @@ runtime-benchmarks = [
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"sp-avn-common/runtime-benchmarks",
+	"orml-asset-registry/runtime-benchmarks",
+	"orml-tokens/runtime-benchmarks",
 ]
 
 try-runtime = ["frame-support/try-runtime"]
