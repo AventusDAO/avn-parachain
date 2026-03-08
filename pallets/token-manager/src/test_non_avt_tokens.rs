@@ -365,7 +365,8 @@ fn avn_test_signed_transfer_of_0_token_should_succeed() {
             4 * amount
         );
 
-        assert!(System::events().iter().any(|a| a.event ==
+        // There should be no transfer event because the amount is 0
+        assert!(!System::events().iter().any(|a| a.event ==
             RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenTransferred {
                 token_id: NON_AVT_TOKEN_ID,
                 sender: sender_account_id,
@@ -439,7 +440,8 @@ fn avn_test_self_signed_transfer_should_succeed() {
             3 * amount
         );
 
-        assert!(System::events().iter().any(|a| a.event ==
+        // No event because its a noop operation
+        assert!(!System::events().iter().any(|a| a.event ==
             RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenTransferred {
                 token_id: NON_AVT_TOKEN_ID,
                 sender: sender_account_id,
@@ -514,7 +516,8 @@ fn avn_test_self_signed_transfer_of_0_token_should_succeed() {
             3 * amount
         );
 
-        assert!(System::events().iter().any(|a| a.event ==
+        // No transfer event because the amount is 0
+        assert!(!System::events().iter().any(|a| a.event ==
             RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::TokenTransferred {
                 token_id: NON_AVT_TOKEN_ID,
                 sender: sender_account_id,

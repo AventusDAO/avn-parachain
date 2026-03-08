@@ -6,25 +6,36 @@ use frame_support::{
     derive_impl,
     pallet_prelude::{DispatchClass, Weight},
     parameter_types,
-    traits::EqualPrivilegeOnly,
+    traits::{EqualPrivilegeOnly, Everything},
     PalletId,
 };
-use frame_system::{self as system, limits::BlockWeights, DefaultConfig, EnsureRoot};
+use frame_system::{self as system, limits::BlockWeights, EnsureRoot};
 use hex_literal::hex;
 use libsecp256k1::{sign, Message, PublicKey, SecretKey};
+use orml_traits::{
+    asset_registry::{AssetProcessor, AvnAssetLocation, AvnAssetMetadata},
+    parameter_type_with_key,
+};
 use pallet_avn::BridgeInterfaceNotification;
 use pallet_balances;
 use pallet_nft_manager::nft_data::Royalty;
 use pallet_session as session;
-use sp_avn_common::{eth::EthereumId, hash_string_data_with_ethereum_prefix};
+use sp_avn_common::{
+    avn_tests_helpers::utilities::TestAccountIdPK,
+    eth::EthereumId,
+    hash_string_data_with_ethereum_prefix,
+    primitives::{Amount, Balance, CurrencyId},
+    Asset,
+};
 use sp_core::{keccak_256, sr25519, ByteArray, ConstU32, ConstU64, Pair, H160, H256};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
     traits::{ConvertInto, IdentityLookup, Verify},
-    BuildStorage, MultiSignature, Perbill,
+    BuildStorage, DispatchError, MultiSignature, Perbill,
 };
 pub use std::sync::Arc;
+
 pub const BASE_FEE: u64 = 12;
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
@@ -79,6 +90,9 @@ frame_support::construct_runtime!(
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
         Historical: pallet_session::historical::{Pallet, Storage},
+        AssetRegistry: orml_asset_registry,
+        AssetManager: orml_currencies,
+        Tokens: orml_tokens,
     }
 );
 
@@ -128,6 +142,7 @@ impl pallet_balances::Config for TestRuntime {
     type Balance = u128;
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
+    type ReserveIdentifier = [u8; 8];
 }
 
 impl pallet_nft_manager::Config for TestRuntime {
@@ -170,6 +185,8 @@ impl pallet_token_manager::Config for TestRuntime {
     type OnIdleHandler = ();
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
+    type AssetRegistry = AssetRegistry;
+    type AssetManager = AssetManager;
 }
 
 parameter_types! {
@@ -252,6 +269,76 @@ impl pallet_session::historical::Config for TestRuntime {
     type FullIdentificationOf = ConvertInto;
 }
 
+type AssetMetadata = orml_traits::asset_registry::AssetMetadata<
+    Balance,
+    AvnAssetMetadata,
+    AvnAssetLocation,
+    ConstU32<1024>,
+>;
+type BasicCurrencyAdapter<R, B> = orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
+
+pub struct NoopAssetProcessor {}
+impl AssetProcessor<CurrencyId, AssetMetadata> for NoopAssetProcessor {
+    fn pre_register(
+        id: Option<CurrencyId>,
+        asset_metadata: AssetMetadata,
+    ) -> Result<(CurrencyId, AssetMetadata), DispatchError> {
+        assert!(id.is_some(), "Id must be set");
+        Ok((id.unwrap(), asset_metadata))
+    }
+}
+
+parameter_types! {
+    pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
+}
+
+impl orml_currencies::Config for TestRuntime {
+    type GetNativeCurrencyId = GetNativeCurrencyId;
+    type MultiCurrency = Tokens;
+    type NativeCurrency = BasicCurrencyAdapter<TestRuntime, Balances>;
+    type WeightInfo = ();
+}
+
+impl orml_asset_registry::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
+    type CustomMetadata = AvnAssetMetadata;
+    type AssetId = CurrencyId;
+    type AuthorityOrigin = EnsureRoot<TestAccountIdPK>;
+    type Balance = Balance;
+    type StringLimit = ConstU32<1024>;
+    type AssetProcessor = NoopAssetProcessor;
+    type AssetLocation = AvnAssetLocation;
+    type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const MaxLocks: u32 = 50;
+    pub const MaxReserves: u32 = 50;
+}
+
+parameter_type_with_key! {
+    pub ExistentialDeposits: |currency_id: CurrencyId| -> Balance {
+        match currency_id {
+            Asset::Avt => ExistentialDeposit::get().into(),
+            _ => 1
+        }
+    };
+}
+
+impl orml_tokens::Config for TestRuntime {
+    type Amount = Amount;
+    type Balance = Balance;
+    type CurrencyId = CurrencyId;
+    type DustRemovalWhitelist = Everything;
+    type RuntimeEvent = RuntimeEvent;
+    type ExistentialDeposits = ExistentialDeposits;
+    type MaxLocks = MaxLocks;
+    type MaxReserves = MaxReserves;
+    type CurrencyHooks = ();
+    type ReserveIdentifier = [u8; 8];
+    type WeightInfo = ();
+}
+
 // Test Avn proxy configuration logic
 // We only allow System::Remark and signed_mint_single_nft calls to be proxied
 #[derive(
@@ -330,6 +417,24 @@ impl ExtBuilder {
             )],
         }
         .assimilate_storage(&mut storage);
+
+        let _ = orml_asset_registry::GenesisConfig::<TestRuntime> {
+            assets: vec![(
+                Asset::Avt,
+                AssetMetadata {
+                    decimals: 18,
+                    name: "AVT Test".as_bytes().to_vec().try_into().unwrap(),
+                    symbol: "AVT".as_bytes().to_vec().try_into().unwrap(),
+                    existential_deposit: 0,
+                    location: Some(AvnAssetLocation::Ethereum(AVT_TOKEN_CONTRACT)),
+                    additional: AvnAssetMetadata { appchain_native: false },
+                }
+                .encode(),
+            )],
+            last_asset_id: Asset::Avt,
+        }
+        .assimilate_storage(&mut storage);
+
         Self { storage }
     }
 

@@ -8,6 +8,9 @@ use alloc::{
     string::{String, ToString},
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
@@ -505,4 +508,28 @@ impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
     pub fn session_id(&self) -> BoundedVec<u8, VotingSessionIdBound> {
         BoundedVec::truncate_from(self.encode())
     }
+}
+
+/// The `Asset` enum represents all types of assets available in Aventus
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Eq,
+    Encode,
+    MaxEncodedLen,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    TypeInfo,
+)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(all(feature = "std", feature = "serde"), serde(rename_all = "camelCase"))]
+pub enum Asset {
+    #[default]
+    Avt,
+    ForeignAsset(u32),
 }

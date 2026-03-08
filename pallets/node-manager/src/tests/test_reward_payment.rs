@@ -745,7 +745,7 @@ mod reward {
             let balance_a_after = Balances::free_balance(&context.owner);
             let balance_b_after = Balances::free_balance(&new_owner);
 
-            // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) - 5% fee vs 181 (0.18%) - 5% fee
+            // 4.5 / (4.5 + 1.0) = 0.818181... => 818 (0.81%) - 0% fee vs 181 (0.18%) - 0% fee
             // (flooring)
             assert_eq!(current_stake_a, previous_stake_a + 181u128);
             assert_eq!(current_stake_b, previous_stake_b + 818u128);
