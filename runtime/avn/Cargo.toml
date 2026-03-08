@@ -261,6 +261,9 @@ runtime-benchmarks = [
 	"pallet-whitelist/runtime-benchmarks",
 	"pallet-scheduler/runtime-benchmarks",
 	"pallet-preimage/runtime-benchmarks",
+	# Orml
+	"orml-asset-registry/runtime-benchmarks",
+	"orml-tokens/runtime-benchmarks",
 ]
 
 try-runtime = [

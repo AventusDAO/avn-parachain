@@ -520,7 +520,7 @@ pub mod pallet {
 
             Self::settle_lower(token_id, &from, &to_account_id, amount, t1_recipient, lower_id)?;
 
-            // TODO: NS - replace with process known token vs unknown tokens
+            // TODO: replace with process known token vs unknown tokens
             let final_weight = if Self::is_native_token(token_id) {
                 <T as pallet::Config>::WeightInfo::execute_avt_lower()
             } else {
@@ -680,16 +680,26 @@ pub mod pallet {
 
         /// Transfer an amount of token with token_id from sender to receiver
         #[pallet::call_index(12)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::transfer())]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::transfer_non_avt()
+            .max(<T as pallet::Config>::WeightInfo::transfer_native()))
+        ]
         pub fn transfer(
             origin: OriginFor<T>,
             to: T::AccountId,
             token_id: T::TokenId,
             amount: T::TokenBalance,
-        ) -> DispatchResult {
+        ) -> DispatchResultWithPostInfo {
             let from = ensure_signed(origin)?;
+
             Self::settle_transfer(&token_id, &from, &to, &amount)?;
-            Ok(())
+
+            let final_weight = if Self::is_avt_token(token_id) {
+                <T as pallet::Config>::WeightInfo::transfer_native()
+            } else {
+                <T as pallet::Config>::WeightInfo::transfer_non_avt()
+            };
+
+            Ok(Some(final_weight).into())
         }
     }
 

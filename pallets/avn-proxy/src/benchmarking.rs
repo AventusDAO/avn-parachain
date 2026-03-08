@@ -83,7 +83,7 @@ benchmarks! {
         let token: H160 = crate::mock::AVT_TOKEN_CONTRACT;
         #[cfg(not(test))]
         // Make sure this matched the chainspec value
-        let token: H160 = H160(hex!("93ba86eCfDDD9CaAAc29bE83aCE5A3188aC47730"));
+        let token: H160 = H160(hex!("dB1Cff52f66195f0a5Bd3db91137db98cfc54AE6"));
 
         #[cfg(test)]
         let signature: sr25519::Signature = sr25519::Signature::from_slice(&hex!("1cbdef33d6deae9ab0890eb2489a4e361065b2b1bd78236169f20e813c2aff0ac541ccb2510f79c68ffb37cd9d0b1555ea07499d86cd5da83f272ae63011ef87")).unwrap().into();
