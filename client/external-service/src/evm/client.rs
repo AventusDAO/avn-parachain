@@ -13,7 +13,7 @@ use url::Url;
 
 use crate::chain::{ChainClient, ChainLog, ChainReceipt, LogFilter};
 use alloy_primitives::{Address as AlloyAddress, Bytes as AlloyBytes, B256 as AlloyB256};
-use sp_core::{H160, H256};
+use polkadot_sdk::sp_core::{H160, H256};
 
 pub type SharedProvider = Arc<DynProvider>;
 

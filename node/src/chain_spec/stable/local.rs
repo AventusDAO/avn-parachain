@@ -8,7 +8,7 @@ use crate::chain_spec::{
     },
 };
 use hex_literal::hex;
-use sp_core::{sr25519, H160};
+use polkadot_sdk::sp_core::{sr25519, H160};
 
 pub fn development_config() -> ChainSpec {
     let dev_rococo_parachain_id: u32 = 2060;

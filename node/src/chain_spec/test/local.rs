@@ -5,7 +5,7 @@ use crate::chain_spec::{
     test::{avn_test_runtime_genesis, get_account_id_from_seed, ChainSpec},
 };
 use hex_literal::hex;
-use sp_core::{sr25519, H160};
+use polkadot_sdk::sp_core::{sr25519, H160};
 
 pub fn avn_garde_local_config() -> ChainSpec {
     let parachain_id: u32 = 2000;

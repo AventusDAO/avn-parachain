@@ -23,10 +23,9 @@ sp-runtime = { default-features = true, workspace = true }
 # client dependencies
 sc-service = { default-features = true, workspace = true }
 sc-client-api = { default-features = true, workspace = true }
-sc-client-db = { default-features = true, workspace = true }
 sc-transaction-pool = { default-features = true, workspace = true }
 sc-transaction-pool-api = { default-features = true, workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true, default-features = true }
-hex-literal = "0.4.1"
+hex-literal = { workspace = true, default-features = true }
