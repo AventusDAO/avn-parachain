@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-frame_benchmarking::define_benchmarks!(
+polkadot_sdk::frame_benchmarking::define_benchmarks!(
     [frame_system, SystemBench::<Runtime>]
     [pallet_assets, Assets]
     [pallet_balances, Balances]

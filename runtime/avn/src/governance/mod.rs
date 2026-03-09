@@ -1,7 +1,8 @@
 pub use super::*;
 
 pub mod origins;
-use frame_support::traits::EitherOf;
+use polkadot_sdk::frame_support::{parameter_types, traits::EitherOf};
+
 pub use origins::{
     pallet_custom_origins, ReferendumCanceller, ReferendumKiller, WhitelistedCaller,
 };
@@ -20,8 +21,10 @@ impl pallet_conviction_voting::Config for Runtime {
     type Currency = Balances;
     type VoteLockingPeriod = VoteLockingPeriod;
     type MaxVotes = ConstU32<512>;
-    type MaxTurnout =
-        frame_support::traits::tokens::currency::ActiveIssuanceOf<Balances, Self::AccountId>;
+    type MaxTurnout = polkadot_sdk::frame_support::traits::tokens::currency::ActiveIssuanceOf<
+        Balances,
+        Self::AccountId,
+    >;
     type Polls = Referenda;
     type BlockNumberProvider = System;
     type VotingHooks = ();
