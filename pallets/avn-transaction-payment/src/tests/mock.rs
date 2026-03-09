@@ -22,7 +22,7 @@ pub type Signature = sr25519::Signature;
 
 type Block = frame_system::mocking::MockBlock<TestRuntime>;
 
-pub const EXISTENTIAL_DEPOSIT: u64 = 0;
+pub const EXISTENTIAL_DEPOSIT: u64 = 1;
 pub const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 pub const MAX_BLOCK_WEIGHT: Weight = Weight::from_parts(1024 as u64, u64::MAX);
 pub const BASE_FEE_U64: u64 = 12;

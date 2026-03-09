@@ -103,7 +103,7 @@ pub const GOOD_STATUS: &str = "0x1";
 pub const GOOD_BLOCK_CONFIRMATIONS: u64 = 2;
 pub const QUORUM_FACTOR: u32 = 3;
 pub const EVENT_CHALLENGE_PERIOD: BlockNumber = 2;
-pub const EXISTENTIAL_DEPOSIT: u64 = 0;
+pub const EXISTENTIAL_DEPOSIT: u64 = 1;
 
 pub mod crypto {
     use super::KEY_TYPE;
