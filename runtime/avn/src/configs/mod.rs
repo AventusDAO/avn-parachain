@@ -20,36 +20,42 @@ mod xcm_config;
 // use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
 use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
-use frame_support::{
-    derive_impl,
-    dispatch::DispatchClass,
-    pallet_prelude::EnsureOrigin,
-    parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, TransformOrigin, VariantCountOf},
-    weights::{ConstantMultiplier, Weight},
-    PalletId,
-};
-use frame_system::{
-    limits::{BlockLength, BlockWeights},
-    EnsureRoot,
-};
-use parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling};
-use polkadot_runtime_common::{
-    xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
-};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_runtime::Perbill;
-use sp_version::RuntimeVersion;
+
+use polkadot_sdk::{staging_parachain_info as parachain_info, *};
+#[cfg(not(feature = "runtime-benchmarks"))]
+use polkadot_sdk::{staging_xcm_builder as xcm_builder, staging_xcm_executor as xcm_executor};
 
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
+use polkadot_sdk::{
+    frame_support::{
+        derive_impl,
+        dispatch::DispatchClass,
+        parameter_types,
+        traits::{ConstBool, ConstU32, ConstU64, EnsureOrigin, TransformOrigin, VariantCountOf},
+        weights::{ConstantMultiplier, Weight},
+        PalletId,
+    },
+    frame_system::{
+        limits::{BlockLength, BlockWeights},
+        EnsureRoot,
+    },
+    parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling},
+    polkadot_runtime_common::{
+        xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
+    },
+};
 use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
     NODE_MANAGER_PALLET_ID,
 };
+
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority, Perbill};
+use sp_version::RuntimeVersion;
+
 use sp_core::{ConstU128, H160};
-use sp_runtime::{traits::ConvertInto, transaction_validity::TransactionPriority};
 
 // Local module imports
 use crate::{
@@ -251,7 +257,7 @@ impl cumulus_pallet_xcmp_queue::Config for Runtime {
     type XcmpQueue = TransformOrigin<MessageQueue, AggregateMessageOrigin, ParaId, ParaIdToSibling>;
     type MaxInboundSuspended = sp_core::ConstU32<1_000>;
     type MaxActiveOutboundChannels = ConstU32<128>;
-    type MaxPageSize = ConstU32<{ 1 << 16 }>;
+    type MaxPageSize = ConstU32<{ 103 * 1024 }>;
     type ControllerOrigin = EnsureRoot<AccountId>;
     type ControllerOriginConverter = XcmOriginToTransactDispatchOrigin;
     type WeightInfo = ();
@@ -451,7 +457,7 @@ parameter_types! {
     pub const TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub const EthAutoSubmitSummaries: bool = true;
     pub const EthereumInstanceId: u8 = 1u8;
-    pub const ExternalValidationEnabled: bool = true;
+    pub const ExternalValidationEnabled: bool = false;
 }
 
 impl pallet_summary::Config for Runtime {

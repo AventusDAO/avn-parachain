@@ -287,10 +287,16 @@ pub mod pallet {
     pub(super) type PendingMintAmount<T: Config> =
         StorageMap<_, Blake2_128Concat, RewardPeriodIndex, u128, OptionQuery>;
 
-    /// Is mint tx submitted for this period
+    /// Mint state for each reward period that has a non-zero pending mint.
     #[pallet::storage]
-    pub(super) type SubmittedMints<T: Config> =
-        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, bool, ValueQuery>;
+    pub(super) type MintStates<T: Config> =
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, MintState, OptionQuery>;
+
+    /// Earliest reward period that may still need mint submission scanning.
+    #[pallet::storage]
+    #[pallet::getter(fn next_mint_period_cursor)]
+    pub(super) type NextMintPeriodCursor<T: Config> =
+        StorageValue<_, RewardPeriodIndex, ValueQuery>;
 
     /// Reward period to TX ID mapping
     #[pallet::storage]
@@ -1171,7 +1177,7 @@ pub mod pallet {
             ensure!(expected == amount, Error::<T>::InvalidRewardPaymentRequest);
 
             ensure!(
-                !SubmittedMints::<T>::get(reward_period_index),
+                matches!(MintStates::<T>::get(reward_period_index), Some(MintState::Ready)),
                 Error::<T>::InvalidRewardPaymentRequest
             );
 
@@ -1181,7 +1187,7 @@ pub mod pallet {
             );
 
             let tx_id = Self::send_mint_to_ethereum(amount)?;
-            SubmittedMints::<T>::insert(reward_period_index, true);
+            MintStates::<T>::insert(reward_period_index, MintState::Submitted { tx_id });
             RewardPeriodToTxId::<T>::insert(reward_period_index, tx_id);
             TxIdToRewardPeriod::<T>::insert(tx_id, reward_period_index);
 
@@ -1252,7 +1258,13 @@ pub mod pallet {
 
                 if mint_amount > 0 {
                     PendingMintAmount::<T>::insert(previous_index, mint_amount);
-                    SubmittedMints::<T>::insert(previous_index, false);
+                    MintStates::<T>::insert(previous_index, MintState::Ready);
+
+                    NextMintPeriodCursor::<T>::mutate(|cursor| {
+                        *cursor = (*cursor)
+                            .max(OldestUnpaidRewardPeriodIndex::<T>::get())
+                            .min(previous_index);
+                    });
                 }
 
                 ActiveNodesCount::<T>::insert(reward_period.current, 0u32);
@@ -1278,7 +1290,7 @@ pub mod pallet {
                 if Self::can_pay_period(oldest_unpaid_period) {
                     Self::trigger_payment_if_required(oldest_unpaid_period, author);
                 } else {
-                    log::info!(
+                    log::debug!(
                         "🛠️  OCW - skipping payment for period {:?}, mint still pending",
                         oldest_unpaid_period
                     );
@@ -1614,10 +1626,18 @@ pub mod pallet {
 
         pub fn process_mint_success(tx_id: EthereumId) -> DispatchResult {
             let reward_period_index =
-                TxIdToRewardPeriod::<T>::take(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
+                TxIdToRewardPeriod::<T>::get(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
 
             let amount = PendingMintAmount::<T>::get(reward_period_index)
                 .ok_or(Error::<T>::PendingMintNotFound)?;
+
+            let stored_tx_id = Self::submitted_mint_tx_id(reward_period_index)
+                .ok_or(Error::<T>::MintTxNotFound)?;
+            ensure!(stored_tx_id == tx_id, Error::<T>::MintTxNotFound);
+
+            let stored_tx_id = Self::submitted_mint_tx_id(reward_period_index)
+                .ok_or(Error::<T>::MintTxNotFound)?;
+            ensure!(stored_tx_id == tx_id, Error::<T>::MintTxNotFound);
 
             let amount_balance: BalanceOf<T> =
                 amount.try_into().map_err(|_| Error::<T>::MintAmountConversionFailed)?;
@@ -1629,7 +1649,11 @@ pub mod pallet {
             })?;
 
             Self::credit_reward_pot(amount)?;
-            Self::clear_mint_tracking(reward_period_index, tx_id);
+
+            TxIdToRewardPeriod::<T>::remove(tx_id);
+            Self::clear_mint_tracking(reward_period_index);
+
+            Self::advance_mint_cursor_from(reward_period_index);
 
             Self::deposit_event(Event::MintConfirmed { reward_period_index, amount, tx_id });
 
@@ -1640,11 +1664,23 @@ pub mod pallet {
             let reward_period_index =
                 TxIdToRewardPeriod::<T>::get(tx_id).ok_or(Error::<T>::MintTxNotFound)?;
 
-            // Allow OCW to retry later by marking as not submitted again.
-            SubmittedMints::<T>::insert(reward_period_index, false);
+            let stored_tx_id = Self::submitted_mint_tx_id(reward_period_index)
+                .ok_or(Error::<T>::MintTxNotFound)?;
+            ensure!(stored_tx_id == tx_id, Error::<T>::MintTxNotFound);
 
-            RewardPeriodToTxId::<T>::remove(reward_period_index);
+            let stored_tx_id = Self::submitted_mint_tx_id(reward_period_index)
+                .ok_or(Error::<T>::MintTxNotFound)?;
+            ensure!(stored_tx_id == tx_id, Error::<T>::MintTxNotFound);
+
             TxIdToRewardPeriod::<T>::remove(tx_id);
+            RewardPeriodToTxId::<T>::remove(reward_period_index);
+            MintStates::<T>::insert(reward_period_index, MintState::Ready);
+
+            NextMintPeriodCursor::<T>::mutate(|cursor| {
+                *cursor = (*cursor)
+                    .max(OldestUnpaidRewardPeriodIndex::<T>::get())
+                    .min(reward_period_index);
+            });
 
             Self::deposit_event(Event::MintFailed { reward_period_index, tx_id });
 
@@ -1652,19 +1688,57 @@ pub mod pallet {
         }
 
         pub fn next_mint_period_to_submit() -> Option<(RewardPeriodIndex, u128)> {
+            let start = NextMintPeriodCursor::<T>::get();
+            Self::advance_mint_cursor_from(start);
+
+            let period = NextMintPeriodCursor::<T>::get();
             let current = RewardPeriod::<T>::get().current;
 
-            for period in 0..current {
-                if let Some(amount) = PendingMintAmount::<T>::get(period) {
-                    if !SubmittedMints::<T>::get(period) &&
-                        !RewardPeriodToTxId::<T>::contains_key(period)
-                    {
-                        return Some((period, amount))
-                    }
-                }
+            if period >= current {
+                return None
             }
 
-            None
+            Self::mint_needs_submission(period).map(|amount| (period, amount))
+        }
+
+        fn submitted_mint_tx_id(period: RewardPeriodIndex) -> Option<EthereumId> {
+            let tx_id_from_state = match MintStates::<T>::get(period) {
+                Some(MintState::Submitted { tx_id }) => tx_id,
+                _ => return None,
+            };
+
+            let tx_id_from_index = RewardPeriodToTxId::<T>::get(period)?;
+            if tx_id_from_state != tx_id_from_index {
+                return None
+            }
+
+            Some(tx_id_from_state)
+        }
+
+        fn mint_needs_submission(period: RewardPeriodIndex) -> Option<u128> {
+            let amount = PendingMintAmount::<T>::get(period)?;
+
+            match MintStates::<T>::get(period) {
+                Some(MintState::Ready) => Some(amount),
+                _ => None,
+            }
+        }
+
+        fn advance_mint_cursor_from(mut period: RewardPeriodIndex) {
+            let current = RewardPeriod::<T>::get().current;
+            let floor = OldestUnpaidRewardPeriodIndex::<T>::get();
+            period = period.max(floor);
+
+            while period < current {
+                if Self::mint_needs_submission(period).is_some() {
+                    NextMintPeriodCursor::<T>::put(period);
+                    return
+                }
+
+                period = period.saturating_add(1);
+            }
+
+            NextMintPeriodCursor::<T>::put(current);
         }
 
         fn mint_pending_for_period(period: RewardPeriodIndex) -> bool {
@@ -1731,10 +1805,10 @@ pub mod pallet {
             Ok(())
         }
 
-        fn clear_mint_tracking(reward_period_index: RewardPeriodIndex, tx_id: EthereumId) {
+        fn clear_mint_tracking(reward_period_index: RewardPeriodIndex) {
             PendingMintAmount::<T>::remove(reward_period_index);
+            MintStates::<T>::remove(reward_period_index);
             RewardPeriodToTxId::<T>::remove(reward_period_index);
-            TxIdToRewardPeriod::<T>::remove(tx_id);
         }
     }
 

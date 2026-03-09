@@ -402,3 +402,19 @@ pub enum StakeOperation {
     Add,
     Remove,
 }
+
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub enum MintState {
+    Ready,
+    Submitted { tx_id: EthereumId },
+}

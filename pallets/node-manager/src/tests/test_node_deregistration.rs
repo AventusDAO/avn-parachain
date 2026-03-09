@@ -164,6 +164,7 @@ fn confirm_mint_for_period(reward_period_index: RewardPeriodIndex) -> u128 {
         .expect("pending mint should exist for period");
 
     let tx_id: EthereumId = 1;
+    MintStates::<TestRuntime>::insert(reward_period_index, MintState::Submitted { tx_id });
     RewardPeriodToTxId::<TestRuntime>::insert(reward_period_index, tx_id);
     TxIdToRewardPeriod::<TestRuntime>::insert(tx_id, reward_period_index);
 
@@ -171,7 +172,6 @@ fn confirm_mint_for_period(reward_period_index: RewardPeriodIndex) -> u128 {
 
     amount
 }
-
 fn top_up_nodes_to_threshold(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>) {
     let threshold = RewardPeriod::<TestRuntime>::get().uptime_threshold as u64;
 

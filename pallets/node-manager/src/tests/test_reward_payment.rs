@@ -158,6 +158,7 @@ fn confirm_mint_for_period(reward_period_index: RewardPeriodIndex) -> u128 {
         .expect("pending mint should exist for period");
 
     let tx_id: EthereumId = 1;
+    MintStates::<TestRuntime>::insert(reward_period_index, MintState::Submitted { tx_id });
     RewardPeriodToTxId::<TestRuntime>::insert(reward_period_index, tx_id);
     TxIdToRewardPeriod::<TestRuntime>::insert(tx_id, reward_period_index);
 
@@ -176,7 +177,7 @@ fn set_confirmed_reward_for_period(
     });
 
     PendingMintAmount::<TestRuntime>::remove(reward_period_index);
-    SubmittedMints::<TestRuntime>::remove(reward_period_index);
+    MintStates::<TestRuntime>::remove(reward_period_index);
 
     if let Some(tx_id) = RewardPeriodToTxId::<TestRuntime>::get(reward_period_index) {
         TxIdToRewardPeriod::<TestRuntime>::remove(tx_id);
