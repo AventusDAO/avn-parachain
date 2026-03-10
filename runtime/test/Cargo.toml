@@ -51,7 +51,6 @@ polkadot-sdk = { workspace = true, default-features = false, features = [
 	"pallet-aura",
 	"pallet-authority-discovery",
 	"pallet-authorship",
-	"pallet-balances",
 	"pallet-collator-selection",
 	"pallet-conviction-voting",
 	"pallet-im-online",
@@ -77,6 +76,9 @@ polkadot-sdk = { workspace = true, default-features = false, features = [
 	"staging-xcm-builder",
 	"staging-xcm-executor",
 ]}
+
+# Balances added explicitly to ensure the features we need are enabled
+pallet-balances.workspace = true
 
 # AvN pallets
 sp-avn-common.workspace = true
@@ -112,6 +114,7 @@ std = [
 	# Polkadot SDK
 	"substrate-wasm-builder",
 	"polkadot-sdk/std",
+	"pallet-balances/std",
 	"cumulus-pallet-parachain-system/std",
 	# AvN pallets
 	"sp-avn-common/std",
@@ -138,6 +141,7 @@ std = [
 runtime-benchmarks = [
 	# Polkadot SDK
 	"polkadot-sdk/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
 	"cumulus-pallet-parachain-system/runtime-benchmarks",
 	# AvN pallets
 	"pallet-avn-anchor/runtime-benchmarks",
@@ -160,6 +164,7 @@ runtime-benchmarks = [
 try-runtime = [
 	# Polkadot SDK
 	"polkadot-sdk/try-runtime",
+	"pallet-balances/try-runtime",
 	"cumulus-pallet-parachain-system/try-runtime",
 	"runtime-common/try-runtime",
 	"pallet-avn-anchor/try-runtime",
