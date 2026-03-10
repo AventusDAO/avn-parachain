@@ -1195,6 +1195,65 @@ pub mod pallet {
 
             Ok(())
         }
+
+        // TODO: Remove this extrinsic - added to repair Dev-chain state only
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::repair_mint_state())]
+        pub fn repair_mint_state(
+            origin: OriginFor<T>,
+            reward_period_index: RewardPeriodIndex,
+            action: u8,
+            tx_id: EthereumId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            match action {
+                // 0 = clear tracking only
+                0 => {
+                    if let Some(old_tx_id) = RewardPeriodToTxId::<T>::get(reward_period_index) {
+                        TxIdToRewardPeriod::<T>::remove(old_tx_id);
+                    }
+                    MintStates::<T>::remove(reward_period_index);
+                    RewardPeriodToTxId::<T>::remove(reward_period_index);
+                },
+
+                // 1 = mark ready for resubmission
+                1 => {
+                    if let Some(old_tx_id) = RewardPeriodToTxId::<T>::get(reward_period_index) {
+                        TxIdToRewardPeriod::<T>::remove(old_tx_id);
+                    }
+                    RewardPeriodToTxId::<T>::remove(reward_period_index);
+                    MintStates::<T>::insert(reward_period_index, MintState::Ready);
+
+                    NextMintPeriodCursor::<T>::mutate(|cursor| {
+                        *cursor = (*cursor)
+                            .max(OldestUnpaidRewardPeriodIndex::<T>::get())
+                            .min(reward_period_index);
+                    });
+                },
+
+                // 2 = reconstruct submitted state
+                2 => {
+                    if let Some(old_tx_id) = RewardPeriodToTxId::<T>::get(reward_period_index) {
+                        TxIdToRewardPeriod::<T>::remove(old_tx_id);
+                    }
+
+                    RewardPeriodToTxId::<T>::insert(reward_period_index, tx_id);
+                    TxIdToRewardPeriod::<T>::insert(tx_id, reward_period_index);
+                    MintStates::<T>::insert(reward_period_index, MintState::Submitted { tx_id });
+
+                    NextMintPeriodCursor::<T>::mutate(|cursor| {
+                        *cursor = (*cursor)
+                            .max(OldestUnpaidRewardPeriodIndex::<T>::get())
+                            .min(reward_period_index);
+                    });
+                },
+
+                _ => return Err(Error::<T>::InvalidRewardPaymentRequest.into()),
+            }
+
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
