@@ -8,7 +8,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use codec::Encode;
-use sp_core::{ecdsa, Pair};
+use polkadot_sdk::sp_core::{ecdsa, Pair};
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use url::Url;

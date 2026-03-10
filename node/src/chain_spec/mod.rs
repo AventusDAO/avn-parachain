@@ -1,3 +1,5 @@
+use polkadot_sdk::*;
+
 mod stable;
 pub use stable::*;
 
@@ -49,6 +51,7 @@ pub(crate) mod constants {
 }
 
 pub(crate) mod helpers {
+    use polkadot_sdk::{staging_xcm as xcm, *};
 
     use crate::chain_spec::{AuraId, AuthorityDiscoveryId, AvnId, ImOnlineId};
     use sp_avn_common::primitives::{AccountId, Signature};

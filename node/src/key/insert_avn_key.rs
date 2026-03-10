@@ -19,6 +19,7 @@
 // limitations under the License.
 
 //! Implementation of the `insert` subcommand
+use polkadot_sdk::*;
 
 use clap::{Parser, ValueEnum};
 use external_service::eth_utils::eth_address_from_private_key_hex;
