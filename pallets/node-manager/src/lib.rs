@@ -1198,7 +1198,7 @@ pub mod pallet {
 
         // TODO: Remove this extrinsic - added to repair Dev-chain state only
         #[pallet::call_index(12)]
-        #[pallet::weight(<T as Config>::WeightInfo::repair_mint_state())]
+        #[pallet::weight(Weight::from_parts(10_000_000, 0))]
         pub fn repair_mint_state(
             origin: OriginFor<T>,
             reward_period_index: RewardPeriodIndex,
