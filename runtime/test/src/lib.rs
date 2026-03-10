@@ -124,7 +124,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     authoring_version: 1,
-    spec_version: 207,
+    spec_version: 208,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
