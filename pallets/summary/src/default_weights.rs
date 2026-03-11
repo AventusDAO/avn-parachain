@@ -53,6 +53,7 @@ pub trait WeightInfo {
 	fn set_voting_period() -> Weight;
 	fn admin_resolve_challenge_rejected() -> Weight;
 	fn admin_resolve_challenge_accepted() -> Weight;
+	fn mbm_migration_step() -> Weight;
 }
 
 /// Weights for pallet_summary using the Substrate node and recommended hardware.
@@ -483,6 +484,17 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(6_u64))
 			.saturating_add(Weight::from_parts(0, 64).saturating_mul(v.into()))
 	}
+	/// Storage: `Summary::VotesRepository` (r:2 w:1)
+	/// Proof: `Summary::VotesRepository` (`max_values`: None, `max_size`: Some(16498), added: 18973, mode: `MaxEncodedLen`)
+	fn mbm_migration_step() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `224`
+		//  Estimated: `38936`
+		// Minimum execution time: 15_960_000 picoseconds.
+		Weight::from_parts(16_690_000, 38936)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -911,5 +923,16 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(11_u64))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
 			.saturating_add(Weight::from_parts(0, 64).saturating_mul(v.into()))
+	}
+	/// Storage: `Summary::VotesRepository` (r:2 w:1)
+	/// Proof: `Summary::VotesRepository` (`max_values`: None, `max_size`: Some(16498), added: 18973, mode: `MaxEncodedLen`)
+	fn mbm_migration_step() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `224`
+		//  Estimated: `38936`
+		// Minimum execution time: 15_960_000 picoseconds.
+		Weight::from_parts(16_690_000, 38936)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }
