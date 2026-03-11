@@ -11100,6 +11100,7 @@ dependencies = [
  "log",
  "pallet-avn",
  "pallet-eth-bridge",
+ "pallet-migrations",
  "pallet-session",
  "pallet-timestamp",
  "parity-scale-codec",

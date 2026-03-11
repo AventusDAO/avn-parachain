@@ -73,15 +73,16 @@ use crate::{
     AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn,
     AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
     BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
-    HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
-    NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
-    Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
-    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
-    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
-    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment,
+    MultiBlockMigrations, NftManager, NodeManager, Nonce, Offences, OnUnbalanced, Ordering,
+    OriginCaller, OrmlTokens, PalletInfo, ParachainStaking, ParachainSystem, Preimage,
+    PrivilegeCmp, ResolveTo, RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent,
+    RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, Session,
+    SessionKeys, Signature, StakingPotAccountId, Summary, SummaryWatchtower, System, Timestamp,
+    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
+    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
+    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
+    VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -146,7 +147,10 @@ impl frame_system::Config for Runtime {
     type SS58Prefix = SS58Prefix;
     /// The action to take on a Runtime Upgrade
     type OnSetCode = cumulus_pallet_parachain_system::ParachainSetCode<Self>;
+    /// The maximum number of consumers allowed on a single account.
     type MaxConsumers = frame_support::traits::ConstU32<16>;
+    /// The migrator that is used to run Multi-Block-Migrations.
+    type MultiBlockMigrator = MultiBlockMigrations;
 }
 
 /// Configure the palelt weight reclaim tx.
@@ -733,6 +737,32 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureExternalProposerOrRoot {
         use frame_benchmarking::whitelisted_caller;
         Ok(RuntimeOrigin::signed(whitelisted_caller()))
     }
+}
+
+parameter_types! {
+    pub MbmServiceWeight: Weight = Perbill::from_percent(80) * RuntimeBlockWeights::get().max_block;
+}
+
+impl pallet_migrations::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type Migrations = (
+        pallet_summary::migrations::v1::LazyVotingDataMigrationV1<
+            Runtime,
+            (),
+            pallet_summary::migrations::v1::weights::SubstrateWeight<Runtime>,
+        >,
+    );
+
+    // Benchmarks need mocked migrations to guarantee that they succeed.
+    #[cfg(feature = "runtime-benchmarks")]
+    type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
+    type CursorMaxLen = ConstU32<65_536>;
+    type IdentifierMaxLen = ConstU32<256>;
+    type MigrationStatusHandler = ();
+    type FailedMigrationHandler = frame_support::migrations::FreezeChainOnFailedMigration;
+    type MaxServiceWeight = MbmServiceWeight;
+    type WeightInfo = pallet_migrations::weights::SubstrateWeight<Runtime>;
 }
 
 impl pallet_watchtower::Config for Runtime {
