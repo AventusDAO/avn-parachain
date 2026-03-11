@@ -84,8 +84,9 @@ impl crate::signing::SignerProvider for KeystoreSignerProvider {
         self.ensure_signing_key().await?;
         if let Some(keys) = self.key_cache.read().await.as_ref() {
             log::info!(
-                "⛓️ external-service: Initialising Ethereum signer (address: {})",
-                keys.eth_address_hex
+                "⛓️ external-service: Initialising Ethereum signer (address: {}, rpc_url: {})",
+                keys.eth_address_hex,
+                self.rpc_url
             );
         }
 

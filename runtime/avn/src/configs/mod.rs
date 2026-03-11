@@ -64,14 +64,14 @@ use crate::{
     AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
     AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, EnsureSigned, EthBridge,
     Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
-    Moment, NftManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
-    Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
-    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
-    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
-    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    Moment, NftManager, NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller,
+    PalletInfo, ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo,
+    RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason,
+    RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, Session, SessionKeys, Signature,
+    StakingPotAccountId, Summary, SummaryWatchtower, System, Timestamp, TokenManager,
+    TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower, WeightToFee, XcmpQueue,
+    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -550,7 +550,8 @@ impl pallet_eth_bridge::Config for Runtime {
     type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
-    type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);
+    type BridgeInterfaceNotification =
+        (NodeManager, ParachainStaking, Summary, TokenManager, ValidatorsManager);
     type ProcessedEventsHandler = CorePrimaryEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
@@ -579,6 +580,7 @@ impl pallet_node_manager::Config for Runtime {
     type Currency = Balances;
     type RewardPotId = NodeManagerPalletId;
     type Public = <Signature as sp_runtime::traits::Verify>::Signer;
+    type SecondsPerBlock = ConstU64<12>;
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type TimeProvider = pallet_timestamp::Pallet<Runtime>;
@@ -586,6 +588,7 @@ impl pallet_node_manager::Config for Runtime {
     type Token = EthAddress;
     type AppChainFeeHandler = TokenManager;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
+    type BridgeInterface = EthBridge;
 }
 
 // Other pallets

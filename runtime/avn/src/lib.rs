@@ -179,7 +179,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 205,
+    spec_version: 209,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -204,7 +204,7 @@ mod block_times {
 pub use block_times::*;
 
 /// The existential deposit. Set to 1/10 of the Connected Relay Chain.
-pub const EXISTENTIAL_DEPOSIT: Balance = 0;
+pub const EXISTENTIAL_DEPOSIT: Balance = 1;
 
 /// We assume that ~5% of the block weight is consumed by `on_initialize` handlers. This is
 /// used to limit the maximal weight of a single extrinsic.

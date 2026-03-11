@@ -11,22 +11,38 @@ struct Context {
     registrar: AccountId,
     owner: AccountId,
     ocw_node: AccountId,
+    registered_nodes: Vec<NodeId<TestRuntime>>,
 }
 
 impl Context {
     fn new(num_of_nodes: u8) -> Self {
         let registrar = TestAccount::new([1u8; 32]).account_id();
         let owner = TestAccount::new([209u8; 32]).account_id();
-        let reward_amount: BalanceOf<TestRuntime> = <RewardAmount<TestRuntime>>::get();
 
-        Balances::make_free_balance_be(
-            &NodeManager::compute_reward_account_id(),
-            reward_amount * 2u128,
-        );
         <NodeRegistrar<TestRuntime>>::set(Some(registrar.clone()));
-        let ocw_node = register_nodes(registrar, owner, num_of_nodes);
 
-        Context { registrar, owner, ocw_node }
+        let reward_period = <RewardPeriod<TestRuntime>>::get().current;
+        let mut registered_nodes = vec![];
+
+        for i in 0..num_of_nodes {
+            registered_nodes.push(register_node_and_send_heartbeat(
+                registrar,
+                owner.clone(),
+                reward_period,
+                i,
+                None,
+            ));
+        }
+
+        let this_node = TestAccount::new([0u8; 32]).account_id();
+        let this_node_signing_key = 0;
+
+        set_ocw_node_id(this_node);
+        UintAuthorityId::set_all_keys(vec![UintAuthorityId(this_node_signing_key)]);
+
+        let ocw_node = this_node;
+
+        Context { registrar, owner, ocw_node, registered_nodes }
     }
 }
 
@@ -74,22 +90,39 @@ fn register_node_and_send_heartbeat(
 }
 
 fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>, uptime: u64) {
+    let uptime_threshold = RewardPeriod::<TestRuntime>::get().uptime_threshold as u64;
+
     for node in nodes {
         let node_info = <NodeRegistry<TestRuntime>>::get(&node).unwrap();
         let single_hb_weight =
             NodeManager::effective_heartbeat_weight(&node_info, NodeManager::time_now_sec());
         let weight = single_hb_weight.saturating_mul(uptime.into());
 
-        <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
-            if let Some(info) = maybe_info.as_mut() {
-                info.count = info.count.saturating_add(uptime);
-                info.last_reported = System::block_number();
-                info.weight = info.weight.saturating_add(weight);
-            } else {
-                *maybe_info =
-                    Some(UptimeInfo { count: 1, last_reported: System::block_number(), weight });
-            }
-        });
+        let reached_threshold_now =
+            <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
+                if let Some(info) = maybe_info.as_mut() {
+                    let previous_count = info.count;
+                    info.count = info.count.saturating_add(uptime);
+                    info.last_reported = System::block_number();
+                    info.weight = info.weight.saturating_add(weight);
+
+                    previous_count < uptime_threshold && info.count >= uptime_threshold
+                } else {
+                    *maybe_info = Some(UptimeInfo {
+                        count: uptime,
+                        last_reported: System::block_number(),
+                        weight,
+                    });
+
+                    uptime >= uptime_threshold
+                }
+            });
+
+        if reached_threshold_now {
+            <ActiveNodesCount<TestRuntime>>::mutate(reward_period, |c| {
+                *c = c.saturating_add(1);
+            });
+        }
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
             total.total_heartbeats = total.total_heartbeats.saturating_add(uptime);
@@ -120,6 +153,55 @@ fn remove_ocw_run_lock() {
     storage.clear();
 }
 
+fn confirm_mint_for_period(reward_period_index: RewardPeriodIndex) -> u128 {
+    let amount = PendingMintAmount::<TestRuntime>::get(reward_period_index)
+        .expect("pending mint should exist for period");
+
+    let tx_id: EthereumId = 1;
+    MintStates::<TestRuntime>::insert(reward_period_index, MintState::Submitted { tx_id });
+    RewardPeriodToTxId::<TestRuntime>::insert(reward_period_index, tx_id);
+    TxIdToRewardPeriod::<TestRuntime>::insert(tx_id, reward_period_index);
+
+    assert_ok!(NodeManager::process_mint_success(tx_id));
+
+    amount
+}
+
+fn set_confirmed_reward_for_period(
+    reward_period_index: RewardPeriodIndex,
+    amount: BalanceOf<TestRuntime>,
+) {
+    RewardPot::<TestRuntime>::mutate(reward_period_index, |maybe_pot| {
+        let pot = maybe_pot.as_mut().expect("reward pot should exist");
+        pot.total_reward = amount;
+    });
+
+    PendingMintAmount::<TestRuntime>::remove(reward_period_index);
+    MintStates::<TestRuntime>::remove(reward_period_index);
+
+    if let Some(tx_id) = RewardPeriodToTxId::<TestRuntime>::get(reward_period_index) {
+        TxIdToRewardPeriod::<TestRuntime>::remove(tx_id);
+    }
+    RewardPeriodToTxId::<TestRuntime>::remove(reward_period_index);
+
+    let reward_pot = NodeManager::compute_reward_account_id();
+    Balances::make_free_balance_be(&reward_pot, amount);
+}
+
+fn top_up_nodes_to_threshold(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>) {
+    let threshold = RewardPeriod::<TestRuntime>::get().uptime_threshold as u64;
+
+    for node in nodes {
+        let current = NodeUptime::<TestRuntime>::get(reward_period, &node)
+            .map(|i| i.count)
+            .unwrap_or(0);
+
+        if current < threshold {
+            incr_heartbeats(reward_period, vec![node], threshold - current);
+        }
+    }
+}
+
 mod reward {
     use super::*;
 
@@ -134,18 +216,17 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get();
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            // make sure the pot has the expected amount
+            top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
+            roll_forward((reward_period_length - System::block_number()) + 1);
+            let reward_amount = confirm_mint_for_period(reward_period_to_pay);
+
             assert_eq!(
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                reward_amount * 2u128
+                reward_amount
             );
-
-            // Complete a reward period
-            roll_forward((reward_period_length - System::block_number()) + 1);
 
             assert_eq!(
                 <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
@@ -180,13 +261,16 @@ mod reward {
             // The owner has received the reward
             let reward_fee = <AppChainFeePercentage<TestRuntime>>::get() * reward_amount;
             let net_reward = reward_amount - reward_fee;
-            assert_eq!(Balances::reserved_balance(&context.owner), net_reward);
-            // The pot has gone down by half
-            assert_eq!(
-                Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                reward_amount
+            assert!(
+                Balances::reserved_balance(&context.owner).abs_diff(net_reward) <= 10,
+                "Value {} differs by more than 10",
+                Balances::reserved_balance(&context.owner).abs_diff(net_reward)
             );
-
+            assert!(
+                Balances::free_balance(&NodeManager::compute_reward_account_id()) <= 10,
+                "Remaining pot {} is more than 10",
+                Balances::free_balance(&NodeManager::compute_reward_account_id())
+            );
             System::assert_last_event(
                 Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
             );
@@ -205,12 +289,12 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() * 2;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            // Complete a reward period
+            top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
             roll_forward((reward_period_length - System::block_number()) + 1);
+            let reward_amount = confirm_mint_for_period(reward_period_to_pay);
 
             mock_get_finalised_block(
                 &mut offchain_state.write(),
@@ -225,7 +309,11 @@ mod reward {
             let gross_owner_reward = reward_amount / 2;
             let owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward;
             let expected_owner_reward = gross_owner_reward - owner_fee;
-            assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward);
+            assert!(
+                Balances::reserved_balance(&context.owner).abs_diff(expected_owner_reward) <= 10,
+                "Value {} differs by more than 10",
+                Balances::reserved_balance(&context.owner).abs_diff(expected_owner_reward)
+            );
 
             // This is a hack: we remove the lock to allow the offchain worker to run again for the
             // same block
@@ -251,13 +339,16 @@ mod reward {
             let gross_owner_reward = reward_amount;
             let owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward;
             let expected_owner_reward = gross_owner_reward - owner_fee;
-            assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward);
-            // The pot has gone down by half
-            assert_eq!(
-                Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                reward_amount
+            assert!(
+                Balances::reserved_balance(&context.owner).abs_diff(expected_owner_reward) <= 20,
+                "Value {} differs by more than 20",
+                Balances::reserved_balance(&context.owner).abs_diff(expected_owner_reward)
             );
-
+            assert!(
+                Balances::free_balance(&NodeManager::compute_reward_account_id()) <= 20,
+                "Remaining pot {} is more than 20",
+                Balances::free_balance(&NodeManager::compute_reward_account_id())
+            );
             System::assert_last_event(
                 Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
             );
@@ -275,16 +366,17 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmount<TestRuntime>>::get(); // 5
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            // make sure the pot has the expected amount
+            top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
+            roll_forward((reward_period_length - System::block_number()) + 1);
+            let reward_amount = confirm_mint_for_period(reward_period_to_pay);
+
             assert_eq!(
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                reward_amount * 2u128
+                reward_amount
             );
-
             let new_owner = TestAccount::new([111u8; 32]).account_id();
             let new_node = register_node_and_send_heartbeat(
                 context.registrar.clone(),
@@ -301,8 +393,6 @@ mod reward {
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 2);
 
             let total_uptime = <TotalUptime<TestRuntime>>::get(reward_period_to_pay);
-            // Complete a reward period
-            roll_forward((reward_period_length - System::block_number()) + 1);
 
             // Pay out
             mock_get_finalised_block(
@@ -341,14 +431,10 @@ mod reward {
                 Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
             );
 
-            // The pot has gone down by half
             assert!(
+                Balances::free_balance(&NodeManager::compute_reward_account_id()) <= 20,
+                "Remaining pot {} is more than 20",
                 Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(reward_amount) <=
-                    20,
-                "Value {} differs by more than 20",
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(reward_amount)
             );
 
             System::assert_last_event(
@@ -368,14 +454,16 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmount<TestRuntime>>::get(); // 5
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            // make sure the pot has the expected amount
+            top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
+            roll_forward((reward_period_length - System::block_number()) + 1);
+            let reward_amount = confirm_mint_for_period(reward_period_to_pay);
+
             assert_eq!(
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                reward_amount * 2u128
+                reward_amount
             );
 
             let new_owner = TestAccount::new([111u8; 32]).account_id();
@@ -393,9 +481,6 @@ mod reward {
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
 
             let total_uptime = <TotalUptime<TestRuntime>>::get(reward_period_to_pay);
-
-            // Complete a reward period
-            roll_forward((reward_period_length - System::block_number()) + 1);
 
             // Pay out
             mock_get_finalised_block(
@@ -426,20 +511,15 @@ mod reward {
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
-                Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <=
-                    100,
-                "Value {}  differs by more than 100",
+                Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) < 10,
+                "Value {} differs by more than 10",
                 Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
             );
 
-            // The pot has gone down by half
             assert!(
+                Balances::free_balance(&NodeManager::compute_reward_account_id()) <= 100,
+                "Remaining pot {} is more than 100",
                 Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(reward_amount) <=
-                    100,
-                "Value {} differs by more than 100",
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(reward_amount)
             );
 
             System::assert_last_event(
@@ -459,11 +539,14 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            let initial_pot = reward_amount * 2u128;
+            top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
+            roll_forward((reward_period_length - System::block_number()) + 1);
+            let reward_amount = confirm_mint_for_period(reward_period_to_pay);
+
+            let initial_pot = reward_amount;
             // make sure the pot has the expected amount
             assert_eq!(
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
@@ -490,9 +573,6 @@ mod reward {
 
             let total_uptime = <TotalUptime<TestRuntime>>::get(reward_period_to_pay);
 
-            // Complete a reward period
-            roll_forward(reward_period_length - System::block_number());
-
             // Pay out
             mock_get_finalised_block(
                 &mut offchain_state.write(),
@@ -518,40 +598,23 @@ mod reward {
                 Balances::reserved_balance(&new_owner),
                 expected_new_owner_reward,
             );
-            //The old owner gets a smaller share of the rewards because the total_uptime has now
-            // increased by the extra uptime
-            let gross_old_owner_reward =
-                Perquintill::from_rational(1u128, total_uptime.total_heartbeats as u128) *
-                    reward_amount *
-                    (node_count as u128);
+            // The old owner gets a smaller share of the rewards because the total_uptime has now
+            // increased by the extra uptime, but each of the old owner's nodes is still capped at
+            // the expected uptime.
+            let gross_old_owner_reward = Perquintill::from_rational(
+                (total_expected_uptime as u128) * (node_count as u128),
+                total_uptime.total_heartbeats as u128,
+            ) * reward_amount;
             let old_owner_fee =
                 <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
-                Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) < 1,
-                "Value {} differs by more than 1",
-                Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
-            );
-
-            // The pot should have gone down by half (because we started with reward_amount * 2),
-            // but it hasn't because it didn't pay out the full reward.
-            // This is because one of the nodes went over the expected uptime, which increased the
-            // total uptime But we limit how much a node can get paid based on the
-            // expected uptime. This is a safeguard against paying out more than the
-            // expected amount if nodes somehow manipulate their uptime.
-            assert!(
-                Balances::free_balance(&NodeManager::compute_reward_account_id()) > reward_amount
-            );
-
-            // Make sure the pot has gone down by the expected amount
-            assert!(
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(initial_pot - (gross_new_owner_reward + gross_old_owner_reward)) <
-                    10,
-                "Value {} and {} differs by more than 10",
-                Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                initial_pot - (gross_new_owner_reward + gross_old_owner_reward)
+                Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward) <
+                    100,
+                "Values {} and {} differ by more than 100",
+                Balances::reserved_balance(&context.owner),
+                expected_old_owner_reward,
             );
 
             System::assert_last_event(
@@ -571,16 +634,17 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            // make sure the pot has the expected amount
+            top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
+            roll_forward((reward_period_length - System::block_number()) + 1);
+            let reward_amount = confirm_mint_for_period(reward_period_to_pay);
+
             assert_eq!(
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
-                reward_amount * 2u128
+                reward_amount
             );
-
             let new_owner = TestAccount::new([111u8; 32]).account_id();
             let new_node = register_node_and_send_heartbeat(
                 context.registrar.clone(),
@@ -599,9 +663,6 @@ mod reward {
             // Set a new threshold before rolling forward. This will change the current period's
             // threshold but should not affect the rewards of the previous period
             MinUptimeThreshold::<TestRuntime>::put(Perbill::from_percent(5));
-
-            // Complete a reward period
-            roll_forward((reward_period_length - System::block_number()) + 1);
 
             // Pay out
             mock_get_finalised_block(
@@ -639,14 +700,10 @@ mod reward {
                 Balances::reserved_balance(&context.owner).abs_diff(expected_old_owner_reward)
             );
 
-            // The pot has gone down by half
             assert!(
+                Balances::free_balance(&NodeManager::compute_reward_account_id()) <= 100,
+                "Remaining pot {} is more than 100",
                 Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(reward_amount) <=
-                    100,
-                "Value {} differs by more than 100",
-                Balances::free_balance(&NodeManager::compute_reward_account_id())
-                    .abs_diff(reward_amount)
             );
 
             System::assert_last_event(
@@ -712,11 +769,9 @@ mod reward {
             // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
             assert_eq!(node_uptime_b.weight, 450_000_000u128 * total_expected_uptime as u128);
 
-            // Set a custom reward amount for easier calculations
-            <RewardAmount<TestRuntime>>::put(1_000u128);
-
-            // Complete a reward period
             roll_forward((reward_period_length - System::block_number()) + 1);
+            // Set a custom reward amount for easier calculations
+            set_confirmed_reward_for_period(reward_period_to_pay, 1_000u128);
 
             // Stake before payout
             let previous_stake_a =
@@ -790,28 +845,29 @@ mod reward {
             .with_authors()
             .for_offchain_worker()
             .as_externality_with_state();
+
         ext.execute_with(|| {
-            let context = Context::new(1 as u8);
+            let _context = Context::new(1u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
-            // Complete a reward period
+            // Make the completed period have zero active nodes / zero mint.
+            ActiveNodesCount::<TestRuntime>::insert(reward_period_to_pay, 0);
+            TotalUptime::<TestRuntime>::insert(reward_period_to_pay, TotalUptimeInfo::default());
+            let _ = NodeUptime::<TestRuntime>::clear_prefix(reward_period_to_pay, u32::MAX, None);
+
             roll_forward((reward_period_length - System::block_number()) + 1);
+
+            assert!(!PendingMintAmount::<TestRuntime>::contains_key(reward_period_to_pay));
+            assert_eq!(
+                RewardPot::<TestRuntime>::get(reward_period_to_pay).unwrap().total_reward,
+                0
+            );
 
             let signature =
                 UintAuthorityId(1).sign(&("DummyProof").encode()).expect("Error signing");
             let author = mock::AVN::active_validators()[0].clone();
-            // Remove uptime for the node to make the reward 0
-            let node_id = context.ocw_node;
-
-            <NodeUptime<TestRuntime>>::mutate(&reward_period_to_pay, &node_id, |maybe_info| {
-                if let Some(info) = maybe_info.as_mut() {
-                    info.count = 0;
-                    info.last_reported = 0;
-                    info.weight = 0;
-                }
-            });
 
             assert_ok!(NodeManager::offchain_pay_nodes(
                 RawOrigin::None.into(),
@@ -820,14 +876,8 @@ mod reward {
                 signature
             ));
 
-            System::assert_has_event(
-                Event::RewardPaid {
-                    reward_period: reward_period_to_pay,
-                    owner: context.owner,
-                    node: context.ocw_node,
-                    amount: 0,
-                }
-                .into(),
+            System::assert_last_event(
+                Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
             );
         });
     }
@@ -876,14 +926,14 @@ mod reward {
                 .as_externality_with_state();
             ext.execute_with(|| {
                 let node_count = <MaxBatchSize<TestRuntime>>::get();
-                let _ = Context::new(node_count as u8);
+                let context = Context::new(node_count as u8);
                 let reward_period = <RewardPeriod<TestRuntime>>::get();
-                let reward_amount = <RewardAmount<TestRuntime>>::get();
                 let reward_period_length = reward_period.length as u64;
                 let reward_period_to_pay = reward_period.current;
 
-                // Complete a reward period
+                top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
                 roll_forward((reward_period_length - System::block_number()) + 1);
+                let reward_amount = confirm_mint_for_period(reward_period_to_pay);
 
                 let signature =
                     UintAuthorityId(1).sign(&("DummyProof").encode()).expect("Error signing");
@@ -891,7 +941,7 @@ mod reward {
                 // ensure there isn't enough to pay out
                 Balances::make_free_balance_be(
                     &NodeManager::compute_reward_account_id(),
-                    reward_amount - 10000u128,
+                    reward_amount - 1u128,
                 );
 
                 assert_noop!(
@@ -1022,11 +1072,14 @@ mod end_2_end {
     ) {
         let reward_period = <RewardPeriod<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
+        let reward_period_to_pay = reward_period.current;
 
-        // Complete a reward period
         roll_forward(reward_period_length + 1);
 
-        // Pay out
+        if PendingMintAmount::<TestRuntime>::contains_key(reward_period_to_pay) {
+            let _ = confirm_mint_for_period(reward_period_to_pay);
+        }
+
         mock_get_finalised_block(
             &mut offchain_state.write(),
             &Some(hex::encode(1u32.encode()).into()),
@@ -1050,6 +1103,26 @@ mod end_2_end {
         Ok(())
     }
 
+    fn complete_reward_period_and_pay_with_fixed_reward(
+        pool_state: Arc<RwLock<PoolState>>,
+        offchain_state: Arc<RwLock<OffchainState>>,
+        amount: BalanceOf<TestRuntime>,
+    ) {
+        let reward_period_to_pay = <RewardPeriod<TestRuntime>>::get().current;
+        let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
+
+        roll_forward(reward_period_length + 1);
+        set_confirmed_reward_for_period(reward_period_to_pay, amount);
+
+        mock_get_finalised_block(
+            &mut offchain_state.write(),
+            &Some(hex::encode(1u32.encode()).into()),
+        );
+        NodeManager::offchain_worker(System::block_number());
+        let tx = pop_tx_from_mempool(pool_state.clone());
+        assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
+    }
+
     #[test]
     fn works() {
         let (mut ext, pool_state, offchain_state) = ExtBuilder::build_default()
@@ -1058,7 +1131,7 @@ mod end_2_end {
             .for_offchain_worker()
             .as_externality_with_state();
         ext.execute_with(|| {
-            let total_reward_per_period = 1_000u128;
+            let total_reward_for_period = 1_000u128;
             let new_owner_stake = 4_000_000_000_000_000_000_000u128;
             let reward_period_info = <RewardPeriod<TestRuntime>>::get();
             let reward_period = reward_period_info.current;
@@ -1066,17 +1139,8 @@ mod end_2_end {
             // Fund new owner account so it can stake
             Balances::make_free_balance_be(&new_owner, new_owner_stake * 2);
 
-            // Set a custom reward amount for easier calculations
-            <RewardAmount<TestRuntime>>::put(total_reward_per_period);
-
             // No genesis bonus, no stake for default context node
             let context = Context::new(1u8);
-
-            // Reset the reward pot balance
-            Balances::make_free_balance_be(
-                &NodeManager::compute_reward_account_id(),
-                total_reward_per_period * 1_000_000_000_000u128,
-            );
 
             // No stake, no genesis bonus
             let new_node = register_node_and_send_heartbeat(
@@ -1104,13 +1168,17 @@ mod end_2_end {
             assert_eq!(new_node_uptime.weight, 100_000_000u128 * expected_uptime as u128);
 
             // Pay out
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay_with_fixed_reward(
+                pool_state.clone(),
+                offchain_state.clone(),
+                total_reward_for_period,
+            );
 
             let context_node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let new_node_info = NodeRegistry::<TestRuntime>::get(&new_node).unwrap();
 
             // Stake after payout - we are still in auto stake period
-            let gross_per_node_reward = total_reward_per_period / 2; // equal share 500
+            let gross_per_node_reward = total_reward_for_period / 2; // equal share 500
             let node_reward =
                 gross_per_node_reward - NodeManager::calculate_appchain_fee(gross_per_node_reward);
 
@@ -1136,14 +1204,18 @@ mod end_2_end {
             incr_heartbeats(reward_period, vec![new_node], (expected_uptime / 2) as u64);
 
             // Pay out
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay_with_fixed_reward(
+                pool_state.clone(),
+                offchain_state.clone(),
+                total_reward_for_period,
+            );
 
             let context_node_stake =
                 NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap().stake.amount;
             let new_node_stake = NodeRegistry::<TestRuntime>::get(&new_node).unwrap().stake.amount;
 
-            let gross_new_node_reward = total_reward_per_period * 2 / 3;
-            let gross_context_node_reward = total_reward_per_period / 3;
+            let gross_new_node_reward = total_reward_for_period * 2 / 3;
+            let gross_context_node_reward = total_reward_for_period / 3;
             let expected_new_node_net_reward =
                 gross_new_node_reward - NodeManager::calculate_appchain_fee(gross_new_node_reward);
             // Get the remaining 1/3rd of the rewards
@@ -1318,7 +1390,11 @@ mod end_2_end {
             let new_owner_balance_before = Balances::free_balance(&new_owner);
 
             // Pay out
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay_with_fixed_reward(
+                pool_state.clone(),
+                offchain_state.clone(),
+                total_reward_for_period,
+            );
 
             // No auto staking because auto_stake_rewards has been explicitly disabled
             assert!(!System::events().iter().any(|e| matches!(e.event,
@@ -1327,7 +1403,7 @@ mod end_2_end {
             )));
 
             // We are back to sharing rewards equally because all the stake has been removed
-            let gross_per_node_reward = total_reward_per_period / 2; // equal share 500
+            let gross_per_node_reward = total_reward_for_period / 2; // equal share 500
             let node_reward =
                 gross_per_node_reward - NodeManager::calculate_appchain_fee(gross_per_node_reward);
 
@@ -1399,16 +1475,10 @@ mod end_2_end {
             .for_offchain_worker()
             .as_externality_with_state();
         ext.execute_with(|| {
-            let total_reward = 1_000u128;
-            <RewardAmount<TestRuntime>>::put(total_reward);
             let context = Context::new(1u8);
-            Balances::make_free_balance_be(
-                &NodeManager::compute_reward_account_id(),
-                total_reward * 1_000_000u128,
-            );
-
             let first_period = <RewardPeriod<TestRuntime>>::get().current;
             let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
+
             let expected_uptime =
                 NodeManager::calculate_uptime_threshold(reward_period_length as u32);
 
@@ -1466,16 +1536,10 @@ mod end_2_end {
             .for_offchain_worker()
             .as_externality_with_state();
         ext.execute_with(|| {
-            let total_reward = 1_000u128;
-            <RewardAmount<TestRuntime>>::put(total_reward);
             let context = Context::new(1u8);
-            Balances::make_free_balance_be(
-                &NodeManager::compute_reward_account_id(),
-                total_reward * 1_000_000u128,
-            );
-
             let first_period = <RewardPeriod<TestRuntime>>::get().current;
             let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
+
             let expected_uptime =
                 NodeManager::calculate_uptime_threshold(reward_period_length as u32);
 

@@ -21,12 +21,7 @@ impl Context {
         let registrar = registrar_key_pair.account_id();
         let owner = TestAccount::new([209u8; 32]).account_id();
         let relayer = TestAccount::new([109u8; 32]).account_id();
-        let reward_amount: BalanceOf<TestRuntime> = <RewardAmount<TestRuntime>>::get();
 
-        Balances::make_free_balance_be(
-            &NodeManager::compute_reward_account_id(),
-            reward_amount * 2u128,
-        );
         <NodeRegistrar<TestRuntime>>::set(Some(registrar.clone()));
         let registered_nodes = register_nodes(registrar, owner, num_of_nodes);
 
@@ -81,21 +76,39 @@ fn register_node_and_send_heartbeat(
 }
 
 fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>, uptime: u64) {
+    let uptime_threshold = RewardPeriod::<TestRuntime>::get().uptime_threshold as u64;
+
     for node in nodes {
         let node_info = <NodeRegistry<TestRuntime>>::get(&node).unwrap();
         let single_hb_weight =
             NodeManager::effective_heartbeat_weight(&node_info, NodeManager::time_now_sec());
         let weight = single_hb_weight.saturating_mul(uptime.into());
 
-        <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
-            if let Some(info) = maybe_info.as_mut() {
-                info.count = info.count.saturating_add(uptime);
-                info.last_reported = System::block_number();
-            } else {
-                *maybe_info =
-                    Some(UptimeInfo { count: 1, last_reported: System::block_number(), weight });
-            }
-        });
+        let reached_threshold_now =
+            <NodeUptime<TestRuntime>>::mutate(&reward_period, &node, |maybe_info| {
+                if let Some(info) = maybe_info.as_mut() {
+                    let previous_count = info.count;
+                    info.count = info.count.saturating_add(uptime);
+                    info.last_reported = System::block_number();
+                    info.weight = info.weight.saturating_add(weight);
+
+                    previous_count < uptime_threshold && info.count >= uptime_threshold
+                } else {
+                    *maybe_info = Some(UptimeInfo {
+                        count: uptime,
+                        last_reported: System::block_number(),
+                        weight,
+                    });
+
+                    uptime >= uptime_threshold
+                }
+            });
+
+        if reached_threshold_now {
+            <ActiveNodesCount<TestRuntime>>::mutate(reward_period, |c| {
+                *c = c.saturating_add(1);
+            });
+        }
 
         <TotalUptime<TestRuntime>>::mutate(&reward_period, |total| {
             total.total_heartbeats = total.total_heartbeats.saturating_add(uptime);
@@ -144,6 +157,33 @@ fn create_signed_deregister_proof(
     };
 
     proof
+}
+
+fn confirm_mint_for_period(reward_period_index: RewardPeriodIndex) -> u128 {
+    let amount = PendingMintAmount::<TestRuntime>::get(reward_period_index)
+        .expect("pending mint should exist for period");
+
+    let tx_id: EthereumId = 1;
+    MintStates::<TestRuntime>::insert(reward_period_index, MintState::Submitted { tx_id });
+    RewardPeriodToTxId::<TestRuntime>::insert(reward_period_index, tx_id);
+    TxIdToRewardPeriod::<TestRuntime>::insert(tx_id, reward_period_index);
+
+    assert_ok!(NodeManager::process_mint_success(tx_id));
+
+    amount
+}
+fn top_up_nodes_to_threshold(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRuntime>>) {
+    let threshold = RewardPeriod::<TestRuntime>::get().uptime_threshold as u64;
+
+    for node in nodes {
+        let current = NodeUptime::<TestRuntime>::get(reward_period, &node)
+            .map(|i| i.count)
+            .unwrap_or(0);
+
+        if current < threshold {
+            incr_heartbeats(reward_period, vec![node], threshold - current);
+        }
+    }
 }
 
 #[test]
@@ -243,6 +283,8 @@ fn payment_works_all_nodes_deregistered() {
         let node_count = <MaxBatchSize<TestRuntime>>::get();
         let context = Context::new(node_count as u8);
         let num_nodes_to_deregister = context.registered_nodes.len();
+        let reward_period_to_pay = <RewardPeriod<TestRuntime>>::get().current;
+        top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
 
         assert_ok!(NodeManager::deregister_nodes(
             RuntimeOrigin::signed(context.registrar),
@@ -256,23 +298,20 @@ fn payment_works_all_nodes_deregistered() {
         }
 
         let reward_period = <RewardPeriod<TestRuntime>>::get();
-        let reward_amount = <RewardAmount<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
-        let reward_period_to_pay = reward_period.current;
-
-        let initial_pot_balance = Balances::free_balance(&NodeManager::compute_reward_account_id());
         let initial_owner_balance = Balances::free_balance(&context.owner);
 
-        // make sure the pot has the expected amount
-        assert_eq!(initial_pot_balance, reward_amount * 2u128);
-
-        // Complete a reward period
         roll_forward((reward_period_length - System::block_number()) + 1);
+        let reward_amount = confirm_mint_for_period(reward_period_to_pay);
+
+        let initial_pot_balance = Balances::free_balance(&NodeManager::compute_reward_account_id());
 
         assert_eq!(
             <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
             reward_amount
         );
+        assert_eq!(initial_pot_balance, reward_amount);
+
         // mock finalised block response
         mock_get_finalised_block(
             &mut offchain_state.write(),
@@ -323,6 +362,8 @@ fn payment_works_some_nodes_deregistered() {
         let context = Context::new(node_count as u8);
         let nodes_to_deregister = vec![context.registered_nodes[0].clone()];
         let num_nodes_to_deregister = 1u32;
+        let reward_period_to_pay = <RewardPeriod<TestRuntime>>::get().current;
+        top_up_nodes_to_threshold(reward_period_to_pay, context.registered_nodes.clone());
 
         assert_ok!(NodeManager::deregister_nodes(
             RuntimeOrigin::signed(context.registrar),
@@ -331,22 +372,18 @@ fn payment_works_some_nodes_deregistered() {
         ));
 
         let reward_period = <RewardPeriod<TestRuntime>>::get();
-        let reward_amount = <RewardAmount<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
-        let reward_period_to_pay = reward_period.current;
+
+        roll_forward((reward_period_length - System::block_number()) + 1);
+        let reward_amount = confirm_mint_for_period(reward_period_to_pay);
 
         let initial_pot_balance = Balances::free_balance(&NodeManager::compute_reward_account_id());
-
-        // make sure the pot has the expected amount
-        assert_eq!(initial_pot_balance, reward_amount * 2u128);
-
-        // Complete a reward period
-        roll_forward((reward_period_length - System::block_number()) + 1);
 
         assert_eq!(
             <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
             reward_amount
         );
+        assert_eq!(initial_pot_balance, reward_amount);
 
         // mock finalised block response
         mock_get_finalised_block(

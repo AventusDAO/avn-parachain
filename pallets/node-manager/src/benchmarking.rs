@@ -32,7 +32,7 @@ fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
     // compare to the last event record
-    let EventRecord { event, .. } = &events[events.len().saturating_sub(1 as usize)];
+    let EventRecord { event, .. } = &events[events.len().saturating_sub(1usize)];
     assert_eq!(event, &system_event);
 }
 
@@ -61,7 +61,8 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
     let uptime = 1u64;
     let node_info = <NodeRegistry<T>>::get(&node).unwrap();
-    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(&node_info, reward_period_index);
+    let single_hb_weight =
+        Pallet::<T>::effective_heartbeat_weight(&node_info, Pallet::<T>::time_now_sec());
     let weight = single_hb_weight.saturating_mul(uptime.into());
 
     <NodeUptime<T>>::mutate(&reward_period_index, &node, |maybe_info| {
@@ -85,15 +86,16 @@ fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPerio
 }
 
 fn fund_reward_pot<T: Config>() {
-    let reward_amount = RewardAmount::<T>::get() * 2000u32.into();
+    let reward_amount: BalanceOf<T> = 2_000_000u32.into();
     let reward_pot_address = Pallet::<T>::compute_reward_account_id();
     T::Currency::make_free_balance_be(&reward_pot_address, reward_amount);
 }
 
 fn create_author<T: Config>() -> Author<T> {
-    let account = account("dummy_validator", 0, 0);
-    let key = <T as avn::Config>::AuthorityId::generate_pair(Some("//bob".as_bytes().to_vec()));
-    Author::<T>::new(account, key)
+    AVN::<T>::active_validators()
+        .into_iter()
+        .next()
+        .expect("at least one active validator must exist")
 }
 
 fn create_nodes_and_hearbeat<T: Config>(
@@ -120,7 +122,7 @@ fn get_proof<T: Config>(
     signer: &T::AccountId,
     signature: sp_core::sr25519::Signature,
 ) -> Proof<T::Signature, T::AccountId> {
-    return Proof {
+    Proof {
         signer: signer.clone(),
         relayer: relayer.clone(),
         signature: convert_sr25519_signature::<T::Signature>(signature),
@@ -155,11 +157,16 @@ benchmarks! {
         let owner: T::AccountId = account("owner", 1, 1);
         let node: NodeId<T> = account("node", 2, 2);
         let signing_key: T::SignerId = account("signing_key", 3, 3);
-    }: register_node(RawOrigin::Signed(registrar.clone()), node.clone(), owner.clone(), signing_key.clone())
+    }: register_node(
+        RawOrigin::Signed(registrar.clone()),
+        node.clone(),
+        owner.clone(),
+        signing_key.clone()
+    )
     verify {
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), node.clone()));
         assert!(<NodeRegistry<T>>::contains_key(node.clone()));
-        assert_last_event::<T>(Event::NodeRegistered {owner, node}.into());
+        assert_last_event::<T>(Event::NodeRegistered { owner, node }.into());
     }
 
     set_admin_config_registrar {
@@ -201,16 +208,6 @@ benchmarks! {
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
         assert!(<HeartbeatPeriod<T>>::get() == new_heartbeat);
-    }
-
-    set_admin_config_reward_amount {
-        let current_amount = <RewardAmount<T>>::get();
-        let new_amount = current_amount + 1u32.into();
-        let config = AdminConfig::RewardAmount(new_amount);
-
-    }: set_admin_config(RawOrigin::Root, config.clone())
-    verify {
-        assert!(<RewardAmount<T>>::get() == new_amount);
     }
 
     set_admin_config_reward_enabled {
@@ -271,27 +268,50 @@ benchmarks! {
 
     on_initialise_with_new_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
-        let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();
+        let block_number: BlockNumberFor<T> =
+            reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();
         enable_rewards::<T>();
     }: { Pallet::<T>::on_initialize(block_number) }
     verify {
         let new_reward_period_index = reward_period.current + 1u64;
         let new_reward_period = <RewardPeriod<T>>::get();
-        assert!(new_reward_period_index== new_reward_period.current);
-        assert_last_event::<T>(Event::NewRewardPeriodStarted {
-            reward_period_index: new_reward_period_index,
-            reward_period_length: reward_period.length,
-            uptime_threshold: new_reward_period.uptime_threshold,
-            previous_period_reward: RewardAmount::<T>::get()}.into());
+
+        assert!(new_reward_period_index == new_reward_period.current);
+
+        let started_event: <T as Config>::RuntimeEvent =
+            Event::NewRewardPeriodStarted {
+                reward_period_index: new_reward_period_index,
+                reward_period_length: reward_period.length,
+                uptime_threshold: new_reward_period.uptime_threshold,
+            }
+            .into();
+
+        let started_event_system: <T as frame_system::Config>::RuntimeEvent = started_event.into();
+
+        let events = frame_system::Pallet::<T>::events();
+        assert!(events.iter().any(|r| r.event == started_event_system));
+
+        assert_last_event::<T>(
+            Event::MintCalculated {
+                reward_period_index: reward_period.current,
+                active_nodes: 0,
+                years: 0,
+                period_seconds: (reward_period.length as u64)
+                    .saturating_mul(T::SecondsPerBlock::get()),
+                amount: 0,
+            }
+            .into(),
+        );
     }
 
     on_initialise_no_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
-        let block_number: BlockNumberFor<T> = BlockNumberFor::<T>::from(reward_period.length) - 1u32.into();
+        let block_number: BlockNumberFor<T> =
+            BlockNumberFor::<T>::from(reward_period.length) - 1u32.into();
         enable_rewards::<T>();
     }: { Pallet::<T>::on_initialize(block_number) }
     verify {
-        assert!(reward_period.current== <RewardPeriod<T>>::get().current);
+        assert!(reward_period.current == <RewardPeriod<T>>::get().current);
     }
 
     offchain_submit_heartbeat {
@@ -309,18 +329,26 @@ benchmarks! {
 
         // Move forward to the next heartbeat period
         <frame_system::Pallet<T>>::set_block_number(
-            frame_system::Pallet::<T>::block_number() + <HeartbeatPeriod<T>>::get().into() + 1u32.into()
+            frame_system::Pallet::<T>::block_number() +
+                <HeartbeatPeriod<T>>::get().into() +
+                1u32.into()
         );
 
         let heartbeat_count = 1u64;
-        let signature = signing_key.sign(
-            &(HEARTBEAT_CONTEXT, heartbeat_count, reward_period_index).encode()
-        ).expect("Error signing");
-    }: offchain_submit_heartbeat(RawOrigin::None, node.clone(), reward_period_index, heartbeat_count, signature)
+        let signature = signing_key
+            .sign(&(HEARTBEAT_CONTEXT, heartbeat_count, reward_period_index).encode())
+            .expect("Error signing");
+    }: offchain_submit_heartbeat(
+        RawOrigin::None,
+        node.clone(),
+        reward_period_index,
+        heartbeat_count,
+        signature
+    )
     verify {
         let uptime_info = <NodeUptime<T>>::get(reward_period_index, &node).expect("No uptime info");
         assert!(uptime_info.count == heartbeat_count + 1);
-        assert_last_event::<T>(Event::HeartbeatReceived {reward_period_index, node}.into());
+        assert_last_event::<T>(Event::HeartbeatReceived { reward_period_index, node }.into());
     }
 
     offchain_pay_nodes {
@@ -343,22 +371,32 @@ benchmarks! {
         // Move forward to the next reward period
         <frame_system::Pallet<T>>::set_block_number((reward_period.length + 1).into());
         let current_block_number = frame_system::Pallet::<T>::block_number();
-        <frame_system::Pallet<T>>::set_block_number(current_block_number + reward_period.length.into());
+        <frame_system::Pallet<T>>::set_block_number(
+            current_block_number + reward_period.length.into()
+        );
         Pallet::<T>::on_initialize(current_block_number);
-        let signature = author.key.sign(
-            &(PAYOUT_REWARD_CONTEXT, reward_period_index).encode()
-        ).expect("Error signing");
-    }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author ,signature)
+
+        let signature = author
+            .key
+            .sign(&(PAYOUT_REWARD_CONTEXT, reward_period_index).encode())
+            .expect("Error signing");
+    }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author, signature)
     verify {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(registered_nodes);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, registered_nodes as u128);
-        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
-        let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+
+        let total_rewards: BalanceOf<T> =
+            RewardPot::<T>::get(reward_period_index).expect("reward pot must exist").total_reward;
+
+        let total_rewards_u128: u128 = total_rewards.saturated_into();
+        let gross_expected_balance: BalanceOf<T> =
+            ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
         let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
         let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
+        let tolerance: BalanceOf<T> = 1_000u32.into();
 
-        assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
+        assert_approx!(T::Currency::free_balance(&owner), expected_balance, tolerance);
     }
 
     #[extra]
@@ -396,29 +434,40 @@ benchmarks! {
         // Move forward to the next reward period
         <frame_system::Pallet<T>>::set_block_number((reward_period.length + 1).into());
         let current_block_number = frame_system::Pallet::<T>::block_number();
-        <frame_system::Pallet<T>>::set_block_number(current_block_number + reward_period.length.into());
+        <frame_system::Pallet<T>>::set_block_number(
+            current_block_number + reward_period.length.into()
+        );
         Pallet::<T>::on_initialize(current_block_number);
-        let signature = author.key.sign(
-            &(PAYOUT_REWARD_CONTEXT, reward_period_index).encode()
-        ).expect("Error signing");
-    }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author ,signature)
+
+        let total_rewards: BalanceOf<T> =
+            RewardPot::<T>::get(reward_period_index).expect("reward pot must exist").total_reward;
+
+        let signature = author
+            .key
+            .sign(&(PAYOUT_REWARD_CONTEXT, reward_period_index).encode())
+            .expect("Error signing");
+    }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author, signature)
     verify {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(n);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, n as u128);
-        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
-        let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
+
+        let total_rewards_u128: u128 = total_rewards.saturated_into();
+        let gross_expected_balance: BalanceOf<T> =
+            ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
         let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
         let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
+        let tolerance: BalanceOf<T> = 1_000u32.into();
 
-        assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
+        assert_approx!(T::Currency::free_balance(&owner), expected_balance, tolerance);
     }
 
     signed_register_node {
         enable_rewards::<T>();
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
-            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
+            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice())
+                .expect("valid account id");
         set_registrar::<T>(registrar.clone());
 
         let relayer: T::AccountId = account("relayer", 11, 11);
@@ -437,11 +486,18 @@ benchmarks! {
 
         let signature = registrar_key.sign(&signed_payload).ok_or("Error signing proof")?;
         let proof = get_proof::<T>(&relayer.clone(), &registrar, signature.into());
-    }: signed_register_node(RawOrigin::Signed(registrar.clone()), proof.clone(), node.clone(), owner.clone(), signing_key.clone(), now)
+    }: signed_register_node(
+        RawOrigin::Signed(registrar.clone()),
+        proof.clone(),
+        node.clone(),
+        owner.clone(),
+        signing_key.clone(),
+        now
+    )
     verify {
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), node.clone()));
         assert!(<NodeRegistry<T>>::contains_key(node.clone()));
-        assert_last_event::<T>(Event::NodeRegistered{owner, node}.into());
+        assert_last_event::<T>(Event::NodeRegistered { owner, node }.into());
     }
 
     deregister_nodes {
@@ -456,7 +512,8 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
 
-        let nodes_to_deregister = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, b);
+        let nodes_to_deregister =
+            create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, b);
 
         // Show that the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -465,22 +522,28 @@ benchmarks! {
     }: deregister_nodes(
         RawOrigin::Signed(registrar.clone()),
         owner.clone(),
-        BoundedVec::truncate_from(nodes_to_deregister.clone()))
+        BoundedVec::truncate_from(nodes_to_deregister.clone())
+    )
     verify {
         for node in &nodes_to_deregister {
             assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
             assert!(!<NodeRegistry<T>>::contains_key(node));
         }
-        assert_last_event::<T>(Event::NodeDeregistered{
-            owner,
-            node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone()}.into());
+        assert_last_event::<T>(
+            Event::NodeDeregistered {
+                owner,
+                node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone(),
+            }
+            .into()
+        );
     }
 
     signed_deregister_nodes {
         let b in 1 .. MAX_NODES_TO_DEREGISTER;
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
-            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
+            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice())
+                .expect("valid account id");
 
         set_registrar::<T>(registrar.clone());
         enable_rewards::<T>();
@@ -490,7 +553,8 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
 
-        let nodes_to_deregister = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, b);
+        let nodes_to_deregister =
+            create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, b);
 
         // Show that at least some of the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -510,15 +574,25 @@ benchmarks! {
 
         let signature = registrar_key.sign(&signed_payload).ok_or("Error signing proof")?;
         let proof = get_proof::<T>(&relayer.clone(), &registrar, signature.into());
-    }: signed_deregister_nodes(RawOrigin::Signed(registrar.clone()), proof, owner.clone(), bounded_nodes_to_deregister, now)
+    }: signed_deregister_nodes(
+        RawOrigin::Signed(registrar.clone()),
+        proof,
+        owner.clone(),
+        bounded_nodes_to_deregister,
+        now
+    )
     verify {
         for node in &nodes_to_deregister {
             assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
             assert!(!<NodeRegistry<T>>::contains_key(node));
         }
-        assert_last_event::<T>(Event::NodeDeregistered{
-            owner,
-            node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone()}.into());
+        assert_last_event::<T>(
+            Event::NodeDeregistered {
+                owner,
+                node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone(),
+            }
+            .into()
+        );
     }
 
     update_signing_key {
@@ -534,13 +608,14 @@ benchmarks! {
     verify {
         let node_info = <NodeRegistry<T>>::get(&node).expect("Node must be registered");
         assert!(node_info.signing_key == new_signing_key);
-        assert_last_event::<T>(Event::SigningKeyUpdated {owner, node}.into());
+        assert_last_event::<T>(Event::SigningKeyUpdated { owner, node }.into());
     }
 
     add_stake {
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
-            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
+            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice())
+                .expect("valid account id");
 
         set_registrar::<T>(registrar.clone());
         enable_rewards::<T>();
@@ -557,13 +632,23 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         let stake = node_info.stake;
         assert!(stake.amount == 100u32.into());
-        assert_last_event::<T>(Event::StakeAdded { owner, node_id, reward_period: reward_period_index, amount: 100u32.into(), new_total: stake.amount }.into());
+        assert_last_event::<T>(
+            Event::StakeAdded {
+                owner,
+                node_id,
+                reward_period: reward_period_index,
+                amount: 100u32.into(),
+                new_total: stake.amount,
+            }
+            .into()
+        );
     }
 
     remove_stake {
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
-            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
+            T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice())
+                .expect("valid account id");
 
         set_registrar::<T>(registrar.clone());
         enable_rewards::<T>();
@@ -586,7 +671,16 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         let stake = node_info.stake;
         assert!(stake.amount == (100u32 - 10u32).into());
-        assert_last_event::<T>(Event::StakeRemoved { owner, node_id, reward_period: reward_period_index, amount: 10u32.into(), new_total: stake.amount }.into());
+        assert_last_event::<T>(
+            Event::StakeRemoved {
+                owner,
+                node_id,
+                reward_period: reward_period_index,
+                amount: 10u32.into(),
+                new_total: stake.amount,
+            }
+            .into()
+        );
     }
 
     update_auto_stake_preference {
@@ -598,16 +692,84 @@ benchmarks! {
         let node_id: NodeId<T> = account("node", 2, 2);
         register_new_node::<T>(node_id.clone(), owner.clone());
         let preference = NodeRegistry::<T>::get(&node_id).unwrap().auto_stake_rewards;
-    }: update_auto_stake_preference(RawOrigin::Signed(owner.clone()), node_id.clone(), !preference)
+    }: update_auto_stake_preference(
+        RawOrigin::Signed(owner.clone()),
+        node_id.clone(),
+        !preference
+    )
     verify {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         assert_eq!(node_info.auto_stake_rewards, !preference);
-        assert_last_event::<T>(Event::AutoStakePreferenceUpdated {owner, node_id, auto_stake_rewards: !preference}.into());
+        assert_last_event::<T>(
+            Event::AutoStakePreferenceUpdated {
+                owner,
+                node_id,
+                auto_stake_rewards: !preference,
+            }
+            .into()
+        );
+    }
+
+    offchain_mint_rewards {
+        enable_rewards::<T>();
+
+        let author = create_author::<T>();
+
+        // We need a completed period, so current must be > reward_period_index
+        let reward_period_index: RewardPeriodIndex = 0u64;
+        let current_period: RewardPeriodIndex = 1u64;
+
+        <RewardPeriod<T>>::put(RewardPeriodInfo::new(
+            current_period,
+            0u32.into(),
+            1000u32,
+            100u32,
+        ));
+
+        let amount: u128 = 1_234_567_890_000_000_000u128;
+
+        PendingMintAmount::<T>::insert(reward_period_index, amount);
+        MintStates::<T>::insert(reward_period_index, MintState::Ready);
+
+        let signature = author
+            .key
+            .sign(&(MINT_REWARDS_CONTEXT, reward_period_index, amount).encode())
+            .expect("Error signing");
+    }: offchain_mint_rewards(
+        RawOrigin::None,
+        reward_period_index,
+        amount,
+        author.clone(),
+        signature
+    )
+    verify {
+        assert_eq!(PendingMintAmount::<T>::get(reward_period_index), Some(amount));
+        assert!(RewardPeriodToTxId::<T>::get(reward_period_index).is_some());
+
+        let tx_id =
+            RewardPeriodToTxId::<T>::get(reward_period_index).expect("tx id should exist");
+        assert_eq!(
+            MintStates::<T>::get(reward_period_index),
+            Some(MintState::Submitted { tx_id })
+        );
+        assert_eq!(TxIdToRewardPeriod::<T>::get(tx_id), Some(reward_period_index));
+
+        assert_last_event::<T>(
+            Event::MintSubmitted {
+                reward_period_index,
+                amount,
+                tx_id,
+            }
+            .into()
+        );
     }
 }
 
 impl_benchmark_test_suite!(
     Pallet,
-    crate::mock::ExtBuilder::build_default().with_genesis_config().as_externality(),
+    crate::mock::ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .as_externality(),
     crate::mock::TestRuntime,
 );

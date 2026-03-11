@@ -48,7 +48,7 @@ pub fn genesis_config_initial_authors() -> [AccountId; 5] {
     [author_id_1(), author_id_2(), author_id_3(), author_id_4(), author_id_5()]
 }
 pub const REGISTERING_AUTHOR_TIER1_ID: u128 = 200;
-pub const EXISTENTIAL_DEPOSIT: u64 = 0;
+pub const EXISTENTIAL_DEPOSIT: u64 = 1;
 
 pub type Extrinsic = TestXt<RuntimeCall, ()>;
 pub type AuthorId = <TestRuntime as session::Config>::ValidatorId;

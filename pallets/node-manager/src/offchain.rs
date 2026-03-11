@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 // No storage mutation allowed in this file
 #[cfg(not(feature = "std"))]
 extern crate alloc;
@@ -322,5 +324,37 @@ impl<T: Config> Pallet<T> {
         }
 
         None
+    }
+
+    pub fn trigger_mint_if_required(author: Author<T>) {
+        let Some((period, amount)) = Self::next_mint_period_to_submit() else {
+        return
+    };
+
+        // Don't submit no-op mint transactions.
+        if amount == 0 {
+            return
+        }
+
+        log::info!("🛠️  Triggering mint for period {:?}, amount {:?}", period, amount);
+
+        let signature = author.key.sign(&(MINT_REWARDS_CONTEXT, period, amount).encode());
+        if let Some(signature) = signature {
+            let call = T::create_inherent(
+                Call::<T>::offchain_mint_rewards {
+                    reward_period_index: period,
+                    amount,
+                    author: author.clone(),
+                    signature,
+                }
+                .into(),
+            );
+
+            if let Err(e) = SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
+                log::error!("💔 Error submitting mint tx. Period: {:?}, Err: {:?}", period, e);
+            }
+        } else {
+            log::error!("💔 Error signing mint tx. Period: {:?}", period);
+        }
     }
 }

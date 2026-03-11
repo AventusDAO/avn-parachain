@@ -20,7 +20,13 @@ use sp_avn_common::{
 };
 use sp_core::{sr25519, H160, H256};
 use sp_runtime::traits::Block as BlockT;
-use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
+use std::{
+    marker::PhantomData,
+    net::SocketAddr,
+    sync::Arc,
+    time::Instant,
+};
+use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
 
 const MAX_BODY_SIZE: usize = 100_000; // 100KB
@@ -33,8 +39,10 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     pub chain: Arc<dyn ChainClient>,
     pub signer_provider: Arc<dyn SignerProvider>,
     pub client: Arc<ClientT>,
+    pub send_lock: Arc<Mutex<()>>,
     pub _block: PhantomData<Block>,
 }
+
 fn server_error(msg: impl Into<String>) -> (StatusCode, String) {
     let m = msg.into();
     log::error!("⛓️ 💔 external-service {}", m);
@@ -71,6 +79,31 @@ pub async fn start<Block: BlockT, ClientT>(state: AppState<Block, ClientT>)
 where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
+    match state.chain.chain_id().await {
+        Ok(id) => log::info!("external-service read chain initialised, chain_id={}", id),
+        Err(e) => {
+            log::error!("external-service failed to initialise read chain client: {:?}", e);
+            return
+        },
+    }
+
+    match state.signer_provider.signed_chain_client().await {
+        Ok(client) => match client.chain_id().await {
+            Ok(id) => log::info!("external-service signed chain initialised, chain_id={}", id),
+            Err(e) => {
+                log::error!(
+                    "external-service failed to query chain_id from signed client: {:?}",
+                    e
+                );
+                return
+            },
+        },
+        Err(e) => {
+            log::error!("external-service failed to initialise signed client: {:?}", e);
+            return
+        },
+    }
+
     let port = state
         .avn_port
         .clone()
@@ -104,11 +137,46 @@ where
     let send_request = EthTransaction::decode(&mut &body[..])
         .map_err(|e| server_error(format!("Error decoding EthTransaction: {e:?}")))?;
 
+    let x_auth = headers
+        .get("X-Auth")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "<missing>".to_string());
+
     let proof_data = (&send_request.from, &send_request.to, &send_request.data).encode();
+
+    log::info!(
+        "external-service eth/send request: request_from={:?}, to=0x{}, body_len={}, data_len={}, data=0x{}, proof_data=0x{}, x_auth={}",
+        send_request.from,
+        hex::encode(send_request.to.as_bytes()),
+        body.len(),
+        send_request.data.len(),
+        hex::encode(&send_request.data),
+        hex::encode(&proof_data),
+        x_auth,
+    );
+
     validate_authorisation_token(&state.keystore, &headers, &proof_data)?;
+
+    log::info!(
+        "external-service eth/send auth_ok: request_from={:?}, to=0x{}, proof_data=0x{}",
+        send_request.from,
+        hex::encode(send_request.to.as_bytes()),
+        hex::encode(&proof_data),
+    );
 
     let to: H160 = send_request.to;
     let data: Vec<u8> = send_request.data;
+
+    let signer_eth_address = get_eth_address_bytes_from_keystore(&state.keystore_path)
+        .map_err(|e| server_error(format!("Failed to read signer eth address from keystore: {e:?}")))?;
+
+    log::info!(
+        "external-service eth/send signer: eth_signer=0x{}",
+        hex::encode(&signer_eth_address)
+    );
+
+    let _guard = state.send_lock.lock().await;
 
     let signed_chain = state
         .signer_provider
@@ -116,10 +184,48 @@ where
         .await
         .map_err(|e| server_error(format!("SignerProvider: {e:?}")))?;
 
-    let tx_hash = signed_chain
-        .send_transaction(to, data)
+    let chain_id = signed_chain
+        .chain_id()
         .await
-        .map_err(|e| server_error(format!("send_transaction: {e:?}")))?;
+        .map_err(|e| server_error(format!("chain_id: {e:?}")))?;
+
+    log::info!(
+        "external-service eth/send resolved: chain_id={}, eth_signer=0x{}, request_from={:?}, to=0x{}, data_len={}, data=0x{}",
+        chain_id,
+        hex::encode(&signer_eth_address),
+        send_request.from,
+        hex::encode(to.as_bytes()),
+        data.len(),
+        hex::encode(&data),
+    );
+
+    let tx_hash = match signed_chain.send_transaction(to, data.clone()).await {
+        Ok(hash) => hash,
+        Err(e) => {
+            log::error!(
+                "💔 external-service eth/send failed: chain_id={}, eth_signer=0x{}, request_from={:?}, to=0x{}, data_len={}, data=0x{}, proof_data=0x{}, x_auth={}, error={:?}",
+                chain_id,
+                hex::encode(&signer_eth_address),
+                send_request.from,
+                hex::encode(to.as_bytes()),
+                data.len(),
+                hex::encode(&data),
+                hex::encode(&proof_data),
+                x_auth,
+                e
+            );
+            return Err(server_error(format!("send_transaction: {e:?}")))
+        },
+    };
+
+    log::info!(
+        "external-service eth/send submitted: chain_id={}, eth_signer=0x{}, request_from={:?}, to=0x{}, tx_hash=0x{}",
+        chain_id,
+        hex::encode(&signer_eth_address),
+        send_request.from,
+        hex::encode(to.as_bytes()),
+        hex::encode(tx_hash.as_bytes()),
+    );
 
     Ok(hex::encode(tx_hash))
 }
