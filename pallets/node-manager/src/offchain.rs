@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 // No storage mutation allowed in this file
 #[cfg(not(feature = "std"))]
 extern crate alloc;
@@ -56,6 +58,7 @@ impl<T: Config> Pallet<T> {
 
             match signature {
                 Some(signature) => {
+                    let call = T::create_inherent(
                         Call::<T>::offchain_mint_rewards {
                             amount,
                             author: author.clone(),
