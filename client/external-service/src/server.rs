@@ -132,23 +132,16 @@ where
     let send_request = EthTransaction::decode(&mut &body[..])
         .map_err(|e| server_error(format!("Error decoding EthTransaction: {e:?}")))?;
 
-    let x_auth = headers
-        .get("X-Auth")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "<missing>".to_string());
-
     let proof_data = (&send_request.from, &send_request.to, &send_request.data).encode();
 
     log::info!(
-        "external-service eth/send request: request_from={:?}, to=0x{}, body_len={}, data_len={}, data=0x{}, proof_data=0x{}, x_auth={}",
+        "external-service eth/send request: request_from={:?}, to=0x{}, body_len={}, data_len={}, data=0x{}, proof_data=0x{}",
         send_request.from,
         hex::encode(send_request.to.as_bytes()),
         body.len(),
         send_request.data.len(),
         hex::encode(&send_request.data),
         hex::encode(&proof_data),
-        x_auth,
     );
 
     validate_authorisation_token(&state.keystore, &headers, &proof_data)?;
