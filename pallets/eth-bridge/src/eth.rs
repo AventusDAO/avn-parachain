@@ -100,22 +100,20 @@ pub fn send_tx<T: Config<I>, I: 'static>(
 
     match generate_send_calldata::<T, I>(tx) {
         Ok(calldata) => {
-            log::info!(
+            log::debug!(
                 "📤 ETH SEND SUMMARY \
             tx_id={} \
             function={} \
             sender={:?} \
             expiry={} \
             replay={} \
-            params={:?} \
-            calldata=0x{}",
+            calldata_len={}",
                 tx.request.tx_id,
                 String::from_utf8_lossy(&tx.request.function_name),
                 tx.data.sender,
                 tx.data.expiry,
                 tx.replay_attempt,
-                tx.data,
-                hex::encode(&calldata),
+                calldata.len(),
             );
 
             match send_transaction::<T, I>(calldata, author) {
