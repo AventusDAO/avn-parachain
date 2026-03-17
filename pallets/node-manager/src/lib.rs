@@ -26,7 +26,7 @@ use pallet_avn::{self as avn, BridgeInterface, ProcessedEventsChecker};
 use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::{
     eth::EthereumId,
-    event_types::{AvtSupplyDeltaData, EthEvent, EventData, ProcessedEventHandler, Validator},
+    event_types::{EthEvent, EventData, ProcessedEventHandler, TotalSupplyUpdatedData, Validator},
     BridgeContractMethod, FeePaymentHandler, REGISTERED_NODE_KEY,
 };
 use sp_core::{MaxEncodedLen, H160};
@@ -34,7 +34,8 @@ use sp_runtime::{
     offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
     scale_info::TypeInfo,
     traits::{
-        AccountIdConversion, CheckedMul, CheckedSub, Dispatchable, IdentifyAccount, Verify, Zero,
+        AccountIdConversion, CheckedMul, CheckedSub, Dispatchable, IdentifyAccount,
+        SaturatedConversion, Verify, Zero,
     },
     transaction_validity::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
@@ -1594,7 +1595,8 @@ pub mod pallet {
 
         fn send_mint_to_ethereum(amount: BalanceOf<T>) -> Result<EthereumId, DispatchError> {
             let function_name: &[u8] = BridgeContractMethod::MintRewards.name_as_bytes();
-            let params = vec![(b"uint128".to_vec(), amount.to_string().into_bytes())];
+            let amount_u128: u128 = amount.saturated_into();
+            let params = vec![(b"uint128".to_vec(), amount_u128.to_string().into_bytes())];
 
             T::BridgeInterface::publish(function_name, &params, PALLET_ID.to_vec())
                 .map_err(|e| DispatchError::Other(e.into()))
@@ -1605,16 +1607,16 @@ pub mod pallet {
                 .map_err(|_| Error::<T>::MintAmountOverflow)?;
 
             let reward_account = Self::compute_reward_account_id();
-            let imbalance: PositiveImbalanceOf<T> =
+            let _imbalance: PositiveImbalanceOf<T> =
                 <T as Config>::Currency::deposit_creating(&reward_account, amount);
-
-            ensure!(imbalance.peek() != BalanceOf::<T>::zero(), Error::<T>::DepositFailed);
-            drop(imbalance);
 
             Ok(amount)
         }
 
-        fn process_rewards_minted(event: &EthEvent, data: &AvtSupplyDeltaData) -> DispatchResult {
+        fn process_rewards_minted(
+            event: &EthEvent,
+            data: &TotalSupplyUpdatedData,
+        ) -> DispatchResult {
             let event_id = &event.event_id;
             let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
             ensure!(event_validity, Error::<T>::NoTier1EventForLogRewardsMinted);
