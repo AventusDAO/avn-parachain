@@ -9,7 +9,8 @@ use frame_system as system;
 use pallet_session as session;
 pub use parking_lot::RwLock;
 pub use sp_avn_common::{
-    avn_tests_helpers::utilities::TestAccount, constants::currency::AVT, NODE_MANAGER_PALLET_ID,
+    avn_tests_helpers::utilities::TestAccount, constants::currency::AVT, eth::EthereumId,
+    NODE_MANAGER_PALLET_ID,
 };
 pub use sp_core::{
     offchain::{
@@ -18,13 +19,13 @@ pub use sp_core::{
         },
         OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
     },
-    sr25519,
+    sr25519, H160,
 };
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 pub use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
     traits::{ConvertInto, IdentityLookup, Verify},
-    BuildStorage, Perbill,
+    BuildStorage, DispatchError, Perbill,
 };
 use sp_state_machine::BasicExternalities;
 use std::cell::RefCell;
@@ -52,6 +53,17 @@ parameter_types! {
     pub const VirtualNodeStake: u128 = 2000 * AVT;
 }
 
+pub struct TestBridgeInterface;
+impl pallet_avn::BridgeInterface for TestBridgeInterface {
+    fn publish(
+        _function_name: &[u8],
+        _params: &Vec<(Vec<u8>, Vec<u8>)>,
+        _caller_id: Vec<u8>,
+    ) -> Result<EthereumId, &'static str> {
+        Ok(1u32.into())
+    }
+}
+
 impl Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -66,6 +78,7 @@ impl Config for TestRuntime {
     type Token = H160;
     type AppChainFeeHandler = Self;
     type WeightInfo = ();
+    type BridgeInterface = TestBridgeInterface;
 }
 
 parameter_types! {
@@ -201,7 +214,8 @@ impl ExtBuilder {
             reward_period: 200u32,
             max_batch_size: 10u32,
             heartbeat_period: 5u32,
-            reward_amount: 20 * AVT,
+            reward_amount_per_period: 20 * AVT,
+            num_periods_to_mint: 3,
             auto_stake_duration_sec: 180 * 24 * 60 * 60,
             max_unstake_percentage: Perbill::from_percent(10),
             unstake_period_sec: 7 * 24 * 60 * 60,

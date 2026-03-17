@@ -77,6 +77,20 @@ pub enum Error {
     LiftedToPredictionMarketEventBadDataLength,
     LiftedToPredictionMarketEventWrongTopicCount,
     LiftedToPredictionMarketEventBadTopicLength,
+
+    AvtFeesBurnedEventShouldOnlyContainTopics,
+    AvtFeesBurnedEventWrongTopicCount,
+    AvtFeesBurnedEventBadTopicLength,
+    AvtFeesBurnedEventAmountOverflow,
+    AvtFeesBurnedEventNewSupplyOverflow,
+    AvtFeesBurnedEventTxIdConversion,
+
+    AvtRewardsMintedEventShouldOnlyContainTopics,
+    AvtRewardsMintedEventWrongTopicCount,
+    AvtRewardsMintedEventBadTopicLength,
+    AvtRewardsMintedEventAmountOverflow,
+    AvtRewardsMintedEventNewSupplyOverflow,
+    AvtRewardsMintedEventTxIdConversion,
 }
 
 #[derive(
@@ -127,6 +141,10 @@ pub enum ValidEvents {
     Erc20DirectTransfer,
     /// A lower was reverted.
     LowerReverted,
+    // AVT was burned by the validators on T1.
+    AvtFeesBurned,
+    /// AVT rewards were minted by either the validators or the T1 owner.
+    AvtRewardsMinted,
 }
 
 impl ValidEvents {
@@ -180,6 +198,14 @@ impl ValidEvents {
             // hex string of Keccak-256 for LogLowerReverted(address,bytes32,address,uint256,uint32)
             ValidEvents::LowerReverted =>
                 H256(hex!("3a534ee35b9cf37cfa5e5aac24f8d0d3a2a2841b1ff92db68501d3c46956daa8")),
+
+            // hex string of Keccak-256 for LogFeesBurned(uint256,uint256,uint32)
+            ValidEvents::AvtFeesBurned =>
+                H256(hex!("5fa9bc0d39625b4af444b4e24eac728f82be0a552b434a54568d009365db032b")),
+
+            // hex string of Keccak-256 for LogRewardsMinted(uint256,uint256,uint32)
+            ValidEvents::AvtRewardsMinted =>
+                H256(hex!("8780503b6efc49186826d97ab83686b74d0c76aa1052e08a81fa36a349472545")),
         }
     }
 
@@ -924,6 +950,130 @@ impl LowerRevertedData {
     }
 }
 
+// T1 Event definitions:
+// event LogFeesBurned(uint256 amount, uint256 newSupply, uint32 t2TxId);
+// event LogRewardsMinted(uint256 amount, uint256 newSupply, uint32 t2TxId);
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub struct TotalSupplyUpdatedData {
+    pub amount: u128,
+    pub new_supply: u128,
+    pub t2_tx_id: u32,
+}
+
+impl TotalSupplyUpdatedData {
+    const TOPIC_AMOUNT: usize = 1;
+    const TOPIC_NEW_SUPPLY: usize = 2;
+    const TOPIC_T2_TX_ID: usize = 3;
+
+    pub fn is_valid(&self) -> bool {
+        self.amount > 0
+    }
+
+    pub fn parse_fees_burned_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
+        if data.is_some() {
+            return Err(Error::AvtFeesBurnedEventShouldOnlyContainTopics)
+        }
+
+        if topics.len() != 4 {
+            return Err(Error::AvtFeesBurnedEventWrongTopicCount)
+        }
+
+        if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_NEW_SUPPLY].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_T2_TX_ID].len() != WORD_LENGTH
+        {
+            return Err(Error::AvtFeesBurnedEventBadTopicLength)
+        }
+
+        if topics[Self::TOPIC_AMOUNT][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
+            return Err(Error::AvtFeesBurnedEventAmountOverflow)
+        }
+
+        if topics[Self::TOPIC_NEW_SUPPLY][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
+            return Err(Error::AvtFeesBurnedEventNewSupplyOverflow)
+        }
+
+        let amount = u128::from_be_bytes(
+            topics[Self::TOPIC_AMOUNT][HALF_WORD_LENGTH..WORD_LENGTH]
+                .try_into()
+                .expect("Slice is the correct size"),
+        );
+
+        let new_supply = u128::from_be_bytes(
+            topics[Self::TOPIC_NEW_SUPPLY][HALF_WORD_LENGTH..WORD_LENGTH]
+                .try_into()
+                .expect("Slice is the correct size"),
+        );
+
+        let t2_tx_id = u32::from_be_bytes(
+            topics[Self::TOPIC_T2_TX_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
+                .try_into()
+                .map_err(|_| Error::AvtFeesBurnedEventTxIdConversion)?,
+        );
+
+        Ok(TotalSupplyUpdatedData { amount, new_supply, t2_tx_id })
+    }
+
+    pub fn parse_rewards_minted_bytes(
+        data: Option<Vec<u8>>,
+        topics: Vec<Vec<u8>>,
+    ) -> Result<Self, Error> {
+        if data.is_some() {
+            return Err(Error::AvtRewardsMintedEventShouldOnlyContainTopics)
+        }
+
+        if topics.len() != 4 {
+            return Err(Error::AvtRewardsMintedEventWrongTopicCount)
+        }
+
+        if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_NEW_SUPPLY].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_T2_TX_ID].len() != WORD_LENGTH
+        {
+            return Err(Error::AvtRewardsMintedEventBadTopicLength)
+        }
+
+        if topics[Self::TOPIC_AMOUNT][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
+            return Err(Error::AvtRewardsMintedEventAmountOverflow)
+        }
+
+        if topics[Self::TOPIC_NEW_SUPPLY][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
+            return Err(Error::AvtRewardsMintedEventNewSupplyOverflow)
+        }
+
+        let amount = u128::from_be_bytes(
+            topics[Self::TOPIC_AMOUNT][HALF_WORD_LENGTH..WORD_LENGTH]
+                .try_into()
+                .expect("Slice is the correct size"),
+        );
+
+        let new_supply = u128::from_be_bytes(
+            topics[Self::TOPIC_NEW_SUPPLY][HALF_WORD_LENGTH..WORD_LENGTH]
+                .try_into()
+                .expect("Slice is the correct size"),
+        );
+
+        let t2_tx_id = u32::from_be_bytes(
+            topics[Self::TOPIC_T2_TX_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
+                .try_into()
+                .map_err(|_| Error::AvtRewardsMintedEventTxIdConversion)?,
+        );
+
+        Ok(TotalSupplyUpdatedData { amount, new_supply, t2_tx_id })
+    }
+}
+
 #[derive(
     Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
@@ -940,6 +1090,8 @@ pub enum EventData {
     LogLowerReverted(LowerRevertedData),
     LogLiftedToPredictionMarket(LiftedData),
     LogErc20Transfer(LiftedData),
+    LogFeesBurned(TotalSupplyUpdatedData),
+    LogRewardsMinted(TotalSupplyUpdatedData),
 }
 
 impl EventData {
@@ -957,6 +1109,8 @@ impl EventData {
             EventData::LogLiftedToPredictionMarket(d) => d.is_valid(),
             EventData::LogErc20Transfer(d) => d.is_valid(),
             EventData::LogLowerReverted(d) => d.is_valid(),
+            EventData::LogFeesBurned(d) => d.is_valid(),
+            EventData::LogRewardsMinted(d) => d.is_valid(),
             EventData::EmptyEvent => true,
             _ => false,
         }

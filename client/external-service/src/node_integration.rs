@@ -16,6 +16,7 @@ use sp_block_builder::BlockBuilder;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::sync::Mutex;
 use url::Url;
 
 #[derive(Clone)]
@@ -40,6 +41,8 @@ where
         .first()
         .cloned()
         .ok_or_else(|| anyhow!("no ethereum node urls configured"))?;
+    
+    log::info!("external-service using RPC url for HTTP send path: {}", first_url);
 
     let evm_rpc_url: Url = first_url
         .parse()
@@ -60,6 +63,7 @@ where
         chain,
         signer_provider,
         client: deps.client.clone(),
+        send_lock: Arc::new(Mutex::new(())),
         _block: Default::default(),
     })
 }

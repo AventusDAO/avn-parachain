@@ -586,6 +586,8 @@ impl pallet_node_manager::Config for Runtime {
     type Token = EthAddress;
     type AppChainFeeHandler = TokenManager;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
+    type BridgeInterface = EthBridge;
+    type ProcessedEventsChecker = EthereumEvents;
 }
 
 // Other pallets

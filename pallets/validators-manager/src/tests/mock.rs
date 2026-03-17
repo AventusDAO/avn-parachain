@@ -61,7 +61,7 @@ pub fn genesis_config_initial_validators() -> [AccountId; 5] {
     [validator_id_1(), validator_id_2(), validator_id_3(), validator_id_4(), validator_id_5()]
 }
 pub const REGISTERING_VALIDATOR_TIER1_ID: u128 = 200;
-pub const EXISTENTIAL_DEPOSIT: u64 = 0;
+pub const EXISTENTIAL_DEPOSIT: u64 = 1;
 
 pub type Extrinsic = TestXt<RuntimeCall, ()>;
 pub type ValidatorId = <TestRuntime as session::Config>::ValidatorId;

@@ -50,10 +50,12 @@ pub trait WeightInfo {
 	fn set_admin_config_unstake_period() -> Weight;
 	fn set_admin_config_restricted_unstake_duration() -> Weight;
 	fn set_admin_config_appchain_fee_percentage() -> Weight;
+	fn set_admin_config_num_periods_to_mint() -> Weight;
 	fn on_initialise_with_new_reward_period() -> Weight;
 	fn on_initialise_no_reward_period() -> Weight;
 	fn offchain_submit_heartbeat() -> Weight;
 	fn offchain_pay_nodes(b: u32, ) -> Weight;
+	fn offchain_mint_rewards() -> Weight;
 	fn pay_nodes_constant_batch_size(n: u32, ) -> Weight;
 	fn signed_register_node() -> Weight;
 	fn deregister_nodes(b: u32, ) -> Weight;
@@ -289,6 +291,13 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
+
+	fn set_admin_config_num_periods_to_mint() -> Weight {
+		Weight::from_parts(14_100_000, 1493)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:0)
 	/// Proof: `NodeManager::RewardEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::RewardPeriod` (r:1 w:1)
@@ -375,6 +384,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2587).saturating_mul(b.into()))
+	}
+	fn offchain_mint_rewards() -> Weight {
+		Weight::from_parts(35_000_000, 1500)
+			.saturating_add(T::DbWeight::get().reads(0_u64))
+			.saturating_add(T::DbWeight::get().writes(0_u64))
 	}
 	/// Storage: `NodeManager::OldestUnpaidRewardPeriodIndex` (r:1 w:0)
 	/// Proof: `NodeManager::OldestUnpaidRewardPeriodIndex` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
@@ -641,6 +655,12 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
+
+	fn set_admin_config_num_periods_to_mint() -> Weight {
+		Weight::from_parts(14_100_000, 1493)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:0)
 	/// Proof: `NodeManager::RewardEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::RewardPeriod` (r:1 w:1)
@@ -727,6 +747,11 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2587).saturating_mul(b.into()))
+	}
+	fn offchain_mint_rewards() -> Weight {
+		Weight::from_parts(35_000_000, 1500)
+			.saturating_add(RocksDbWeight::get().reads(0_u64))
+			.saturating_add(RocksDbWeight::get().writes(0_u64))
 	}
 	/// Storage: `NodeManager::OldestUnpaidRewardPeriodIndex` (r:1 w:0)
 	/// Proof: `NodeManager::OldestUnpaidRewardPeriodIndex` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)

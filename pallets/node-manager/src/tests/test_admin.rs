@@ -181,34 +181,67 @@ mod heartbeat {
     }
 }
 
-mod reward_amount {
+mod reward_amount_per_period {
     use super::*;
 
     #[test]
     fn can_be_set() {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {
-            let current_amount = RewardAmount::<TestRuntime>::get();
+            let current_amount = RewardAmountPerPeriod::<TestRuntime>::get();
             let new_amount = current_amount + 1;
 
-            let config = AdminConfig::RewardAmount(new_amount);
+            let config = AdminConfig::RewardAmountPerPeriod(new_amount);
             assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
-            System::assert_last_event(Event::RewardAmountSet { new_amount }.into());
+            System::assert_last_event(Event::RewardAmountPerPeriodSet { new_amount }.into());
         });
     }
 
     mod fails_to_be_set_when {
         use super::*;
+
         #[test]
         fn amount_is_zero() {
             let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
             ext.execute_with(|| {
                 let new_amount: BalanceOf<TestRuntime> = 0u128;
 
-                let config = AdminConfig::RewardAmount(new_amount);
+                let config = AdminConfig::RewardAmountPerPeriod(new_amount);
                 assert_noop!(
                     NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
-                    Error::<TestRuntime>::RewardAmountZero
+                    Error::<TestRuntime>::RewardAmountPerPeriodZero
+                );
+            });
+        }
+    }
+}
+
+mod num_periods_to_mint {
+    use super::*;
+
+    #[test]
+    fn can_be_set() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            let new_periods = 5u32;
+
+            let config = AdminConfig::NumPeriodsToMint(new_periods);
+            assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
+            System::assert_last_event(Event::NumPeriodsToMintSet { periods: new_periods }.into());
+        });
+    }
+
+    mod fails_to_be_set_when {
+        use super::*;
+
+        #[test]
+        fn periods_is_zero() {
+            let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+            ext.execute_with(|| {
+                let config = AdminConfig::NumPeriodsToMint(0u32);
+                assert_noop!(
+                    NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
+                    Error::<TestRuntime>::NumPeriodsToMintZero
                 );
             });
         }
