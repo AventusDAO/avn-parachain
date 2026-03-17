@@ -22,7 +22,9 @@ use frame_system::{
     offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::*,
 };
-use pallet_avn::{self as avn, BridgeInterface, ProcessedEventsChecker};
+use pallet_avn::{
+    self as avn, BridgeInterface, BridgeInterfaceNotification, ProcessedEventsChecker,
+};
 use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::{
     eth::EthereumId,
@@ -245,6 +247,11 @@ pub mod pallet {
         UptimeInfo<BlockNumberFor<T>>,
         OptionQuery,
     >;
+
+    /// The most recent mint request submitted to Ethereum and still awaiting bridge callback.
+    #[pallet::storage]
+    #[pallet::getter(fn pending_mint_tx_id)]
+    pub type PendingMintTxId<T: Config> = StorageValue<_, EthereumId, OptionQuery>;
 
     /// The total uptime for each reward period.
     #[pallet::storage]
@@ -485,6 +492,10 @@ pub mod pallet {
             amount: BalanceOf<T>,
             tx_id: EthereumId,
         },
+        MintRequestResolved {
+            tx_id: EthereumId,
+            succeeded: bool,
+        },
     }
 
     #[pallet::error]
@@ -573,6 +584,7 @@ pub mod pallet {
         NumPeriodsToMintZero,
         MintAmountOverflow,
         NoTier1EventForLogRewardsMinted,
+        MintRequestAlreadyPending,
     }
 
     #[pallet::config]
@@ -1162,8 +1174,13 @@ pub mod pallet {
             );
 
             ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::ZeroAmount);
+            ensure!(
+                !PendingMintTxId::<T>::exists(),
+                Error::<T>::MintRequestAlreadyPending
+            );
 
             let tx_id = Self::send_mint_to_ethereum(amount)?;
+            PendingMintTxId::<T>::put(tx_id);
 
             Self::deposit_event(Event::MintRequestSubmitted { amount, tx_id });
 
@@ -1319,6 +1336,10 @@ pub mod pallet {
                     match source {
                         TransactionSource::Local | TransactionSource::InBlock => {},
                         _ => return InvalidTransaction::Call.into(),
+                    }
+
+                    if PendingMintTxId::<T>::exists() {
+                        return InvalidTransaction::Stale.into()
                     }
 
                     if AVN::<T>::signature_is_valid(
@@ -1536,7 +1557,11 @@ pub mod pallet {
             current_time.saturating_add(AutoStakeDurationSec::<T>::get())
         }
 
-        pub fn next_mint_amount_to_request() -> Option<BalanceOf<T>> {
+                pub fn next_mint_amount_to_request() -> Option<BalanceOf<T>> {
+            if PendingMintTxId::<T>::exists() {
+                return None
+            }
+
             let num_periods_to_mint = NumPeriodsToMint::<T>::get();
             if num_periods_to_mint == 0 {
                 return None
@@ -1613,6 +1638,20 @@ pub mod pallet {
             Ok(amount)
         }
 
+        fn process_mint_request_result(tx_id: EthereumId, succeeded: bool) -> DispatchResult {
+            match PendingMintTxId::<T>::get() {
+                Some(pending_tx_id) if pending_tx_id == tx_id => {
+                    PendingMintTxId::<T>::kill();
+                    Self::deposit_event(Event::MintRequestResolved { tx_id, succeeded });
+                },
+                _ => {
+                    // Not the currently tracked node-manager mint request so ignore
+                },
+            }
+
+            Ok(())
+        }
+
         fn process_rewards_minted(
             event: &EthEvent,
             data: &TotalSupplyUpdatedData,
@@ -1654,6 +1693,20 @@ pub mod pallet {
     impl<T: Config> ProcessedEventHandler for Pallet<T> {
         fn on_event_processed(event: &EthEvent) -> DispatchResult {
             Self::processed_event_handler(event)
+        }
+    }
+
+    impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
+        fn process_result(
+            tx_id: EthereumId,
+            caller_id: Vec<u8>,
+            succeeded: bool,
+        ) -> DispatchResult {
+            if caller_id.as_slice() != PALLET_ID {
+                return Ok(())
+            }
+
+            Self::process_mint_request_result(tx_id, succeeded)
         }
     }
 }
