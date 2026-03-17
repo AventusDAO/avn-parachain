@@ -88,8 +88,11 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
                 info.last_reported = System::block_number();
                 info.weight = info.weight.saturating_add(weight);
             } else {
-                *maybe_info =
-                    Some(UptimeInfo { count: uptime, last_reported: System::block_number(), weight });
+                *maybe_info = Some(UptimeInfo {
+                    count: uptime,
+                    last_reported: System::block_number(),
+                    weight,
+                });
             }
         });
 

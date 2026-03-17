@@ -980,7 +980,10 @@ impl TotalSupplyUpdatedData {
         self.amount > 0
     }
 
-    pub fn parse_fees_burned_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
+    pub fn parse_fees_burned_bytes(
+        data: Option<Vec<u8>>,
+        topics: Vec<Vec<u8>>,
+    ) -> Result<Self, Error> {
         if data.is_some() {
             return Err(Error::AvtFeesBurnedEventShouldOnlyContainTopics)
         }

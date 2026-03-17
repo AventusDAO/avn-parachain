@@ -20,12 +20,7 @@ use sp_avn_common::{
 };
 use sp_core::{sr25519, H160, H256};
 use sp_runtime::traits::Block as BlockT;
-use std::{
-    marker::PhantomData,
-    net::SocketAddr,
-    sync::Arc,
-    time::Instant,
-};
+use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -168,8 +163,10 @@ where
     let to: H160 = send_request.to;
     let data: Vec<u8> = send_request.data;
 
-    let signer_eth_address = get_eth_address_bytes_from_keystore(&state.keystore_path)
-        .map_err(|e| server_error(format!("Failed to read signer eth address from keystore: {e:?}")))?;
+    let signer_eth_address =
+        get_eth_address_bytes_from_keystore(&state.keystore_path).map_err(|e| {
+            server_error(format!("Failed to read signer eth address from keystore: {e:?}"))
+        })?;
 
     log::info!(
         "external-service eth/send signer: eth_signer=0x{}",

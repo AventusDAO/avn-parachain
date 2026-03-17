@@ -352,7 +352,10 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// A new node has been registered
-        NodeRegistered { owner: T::AccountId, node: NodeId<T> },
+        NodeRegistered {
+            owner: T::AccountId,
+            node: NodeId<T>,
+        },
         /// A new reward period (in blocks) was set.
         RewardPeriodLengthSet {
             period_index: u64,
@@ -367,7 +370,9 @@ pub mod pallet {
             previous_period_reward: BalanceOf<T>,
         },
         /// We finished paying all nodes for a particular period.
-        RewardPayoutCompleted { reward_period_index: RewardPeriodIndex },
+        RewardPayoutCompleted {
+            reward_period_index: RewardPeriodIndex,
+        },
         /// Node received a reward.
         RewardPaid {
             reward_period: RewardPeriodIndex,
@@ -389,31 +394,62 @@ pub mod pallet {
             amount: BalanceOf<T>,
         },
         /// A new node registrar has been set
-        NodeRegistrarSet { new_registrar: T::AccountId },
+        NodeRegistrarSet {
+            new_registrar: T::AccountId,
+        },
         /// A new reward payment batch size has been set
-        BatchSizeSet { new_size: u32 },
+        BatchSizeSet {
+            new_size: u32,
+        },
         /// A new heartbeat period (in blocks) was set.
-        HeartbeatPeriodSet { new_heartbeat_period: u32 },
+        HeartbeatPeriodSet {
+            new_heartbeat_period: u32,
+        },
         /// A new heartbeat has been received
-        HeartbeatReceived { reward_period_index: RewardPeriodIndex, node: NodeId<T> },
+        HeartbeatReceived {
+            reward_period_index: RewardPeriodIndex,
+            node: NodeId<T>,
+        },
         /// A new reward amount is set
-        RewardAmountSet { new_amount: BalanceOf<T> },
-        RewardAmountPerPeriodSet { new_amount: BalanceOf<T> },
-        NumPeriodsToMintSet { periods: u32 },
+        RewardAmountSet {
+            new_amount: BalanceOf<T>,
+        },
+        RewardAmountPerPeriodSet {
+            new_amount: BalanceOf<T>,
+        },
+        NumPeriodsToMintSet {
+            periods: u32,
+        },
         /// Reward payment has been toggled
-        RewardToggled { enabled: bool },
+        RewardToggled {
+            enabled: bool,
+        },
         /// A new minimum uptime threshold has been set
-        MinUptimeThresholdSet { threshold: Perbill },
+        MinUptimeThresholdSet {
+            threshold: Perbill,
+        },
         /// A new maximum unstake percentage has been set
-        MaxUnstakePercentageSet { percentage: Perbill },
+        MaxUnstakePercentageSet {
+            percentage: Perbill,
+        },
         /// A new unstake period (in seconds) has been set
-        UnstakePeriodSet { duration_sec: Duration },
+        UnstakePeriodSet {
+            duration_sec: Duration,
+        },
         /// A node has been deregistered
-        NodeDeregistered { owner: T::AccountId, node: NodeId<T> },
+        NodeDeregistered {
+            owner: T::AccountId,
+            node: NodeId<T>,
+        },
         /// A node signing key has been updated
-        SigningKeyUpdated { owner: T::AccountId, node: NodeId<T> },
+        SigningKeyUpdated {
+            owner: T::AccountId,
+            node: NodeId<T>,
+        },
         /// Auto stake duration has been set
-        AutoStakeDurationSet { duration_sec: Duration },
+        AutoStakeDurationSet {
+            duration_sec: Duration,
+        },
         /// Node owner added stake to the specified node
         StakeAdded {
             owner: T::AccountId,
@@ -431,9 +467,13 @@ pub mod pallet {
             new_total: BalanceOf<T>,
         },
         /// The duration for restricted unstaking has been set
-        RestrictedUnstakeDurationSet { duration_sec: Duration },
+        RestrictedUnstakeDurationSet {
+            duration_sec: Duration,
+        },
         /// The fee percentage for hosting app chain nodes has been set
-        AppChainFeePercentageSet { percentage: Perbill },
+        AppChainFeePercentageSet {
+            percentage: Perbill,
+        },
         /// Node owner updated auto-stake preference for the specified node
         AutoStakePreferenceUpdated {
             owner: T::AccountId,
@@ -683,7 +723,8 @@ pub mod pallet {
                     ensure!(periods > 0, Error::<T>::NumPeriodsToMintZero);
                     <NumPeriodsToMint<T>>::mutate(|p| *p = periods);
                     Self::deposit_event(Event::NumPeriodsToMintSet { periods });
-                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_num_periods_to_mint()).into())
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_num_periods_to_mint())
+                        .into())
                 },
                 AdminConfig::RewardToggle(enabled) => {
                     <RewardEnabled<T>>::mutate(|e| *e = enabled);
@@ -699,18 +740,14 @@ pub mod pallet {
                 AdminConfig::AutoStakeDuration(duration_sec) => {
                     <AutoStakeDurationSec<T>>::mutate(|d| *d = duration_sec);
                     Self::deposit_event(Event::AutoStakeDurationSet { duration_sec });
-                    Ok(Some(
-                        <T as Config>::WeightInfo::set_admin_config_auto_stake_duration(),
-                    )
-                    .into())
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_auto_stake_duration())
+                        .into())
                 },
                 AdminConfig::MaxUnstakePercentage(percentage) => {
                     <MaxUnstakePercentage<T>>::mutate(|p| *p = percentage);
                     Self::deposit_event(Event::MaxUnstakePercentageSet { percentage });
-                    Ok(Some(
-                        <T as Config>::WeightInfo::set_admin_config_max_unstake_percentage(),
-                    )
-                    .into())
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_max_unstake_percentage())
+                        .into())
                 },
                 AdminConfig::UnstakePeriod(duration_sec) => {
                     ensure!(duration_sec > 0, Error::<T>::DurationZero);
@@ -729,10 +766,8 @@ pub mod pallet {
                 AdminConfig::AppChainFee(percentage) => {
                     <AppChainFeePercentage<T>>::mutate(|p| *p = percentage);
                     Self::deposit_event(Event::AppChainFeePercentageSet { percentage });
-                    Ok(Some(
-                        <T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage(),
-                    )
-                    .into())
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage())
+                        .into())
                 },
             }
         }
@@ -1285,8 +1320,11 @@ pub mod pallet {
                         _ => return InvalidTransaction::Call.into(),
                     }
 
-                    if AVN::<T>::signature_is_valid(&(MINT_REWARDS_CONTEXT, amount), author, signature)
-                    {
+                    if AVN::<T>::signature_is_valid(
+                        &(MINT_REWARDS_CONTEXT, amount),
+                        author,
+                        signature,
+                    ) {
                         ValidTransaction::with_tag_prefix("NodeManagerMint")
                             .and_provides(call)
                             .priority(TransactionPriority::max_value() - reduce_priority)
@@ -1496,7 +1534,7 @@ pub mod pallet {
             let current_time = Self::time_now_sec();
             current_time.saturating_add(AutoStakeDurationSec::<T>::get())
         }
-        
+
         pub fn next_mint_amount_to_request() -> Option<BalanceOf<T>> {
             let num_periods_to_mint = NumPeriodsToMint::<T>::get();
             if num_periods_to_mint == 0 {

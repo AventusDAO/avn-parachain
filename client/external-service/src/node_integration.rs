@@ -41,7 +41,7 @@ where
         .first()
         .cloned()
         .ok_or_else(|| anyhow!("no ethereum node urls configured"))?;
-    
+
     log::info!("external-service using RPC url for HTTP send path: {}", first_url);
 
     let evm_rpc_url: Url = first_url

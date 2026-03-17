@@ -99,9 +99,9 @@ pub fn send_tx<T: Config<I>, I: 'static>(
     log::info!("📤 eth-bridge params: {:?}", tx.data);
 
     match generate_send_calldata::<T, I>(tx) {
-    Ok(calldata) => {
-        log::info!(
-            "📤 ETH SEND SUMMARY \
+        Ok(calldata) => {
+            log::info!(
+                "📤 ETH SEND SUMMARY \
             tx_id={} \
             function={} \
             sender={:?} \
@@ -109,24 +109,24 @@ pub fn send_tx<T: Config<I>, I: 'static>(
             replay={} \
             params={:?} \
             calldata=0x{}",
-            tx.request.tx_id,
-            String::from_utf8_lossy(&tx.request.function_name),
-            tx.data.sender,
-            tx.data.expiry,
-            tx.replay_attempt,
-            tx.data,
-            hex::encode(&calldata),
-        );
+                tx.request.tx_id,
+                String::from_utf8_lossy(&tx.request.function_name),
+                tx.data.sender,
+                tx.data.expiry,
+                tx.replay_attempt,
+                tx.data,
+                hex::encode(&calldata),
+            );
 
-        match send_transaction::<T, I>(calldata, author) {
-            Ok(eth_tx_hash) => {
+            match send_transaction::<T, I>(calldata, author) {
+                Ok(eth_tx_hash) => {
                     log::info!(
                         "📤 eth-bridge send request accepted by external-service: tx_id={:?}, eth_tx_hash={:?}",
                         tx.request.tx_id,
                         eth_tx_hash
                     );
                     Ok(eth_tx_hash)
-                }
+                },
                 Err(e) => {
                     log::error!(
                         "💔 eth-bridge external-service send failed: tx_id={:?}, error={:?}",
@@ -134,9 +134,9 @@ pub fn send_tx<T: Config<I>, I: 'static>(
                         e
                     );
                     Err(Error::<T, I>::SendTransactionFailed.into())
-                }
+                },
             }
-        }
+        },
         Err(e) => {
             log::error!(
                 "💔 eth-bridge calldata generation failed: tx_id={:?}, error={:?}, function={}, params={:?}",
@@ -146,7 +146,7 @@ pub fn send_tx<T: Config<I>, I: 'static>(
                 tx.data
             );
             Err(Error::<T, I>::InvalidSendCalldata.into())
-        }
+        },
     }
 }
 
@@ -279,7 +279,8 @@ pub fn abi_encode_function<T: Config<I>, I: 'static>(
     log::debug!(
         "🧱 ABI encode: function={}, params={:?}",
         String::from_utf8_lossy(function_name),
-        params.iter()
+        params
+            .iter()
             .map(|(t, v)| {
                 let ty = String::from_utf8_lossy(t).to_string();
                 let val = match ty.as_str() {
@@ -479,7 +480,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
                 hex::encode(&result),
             );
             result
-        }
+        },
         Err(e) => {
             log::error!(
                 "💔 eth-bridge make_ethereum_call transport failed: endpoint={}, sender={:?}, to=0x{}, calldata=0x{}, error={:?}",
@@ -490,14 +491,14 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
                 e,
             );
             return Err(e)
-        }
+        },
     };
 
     match process_result(result) {
         Ok(parsed) => {
             log::info!("🌉 eth-bridge make_ethereum_call processed: endpoint={} success", url_path);
             Ok(parsed)
-        }
+        },
         Err(e) => {
             log::error!(
                 "💔 eth-bridge make_ethereum_call processing failed: endpoint={}, sender={:?}, to=0x{}, calldata=0x{}, error={:?}",
@@ -508,7 +509,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
                 e,
             );
             Err(e)
-        }
+        },
     }
 }
 
@@ -537,7 +538,10 @@ fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, Di
         .map_err(|_| Error::<T, I>::InvalidHexString)?;
 
     let tx_hash = H256::from_slice(&data);
-    log::info!("📥 eth-bridge process_tx_hash decoded: tx_hash=0x{}", hex::encode(tx_hash.as_bytes()));
+    log::info!(
+        "📥 eth-bridge process_tx_hash decoded: tx_hash=0x{}",
+        hex::encode(tx_hash.as_bytes())
+    );
     Ok(tx_hash)
 }
 

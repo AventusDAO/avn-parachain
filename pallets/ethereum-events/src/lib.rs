@@ -1126,14 +1126,15 @@ impl<T: Config> Pallet<T> {
             })?;
             return Ok(EventData::LogLowerReverted(event_data))
         } else if event_id.signature == ValidEvents::AvtFeesBurned.signature() {
-            let event_data = <TotalSupplyUpdatedData>::parse_fees_burned_bytes(data, topics).map_err(|e| {
-                log::warn!("Error parsing T1 LogFeesBurned Event: {:#?}", e);
-                Error::<T>::EventParsingFailed
-            })?;
+            let event_data = <TotalSupplyUpdatedData>::parse_fees_burned_bytes(data, topics)
+                .map_err(|e| {
+                    log::warn!("Error parsing T1 LogFeesBurned Event: {:#?}", e);
+                    Error::<T>::EventParsingFailed
+                })?;
             return Ok(EventData::LogFeesBurned(event_data))
         } else if event_id.signature == ValidEvents::AvtRewardsMinted.signature() {
-            let event_data =
-                <TotalSupplyUpdatedData>::parse_rewards_minted_bytes(data, topics).map_err(|e| {
+            let event_data = <TotalSupplyUpdatedData>::parse_rewards_minted_bytes(data, topics)
+                .map_err(|e| {
                     log::warn!("Error parsing T1 LogRewardsMinted Event: {:#?}", e);
                     Error::<T>::EventParsingFailed
                 })?;

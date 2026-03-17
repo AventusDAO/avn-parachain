@@ -82,7 +82,7 @@ impl EvmClient {
 
         let pending = self.provider.send_transaction(tx).await?;
         let tx_hash = *pending.tx_hash();
-        
+
         log::info!("external-service evm send submitted: tx_hash={:?}", tx_hash);
 
         Ok(tx_hash)
