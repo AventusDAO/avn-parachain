@@ -10,7 +10,7 @@ use pallet_session as session;
 pub use parking_lot::RwLock;
 pub use sp_avn_common::{
     avn_tests_helpers::utilities::TestAccount, constants::currency::AVT, eth::EthereumId,
-    NODE_MANAGER_PALLET_ID,
+    event_types::EthEventId, NODE_MANAGER_PALLET_ID,
 };
 pub use sp_core::{
     offchain::{
@@ -57,10 +57,42 @@ pub struct TestBridgeInterface;
 impl pallet_avn::BridgeInterface for TestBridgeInterface {
     fn publish(
         _function_name: &[u8],
-        _params: &Vec<(Vec<u8>, Vec<u8>)>,
+        _params: &[(Vec<u8>, Vec<u8>)],
         _caller_id: Vec<u8>,
-    ) -> Result<EthereumId, &'static str> {
+    ) -> Result<u32, sp_runtime::DispatchError> {
         Ok(1u32.into())
+    }
+
+    fn generate_lower_proof(
+        _lower_id: u32,
+        _params: &[u8; 116],
+        _caller_id: Vec<u8>,
+    ) -> Result<(), DispatchError> {
+        Ok(())
+    }
+
+    fn read_bridge_contract(
+        _contract: Vec<u8>,
+        _function_name: &[u8],
+        _params: &[(Vec<u8>, Vec<u8>)],
+        _at_block: Option<u32>,
+    ) -> Result<Vec<u8>, DispatchError> {
+        Ok(Vec::new())
+    }
+
+    fn latest_finalised_ethereum_block() -> Result<u32, DispatchError> {
+        Ok(1u32)
+    }
+}
+
+pub struct TestProcessedEventsChecker;
+
+impl pallet_avn::ProcessedEventsChecker for TestProcessedEventsChecker {
+    fn processed_event_exists(_event_id: &sp_avn_common::event_types::EthEventId) -> bool {
+        true
+    }
+    fn add_processed_event(_event_id: &EthEventId, _accepted: bool) -> Result<(), ()> {
+        Ok(())
     }
 }
 
@@ -79,6 +111,7 @@ impl Config for TestRuntime {
     type AppChainFeeHandler = Self;
     type WeightInfo = ();
     type BridgeInterface = TestBridgeInterface;
+    type ProcessedEventsChecker = TestProcessedEventsChecker;
 }
 
 parameter_types! {

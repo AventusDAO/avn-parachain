@@ -64,14 +64,14 @@ use crate::{
     AccountId, AsEnsureOriginWithArg, Aura, Avn, AvnGasFeeAdapter, AvnId, AvnOffenceHandler,
     AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook, EnsureSigned, EthBridge,
     Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
-    Moment, NftManager, NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
-    Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
-    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
-    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
-    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    Moment, NftManager, NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller,
+    PalletInfo, ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo,
+    RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason,
+    RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, Session, SessionKeys, Signature,
+    StakingPotAccountId, Summary, SummaryWatchtower, System, Timestamp, TokenManager,
+    TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower, WeightToFee, XcmpQueue,
+    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
