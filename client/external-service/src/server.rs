@@ -193,7 +193,7 @@ where
         Ok(hash) => hash,
         Err(e) => {
             log::error!(
-                "💔 external-service eth/send failed: chain_id={}, eth_signer=0x{}, request_from={:?}, to=0x{}, data_len={}, data=0x{}, proof_data=0x{}, x_auth={}, error={:?}",
+                "💔 external-service eth/send failed: chain_id={}, eth_signer=0x{}, request_from={:?}, to=0x{}, data_len={}, data=0x{}, proof_data=0x{}, error={:?}",
                 chain_id,
                 hex::encode(&signer_eth_address),
                 send_request.from,
@@ -201,7 +201,6 @@ where
                 data.len(),
                 hex::encode(&data),
                 hex::encode(&proof_data),
-                x_auth,
                 e
             );
             return Err(server_error(format!("send_transaction: {e:?}")))
