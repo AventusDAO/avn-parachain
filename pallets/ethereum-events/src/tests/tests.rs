@@ -28,7 +28,6 @@ mod test_get_contract_address_for {
             ValidEvents::LiftedToPredictionMarket => H160::from(BRIDGE_CONTRACT),
             ValidEvents::Erc20DirectTransfer => H160::from(BRIDGE_CONTRACT),
             ValidEvents::LowerReverted => H160::from(BRIDGE_CONTRACT),
-            ValidEvents::AvtFeesBurned => H160::from(BRIDGE_CONTRACT),
             ValidEvents::AvtRewardsMinted => H160::from(BRIDGE_CONTRACT),
         }
     }
