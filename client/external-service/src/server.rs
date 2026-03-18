@@ -16,8 +16,7 @@ use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
     http_data_codec::decode_from_http_data, EthQueryRequest, EthQueryResponse,
-    EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
-    short_hex,
+    EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER, short_hex,
 };
 use sp_core::{blake2_256, sr25519, H160, H256};
 use sp_runtime::traits::Block as BlockT;
