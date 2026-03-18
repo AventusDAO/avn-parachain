@@ -433,6 +433,10 @@ where
         let _init_time = OperationTimer::new("ethereum-event-handler EVM client initialization");
         log::info!("⛓️  avn-events-handler: evm client init start");
 
+        if self.eth_node_urls.is_empty() {
+            return Err(AppError::GenericError("No Ethereum node URLs configured".to_string()))
+        }
+
         for eth_node_url in self.eth_node_urls.iter() {
             log::debug!("⛓️  Attempting to connect to EVM node: {}", eth_node_url);
 
@@ -537,7 +541,6 @@ fn find_current_node_author<T>(
     if let Ok(authors) = authors {
         node_signing_keys.sort();
 
-        // Return the current node's address (NOT signing key)
         return authors
             .into_iter()
             .enumerate()
@@ -623,6 +626,11 @@ where
         + ApiExt<Block>
         + BlockBuilder<Block>,
 {
+    if config.eth_node_urls.is_empty() {
+        log::debug!("No Ethereum node URLs configured; skipping Ethereum event processing");
+        return Ok(())
+    }
+
     let instances = if config
         .client
         .runtime_api()
