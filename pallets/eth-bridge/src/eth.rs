@@ -6,21 +6,12 @@ use crate::{
 use ethabi::{Address, Function, Int, Param, ParamType, Token};
 use pallet_avn::{AccountToBytesConverter, EthereumPublicKeyChecker};
 use sp_avn_common::{
-    eth::EthereumId, recover_public_key_from_ecdsa_signature, EthQueryRequest,
+    eth::EthereumId, recover_public_key_from_ecdsa_signature, short_hex, EthQueryRequest,
     EthQueryResponseType, EthTransaction, ADDRESS, BYTES, BYTES32, UINT128, UINT256, UINT32,
 };
 use sp_core::{blake2_256, ecdsa, Get, H256};
 use sp_runtime::DispatchError;
 use sp_std::vec;
-
-fn short_hex(bytes: &[u8]) -> String {
-    let hex = hex::encode(bytes);
-    if hex.len() <= 16 {
-        hex
-    } else {
-        format!("{}..{}", &hex[..8], &hex[hex.len() - 8..])
-    }
-}
 
 fn calldata_id(calldata: &[u8]) -> String {
     short_hex(&blake2_256(calldata))
