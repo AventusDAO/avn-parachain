@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 use crate::*;
 use sp_runtime::{
     traits::{AtLeast32BitUnsigned, Zero},
@@ -347,7 +349,8 @@ pub enum AdminConfig<AccountId, Balance> {
     RewardPeriod(u32),
     BatchSize(u32),
     Heartbeat(u32),
-    RewardAmount(Balance),
+    RewardAmountPerPeriod(Balance),
+    NumPeriodsToMint(u32),
     RewardToggle(bool),
     MinUptimeThreshold(Perbill),
     AutoStakeDuration(Duration),

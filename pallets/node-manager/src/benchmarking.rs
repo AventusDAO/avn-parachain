@@ -85,7 +85,7 @@ fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPerio
 }
 
 fn fund_reward_pot<T: Config>() {
-    let reward_amount = RewardAmount::<T>::get() * 2000u32.into();
+    let reward_amount = RewardAmountPerPeriod::<T>::get() * 2000u32.into();
     let reward_pot_address = Pallet::<T>::compute_reward_account_id();
     T::Currency::make_free_balance_be(&reward_pot_address, reward_amount);
 }
@@ -204,13 +204,13 @@ benchmarks! {
     }
 
     set_admin_config_reward_amount {
-        let current_amount = <RewardAmount<T>>::get();
+        let current_amount = <RewardAmountPerPeriod<T>>::get();
         let new_amount = current_amount + 1u32.into();
-        let config = AdminConfig::RewardAmount(new_amount);
+        let config = AdminConfig::RewardAmountPerPeriod(new_amount);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
-        assert!(<RewardAmount<T>>::get() == new_amount);
+        assert!(<RewardAmountPerPeriod<T>>::get() == new_amount);
     }
 
     set_admin_config_reward_enabled {
@@ -282,7 +282,7 @@ benchmarks! {
             reward_period_index: new_reward_period_index,
             reward_period_length: reward_period.length,
             uptime_threshold: new_reward_period.uptime_threshold,
-            previous_period_reward: RewardAmount::<T>::get()}.into());
+            previous_period_reward: RewardAmountPerPeriod::<T>::get()}.into());
     }
 
     on_initialise_no_reward_period {
@@ -353,7 +353,7 @@ benchmarks! {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(registered_nodes);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, registered_nodes as u128);
-        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
+        let total_rewards_u128: u128 = (RewardAmountPerPeriod::<T>::get()).saturated_into();
         let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
         let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
         let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
@@ -406,7 +406,7 @@ benchmarks! {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(n);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, n as u128);
-        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
+        let total_rewards_u128: u128 = (RewardAmountPerPeriod::<T>::get()).saturated_into();
         let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
         let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
         let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
