@@ -31,7 +31,7 @@ use sp_avn_common::{
     event_types::{EthEvent, EventData, ProcessedEventHandler, TotalSupplyUpdatedData, Validator},
     BridgeContractMethod, FeePaymentHandler, REGISTERED_NODE_KEY,
 };
-use sp_core::{H160, MaxEncodedLen};
+use sp_core::{MaxEncodedLen, H160};
 use sp_runtime::{
     offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
     scale_info::TypeInfo,
