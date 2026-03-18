@@ -96,7 +96,6 @@ pub fn send_tx<T: Config<I>, I: 'static>(
         tx.replay_attempt,
     );
 
-    log::info!("📤 eth-bridge params: {:?}", tx.data);
 
     match generate_send_calldata::<T, I>(tx) {
         Ok(calldata) => {
@@ -118,7 +117,7 @@ pub fn send_tx<T: Config<I>, I: 'static>(
 
             match send_transaction::<T, I>(calldata, author) {
                 Ok(eth_tx_hash) => {
-                    log::info!(
+                    log::debug!(
                         "📤 eth-bridge send request accepted by external-service: tx_id={:?}, eth_tx_hash={:?}",
                         tx.request.tx_id,
                         eth_tx_hash
@@ -210,7 +209,7 @@ fn check_tx_hash<T: Config<I>, I: 'static>(
                     num_confirmations
                 );
             } else {
-                log::info!(
+                log::debug!(
                     "✅ tx hash calldata matched: tx_id={:?}, eth_tx_hash={:?}, confirmations={:?}",
                     tx.request.tx_id,
                     tx.data.eth_tx_hash,
@@ -274,21 +273,6 @@ pub fn abi_encode_function<T: Config<I>, I: 'static>(
     function_name: &[u8],
     params: &[(Vec<u8>, Vec<u8>)],
 ) -> Result<Vec<u8>, Error<T, I>> {
-    log::debug!(
-        "🧱 ABI encode: function={}, params={:?}",
-        String::from_utf8_lossy(function_name),
-        params
-            .iter()
-            .map(|(t, v)| {
-                let ty = String::from_utf8_lossy(t).to_string();
-                let val = match ty.as_str() {
-                    "bytes" | "bytes32" | "address" => format!("0x{}", hex::encode(v)),
-                    _ => String::from_utf8_lossy(v).to_string(),
-                };
-                (ty, val)
-            })
-            .collect::<Vec<_>>()
-    );
 
     let inputs = params
         .iter()
@@ -395,23 +379,6 @@ fn send_transaction<T: Config<I>, I: 'static>(
 
     let proof = author.key.sign(&proof_data);
 
-    if proof.is_none() {
-        log::error!(
-            "💔 eth-bridge send_transaction signing failed: sender_account={:?}, sender_bytes=0x{}, bridge_contract=0x{}, proof_data=0x{}",
-            author.account_id,
-            hex::encode(&sender),
-            hex::encode(bridge_contract.as_bytes()),
-            hex::encode(&proof_data),
-        );
-    } else {
-        log::info!(
-            "📤 eth-bridge send_transaction proof created: sender_account={:?}, sender_bytes=0x{}, bridge_contract=0x{}, proof_data=0x{}",
-            author.account_id,
-            hex::encode(&sender),
-            hex::encode(bridge_contract.as_bytes()),
-            hex::encode(&proof_data),
-        );
-    }
 
     make_ethereum_call::<H256, T, I>(
         &author.account_id,
@@ -454,7 +421,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
     let encoded_call = ethereum_call.encode();
     let url_path = format!("eth/{}", endpoint);
 
-    log::info!(
+    log::debug!(
         "🌉 eth-bridge make_ethereum_call request: endpoint={}, sender={:?}, sender_bytes=0x{}, to=0x{}, eth_block={:?}, calldata_len={}, calldata=0x{}, encoded_call_len={}, encoded_call=0x{}, has_proof={}",
         url_path,
         author_account_id,
@@ -470,7 +437,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
 
     let result = match AVN::<T>::post_data_to_service(url_path.clone(), encoded_call, proof_maybe) {
         Ok(result) => {
-            log::info!(
+            log::debug!(
                 "🌉 eth-bridge make_ethereum_call response: endpoint={}, response_len={}, response_utf8={}, response_hex=0x{}",
                 url_path,
                 result.len(),
@@ -494,7 +461,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
 
     match process_result(result) {
         Ok(parsed) => {
-            log::info!("🌉 eth-bridge make_ethereum_call processed: endpoint={} success", url_path);
+            log::debug!("🌉 eth-bridge make_ethereum_call processed: endpoint={} success", url_path);
             Ok(parsed)
         },
         Err(e) => {
@@ -512,7 +479,7 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
 }
 
 fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, DispatchError> {
-    log::info!(
+    log::debug!(
         "📥 eth-bridge process_tx_hash: raw_len={}, raw_utf8={}, raw_hex=0x{}",
         result.len(),
         String::from_utf8_lossy(&result),
@@ -536,7 +503,7 @@ fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, Di
         .map_err(|_| Error::<T, I>::InvalidHexString)?;
 
     let tx_hash = H256::from_slice(&data);
-    log::info!(
+    log::debug!(
         "📥 eth-bridge process_tx_hash decoded: tx_hash=0x{}",
         hex::encode(tx_hash.as_bytes())
     );

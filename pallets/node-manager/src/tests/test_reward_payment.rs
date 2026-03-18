@@ -104,6 +104,7 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
 }
 
 fn pop_payment_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic {
+    let mut found_tx = None;
     while !pool_state.read().transactions.is_empty() {
         let tx = pop_tx_from_mempool(pool_state.clone());
         if matches!(
@@ -114,11 +115,17 @@ fn pop_payment_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic 
                 signature: _,
             })
         ) {
-            return tx
+           found_tx = Some(tx);
+           break;
         }
     }
 
-    panic!("No offchain_pay_nodes transaction found in mempool")
+    assert!(
+        found_tx.is_some(),
+        "No offchain_pay_nodes transaction found in mempool"
+    );
+    
+    found_tx.unwrap()
 }
 
 fn pop_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic {
