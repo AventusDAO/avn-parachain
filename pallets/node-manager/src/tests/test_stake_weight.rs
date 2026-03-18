@@ -730,6 +730,86 @@ mod stake_and_reward_weight_tests {
         }
     }
 
+    mod do_add_stake_transaction {
+        use super::*;
+
+        fn setup_node(owner: &AccountId, node: &AccountId, free_balance: u128) {
+            NodeRegistry::<TestRuntime>::insert(
+                node,
+                NodeInfo {
+                    owner: owner.clone(),
+                    signing_key: get_signing_key(1),
+                    serial_number: 10_500u32,
+                    auto_stake_expiry: 0,
+                    auto_stake_rewards: true,
+                    stake: StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
+                },
+            );
+            OwnedNodesCount::<TestRuntime>::insert(owner, 1u32);
+            OwnedNodes::<TestRuntime>::insert(owner, node, ());
+            Balances::make_free_balance_be(owner, free_balance);
+        }
+
+        #[test]
+        fn commits_node_registry_total_stake_and_reserved_balance_on_success() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let owner = get_owner(1);
+                    let node = get_node(1);
+                    let amount = 1_000u128;
+                    setup_node(&owner, &node, amount * 10);
+
+                    assert_ok!(NodeManager::do_add_stake(&owner, &node, amount));
+
+                    // NodeRegistry updated
+                    let info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                    assert_eq!(info.stake.amount, amount);
+
+                    // TotalStake updated
+                    assert_eq!(TotalStake::<TestRuntime>::get(&owner), Some(amount));
+
+                    // Balance reserved (moved from free to reserved)
+                    assert_eq!(Balances::reserved_balance(&owner), amount);
+                    assert_eq!(Balances::free_balance(&owner), amount * 10 - amount);
+                });
+        }
+
+        #[test]
+        fn rolls_back_node_registry_and_total_stake_when_reserve_fails() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let owner = get_owner(2);
+                    let node = get_node(2);
+                    let amount = 1_000u128;
+                    // Give the owner zero free balance so `update_reserves` fails.
+                    setup_node(&owner, &node, 0);
+
+                    assert_noop!(
+                        NodeManager::do_add_stake(&owner, &node, amount),
+                        Error::<TestRuntime>::InsufficientFreeBalance
+                    );
+
+                    // NodeRegistry must be unchanged (transaction rolled back)
+                    let info = NodeRegistry::<TestRuntime>::get(&node).unwrap();
+                    assert_eq!(info.stake.amount, 0, "NodeRegistry stake must be rolled back");
+
+                    // TotalStake must be unchanged
+                    assert_eq!(
+                        TotalStake::<TestRuntime>::get(&owner),
+                        None,
+                        "TotalStake must be rolled back"
+                    );
+
+                    // No balance should have been reserved
+                    assert_eq!(Balances::reserved_balance(&owner), 0);
+                });
+        }
+    }
+
     mod fails_when {
         use super::*;
 

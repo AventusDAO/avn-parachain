@@ -1,4 +1,5 @@
 use crate::*;
+use frame_support::storage::{with_transaction, TransactionOutcome};
 use sp_runtime::{traits::UniqueSaturatedInto, FixedPointNumber, FixedU128};
 use sp_std::ops::RangeInclusive;
 
@@ -69,28 +70,39 @@ impl<T: Config> Pallet<T> {
         let max_pct = <MaxUnstakePercentage<T>>::get();
         let restriction_duration = <RestrictedUnstakeDurationSec<T>>::get();
 
-        let node_info =
-            NodeRegistry::<T>::try_mutate(node_id, |maybe| -> Result<_, DispatchError> {
-                let info = maybe.as_mut().ok_or(Error::<T>::NodeNotFound)?;
-                info.try_snapshot_stake(now_sec, max_pct, restriction_duration);
-                info.stake.amount =
-                    info.stake.amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
-                Ok(info.clone())
-            })?;
+        with_transaction(|| {
+            let result = (|| -> Result<BalanceOf<T>, DispatchError> {
+                let node_info =
+                    NodeRegistry::<T>::try_mutate(node_id, |maybe| -> Result<_, DispatchError> {
+                        let info = maybe.as_mut().ok_or(Error::<T>::NodeNotFound)?;
+                        info.try_snapshot_stake(now_sec, max_pct, restriction_duration);
+                        info.stake.amount = info
+                            .stake
+                            .amount
+                            .checked_add(&amount)
+                            .ok_or(Error::<T>::BalanceOverflow)?;
+                        Ok(info.clone())
+                    })?;
 
-        <TotalStake<T>>::try_mutate(owner, |total| -> Result<_, DispatchError> {
-            *total = Some(
-                total
-                    .unwrap_or_else(Zero::zero)
-                    .checked_add(&amount)
-                    .ok_or(Error::<T>::BalanceOverflow)?,
-            );
-            Ok(())
-        })?;
+                <TotalStake<T>>::try_mutate(owner, |total| -> Result<_, DispatchError> {
+                    *total = Some(
+                        total
+                            .unwrap_or_else(Zero::zero)
+                            .checked_add(&amount)
+                            .ok_or(Error::<T>::BalanceOverflow)?,
+                    );
+                    Ok(())
+                })?;
 
-        Self::update_reserves(owner, amount, StakeOperation::Add)?;
+                Self::update_reserves(owner, amount, StakeOperation::Add)?;
+                Ok(node_info.stake.amount)
+            })();
 
-        Ok(node_info.stake.amount)
+            match result {
+                Ok(val) => TransactionOutcome::Commit(Ok(val)),
+                Err(e) => TransactionOutcome::Rollback(Err(e)),
+            }
+        })
     }
 
     pub fn do_remove_stake(
