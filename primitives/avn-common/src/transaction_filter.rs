@@ -30,7 +30,6 @@ pub trait ExtrinsicFilter: Send + Sync + 'static {
     }
 
     /// Check if an extrinsic is allowed. Returns rich result for logging.
-    /// Only called when `is_enabled()` returns true.
     fn check(&self, xt: &sp_core::Bytes) -> FilterResult;
 }
 
