@@ -964,7 +964,7 @@ impl TotalSupplyUpdatedData {
         self.amount > 0
     }
 
-    pub fn parse_rewards_minted_bytes(
+    pub fn parse_bytes(
         data: Option<Vec<u8>>,
         topics: Vec<Vec<u8>>,
     ) -> Result<Self, Error> {
