@@ -17,7 +17,9 @@ impl Context {
     fn new(num_of_nodes: u8) -> Self {
         let registrar = TestAccount::new([1u8; 32]).account_id();
         let owner = TestAccount::new([209u8; 32]).account_id();
-        let reward_amount: BalanceOf<TestRuntime> = <RewardAmount<TestRuntime>>::get();
+        let reward_amount: BalanceOf<TestRuntime> = <RewardAmountPerPeriod<TestRuntime>>::get();
+
+        <NumPeriodsToMint<TestRuntime>>::put(2u32);
 
         Balances::make_free_balance_be(
             &NodeManager::compute_reward_account_id(),
@@ -86,8 +88,11 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
                 info.last_reported = System::block_number();
                 info.weight = info.weight.saturating_add(weight);
             } else {
-                *maybe_info =
-                    Some(UptimeInfo { count: 1, last_reported: System::block_number(), weight });
+                *maybe_info = Some(UptimeInfo {
+                    count: uptime,
+                    last_reported: System::block_number(),
+                    weight,
+                });
             }
         });
 
@@ -96,6 +101,28 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
             total.total_weight = total.total_weight.saturating_add(weight);
         });
     }
+}
+
+fn pop_payment_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic {
+    let mut found_tx = None;
+    while !pool_state.read().transactions.is_empty() {
+        let tx = pop_tx_from_mempool(pool_state.clone());
+        if matches!(
+            tx.function,
+            RuntimeCall::NodeManager(crate::Call::offchain_pay_nodes {
+                reward_period_index: _,
+                author: _,
+                signature: _,
+            })
+        ) {
+            found_tx = Some(tx);
+            break
+        }
+    }
+
+    assert!(found_tx.is_some(), "No offchain_pay_nodes transaction found in mempool");
+
+    found_tx.unwrap()
 }
 
 fn pop_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic {
@@ -134,7 +161,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get();
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -158,7 +185,7 @@ mod reward {
             );
             // Trigger ocw and send the transaction
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Check if the transaction from the mempool is what we expected
@@ -205,7 +232,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() * 2;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -217,7 +244,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state.clone());
+            let tx = pop_payment_tx_from_mempool(pool_state.clone());
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // We should have processed the first batch of payments
@@ -238,7 +265,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // This should complete the payment
@@ -275,7 +302,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmount<TestRuntime>>::get(); // 5
+            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get(); // 5
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -310,7 +337,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
             // The owner has received the reward
             // total_expected_uptime - 1 because we run the OCW
@@ -368,7 +395,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmount<TestRuntime>>::get(); // 5
+            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get(); // 5
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -403,7 +430,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // The owner has received the reward
@@ -459,7 +486,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -499,7 +526,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // The owner has received the reward
@@ -571,7 +598,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -609,7 +636,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // The owner has received the reward
@@ -712,8 +739,8 @@ mod reward {
             // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
             assert_eq!(node_uptime_b.weight, 450_000_000u128 * total_expected_uptime as u128);
 
-            // Set a custom reward amount for easier calculations
-            <RewardAmount<TestRuntime>>::put(1_000u128);
+            // Set a custom reward amount per period for easier calculations
+            <RewardAmountPerPeriod<TestRuntime>>::put(1_000u128);
 
             // Complete a reward period
             roll_forward((reward_period_length - System::block_number()) + 1);
@@ -734,7 +761,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Stake after payout
@@ -878,7 +905,7 @@ mod reward {
                 let node_count = <MaxBatchSize<TestRuntime>>::get();
                 let _ = Context::new(node_count as u8);
                 let reward_period = <RewardPeriod<TestRuntime>>::get();
-                let reward_amount = <RewardAmount<TestRuntime>>::get();
+                let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
                 let reward_period_length = reward_period.length as u64;
                 let reward_period_to_pay = reward_period.current;
 
@@ -1032,7 +1059,7 @@ mod end_2_end {
             &Some(hex::encode(1u32.encode()).into()),
         );
         NodeManager::offchain_worker(System::block_number());
-        let tx = pop_tx_from_mempool(pool_state.clone());
+        let tx = pop_payment_tx_from_mempool(pool_state.clone());
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
     }
 
@@ -1067,7 +1094,7 @@ mod end_2_end {
             Balances::make_free_balance_be(&new_owner, new_owner_stake * 2);
 
             // Set a custom reward amount for easier calculations
-            <RewardAmount<TestRuntime>>::put(total_reward_per_period);
+            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward_per_period);
 
             // No genesis bonus, no stake for default context node
             let context = Context::new(1u8);
@@ -1400,7 +1427,7 @@ mod end_2_end {
             .as_externality_with_state();
         ext.execute_with(|| {
             let total_reward = 1_000u128;
-            <RewardAmount<TestRuntime>>::put(total_reward);
+            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
             let context = Context::new(1u8);
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),
@@ -1467,7 +1494,7 @@ mod end_2_end {
             .as_externality_with_state();
         ext.execute_with(|| {
             let total_reward = 1_000u128;
-            <RewardAmount<TestRuntime>>::put(total_reward);
+            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
             let context = Context::new(1u8);
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),

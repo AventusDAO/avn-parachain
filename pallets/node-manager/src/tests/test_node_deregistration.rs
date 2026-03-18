@@ -21,7 +21,7 @@ impl Context {
         let registrar = registrar_key_pair.account_id();
         let owner = TestAccount::new([209u8; 32]).account_id();
         let relayer = TestAccount::new([109u8; 32]).account_id();
-        let reward_amount: BalanceOf<TestRuntime> = <RewardAmount<TestRuntime>>::get();
+        let reward_amount: BalanceOf<TestRuntime> = <RewardAmountPerPeriod<TestRuntime>>::get();
 
         Balances::make_free_balance_be(
             &NodeManager::compute_reward_account_id(),
@@ -256,7 +256,7 @@ fn payment_works_all_nodes_deregistered() {
         }
 
         let reward_period = <RewardPeriod<TestRuntime>>::get();
-        let reward_amount = <RewardAmount<TestRuntime>>::get();
+        let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
         let reward_period_to_pay = reward_period.current;
 
@@ -331,7 +331,7 @@ fn payment_works_some_nodes_deregistered() {
         ));
 
         let reward_period = <RewardPeriod<TestRuntime>>::get();
-        let reward_amount = <RewardAmount<TestRuntime>>::get();
+        let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
         let reward_period_to_pay = reward_period.current;
 
