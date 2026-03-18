@@ -775,7 +775,7 @@ pub mod pallet {
                 },
                 AdminConfig::MinUptimeThreshold(threshold) => {
                     ensure!(threshold > Perbill::zero(), Error::<T>::UptimeThresholdZero);
-                    <MinUptimeThreshold<T>>::put(Some(threshold));
+                    <MinUptimeThreshold<T>>::put(threshold);
 
                     let mut reward_period = RewardPeriod::<T>::get();
                     reward_period.uptime_threshold =
