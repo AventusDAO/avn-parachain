@@ -15,7 +15,7 @@ use codec::{Decode, Encode};
 use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
-    http_data_codec::decode_from_http_data, EthQueryRequest, EthQueryResponse,
+    http_data_codec::decode_from_http_data, short_hex, EthQueryRequest, EthQueryResponse,
     EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
 use sp_core::{blake2_256, sr25519, H160, H256};
@@ -44,21 +44,13 @@ fn server_error(msg: impl Into<String>) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, m)
 }
 
-fn short_hex(bytes: &[u8]) -> String {
-    let hex = hex::encode(bytes);
-    if hex.len() <= 16 {
-        hex
-    } else {
-        format!("{}..{}", &hex[..8], &hex[hex.len() - 8..])
-    }
-}
-
 fn h160_hex(v: &H160) -> String {
     hex::encode(v.as_bytes())
 }
 
-fn request_id<T: core::fmt::Debug + Encode>(from: &T, to: &H160, data: &[u8]) -> String {
-    let fingerprint = blake2_256(&(from, to, data.len() as u32).encode());
+fn request_id<T: Encode>(from: &T, to: &H160, data: &[u8]) -> String {
+    let encoded = (from, to, data).encode();
+    let fingerprint = blake2_256(&encoded);
     short_hex(&fingerprint)
 }
 

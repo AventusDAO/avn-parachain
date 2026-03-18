@@ -221,6 +221,15 @@ pub fn safe_sub_block_numbers<BlockNumber: Member + Codec + AtLeast32Bit>(
     Ok(left.checked_sub(&right).ok_or(())?.into())
 }
 
+pub fn short_hex(bytes: &[u8]) -> String {
+    let hex = hex::encode(bytes);
+    if hex.len() <= 16 {
+        hex
+    } else {
+        format!("{}..{}", &hex[..8], &hex[hex.len() - 8..])
+    }
+}
+
 pub fn recover_ethereum_address_from_ecdsa_signature(
     signature: &ecdsa::Signature,
     message: &[u8],
