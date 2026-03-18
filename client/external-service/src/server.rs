@@ -179,7 +179,7 @@ where
         .await
         .map_err(|e| server_error(format!("chain_id: {e:?}")))?;
 
-    log::info!(
+    log::debug!(
         "external-service eth/send resolved: chain_id={}, eth_signer=0x{}, request_from={:?}, to=0x{}, data_len={}, data=0x{}",
         chain_id,
         hex::encode(&signer_eth_address),
