@@ -189,9 +189,10 @@ where
         .as_ref()
         .ok_or_else(|| server_error("Ethereum signer not configured"))?;
 
-    let signer_eth_address = get_eth_address_bytes_from_keystore(&state.keystore_path).map_err(|e| {
-        server_error(format!("Failed to read signer eth address from keystore: {e:?}"))
-    })?;
+    let signer_eth_address =
+        get_eth_address_bytes_from_keystore(&state.keystore_path).map_err(|e| {
+            server_error(format!("Failed to read signer eth address from keystore: {e:?}"))
+        })?;
 
     let _guard = state.send_lock.lock().await;
 
