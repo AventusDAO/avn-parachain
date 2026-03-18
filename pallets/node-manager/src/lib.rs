@@ -1772,6 +1772,10 @@ pub mod pallet {
 
             Self::process_mint_request_result(tx_id, succeeded)
         }
+
+        fn on_incoming_event_processed(event: &EthEvent) -> DispatchResult {
+            Self::processed_event_handler(event)
+        }
     }
 }
 
