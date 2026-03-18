@@ -18,7 +18,8 @@ use sp_avn_common::{
     event_types::{
         AddedValidatorData, AvtGrowthLiftedData, AvtLowerClaimedData, Error, EthEvent, EthEventId,
         EthTransactionId, EventData, LiftedData, LowerRevertedData, NftCancelListingData,
-        NftEndBatchListingData, NftMintData, NftTransferToData, ValidEvents,
+        NftEndBatchListingData, NftMintData, NftTransferToData, TotalSupplyUpdatedData,
+        ValidEvents,
     },
     primitives::AccountId,
     AVN_KEY_ID,
@@ -180,6 +181,17 @@ impl EventRegistry {
                     LiftedData::from_erc_20_contract_transfer_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
                         .map(EventData::LogErc20Transfer)
+                },
+            },
+        );
+
+        m.insert(
+            ValidEvents::AvtRewardsMinted.signature(),
+            EventInfo {
+                parser: |data, topics| {
+                    TotalSupplyUpdatedData::parse_bytes(data, topics)
+                        .map_err(|err| AppError::ParsingError(err.into()))
+                        .map(EventData::LogRewardsMinted)
                 },
             },
         );
