@@ -33,7 +33,7 @@ fn get_payment_info<T: Config>(
 
 fn setup_balances<T: Config>(account: T::AccountId, amount: BalanceOf<T>) {
     // setup avt balance
-    T::Currency::make_free_balance_be(&account, (amount + 1u32.into()).into());
+    T::Currency::make_free_balance_be(&account, (amount.into());
 }
 
 fn get_inner_call_proof<T: Config>(
