@@ -31,12 +31,12 @@ use sp_avn_common::{
     event_types::{EthEvent, EventData, ProcessedEventHandler, TotalSupplyUpdatedData, Validator},
     BridgeContractMethod, FeePaymentHandler, REGISTERED_NODE_KEY,
 };
-use sp_core::{MaxEncodedLen, H160};
+use sp_core::{H160, MaxEncodedLen};
 use sp_runtime::{
     offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
     scale_info::TypeInfo,
     traits::{
-        AccountIdConversion, CheckedMul, CheckedSub, Dispatchable, IdentifyAccount,
+        AccountIdConversion, CheckedAdd, CheckedMul, CheckedSub, Dispatchable, IdentifyAccount,
         SaturatedConversion, Verify, Zero,
     },
     transaction_validity::{
@@ -225,6 +225,12 @@ pub mod pallet {
         OptionQuery,
     >;
 
+    /// Running total of reward pot amounts for all periods that have been snapshotted but not yet
+    /// fully paid. This allows mint requirement calculation to be O(1) instead of iterating
+    /// across all unpaid periods.
+    #[pallet::storage]
+    pub type OutstandingRewardRequirement<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
     /// Tracks the current reward period.
     #[pallet::storage]
     #[pallet::getter(fn current_reward_period)]
@@ -364,6 +370,7 @@ pub mod pallet {
             let reward_period: RewardPeriodInfo<BlockNumberFor<T>> =
                 RewardPeriodInfo::new(0u64, 0u32.into(), self.reward_period, uptime_threshold);
             <RewardPeriod<T>>::put(reward_period);
+            OutstandingRewardRequirement::<T>::put(BalanceOf::<T>::zero());
         }
     }
 
@@ -712,10 +719,13 @@ pub mod pallet {
                 AdminConfig::RewardPeriod(period) => {
                     let heartbeat = <HeartbeatPeriod<T>>::get();
                     ensure!(period > heartbeat, Error::<T>::RewardPeriodInvalid);
+
                     let mut reward_period = RewardPeriod::<T>::get();
                     let (index, old_period) = (reward_period.current, reward_period.length);
                     reward_period.length = period;
-                    <RewardPeriod<T>>::mutate(|p| *p = reward_period);
+                    reward_period.uptime_threshold = Self::calculate_uptime_threshold(period);
+                    RewardPeriod::<T>::put(&reward_period);
+
                     Self::deposit_event(Event::RewardPeriodLengthSet {
                         period_index: index,
                         old_reward_period_length: old_period,
@@ -731,34 +741,47 @@ pub mod pallet {
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_batch_size()).into())
                 },
                 AdminConfig::Heartbeat(period) => {
-                    let reward_period = RewardPeriod::<T>::get().length;
+                    let reward_period_length = RewardPeriod::<T>::get().length;
                     ensure!(period > 0, Error::<T>::HeartbeatPeriodZero);
-                    ensure!(period < reward_period, Error::<T>::HeartbeatPeriodInvalid);
-                    <HeartbeatPeriod<T>>::mutate(|p| *p = period);
+                    ensure!(period < reward_period_length, Error::<T>::HeartbeatPeriodInvalid);
+
+                    <HeartbeatPeriod<T>>::put(period);
+
+                    let mut reward_period = RewardPeriod::<T>::get();
+                    reward_period.uptime_threshold =
+                        Self::calculate_uptime_threshold(reward_period.length);
+                    RewardPeriod::<T>::put(&reward_period);
+
                     Self::deposit_event(Event::HeartbeatPeriodSet { new_heartbeat_period: period });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat()).into())
                 },
                 AdminConfig::RewardAmountPerPeriod(amount) => {
                     ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::RewardAmountPerPeriodZero);
-                    <RewardAmountPerPeriod<T>>::mutate(|a| *a = amount);
+                    <RewardAmountPerPeriod<T>>::put(amount);
                     Self::deposit_event(Event::RewardAmountPerPeriodSet { new_amount: amount });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_amount()).into())
                 },
                 AdminConfig::NumPeriodsToMint(periods) => {
                     ensure!(periods > 0, Error::<T>::NumPeriodsToMintZero);
-                    <NumPeriodsToMint<T>>::mutate(|p| *p = periods);
+                    <NumPeriodsToMint<T>>::put(periods);
                     Self::deposit_event(Event::NumPeriodsToMintSet { periods });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_num_periods_to_mint())
                         .into())
                 },
                 AdminConfig::RewardToggle(enabled) => {
-                    <RewardEnabled<T>>::mutate(|e| *e = enabled);
+                    <RewardEnabled<T>>::put(enabled);
                     Self::deposit_event(Event::RewardToggled { enabled });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_enabled()).into())
                 },
                 AdminConfig::MinUptimeThreshold(threshold) => {
                     ensure!(threshold > Perbill::zero(), Error::<T>::UptimeThresholdZero);
-                    <MinUptimeThreshold<T>>::mutate(|t| *t = Some(threshold));
+                    <MinUptimeThreshold<T>>::put(Some(threshold));
+
+                    let mut reward_period = RewardPeriod::<T>::get();
+                    reward_period.uptime_threshold =
+                        Self::calculate_uptime_threshold(reward_period.length);
+                    RewardPeriod::<T>::put(&reward_period);
+
                     Self::deposit_event(Event::MinUptimeThresholdSet { threshold });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_min_threshold()).into())
                 },
@@ -824,7 +847,7 @@ pub mod pallet {
 
             if total_uptime.total_weight == 0 && maybe_node_uptime.is_none() {
                 // No nodes to pay for this period so complete it
-                Self::complete_reward_payout(oldest_period);
+                Self::complete_reward_payout_with_tracking(oldest_period);
                 return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
             }
 
@@ -893,7 +916,7 @@ pub mod pallet {
             if iter.next().is_some() {
                 Self::update_last_paid_pointer(oldest_period, last_node_paid);
             } else {
-                Self::complete_reward_payout(oldest_period);
+                Self::complete_reward_payout_with_tracking(oldest_period);
             }
 
             return Ok(
@@ -1204,43 +1227,48 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         // Keep this logic light and bounded
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
-            let rewards_enabled = <RewardEnabled<T>>::get();
-            if !rewards_enabled {
+            if !RewardEnabled::<T>::get() {
                 return <T as Config>::WeightInfo::on_initialise_no_reward_period()
             }
 
             let reward_period = RewardPeriod::<T>::get();
-            let previous_index = reward_period.current;
-            let previous_uptime_threshold = reward_period.uptime_threshold;
-
-            if reward_period.should_update(n) {
-                let uptime_threshold = Self::calculate_uptime_threshold(reward_period.length);
-
-                let reward_period = reward_period.update(n, uptime_threshold);
-                RewardPeriod::<T>::mutate(|p| *p = reward_period);
-
-                // take a snapshot of the reward pot amount to pay for the previous reward period
-                let reward_amount = RewardAmountPerPeriod::<T>::get();
-                <RewardPot<T>>::insert(
-                    previous_index,
-                    RewardPotInfo::<BalanceOf<T>>::new(
-                        reward_amount,
-                        previous_uptime_threshold,
-                        Self::time_now_sec(),
-                    ),
-                );
-
-                Self::deposit_event(Event::NewRewardPeriodStarted {
-                    reward_period_index: reward_period.current,
-                    reward_period_length: reward_period.length,
-                    uptime_threshold: reward_period.uptime_threshold,
-                    previous_period_reward: reward_amount,
-                });
-
-                return <T as Config>::WeightInfo::on_initialise_with_new_reward_period()
+            if !reward_period.should_update(n) {
+                return <T as Config>::WeightInfo::on_initialise_no_reward_period()
             }
 
-            return <T as Config>::WeightInfo::on_initialise_no_reward_period()
+            let previous_index = reward_period.current;
+            let previous_uptime_threshold = reward_period.uptime_threshold;
+            let reward_amount = RewardAmountPerPeriod::<T>::get();
+
+            // Uptime threshold is kept up to date when admin config changes, so we can reuse the
+            // already-stored value here and avoid extra reads/calculation in on_initialize.
+            let next_reward_period = reward_period.update(n, reward_period.uptime_threshold);
+            RewardPeriod::<T>::put(&next_reward_period);
+
+            // take a snapshot of the reward pot amount to pay for the previous reward period
+            <RewardPot<T>>::insert(
+                previous_index,
+                RewardPotInfo::<BalanceOf<T>>::new(
+                    reward_amount,
+                    previous_uptime_threshold,
+                    Self::time_now_sec(),
+                ),
+            );
+
+            OutstandingRewardRequirement::<T>::mutate(|outstanding| {
+                *outstanding = outstanding
+                    .checked_add(&reward_amount)
+                    .unwrap_or_else(|| outstanding.saturating_add(reward_amount));
+            });
+
+            Self::deposit_event(Event::NewRewardPeriodStarted {
+                reward_period_index: next_reward_period.current,
+                reward_period_length: next_reward_period.length,
+                uptime_threshold: next_reward_period.uptime_threshold,
+                previous_period_reward: reward_amount,
+            });
+
+            <T as Config>::WeightInfo::on_initialise_with_new_reward_period()
         }
 
         fn offchain_worker(n: BlockNumberFor<T>) {
@@ -1445,6 +1473,18 @@ pub mod pallet {
             threshold * max_heartbeats
         }
 
+        fn complete_reward_payout_with_tracking(reward_period_index: RewardPeriodIndex) {
+            if let Some(reward_pot) = RewardPot::<T>::get(reward_period_index) {
+                OutstandingRewardRequirement::<T>::mutate(|outstanding| {
+                    *outstanding = outstanding
+                        .checked_sub(&reward_pot.total_reward)
+                        .unwrap_or_else(|| outstanding.saturating_sub(reward_pot.total_reward));
+                });
+            }
+
+            Self::complete_reward_payout(reward_period_index);
+        }
+
         fn do_register_node(
             node: NodeId<T>,
             owner: T::AccountId,
@@ -1584,16 +1624,7 @@ pub mod pallet {
                 return None
             }
 
-            let current_period = RewardPeriod::<T>::get().current;
-            let oldest_unpaid_period = OldestUnpaidRewardPeriodIndex::<T>::get();
-
-            let mut outstanding_required = BalanceOf::<T>::zero();
-            for period_index in oldest_unpaid_period..current_period {
-                if let Some(reward_pot) = RewardPot::<T>::get(period_index) {
-                    outstanding_required =
-                        outstanding_required.checked_add(&reward_pot.total_reward)?;
-                }
-            }
+            let outstanding_required = OutstandingRewardRequirement::<T>::get();
 
             let future_buffer =
                 reward_amount_per_period.checked_mul(&(num_periods_to_mint.into()))?;
