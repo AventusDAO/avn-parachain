@@ -1126,11 +1126,10 @@ impl<T: Config> Pallet<T> {
             })?;
             return Ok(EventData::LogLowerReverted(event_data))
         } else if event_id.signature == ValidEvents::AvtRewardsMinted.signature() {
-            let event_data = <TotalSupplyUpdatedData>::parse_bytes(data, topics)
-                .map_err(|e| {
-                    log::warn!("Error parsing T1 LogRewardsMinted Event: {:#?}", e);
-                    Error::<T>::EventParsingFailed
-                })?;
+            let event_data = <TotalSupplyUpdatedData>::parse_bytes(data, topics).map_err(|e| {
+                log::warn!("Error parsing T1 LogRewardsMinted Event: {:#?}", e);
+                Error::<T>::EventParsingFailed
+            })?;
             return Ok(EventData::LogRewardsMinted(event_data))
         } else {
             return Err(Error::<T>::UnrecognizedEventSignature)
