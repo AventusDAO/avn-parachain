@@ -233,14 +233,14 @@ impl<T: Config> Pallet<T> {
             return false
         }
 
-        let heartbeat_period = HeartbeatPeriod::<T>::get();
         if let Some(uptime_info) = uptime_info {
             let last_submission = uptime_info.last_reported;
             let below_threshold = uptime_info.count < reward_period.uptime_threshold as u64;
             // Send heartbeat if threshold is not reached and the current block is at or past the
             // next allowed block.
             return below_threshold &&
-                block_number >= last_submission + BlockNumberFor::<T>::from(heartbeat_period)
+                block_number >=
+                    last_submission + BlockNumberFor::<T>::from(reward_period.heartbeat_period)
         } else {
             // First heartbeat
             return true

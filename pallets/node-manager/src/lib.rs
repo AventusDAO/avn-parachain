@@ -193,15 +193,15 @@ pub mod pallet {
     #[pallet::storage]
     pub type MaxBatchSize<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// Heartbeat period in blocks
+    /// Heartbeat period in blocks for the next reward period
     #[pallet::storage]
     pub type HeartbeatPeriod<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// Reward period length for the next period
+    /// Length of the next reward period in blocks
     #[pallet::storage]
     pub type ConfiguredRewardPeriodLength<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// Reward amount paid each period
+    /// Reward amount for the next reward period
     #[pallet::storage]
     pub type RewardAmountPerPeriod<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
@@ -227,7 +227,7 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn current_reward_period)]
     pub(super) type RewardPeriod<T: Config> =
-        StorageValue<_, RewardPeriodInfo<BlockNumberFor<T>>, ValueQuery>;
+        StorageValue<_, RewardPeriodInfo<BlockNumberFor<T>, BalanceOf<T>>, ValueQuery>;
 
     /// Oldest unpaid reward period
     #[pallet::storage]
@@ -354,10 +354,17 @@ pub mod pallet {
             RestrictedUnstakeDurationSec::<T>::set(self.restricted_unstake_duration_sec);
             AppChainFeePercentage::<T>::set(self.app_chain_fee_percentage);
 
-            let max_heartbeats = self.reward_period.saturating_div(self.heartbeat_period);
-            let uptime_threshold = default_threshold * max_heartbeats;
-            let reward_period: RewardPeriodInfo<BlockNumberFor<T>> =
-                RewardPeriodInfo::new(0u64, 0u32.into(), self.reward_period, uptime_threshold);
+            let uptime_threshold =
+                Pallet::<T>::calculate_uptime_threshold(self.reward_period, self.heartbeat_period);
+            let reward_period: RewardPeriodInfo<BlockNumberFor<T>, BalanceOf<T>> = RewardPeriodInfo::new(
+                0u64,
+                0u32.into(),
+                self.reward_period,
+                self.heartbeat_period,
+                uptime_threshold,
+                self.reward_amount_per_period,
+            );
+
             <RewardPeriod<T>>::put(reward_period);
             OutstandingRewardToPay::<T>::put(BalanceOf::<T>::zero());
         }
@@ -1177,12 +1184,21 @@ pub mod pallet {
 
             let previous_index = reward_period.current;
             let previous_uptime_threshold = reward_period.uptime_threshold;
-            let reward_amount = RewardAmountPerPeriod::<T>::get();
+            let reward_amount = reward_period.reward_amount;
 
             let next_reward_period_length = ConfiguredRewardPeriodLength::<T>::get();
-            let next_uptime_threshold = Self::calculate_uptime_threshold(next_reward_period_length);
-            let next_reward_period =
-                reward_period.update(n, next_reward_period_length, next_uptime_threshold);
+            let next_heartbeat_period = HeartbeatPeriod::<T>::get();
+            let next_reward_amount = RewardAmountPerPeriod::<T>::get();
+            let next_uptime_threshold =
+                Self::calculate_uptime_threshold(next_reward_period_length, next_heartbeat_period);
+
+            let next_reward_period = reward_period.update(
+                n,
+                next_reward_period_length,
+                next_heartbeat_period,
+                next_uptime_threshold,
+                next_reward_amount,
+            );
             RewardPeriod::<T>::put(&next_reward_period);
 
             // take a snapshot of the reward pot amount to pay for the previous reward period
@@ -1359,8 +1375,8 @@ pub mod pallet {
                     Error::<T>::HeartbeatThresholdReached
                 );
 
-                let expected_submission = uptime_info.last_reported +
-                    BlockNumberFor::<T>::from(HeartbeatPeriod::<T>::get());
+                let expected_submission =
+                    uptime_info.last_reported + BlockNumberFor::<T>::from(reward_period.heartbeat_period);
                 ensure!(
                     frame_system::Pallet::<T>::block_number() >= expected_submission,
                     Error::<T>::DuplicateHeartbeat
@@ -1403,8 +1419,10 @@ pub mod pallet {
             Ok(())
         }
 
-        pub(crate) fn calculate_uptime_threshold(reward_period_length: u32) -> u32 {
-            let heartbeat_period = HeartbeatPeriod::<T>::get();
+        pub(crate) fn calculate_uptime_threshold(
+            reward_period_length: u32,
+            heartbeat_period: u32,
+        ) -> u32 {
             let threshold = MinUptimeThreshold::<T>::get().unwrap_or(Self::get_default_threshold());
 
             let max_heartbeats = reward_period_length.saturating_div(heartbeat_period);
