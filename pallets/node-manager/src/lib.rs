@@ -1633,6 +1633,8 @@ pub mod pallet {
             match PendingMintRequestState::<T>::get() {
                 Some(mut pending) if pending.tx_id == tx_id => {
                     if !succeeded {
+                        log::error!("💔 Mint request to Ethereum failed. tx_id: {:?}", tx_id);
+
                         Self::resolve_pending_mint_request(tx_id, false);
                         return Ok(())
                     }
