@@ -132,9 +132,10 @@ impl<T: Config> Pallet<T> {
 
     pub fn complete_reward_payout(period_index: RewardPeriodIndex) {
         if let Some(reward_pot) = RewardPot::<T>::get(period_index) {
-            let updated_outstanding_reward =
-                OutstandingRewardToPay::<T>::get().saturating_sub(reward_pot.total_reward);
-            OutstandingRewardToPay::<T>::put(updated_outstanding_reward);
+            let paid_reward = reward_pot.total_reward;
+            OutstandingRewardToPay::<T>::mutate(|outstanding| {
+                *outstanding = outstanding.saturating_sub(paid_reward);
+            });
         }
 
         // We finished paying all nodes for this period

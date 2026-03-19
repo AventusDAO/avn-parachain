@@ -43,10 +43,10 @@ impl<
     }
 
     /// New reward period
-    pub fn update(&self, now: B, uptime_threshold: u32) -> Self {
+    pub fn update(&self, now: B, length: u32, uptime_threshold: u32) -> Self {
         let current = self.current.saturating_add(1u64);
         let first = now;
-        Self { current, first, length: self.length, uptime_threshold }
+        Self { current, first, length, uptime_threshold }
     }
 }
 

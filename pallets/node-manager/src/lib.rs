@@ -412,8 +412,6 @@ pub mod pallet {
         HeartbeatPeriodSet { new_heartbeat_period: u32 },
         /// Heartbeat received
         HeartbeatReceived { reward_period_index: RewardPeriodIndex, node: NodeId<T> },
-        /// Reward amount set
-        RewardAmountSet { new_amount: BalanceOf<T> },
         /// Reward amount per period set
         RewardAmountPerPeriodSet { new_amount: BalanceOf<T> },
         /// Number of periods to mint set
@@ -669,14 +667,13 @@ pub mod pallet {
                     let heartbeat = <HeartbeatPeriod<T>>::get();
                     ensure!(period > heartbeat, Error::<T>::RewardPeriodInvalid);
 
-                    let reward_period = RewardPeriod::<T>::get();
-                    let index = reward_period.current;
+                    let period_index = RewardPeriod::<T>::get().current;
                     let old_period = ConfiguredRewardPeriodLength::<T>::get();
 
                     ConfiguredRewardPeriodLength::<T>::put(period);
 
                     Self::deposit_event(Event::RewardPeriodLengthSet {
-                        period_index: index,
+                        period_index,
                         old_reward_period_length: old_period,
                         new_reward_period_length: period,
                     });
@@ -1184,10 +1181,8 @@ pub mod pallet {
 
             let next_reward_period_length = ConfiguredRewardPeriodLength::<T>::get();
             let next_uptime_threshold = Self::calculate_uptime_threshold(next_reward_period_length);
-
-            let mut reward_period_for_next = reward_period;
-            reward_period_for_next.length = next_reward_period_length;
-            let next_reward_period = reward_period_for_next.update(n, next_uptime_threshold);
+            let next_reward_period =
+                reward_period.update(n, next_reward_period_length, next_uptime_threshold);
             RewardPeriod::<T>::put(&next_reward_period);
 
             // take a snapshot of the reward pot amount to pay for the previous reward period
@@ -1200,9 +1195,9 @@ pub mod pallet {
                 ),
             );
 
-            let updated_outstanding_reward =
-                OutstandingRewardToPay::<T>::get().saturating_add(reward_amount);
-            OutstandingRewardToPay::<T>::put(updated_outstanding_reward);
+            OutstandingRewardToPay::<T>::mutate(|outstanding| {
+                *outstanding = outstanding.saturating_add(reward_amount);
+            });
 
             Self::deposit_event(Event::NewRewardPeriodStarted {
                 reward_period_index: next_reward_period.current,
