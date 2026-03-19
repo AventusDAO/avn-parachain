@@ -404,3 +404,11 @@ pub enum StakeOperation {
     Add,
     Remove,
 }
+
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+pub struct PendingMintRequest<Balance> {
+    pub tx_id: EthereumId,
+    pub amount: Balance,
+    pub bridge_confirmed: bool,
+    pub credit_received: bool,
+}
