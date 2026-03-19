@@ -500,6 +500,11 @@ impl pallet_avn_anchor::Config for Runtime {
     type Signature = Signature;
     type Token = EthAddress;
     type DefaultCheckpointFee = DefaultCheckpointFee;
+    type AnchorPotId = RewardPotId;
+    type MaxRegisteredAppChains = ConstU32<256>;
+    type AppChainAssetId = CurrencyId;
+    type AssetRegistryStringLimit = AssetRegistryStringLimit;
+    type AssetRegistry = AssetRegistry;
 }
 
 pub type EthAddress = H160;

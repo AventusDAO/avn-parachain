@@ -50,10 +50,10 @@ pub trait WeightInfo {
 	fn set_admin_config_unstake_period() -> Weight;
 	fn set_admin_config_restricted_unstake_duration() -> Weight;
 	fn set_admin_config_appchain_fee_percentage() -> Weight;
-	fn on_initialise_with_new_reward_period() -> Weight;
+	fn on_initialise_with_new_reward_period(c: u32) -> Weight;
 	fn on_initialise_no_reward_period() -> Weight;
 	fn offchain_submit_heartbeat() -> Weight;
-	fn offchain_pay_nodes(b: u32, ) -> Weight;
+	fn offchain_pay_nodes(b: u32, c: u32) -> Weight;
 	fn pay_nodes_constant_batch_size(n: u32, ) -> Weight;
 	fn signed_register_node() -> Weight;
 	fn deregister_nodes(b: u32, ) -> Weight;
@@ -303,14 +303,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `NodeManager::TotalUptime` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::RewardPot` (r:0 w:1)
 	/// Proof: `NodeManager::RewardPot` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	fn on_initialise_with_new_reward_period() -> Weight {
+	/// The range of component `c` is `[0, 256]`.
+	fn on_initialise_with_new_reward_period(c: u32, ) -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `215`
 		//  Estimated: `3497`
 		// Minimum execution time: 23_376_000 picoseconds.
 		Weight::from_parts(26_125_000, 3497)
 			.saturating_add(T::DbWeight::get().reads(6_u64))
+			// Per app chain: read AppChainRewardPot + write AppChainRewardPotSnapshot + remove AppChainRewardPot
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(c.into())))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
+			.saturating_add(T::DbWeight::get().writes((2_u64).saturating_mul(c.into())))
 	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:0)
 	/// Proof: `NodeManager::RewardEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
@@ -362,7 +366,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `NodeManager::NodeRegistry` (r:999 w:0)
 	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(112), added: 2587, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 1000]`.
-	fn offchain_pay_nodes(b: u32, ) -> Weight {
+	/// The range of component `c` is `[0, 256]`.
+	fn offchain_pay_nodes(b: u32, c: u32) -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `2334 + b * (184 ±0)`
 		//  Estimated: `6196 + b * (2587 ±0)`
@@ -372,6 +377,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(Weight::from_parts(46_177_465, 0).saturating_mul(b.into()))
 			.saturating_add(T::DbWeight::get().reads(10_u64))
 			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(b.into())))
+			// Per node per app chain: read AppChainRewardPotSnapshot + read AppChainTokenInfo
+			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(b.into()).saturating_mul(c.into())))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2587).saturating_mul(b.into()))
@@ -655,14 +662,18 @@ impl WeightInfo for () {
 	/// Proof: `NodeManager::TotalUptime` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::RewardPot` (r:0 w:1)
 	/// Proof: `NodeManager::RewardPot` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	fn on_initialise_with_new_reward_period() -> Weight {
+	/// The range of component `c` is `[0, 256]`.
+	fn on_initialise_with_new_reward_period(c: u32, ) -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `215`
 		//  Estimated: `3497`
 		// Minimum execution time: 23_376_000 picoseconds.
 		Weight::from_parts(26_125_000, 3497)
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			// Per app chain: read AppChainRewardPot + write AppChainRewardPotSnapshot + remove AppChainRewardPot
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(c.into())))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(RocksDbWeight::get().writes((2_u64).saturating_mul(c.into())))
 	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:0)
 	/// Proof: `NodeManager::RewardEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
@@ -714,7 +725,8 @@ impl WeightInfo for () {
 	/// Storage: `NodeManager::NodeRegistry` (r:999 w:0)
 	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(112), added: 2587, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 1000]`.
-	fn offchain_pay_nodes(b: u32, ) -> Weight {
+	/// The range of component `c` is `[0, 256]`.
+	fn offchain_pay_nodes(b: u32, c: u32) -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `2334 + b * (184 ±0)`
 		//  Estimated: `6196 + b * (2587 ±0)`
@@ -724,6 +736,8 @@ impl WeightInfo for () {
 			.saturating_add(Weight::from_parts(46_177_465, 0).saturating_mul(b.into()))
 			.saturating_add(RocksDbWeight::get().reads(10_u64))
 			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(b.into())))
+			// Per node per app chain: read AppChainRewardPotSnapshot + read AppChainTokenInfo
+			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(b.into()).saturating_mul(c.into())))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2587).saturating_mul(b.into()))

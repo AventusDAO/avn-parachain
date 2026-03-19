@@ -9,7 +9,9 @@ use frame_support::{
     dispatch::DispatchResult,
     ensure,
     traits::{Currency, StorageVersion},
+    PalletId,
 };
+use sp_runtime::traits::{AccountIdConversion, Zero};
 
 pub mod default_weights;
 pub use default_weights::WeightInfo;
@@ -36,7 +38,7 @@ pub const REGISTER_CHAIN_HANDLER: &'static [u8] = b"register_chain_handler";
 pub const UPDATE_CHAIN_HANDLER: &'static [u8] = b"update_chain_handler";
 pub const SUBMIT_CHECKPOINT: &'static [u8] = b"submit_checkpoint";
 
-const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 pub use self::pallet::*;
 pub type ChainId = u32;
@@ -51,9 +53,18 @@ pub mod pallet {
     use super::*;
     use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType};
     use frame_system::pallet_prelude::*;
-    use sp_avn_common::{verify_signature, FeePaymentHandler, InnerCallValidator, Proof};
+    use orml_traits::asset_registry::{
+        AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
+        Mutate as AssetRegistryMutate,
+    };
+    use sp_avn_common::{
+        verify_signature, AppChainRewardDistributor, FeePaymentHandler, InnerCallValidator, Proof,
+    };
     use sp_core::H160;
-    use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
+    use sp_runtime::{
+        traits::{Dispatchable, IdentifyAccount, Verify},
+        Perquintill, Saturating, SaturatedConversion,
+    };
 
     pub type ChainId = u32;
     #[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
@@ -108,6 +119,30 @@ pub mod pallet {
 
         /// The default fee for checkpoint submission
         type DefaultCheckpointFee: Get<BalanceOf<Self>>;
+
+        /// The pallet ID used to derive the app chain reward pot account.
+        #[pallet::constant]
+        type AnchorPotId: Get<PalletId>;
+
+        /// Maximum number of app chains that can register a token for reward distribution.
+        #[pallet::constant]
+        type MaxRegisteredAppChains: Get<u32>;
+
+        /// The asset-id type used by the on-chain asset registry (e.g. `CurrencyId`).
+        type AppChainAssetId: Parameter + Member + Copy + MaxEncodedLen;
+
+        /// String size limit accepted by the asset registry for name/symbol fields.
+        #[pallet::constant]
+        type AssetRegistryStringLimit: Get<u32>;
+
+        /// Asset registry for registering app chain tokens on-chain.
+        type AssetRegistry: AssetRegistryMutate<
+            AvnAssetLocation,
+            AssetId = Self::AppChainAssetId,
+            Balance = BalanceOf<Self>,
+            CustomMetadata = AvnAssetMetadata,
+            StringLimit = Self::AssetRegistryStringLimit,
+        >;
     }
 
     #[pallet::pallet]
@@ -130,6 +165,25 @@ pub mod pallet {
 
         /// Fee was charged for checkpoint submission [handler, fee, nonce]
         CheckpointFeeCharged { handler: T::AccountId, chain_id: ChainId, fee: BalanceOf<T> },
+
+        /// A new app chain was fully registered: handler, token, and asset registry entry.
+        AppChainRegistered {
+            chain_id: ChainId,
+            handler: T::AccountId,
+            token: T::Token,
+            asset_id: T::AppChainAssetId,
+        },
+
+        /// The app chain reward pot was funded.
+        AppChainRewardPotFunded { chain_id: ChainId, funder: T::AccountId, amount: BalanceOf<T> },
+
+        /// App chain token reward paid to a node owner for a reward period.
+        AppChainRewardPaid {
+            chain_id: ChainId,
+            beneficiary: T::AccountId,
+            amount: BalanceOf<T>,
+            period: u64,
+        },
     }
 
     #[pallet::error]
@@ -146,6 +200,16 @@ pub mod pallet {
         UnauthorizedProxyTransaction,
         NoChainDataAvailable,
         CheckpointOriginAlreadyExists,
+        /// The app chain already has a token registered.
+        AppChainTokenAlreadyRegistered,
+        /// The app chain has no token registered yet.
+        AppChainTokenNotRegistered,
+        /// The funding amount must be greater than zero.
+        ZeroFundingAmount,
+        /// The maximum number of registered app chains has been reached.
+        MaxAppChainsReached,
+        /// The chain name is too long to fit in the asset registry string limit.
+        ChainNameTooLongForRegistry,
     }
 
     #[pallet::storage]
@@ -198,8 +262,44 @@ pub mod pallet {
     pub type NextCheckpointId<T> =
         StorageMap<_, Blake2_128Concat, ChainId, CheckpointId, ValueQuery>;
 
+    /// The native token (H160 Ethereum address) registered by each app chain for reward
+    /// distribution.
+    #[pallet::storage]
+    #[pallet::getter(fn app_chain_token_info)]
+    pub type AppChainTokenInfo<T: Config> =
+        StorageMap<_, Blake2_128Concat, ChainId, T::Token, OptionQuery>;
+
+    /// Ordered list of chain IDs that have registered a token for reward distribution.
+    /// Bounded to avoid unbounded iteration.
+    #[pallet::storage]
+    pub type RegisteredChainIds<T: Config> =
+        StorageValue<_, BoundedVec<ChainId, T::MaxRegisteredAppChains>, ValueQuery>;
+
+    /// Accumulated (unfunded) app chain token balance not yet committed to any reward period.
+    /// Resets to zero each time a period snapshot is taken.
+    #[pallet::storage]
+    #[pallet::getter(fn app_chain_reward_pot)]
+    pub type AppChainRewardPot<T: Config> =
+        StorageMap<_, Blake2_128Concat, ChainId, BalanceOf<T>, ValueQuery>;
+
+    /// Snapshot of each app chain's reward pot committed to a given reward period.
+    /// Keyed by (period_index, chain_id) for efficient per-period cleanup.
+    #[pallet::storage]
+    pub type AppChainRewardPotSnapshot<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        u64, // reward period index
+        Blake2_128Concat,
+        ChainId,
+        BalanceOf<T>,
+        OptionQuery,
+    >;
+
     #[pallet::call]
     impl<T: Config> Pallet<T> {
+        /// Deprecated: use [`Pallet::register_appchain`] instead, which atomically registers the
+        /// chain handler, the native token, and the asset-registry entry in a single call.
+        /// Retained for backwards compatibility only.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::register_chain_handler())]
         #[pallet::call_index(0)]
         pub fn register_chain_handler(
@@ -359,6 +459,88 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// Register a new app chain: assigns a chain ID, stores the handler, registers the native
+        /// token, and creates an asset-registry entry with `appchain_native: true`.
+        ///
+        /// This call supersedes separate calls to `register_chain_handler` +
+        /// `register_appchain_token`. The `asset_id` must be a unique `CurrencyId` not yet
+        /// registered in the asset registry.
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::register_appchain())]
+        #[pallet::call_index(7)]
+        pub fn register_appchain(
+            origin: OriginFor<T>,
+            name: BoundedVec<u8, ChainNameLimit>,
+            token: T::Token,
+            asset_id: T::AppChainAssetId,
+            decimals: u32,
+        ) -> DispatchResult {
+            let handler = ensure_signed(origin)?;
+
+            // Register chain handler and get the assigned chain_id
+            let chain_id = Self::do_register_chain_handler(&handler, name.clone())?;
+
+            // Register the app chain token
+            AppChainTokenInfo::<T>::insert(chain_id, token);
+            RegisteredChainIds::<T>::try_mutate(|ids| ids.try_push(chain_id))
+                .map_err(|_| Error::<T>::MaxAppChainsReached)?;
+
+            // Register the token in the asset registry
+            let name_inner = name.into_inner();
+            let name_bytes: BoundedVec<u8, T::AssetRegistryStringLimit> = name_inner
+                .clone()
+                .try_into()
+                .map_err(|_| Error::<T>::ChainNameTooLongForRegistry)?;
+            let symbol_bytes: BoundedVec<u8, T::AssetRegistryStringLimit> = name_inner
+                .try_into()
+                .map_err(|_| Error::<T>::ChainNameTooLongForRegistry)?;
+            let location = AvnAssetLocation::Ethereum(token.into());
+            let metadata = RegistryAssetMetadata {
+                decimals,
+                name: name_bytes,
+                symbol: symbol_bytes,
+                existential_deposit: BalanceOf::<T>::default(),
+                location: Some(location),
+                additional: AvnAssetMetadata { appchain_native: true },
+            };
+
+            T::AssetRegistry::register_asset(Some(asset_id), metadata)?;
+
+            Self::deposit_event(Event::AppChainRegistered { chain_id, handler, token, asset_id });
+            Ok(())
+        }
+
+        /// Fund the app chain reward pot with native app chain tokens.
+        ///
+        /// Must be called by the registered chain handler. Tokens are transferred from the
+        /// handler's account to the avn-anchor pot account via the token manager.
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::fund_appchain_reward_pot())]
+        #[pallet::call_index(8)]
+        pub fn fund_appchain_reward_pot(
+            origin: OriginFor<T>,
+            chain_id: ChainId,
+            amount: BalanceOf<T>,
+        ) -> DispatchResult {
+            let funder = ensure_signed(origin)?;
+
+            let funder_chain_id =
+                ChainHandlers::<T>::get(&funder).ok_or(Error::<T>::ChainNotRegistered)?;
+            ensure!(funder_chain_id == chain_id, Error::<T>::UnauthorizedHandler);
+
+            let token = AppChainTokenInfo::<T>::get(chain_id)
+                .ok_or(Error::<T>::AppChainTokenNotRegistered)?;
+            ensure!(amount > BalanceOf::<T>::default(), Error::<T>::ZeroFundingAmount);
+
+            let pot_account = Self::compute_appchain_pot_account_id();
+            T::FeeHandler::pay_fee(&token, &amount, &funder, &pot_account)?;
+
+            AppChainRewardPot::<T>::mutate(chain_id, |bal| {
+                *bal = bal.saturating_add(amount);
+            });
+
+            Self::deposit_event(Event::AppChainRewardPotFunded { chain_id, funder, amount });
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -491,6 +673,11 @@ pub mod pallet {
             StorageVersion::get::<Pallet<T>>()
         }
 
+        /// The account ID of the app chain reward pot.
+        pub fn compute_appchain_pot_account_id() -> T::AccountId {
+            T::AnchorPotId::get().into_account_truncating()
+        }
+
         fn get_encoded_call_param(
             call: &<T as Config>::RuntimeCall,
         ) -> Option<(&Proof<T::Signature, T::AccountId>, Vec<u8>)> {
@@ -552,6 +739,86 @@ pub mod pallet {
                     Some((proof, encoded_data))
                 },
                 _ => None,
+            }
+        }
+    }
+
+    impl<T: Config> AppChainRewardDistributor for Pallet<T> {
+        type AccountId = T::AccountId;
+
+        fn snapshot_appchain_reward_pots(period_index: u64) {
+            for chain_id in RegisteredChainIds::<T>::get() {
+                let pending = AppChainRewardPot::<T>::get(chain_id);
+                AppChainRewardPotSnapshot::<T>::insert(period_index, chain_id, pending);
+                AppChainRewardPot::<T>::remove(chain_id);
+            }
+        }
+
+        fn distribute_appchain_rewards(
+            beneficiary: &T::AccountId,
+            reward_percentage: Perquintill,
+            period_index: u64,
+        ) -> Result<(), sp_runtime::DispatchError> {
+            let pot_account = Self::compute_appchain_pot_account_id();
+
+            for chain_id in RegisteredChainIds::<T>::get() {
+                let token = match AppChainTokenInfo::<T>::get(chain_id) {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+                let snapshot = match AppChainRewardPotSnapshot::<T>::get(period_index, chain_id) {
+                    Some(s) if !s.is_zero() => s,
+                    _ => continue,
+                };
+
+                let snapshot_u128: u128 = snapshot.saturated_into();
+                let amount: BalanceOf<T> =
+                    reward_percentage.mul_floor(snapshot_u128).saturated_into();
+                if amount.is_zero() {
+                    continue;
+                }
+
+                match T::FeeHandler::pay_fee(&token, &amount, &pot_account, beneficiary) {
+                    Ok(_) => Self::deposit_event(Event::AppChainRewardPaid {
+                        chain_id,
+                        beneficiary: beneficiary.clone(),
+                        amount,
+                        period: period_index,
+                    }),
+                    Err(e) => log::error!(
+                        "💔 Failed to pay app chain reward. chain_id: {:?}, period: {:?}, amount: {:?}, error: {:?}",
+                        chain_id, period_index, amount, e
+                    ),
+                }
+            }
+
+            Ok(())
+        }
+
+        fn on_reward_period_complete(period_index: u64) {
+            let _ = AppChainRewardPotSnapshot::<T>::clear_prefix(period_index, u32::MAX, None);
+        }
+
+        fn registered_chain_count() -> u32 {
+            RegisteredChainIds::<T>::get().len() as u32
+        }
+
+        #[cfg(feature = "runtime-benchmarks")]
+        fn setup_benchmark_chains(period_index: u64, chain_count: u32) {
+            let default_token = T::Token::default();
+            let default_amount: BalanceOf<T> = BalanceOf::<T>::from(1_000_000u32);
+
+            for i in 0..chain_count {
+                let chain_id = i as ChainId;
+                if !AppChainTokenInfo::<T>::contains_key(chain_id) {
+                    AppChainTokenInfo::<T>::insert(chain_id, default_token);
+                    RegisteredChainIds::<T>::mutate(|ids| {
+                        let _ = ids.try_push(chain_id);
+                    });
+                }
+                AppChainRewardPot::<T>::insert(chain_id, default_amount);
+                AppChainRewardPotSnapshot::<T>::insert(period_index, chain_id, default_amount);
             }
         }
     }

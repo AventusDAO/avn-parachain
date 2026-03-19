@@ -138,6 +138,7 @@ parameter_types! {
     pub const Offset: u64 = 0;
     pub const DisabledValidatorsThreshold: Perbill = Perbill::from_percent(33);
     pub const DefaultCheckpointFee: Balance = 1_000_000_000;
+    pub const AvnAnchorPotId: PalletId = PalletId(*b"avnanch!");
 }
 
 impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
@@ -334,6 +335,11 @@ impl Config for TestRuntime {
     type Token = sp_core::H160;
     type Currency = Balances;
     type DefaultCheckpointFee = DefaultCheckpointFee;
+    type AnchorPotId = AvnAnchorPotId;
+    type MaxRegisteredAppChains = ConstU32<256>;
+    type AppChainAssetId = sp_avn_common::primitives::CurrencyId;
+    type AssetRegistryStringLimit = ConstU32<1024>;
+    type AssetRegistry = AssetRegistry;
 }
 
 type AssetMetadata = orml_traits::asset_registry::AssetMetadata<

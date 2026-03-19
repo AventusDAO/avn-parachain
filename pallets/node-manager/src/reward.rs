@@ -34,7 +34,7 @@ impl<T: Config> Pallet<T> {
         weight: u128,
         total_weight: &u128,
         total_reward: &BalanceOf<T>,
-    ) -> Result<BalanceOf<T>, DispatchError> {
+    ) -> Result<(BalanceOf<T>, Perquintill), DispatchError> {
         if total_weight.is_zero() {
             return Err(DispatchError::Arithmetic(ArithmeticError::DivisionByZero))
         }
@@ -43,7 +43,7 @@ impl<T: Config> Pallet<T> {
         let ratio = Perquintill::from_rational(weight, *total_weight);
         let total_rewards_u128: u128 = (*total_reward).saturated_into();
 
-        Ok(ratio.mul_floor(total_rewards_u128).saturated_into())
+        Ok((ratio.mul_floor(total_rewards_u128).saturated_into(), ratio))
     }
 
     // ** Note **: this function will not roll back in case of error, so make sure storage changes
@@ -53,6 +53,7 @@ impl<T: Config> Pallet<T> {
         node_id: NodeId<T>,
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         amount: BalanceOf<T>,
+        reward_percentage: Perquintill,
     ) -> DispatchResult {
         let node_owner = node_info.owner.clone();
 
@@ -90,6 +91,15 @@ impl<T: Config> Pallet<T> {
         // Pay the fee to the treasury
         if let Err(e) = T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id) {
             log::error!("💔 Failed to pay appchain fee of {:?} from reward pot. Node {:?}. Period: {:?}. Error: {:?}", appchain_fee, node_id, period, e);
+        }
+
+        // Distribute app chain token rewards proportional to this node's share
+        if let Err(e) = T::AppChainRewardDistributor::distribute_appchain_rewards(
+            &node_owner,
+            reward_percentage,
+            *period,
+        ) {
+            log::error!("💔 Failed to distribute app chain rewards. Node {:?}. Period: {:?}. Error: {:?}", node_id, period, e);
         }
 
         if net_reward <= Zero::zero() {
@@ -134,6 +144,9 @@ impl<T: Config> Pallet<T> {
         LastPaidPointer::<T>::kill();
         <TotalUptime<T>>::remove(period_index);
         <RewardPot<T>>::remove(period_index);
+
+        // Let the app chain distributor clean up its per-period snapshot storage
+        T::AppChainRewardDistributor::on_reward_period_complete(period_index);
 
         Self::deposit_event(Event::RewardPayoutCompleted { reward_period_index: period_index });
     }

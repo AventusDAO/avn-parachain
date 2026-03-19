@@ -65,6 +65,7 @@ impl Config for TestRuntime {
     type VirtualNodeStake = VirtualNodeStake;
     type Token = H160;
     type AppChainFeeHandler = Self;
+    type AppChainRewardDistributor = Self;
     type WeightInfo = ();
 }
 
@@ -307,6 +308,29 @@ pub fn mock_get_finalised_block(state: &mut OffchainState, response: &Option<Vec
         sent: true,
         ..Default::default()
     });
+}
+
+impl sp_avn_common::AppChainRewardDistributor for TestRuntime {
+    type AccountId = AccountId;
+
+    fn snapshot_appchain_reward_pots(_period_index: u64) {}
+
+    fn distribute_appchain_rewards(
+        _beneficiary: &AccountId,
+        _reward_percentage: sp_runtime::Perquintill,
+        _period_index: u64,
+    ) -> Result<(), sp_runtime::DispatchError> {
+        Ok(())
+    }
+
+    fn on_reward_period_complete(_period_index: u64) {}
+
+    fn registered_chain_count() -> u32 {
+        0
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn setup_benchmark_chains(_period_index: u64, _chain_count: u32) {}
 }
 
 impl FeePaymentHandler for TestRuntime {

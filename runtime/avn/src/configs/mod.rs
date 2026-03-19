@@ -545,6 +545,11 @@ impl pallet_avn_anchor::Config for Runtime {
     type Signature = Signature;
     type Token = EthAddress;
     type DefaultCheckpointFee = DefaultCheckpointFee;
+    type AnchorPotId = NodeManagerPalletId;
+    type MaxRegisteredAppChains = ConstU32<256>;
+    type AppChainAssetId = CurrencyId;
+    type AssetRegistryStringLimit = AssetRegistryStringLimit;
+    type AssetRegistry = AssetRegistry;
 }
 
 impl pallet_eth_bridge::Config for Runtime {
@@ -592,6 +597,7 @@ impl pallet_node_manager::Config for Runtime {
     type VirtualNodeStake = VirtualNodeStake;
     type Token = EthAddress;
     type AppChainFeeHandler = TokenManager;
+    type AppChainRewardDistributor = AvnAnchor;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
 }
 

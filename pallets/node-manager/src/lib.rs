@@ -15,7 +15,9 @@ use frame_system::{
 };
 use pallet_avn::{self as avn};
 use sp_application_crypto::RuntimeAppPublic;
-use sp_avn_common::{event_types::Validator, FeePaymentHandler, REGISTERED_NODE_KEY};
+use sp_avn_common::{
+    event_types::Validator, AppChainRewardDistributor, FeePaymentHandler, REGISTERED_NODE_KEY,
+};
 use sp_core::{MaxEncodedLen, H160};
 use sp_runtime::{
     offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
@@ -535,6 +537,9 @@ pub mod pallet {
             TokenBalance = <Self::Currency as Currency<Self::AccountId>>::Balance,
             Error = DispatchError,
         >;
+        /// Hook for distributing registered app chain token rewards alongside AVT payouts.
+        /// Use `()` in runtimes without app chain integration.
+        type AppChainRewardDistributor: AppChainRewardDistributor<AccountId = Self::AccountId>;
         /// The id of the reward pot.
         #[pallet::constant]
         type RewardPotId: Get<PalletId>;
@@ -700,7 +705,7 @@ pub mod pallet {
 
         /// Offchain call: pay and remove up to `MAX_BATCH_SIZE` nodes in the oldest unpaid period.
         #[pallet::call_index(2)]
-        #[pallet::weight(<T as Config>::WeightInfo::offchain_pay_nodes(MAX_BATCH_SIZE))]
+        #[pallet::weight(<T as Config>::WeightInfo::offchain_pay_nodes(MAX_BATCH_SIZE, T::AppChainRewardDistributor::registered_chain_count()))]
         pub fn offchain_pay_nodes(
             origin: OriginFor<T>,
             reward_period_index: RewardPeriodIndex,
@@ -726,7 +731,7 @@ pub mod pallet {
             if total_uptime.total_weight == 0 && maybe_node_uptime.is_none() {
                 // No nodes to pay for this period so complete it
                 Self::complete_reward_payout(oldest_period);
-                return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
+                return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32, T::AppChainRewardDistributor::registered_chain_count())).into())
             }
 
             ensure!(total_uptime.total_weight > 0, Error::<T>::TotalUptimeNotFound);
@@ -768,10 +773,16 @@ pub mod pallet {
                     reward_pot.reward_end_time,
                 );
 
-                let reward_amount =
+                let (reward_amount, reward_percentage) =
                     Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
 
-                Self::pay_reward(&oldest_period, node.clone(), &node_info, reward_amount)?;
+                Self::pay_reward(
+                    &oldest_period,
+                    node.clone(),
+                    &node_info,
+                    reward_amount,
+                    reward_percentage,
+                )?;
                 Ok(())
             };
 
@@ -798,7 +809,7 @@ pub mod pallet {
             }
 
             return Ok(
-                Some(<T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32)).into()
+                Some(<T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32, T::AppChainRewardDistributor::registered_chain_count())).into()
             )
         }
 
@@ -1100,6 +1111,9 @@ pub mod pallet {
                     ),
                 );
 
+                // snapshot app chain reward pots for the same period
+                T::AppChainRewardDistributor::snapshot_appchain_reward_pots(previous_index);
+
                 Self::deposit_event(Event::NewRewardPeriodStarted {
                     reward_period_index: reward_period.current,
                     reward_period_length: reward_period.length,
@@ -1107,7 +1121,7 @@ pub mod pallet {
                     previous_period_reward: reward_amount,
                 });
 
-                return <T as Config>::WeightInfo::on_initialise_with_new_reward_period()
+                return <T as Config>::WeightInfo::on_initialise_with_new_reward_period(T::AppChainRewardDistributor::registered_chain_count())
             }
 
             return <T as Config>::WeightInfo::on_initialise_no_reward_period()

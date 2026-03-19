@@ -270,9 +270,12 @@ benchmarks! {
     }
 
     on_initialise_with_new_reward_period {
+        let c in 0 .. 100;
         let reward_period = <RewardPeriod<T>>::get();
         let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();
         enable_rewards::<T>();
+        // Set up c app chains with pending pot balances to benchmark snapshot_appchain_reward_pots
+        T::AppChainRewardDistributor::setup_benchmark_chains(reward_period.current, c);
     }: { Pallet::<T>::on_initialize(block_number) }
     verify {
         let new_reward_period_index = reward_period.current + 1u64;
@@ -328,6 +331,8 @@ benchmarks! {
 
         // This should affect the performance of the extrinsic.
         let b in 1 .. 1000;
+        // Number of registered app chains — affects distribute_appchain_rewards per node.
+        let c in 0 .. 100;
 
         enable_rewards::<T>();
         fund_reward_pot::<T>();
@@ -339,6 +344,9 @@ benchmarks! {
         let author = create_author::<T>();
 
         let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, registered_nodes);
+
+        // Set up c app chains with pending pots so they get snapshotted during on_initialize below
+        T::AppChainRewardDistributor::setup_benchmark_chains(reward_period_index, c);
 
         // Move forward to the next reward period
         <frame_system::Pallet<T>>::set_block_number((reward_period.length + 1).into());

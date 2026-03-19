@@ -458,6 +458,59 @@ impl<BlockNumber, Weight: Zero> OnIdleHandler<BlockNumber, Weight> for () {
     }
 }
 
+/// Hook for node-manager to trigger app chain reward distribution without tight coupling.
+/// Implemented by the avn-anchor pallet; the () no-op is used in tests / runtimes without app
+/// chains.
+pub trait AppChainRewardDistributor {
+    type AccountId;
+
+    /// Called when a new reward period snapshot is taken.
+    /// Implementations should snapshot the current unfunded pot balances into period storage.
+    fn snapshot_appchain_reward_pots(period_index: u64);
+
+    /// Distribute app chain token rewards proportional to `reward_percentage` to `beneficiary`.
+    /// Called once per node per payout batch.
+    fn distribute_appchain_rewards(
+        beneficiary: &Self::AccountId,
+        reward_percentage: sp_runtime::Perquintill,
+        period_index: u64,
+    ) -> Result<(), sp_runtime::DispatchError>;
+
+    /// Called when all rewards for `period_index` have been paid out.
+    /// Implementations should clean up any per-period snapshot storage.
+    fn on_reward_period_complete(period_index: u64);
+
+    /// Returns the number of currently registered app chains. Used for weight calculation.
+    fn registered_chain_count() -> u32;
+
+    /// Populate benchmark state with `chain_count` registered chains for the given period.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn setup_benchmark_chains(period_index: u64, chain_count: u32);
+}
+
+impl AppChainRewardDistributor for () {
+    type AccountId = ();
+
+    fn snapshot_appchain_reward_pots(_period_index: u64) {}
+
+    fn distribute_appchain_rewards(
+        _beneficiary: &(),
+        _reward_percentage: sp_runtime::Perquintill,
+        _period_index: u64,
+    ) -> Result<(), sp_runtime::DispatchError> {
+        Ok(())
+    }
+
+    fn on_reward_period_complete(_period_index: u64) {}
+
+    fn registered_chain_count() -> u32 {
+        0
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn setup_benchmark_chains(_period_index: u64, _chain_count: u32) {}
+}
+
 #[derive(
     Encode,
     Decode,
