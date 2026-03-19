@@ -132,11 +132,11 @@ pub(crate) type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
     <T as frame_system::Config>::AccountId,
 >>::PositiveImbalance;
 pub(crate) type RewardPeriodIndex = u64;
-/// A type alias for a unique identifier of a node
+/// Node account ID
 pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
-/// The max number of nodes that can be deregistered in a single call
+/// Max nodes per deregistration call
 pub type MaxNodesToDeregister = ConstU32<MAX_NODES_TO_DEREGISTER>;
-/// The max number of stake changes an owner can do in a period
+/// Max stake changes per period
 pub type MaxStakeChangesPerPeriod = ConstU32<MAX_STAKE_CHANGES_PER_PERIOD>;
 
 #[frame_support::pallet]
@@ -149,7 +149,7 @@ pub mod pallet {
     #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T>(_);
 
-    /// Map of registered nodes
+    /// Registered nodes
     #[pallet::storage]
     pub type NodeRegistry<T: Config> = StorageMap<
         _,
@@ -159,18 +159,16 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Reverse index: signing_key -> node_id
+    /// Signing key to node ID
     #[pallet::storage]
     pub type SigningKeyToNodeId<T: Config> =
         StorageMap<_, Blake2_128Concat, T::SignerId, NodeId<T>, OptionQuery>;
 
-    /// Total registered nodes.
-    /// Note: This is mainly used for performance reasons. It is better to have a single value
-    /// storage than iterate over a huge map.
+    /// Total registered nodes
     #[pallet::storage]
     pub type TotalRegisteredNodes<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// Registry of nodes with their owners.
+    /// Owner to node mapping
     #[pallet::storage]
     pub type OwnedNodes<T: Config> = StorageDoubleMap<
         _,
@@ -182,36 +180,36 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Count of nodes owned by an account.
+    /// Number of nodes owned by each account
     #[pallet::storage]
     pub type OwnedNodesCount<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, u32, ValueQuery>;
 
-    /// The admin account that can register new nodes
+    /// Account allowed to register nodes
     #[pallet::storage]
     pub type NodeRegistrar<T: Config> = StorageValue<_, T::AccountId, OptionQuery>;
 
-    /// The maximum batch size to pay rewards
+    /// Max nodes paid per batch
     #[pallet::storage]
     pub type MaxBatchSize<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// The heartbeat period in blocks
+    /// Heartbeat period in blocks
     #[pallet::storage]
     pub type HeartbeatPeriod<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// The configured reward period length to apply when the next reward period starts.
+    /// Reward period length for the next period
     #[pallet::storage]
     pub type ConfiguredRewardPeriodLength<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// The total amount to pay out for each period
+    /// Reward amount paid each period
     #[pallet::storage]
     pub type RewardAmountPerPeriod<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
-    /// Number of reward periods to keep funded in the reward pot
+    /// Future periods to keep funded
     #[pallet::storage]
     pub type NumPeriodsToMint<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// Map of reward pot amounts for each reward period.
+    /// Reward snapshots by period
     #[pallet::storage]
     pub(super) type RewardPot<T: Config> = StorageMap<
         _,
@@ -221,31 +219,29 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Running total of reward pot amounts for all periods that have been snapshotted but not yet
-    /// fully paid. This allows mint requirement calculation to be O(1) instead of iterating
-    /// across all unpaid periods.
+    /// Total rewards still to be paid
     #[pallet::storage]
     pub type OutstandingRewardToPay<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
-    /// Tracks the current reward period.
+    /// Current reward period
     #[pallet::storage]
     #[pallet::getter(fn current_reward_period)]
     pub(super) type RewardPeriod<T: Config> =
         StorageValue<_, RewardPeriodInfo<BlockNumberFor<T>>, ValueQuery>;
 
-    /// The earliest reward period that has not been fully paid.
+    /// Oldest unpaid reward period
     #[pallet::storage]
     #[pallet::getter(fn oldest_unpaid_period)]
     pub(super) type OldestUnpaidRewardPeriodIndex<T: Config> =
         StorageValue<_, RewardPeriodIndex, ValueQuery>;
 
-    /// Stores a `PaymentPointer` for the last node we successfully paid in a given period.
+    /// Last paid node pointer
     #[pallet::storage]
     #[pallet::getter(fn last_paid_pointer)]
     pub(super) type LastPaidPointer<T: Config> =
         StorageValue<_, PaymentPointer<T::AccountId>, OptionQuery>;
 
-    /// DoubleMap storing each node's uptime for a given reward period.
+    /// Node uptime by reward period
     #[pallet::storage]
     #[pallet::getter(fn node_uptime)]
     pub(super) type NodeUptime<T: Config> = StorageDoubleMap<
@@ -258,53 +254,50 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// The most recent mint request submitted to Ethereum and still awaiting final credit
-    /// confirmation on-chain. This remains populated until:
-    /// - the bridge callback fails, or
-    /// - both the bridge callback succeeded and the matching rewards-minted log has been processed.
+    /// Pending mint request state
     #[pallet::storage]
     #[pallet::getter(fn pending_mint_request)]
     pub type PendingMintRequestState<T: Config> =
         StorageValue<_, PendingMintRequest<BalanceOf<T>>, OptionQuery>;
 
-    /// The total uptime for each reward period.
+    /// Total uptime by reward period
     #[pallet::storage]
     pub(super) type TotalUptime<T: Config> =
         StorageMap<_, Blake2_128Concat, RewardPeriodIndex, TotalUptimeInfo, ValueQuery>;
 
-    /// Controls if rewards are enabled
+    /// Whether rewards are enabled
     #[pallet::storage]
     pub(super) type RewardEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
 
-    /// The minimum uptime threshold
+    /// Minimum uptime threshold
     #[pallet::storage]
     pub type MinUptimeThreshold<T: Config> = StorageValue<_, Perbill, OptionQuery>;
 
-    /// The auto staking duration in seconds
+    /// Auto-stake duration in seconds
     #[pallet::storage]
     pub type AutoStakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
-    /// The unstake period duration in seconds
+    /// Unstake period in seconds
     #[pallet::storage]
     pub type UnstakePeriodSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
-    /// The maximum percentage of staked balance that can be unstaked at once
+    /// Max unstake percentage
     #[pallet::storage]
     pub type MaxUnstakePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
 
-    /// The next node serial number to be assigned
+    /// Next node serial number
     #[pallet::storage]
     pub type NextNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
 
-    /// The duration in seconds for which unstaking is restricted
+    /// Restricted unstake duration in seconds
     #[pallet::storage]
     pub type RestrictedUnstakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
-    /// The fee charged by the chain to host app chain nodes
+    /// App-chain fee percentage
     #[pallet::storage]
     pub type AppChainFeePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
 
-    /// The total stake of the owner, across all nodes
+    /// Total stake by owner
     #[pallet::storage]
     pub type TotalStake<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, OptionQuery>;
@@ -374,106 +367,72 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// A new node has been registered
-        NodeRegistered {
-            owner: T::AccountId,
-            node: NodeId<T>,
-        },
-        /// A new reward period (in blocks) was set.
+        /// Node registered
+        NodeRegistered { owner: T::AccountId, node: NodeId<T> },
+        /// Reward period length set
         RewardPeriodLengthSet {
             period_index: u64,
             old_reward_period_length: u32,
             new_reward_period_length: u32,
         },
-        /// A new reward period was initialized.
+        /// New reward period started
         NewRewardPeriodStarted {
             reward_period_index: RewardPeriodIndex,
             reward_period_length: u32,
             uptime_threshold: u32,
             previous_period_reward: BalanceOf<T>,
         },
-        /// We finished paying all nodes for a particular period.
-        RewardPayoutCompleted {
-            reward_period_index: RewardPeriodIndex,
-        },
-        /// Node received a reward.
+        /// Reward payout completed
+        RewardPayoutCompleted { reward_period_index: RewardPeriodIndex },
+        /// Reward paid
         RewardPaid {
             reward_period: RewardPeriodIndex,
             owner: T::AccountId,
             node: NodeId<T>,
             amount: BalanceOf<T>,
         },
-        /// An error occurred while paying a reward.
+        /// Reward payment failed
         ErrorPayingReward {
             reward_period: RewardPeriodIndex,
             node: NodeId<T>,
             error: DispatchError,
         },
-        /// Node reward was auto staked.
+        /// Reward auto-staked
         RewardAutoStaked {
             reward_period: RewardPeriodIndex,
             owner: T::AccountId,
             node: NodeId<T>,
             amount: BalanceOf<T>,
         },
-        /// A new node registrar has been set
-        NodeRegistrarSet {
-            new_registrar: T::AccountId,
-        },
-        /// A new reward payment batch size has been set
-        BatchSizeSet {
-            new_size: u32,
-        },
-        /// A new heartbeat period (in blocks) was set.
-        HeartbeatPeriodSet {
-            new_heartbeat_period: u32,
-        },
-        /// A new heartbeat has been received
-        HeartbeatReceived {
-            reward_period_index: RewardPeriodIndex,
-            node: NodeId<T>,
-        },
-        /// A new reward amount is set
-        RewardAmountSet {
-            new_amount: BalanceOf<T>,
-        },
-        RewardAmountPerPeriodSet {
-            new_amount: BalanceOf<T>,
-        },
-        NumPeriodsToMintSet {
-            periods: u32,
-        },
-        /// Reward payment has been toggled
-        RewardToggled {
-            enabled: bool,
-        },
-        /// A new minimum uptime threshold has been set
-        MinUptimeThresholdSet {
-            threshold: Perbill,
-        },
-        /// A new maximum unstake percentage has been set
-        MaxUnstakePercentageSet {
-            percentage: Perbill,
-        },
-        /// A new unstake period (in seconds) has been set
-        UnstakePeriodSet {
-            duration_sec: Duration,
-        },
-        /// A node has been deregistered
-        NodeDeregistered {
-            owner: T::AccountId,
-            node: NodeId<T>,
-        },
-        /// A node signing key has been updated
-        SigningKeyUpdated {
-            owner: T::AccountId,
-            node: NodeId<T>,
-        },
-        /// Auto stake duration has been set
-        AutoStakeDurationSet {
-            duration_sec: Duration,
-        },
-        /// Node owner added stake to the specified node
+        /// Node registrar set
+        NodeRegistrarSet { new_registrar: T::AccountId },
+        /// Batch size set
+        BatchSizeSet { new_size: u32 },
+        /// Heartbeat period set
+        HeartbeatPeriodSet { new_heartbeat_period: u32 },
+        /// Heartbeat received
+        HeartbeatReceived { reward_period_index: RewardPeriodIndex, node: NodeId<T> },
+        /// Reward amount set
+        RewardAmountSet { new_amount: BalanceOf<T> },
+        /// Reward amount per period set
+        RewardAmountPerPeriodSet { new_amount: BalanceOf<T> },
+        /// Number of periods to mint set
+        NumPeriodsToMintSet { periods: u32 },
+        /// Reward payment toggled
+        RewardToggled { enabled: bool },
+        /// Min uptime threshold set
+        MinUptimeThresholdSet { threshold: Perbill },
+        /// Max unstake percentage set
+        MaxUnstakePercentageSet { percentage: Perbill },
+        /// Unstake period set
+        UnstakePeriodSet { duration_sec: Duration },
+        /// Node deregistered
+        NodeDeregistered { owner: T::AccountId, node: NodeId<T> },
+        /// Signing key updated
+        SigningKeyUpdated { owner: T::AccountId, node: NodeId<T> },
+        /// Auto-stake duration set
+        AutoStakeDurationSet { duration_sec: Duration },
+        /// Stake added
         StakeAdded {
             owner: T::AccountId,
             node_id: NodeId<T>,
@@ -481,7 +440,7 @@ pub mod pallet {
             amount: BalanceOf<T>,
             new_total: BalanceOf<T>,
         },
-        /// Node owner removed stake from the specified node
+        /// Stake removed
         StakeRemoved {
             owner: T::AccountId,
             node_id: NodeId<T>,
@@ -489,119 +448,111 @@ pub mod pallet {
             amount: BalanceOf<T>,
             new_total: BalanceOf<T>,
         },
-        /// The duration for restricted unstaking has been set
-        RestrictedUnstakeDurationSet {
-            duration_sec: Duration,
-        },
-        /// The fee percentage for hosting app chain nodes has been set
-        AppChainFeePercentageSet {
-            percentage: Perbill,
-        },
-        /// Node owner updated auto-stake preference for the specified node
+        /// Restricted unstake duration set
+        RestrictedUnstakeDurationSet { duration_sec: Duration },
+        /// App-chain fee percentage set
+        AppChainFeePercentageSet { percentage: Perbill },
+        /// Auto-stake preference updated
         AutoStakePreferenceUpdated {
             owner: T::AccountId,
             node_id: NodeId<T>,
             auto_stake_rewards: bool,
         },
-        MintRequestSubmitted {
-            amount: BalanceOf<T>,
-            tx_id: EthereumId,
-        },
-        MintRequestResolved {
-            tx_id: EthereumId,
-            succeeded: bool,
-        },
+        /// Mint request submitted
+        MintRequestSubmitted { amount: BalanceOf<T>, tx_id: EthereumId },
+        /// Mint request resolved
+        MintRequestResolved { tx_id: EthereumId, succeeded: bool },
     }
 
     #[pallet::error]
     pub enum Error<T> {
-        /// The node registrar account is invalid
+        /// Invalid node registrar
         OriginNotRegistrar,
-        /// The node address of the last paid node is not recognised
+        /// Invalid last paid node
         InvalidNodePointer,
-        /// The period index of the last paid node is invalid
+        /// Invalid last paid period
         InvalidPeriodPointer,
-        /// The node registrar account is not set
+        /// Node registrar not set
         RegistrarNotSet,
-        /// Node has already been registered
+        /// Node already registered
         DuplicateNode,
-        /// The signing key of the node is invalid
+        /// Invalid signing key
         InvalidSigningKey,
-        /// The signing key is already in use by another node
+        /// Signing key already in use
         SigningKeyAlreadyInUse,
-        /// The reward period is invalid
+        /// Invalid reward period
         RewardPeriodInvalid,
-        /// The batch size is 0 or invalid
+        /// Invalid batch size
         BatchSizeInvalid,
-        /// The heartbeat period is invalid
+        /// Invalid heartbeat period
         HeartbeatPeriodInvalid,
-        /// The heartbeat period is 0
+        /// Heartbeat period is zero
         HeartbeatPeriodZero,
-        /// The reward pot does not have enough funds to pay rewards
+        /// Reward pot has insufficient balance
         InsufficientBalanceForReward,
-        /// The total uptime for the period was not found
+        /// Total uptime not found
         TotalUptimeNotFound,
-        /// The node uptime for the period was not found
+        /// Node uptime not found
         NodeUptimeNotFound,
-        /// The reward payment request is invalid
+        /// Invalid reward payment request
         InvalidRewardPaymentRequest,
-        /// Heartbeat has already been submitted
+        /// Duplicate heartbeat
         DuplicateHeartbeat,
-        /// Heartbeat submission is not valid
+        /// Invalid heartbeat
         InvalidHeartbeat,
-        /// The node is not registered
+        /// Node not registered
         NodeNotRegistered,
-        /// Failed to aquire a lock on the Offchain db
+        /// Failed to acquire OCW DB lock
         FailedToAcquireOcwDbLock,
-        /// The reward amount is 0
+        /// Reward amount is zero
         RewardAmountZero,
-        /// The sender is not the signer
+        /// Sender is not the signer
         SenderIsNotSigner,
-        /// Proxy signature failed to verification
+        /// Unauthorized signed transaction
         UnauthorizedSignedTransaction,
-        /// The signed transaction has expired
+        /// Signed transaction expired
         SignedTransactionExpired,
-        /// The minimum uptime threshold is reached
+        /// Heartbeat threshold reached
         HeartbeatThresholdReached,
-        /// The minimum uptime threshold is 0
+        /// Uptime threshold is zero
         UptimeThresholdZero,
-        /// The specified node is not owned by the owner
+        /// Node not owned by owner
         NodeNotOwnedByOwner,
-        /// The sender is not authorised to update the signing key
+        /// Unauthorized signing key update
         UnauthorizedSigningKeyUpdate,
-        /// The new signing key must be different from the current one
+        /// Signing key must be different
         SigningKeyMustBeDifferent,
         /// Amount must be greater than zero
         ZeroAmount,
-        /// The account does not have enough free balance to stake
+        /// Insufficient free balance
         InsufficientFreeBalance,
-        /// The account does not have enough staked balance to withdraw
+        /// Insufficient staked balance
         InsufficientStakedBalance,
-        /// Failed to reserve balance for staking
+        /// Reserve failed
         ReserveFailed,
         /// Duration must be greater than zero
         DurationZero,
-        /// There is no stake for the owner
+        /// No stake found
         NoStakeFound,
-        /// Auto stake is still active, cannot unstake now
+        /// Auto-stake still active
         AutoStakeStillActive,
-        /// There is no available stake to unstake right now
+        /// No stake available to unstake
         NoAvailableStakeToUnstake,
-        /// Node is not found
+        /// Node not found
         NodeNotFound,
         /// Balance overflow
         BalanceOverflow,
         /// Balance underflow
         BalanceUnderflow,
-        /// Reward pot snapshot not found for the period
+        /// Reward pot snapshot not found
         RewardPotNotFound,
-        /// The reward amount per period must be greater than zero
+        /// Reward amount per period must be greater than zero
         RewardAmountPerPeriodZero,
-        /// The minted amount cannot be represented in this runtime balance type
+        /// Mint amount cannot fit balance type
         MintAmountOverflow,
-        /// No Tier1 event found for the reward minting
+        /// No Tier1 event found for reward minting
         NoTier1MintEventFound,
-        /// A mint request is already in progress
+        /// Mint request already in progress
         MintRequestInProgress,
     }
 
@@ -612,16 +563,16 @@ pub mod pallet {
         + CreateInherent<Call<Self>>
         + CreateTransactionBase<Call<Self>>
     {
-        /// The overarching event type.
+        /// Runtime event type
         type RuntimeEvent: From<Event<Self>>
             + Into<<Self as frame_system::Config>::RuntimeEvent>
             + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-        /// The overarching call type.
+        /// Runtime call type
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = <Self as frame_system::Config>::RuntimeOrigin>
             + IsSubType<Call<Self>>
             + From<Call<Self>>;
-        /// The currency type for this module.
+        /// Currency used by this pallet
         type Currency: Currency<Self::AccountId> + ReservableCurrency<Self::AccountId>;
         // The identifier type for an offchain transaction signer.
         type SignerId: Member
@@ -630,32 +581,31 @@ pub mod pallet {
             + Ord
             + MaybeSerializeDeserialize
             + MaxEncodedLen;
-        /// A type that can be used to verify signatures
+        /// Account type used for signature verification
         type Public: IdentifyAccount<AccountId = Self::AccountId>;
         /// Time provider
         type TimeProvider: UnixTime;
-        /// The signature type used by accounts/transactions.
+        /// Signature type
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
-        /// The type of token identifier
-        /// (a H160 because this is an Ethereum address)
+        /// Token identifier type
         type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
-        /// Trait to deal with handling the fee charged by the chain to host app chain nodes
+        /// App-chain fee handler
         type AppChainFeeHandler: FeePaymentHandler<
             AccountId = Self::AccountId,
             Token = Self::Token,
             TokenBalance = <Self::Currency as Currency<Self::AccountId>>::Balance,
             Error = DispatchError,
         >;
-        /// The id of the reward pot.
+        /// Reward pot ID
         #[pallet::constant]
         type RewardPotId: Get<PalletId>;
-        /// The lifetime (in blocks) of a signed transaction.
+        /// Signed transaction lifetime in blocks
         #[pallet::constant]
         type SignedTxLifetime: Get<u32>;
-        /// The amount of AVT required to stake to get a +1 virtual node weight bonus.
+        /// Stake needed for one virtual node bonus
         #[pallet::constant]
         type VirtualNodeStake: Get<BalanceOf<Self>>;
-        /// The weight information for extrinsics in this pallet.
+        /// Extrinsic weight provider
         type WeightInfo: WeightInfo;
 
         type BridgeInterface: BridgeInterface;
