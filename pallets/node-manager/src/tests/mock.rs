@@ -9,8 +9,8 @@ use frame_system as system;
 use pallet_session as session;
 pub use parking_lot::RwLock;
 pub use sp_avn_common::{
-    avn_tests_helpers::utilities::TestAccount, constants::currency::AVT,
-    event_types::EthEventId, NODE_MANAGER_PALLET_ID,
+    avn_tests_helpers::utilities::TestAccount, constants::currency::AVT, event_types::EthEventId,
+    NODE_MANAGER_PALLET_ID,
 };
 pub use sp_core::{
     offchain::{
