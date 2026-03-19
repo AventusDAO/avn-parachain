@@ -14,7 +14,8 @@ use frame_support::{
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
     traits::{
-        Currency, ExistenceRequirement, IsSubType, ReservableCurrency, StorageVersion, UnixTime,
+        Currency, ExistenceRequirement, IsSubType, OnRuntimeUpgrade, ReservableCurrency,
+        StorageVersion, UnixTime,
     },
     PalletId,
 };
@@ -99,7 +100,7 @@ const PAYOUT_REWARD_CONTEXT: &'static [u8] = b"NodeManager_RewardPayout";
 const MINT_REWARDS_CONTEXT: &'static [u8] = b"NodeManager_MintRewards";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
 const MAX_BATCH_SIZE: u32 = 1_000;
-pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
 pub const MAX_NODES_TO_DEREGISTER: u32 = 64;
@@ -1245,6 +1246,47 @@ pub mod pallet {
             }
 
             Self::send_heartbeat_if_required(n);
+        }
+
+        fn on_runtime_upgrade() -> Weight {
+            let onchain = Pallet::<T>::on_chain_storage_version();
+            let current = Pallet::<T>::current_storage_version();
+
+            if onchain >= current {
+                return Weight::zero()
+            }
+
+            // Dev-only reset of reward-period-related state after RewardPeriodInfo layout changes.
+            RewardPot::<T>::remove_all(None);
+            OutstandingRewardToPay::<T>::put(BalanceOf::<T>::zero());
+            OldestUnpaidRewardPeriodIndex::<T>::put(0);
+            LastPaidPointer::<T>::kill();
+            PendingMintRequestState::<T>::kill();
+            TotalUptime::<T>::remove_all(None);
+
+            // Clear all node uptime entries across periods.
+            let _ = NodeUptime::<T>::clear(u32::MAX, None);
+
+            let reward_period_length = ConfiguredRewardPeriodLength::<T>::get();
+            let heartbeat_period = HeartbeatPeriod::<T>::get();
+            let uptime_threshold =
+                Self::calculate_uptime_threshold(reward_period_length, heartbeat_period);
+            let reward_amount = RewardAmountPerPeriod::<T>::get();
+
+            RewardPeriod::<T>::put(RewardPeriodInfo::new(
+                0u64,
+                frame_system::Pallet::<T>::block_number(),
+                reward_period_length,
+                heartbeat_period,
+                uptime_threshold,
+                reward_amount,
+            ));
+
+            current.put::<Pallet<T>>();
+
+            log::warn!("🧹 NodeManager dev migration: reward-period state reset completed");
+
+            Weight::zero()
         }
     }
 
