@@ -178,6 +178,8 @@ mod reward {
                 <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
                 reward_amount
             );
+            assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), reward_amount);
+
             // mock finalised block response
             mock_get_finalised_block(
                 &mut offchain_state.write(),
@@ -213,6 +215,8 @@ mod reward {
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
                 reward_amount
             );
+            // The outstanding rewards should be cleared
+            assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), 0u128);
 
             System::assert_last_event(
                 Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
@@ -623,9 +627,11 @@ mod reward {
 
             let total_uptime = <TotalUptime<TestRuntime>>::get(reward_period_to_pay);
 
-            // Set a new threshold before rolling forward. This will change the current period's
-            // threshold but should not affect the rewards of the previous period
+            // Set a new threshold before rolling forward. This updates config for the next period
+            // only and must not affect payout for the current snapshotted period.
             MinUptimeThreshold::<TestRuntime>::put(Perbill::from_percent(5));
+
+            assert_eq!(RewardPeriod::<TestRuntime>::get().uptime_threshold, total_expected_uptime);
 
             // Complete a reward period
             roll_forward((reward_period_length - System::block_number()) + 1);
@@ -679,6 +685,53 @@ mod reward {
             System::assert_last_event(
                 Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
             );
+        });
+    }
+
+    #[test]
+    fn threshold_update_applies_to_next_period_only() {
+        let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+
+        ext.execute_with(|| {
+            let current_reward_period = <RewardPeriod<TestRuntime>>::get();
+            let current_period_index = current_reward_period.current;
+            let current_period_length = current_reward_period.length;
+            let current_uptime_threshold = current_reward_period.uptime_threshold;
+
+            let new_min_threshold = Perbill::from_percent(5);
+
+            // Change the configured min threshold during the current period.
+            assert_ok!(NodeManager::set_admin_config(
+                RawOrigin::Root.into(),
+                AdminConfig::MinUptimeThreshold(new_min_threshold),
+            ));
+
+            // The stored config changes immediately...
+            assert_eq!(MinUptimeThreshold::<TestRuntime>::get(), Some(new_min_threshold));
+
+            // ...but the current reward period snapshot must stay unchanged.
+            let reward_period_after_config = <RewardPeriod<TestRuntime>>::get();
+            assert_eq!(reward_period_after_config.current, current_period_index);
+            assert_eq!(reward_period_after_config.length, current_period_length);
+            assert_eq!(reward_period_after_config.uptime_threshold, current_uptime_threshold);
+
+            // Roll into the next period.
+            roll_forward((current_period_length as u64 - System::block_number()) + 1);
+
+            let next_reward_period = <RewardPeriod<TestRuntime>>::get();
+            let expected_next_uptime_threshold =
+                NodeManager::calculate_uptime_threshold(next_reward_period.length);
+
+            assert_eq!(next_reward_period.current, current_period_index + 1);
+            assert_eq!(next_reward_period.length, current_period_length);
+            assert_eq!(next_reward_period.uptime_threshold, expected_next_uptime_threshold);
+
+            // And the threshold should actually have changed for the new period.
+            assert_ne!(next_reward_period.uptime_threshold, current_uptime_threshold);
         });
     }
 

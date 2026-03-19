@@ -273,6 +273,8 @@ fn payment_works_all_nodes_deregistered() {
             <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
             reward_amount
         );
+        assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), reward_amount);
+
         // mock finalised block response
         mock_get_finalised_block(
             &mut offchain_state.write(),
@@ -305,6 +307,8 @@ fn payment_works_all_nodes_deregistered() {
 
         // The payment should succeed
         assert_eq!(true, <RewardPot<TestRuntime>>::get(reward_period_to_pay).is_none());
+        // The outstanding rewards should be cleared
+        assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), 0u128);
         System::assert_last_event(
             Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
         );
@@ -347,6 +351,7 @@ fn payment_works_some_nodes_deregistered() {
             <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
             reward_amount
         );
+        assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), reward_amount);
 
         // mock finalised block response
         mock_get_finalised_block(
@@ -385,6 +390,8 @@ fn payment_works_some_nodes_deregistered() {
 
         // The payment for the remaing nodes should succeed
         assert_eq!(true, <RewardPot<TestRuntime>>::get(reward_period_to_pay).is_none());
+        // The outstanding rewards should be cleared
+        assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), 0u128);
         System::assert_last_event(
             Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
         );
