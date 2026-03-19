@@ -161,7 +161,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get();
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -236,7 +236,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() * 2;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -305,8 +305,8 @@ mod reward {
         ext.execute_with(|| {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
-            let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get(); // 5
+            let reward_period = <RewardPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -325,8 +325,10 @@ mod reward {
                 None,
             );
 
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // The node falls below the min threshold to get the full rewards. They should still get
             // their share
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 2);
@@ -398,8 +400,8 @@ mod reward {
         ext.execute_with(|| {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
-            let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get(); // 5
+            let reward_period = <RewardPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -418,8 +420,10 @@ mod reward {
                 None,
             );
 
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // The node's uptime is exactly the threshold, so they should get the full rewards
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
 
@@ -490,7 +494,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -510,8 +514,10 @@ mod reward {
                 None,
             );
 
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // The node's uptime is over the threshold. This is unexpected but handled
             incr_heartbeats(
                 reward_period_to_pay,
@@ -602,7 +608,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -620,8 +626,10 @@ mod reward {
                 199,
                 None,
             );
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // Increase the uptime of the node by 4 (total 5) to change the rewards
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
 
@@ -723,8 +731,10 @@ mod reward {
             roll_forward((current_period_length as u64 - System::block_number()) + 1);
 
             let next_reward_period = <RewardPeriod<TestRuntime>>::get();
-            let expected_next_uptime_threshold =
-                NodeManager::calculate_uptime_threshold(next_reward_period.length);
+            let expected_next_uptime_threshold = NodeManager::calculate_uptime_threshold(
+                next_reward_period.length,
+                next_reward_period.heartbeat_period,
+            );
 
             assert_eq!(next_reward_period.current, current_period_index + 1);
             assert_eq!(next_reward_period.length, current_period_length);
@@ -771,8 +781,10 @@ mod reward {
             assert_eq!(node_uptime_b.weight, 450_000_000u128);
 
             let reward_period_length = reward_period_info.length as u64;
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period_info.heartbeat_period,
+            );
 
             // The node's uptime is exactly the threshold, so they should get the full rewards
             incr_heartbeats(
@@ -794,6 +806,9 @@ mod reward {
 
             // Set a custom reward amount per period for easier calculations
             <RewardAmountPerPeriod<TestRuntime>>::put(1_000u128);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = 1_000u128;
+            });
 
             // Complete a reward period
             roll_forward((reward_period_length - System::block_number()) + 1);
@@ -958,7 +973,7 @@ mod reward {
                 let node_count = <MaxBatchSize<TestRuntime>>::get();
                 let _ = Context::new(node_count as u8);
                 let reward_period = <RewardPeriod<TestRuntime>>::get();
-                let reward_amount = <RewardAmountPerPeriod<TestRuntime>>::get();
+                let reward_amount = reward_period.reward_amount;
                 let reward_period_length = reward_period.length as u64;
                 let reward_period_to_pay = reward_period.current;
 
@@ -1148,6 +1163,9 @@ mod end_2_end {
 
             // Set a custom reward amount for easier calculations
             <RewardAmountPerPeriod<TestRuntime>>::put(total_reward_per_period);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = total_reward_per_period;
+            });
 
             // No genesis bonus, no stake for default context node
             let context = Context::new(1u8);
@@ -1168,8 +1186,10 @@ mod end_2_end {
             );
 
             let reward_period_length = reward_period_info.length as u64;
-            let expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period_info.heartbeat_period,
+            );
 
             // The node's uptime is exactly the threshold, so they should get the full rewards
             incr_heartbeats(reward_period, vec![context.ocw_node], expected_uptime as u64 - 1);
@@ -1267,7 +1287,6 @@ mod end_2_end {
             );
 
             // Set time to unlock the stake. Use context node because its registered first
-            //Timestamp::set_timestamp(context_node_info.auto_stake_expiry * 1000);
             set_timestamp(context_node_info.auto_stake_expiry).unwrap();
             let new_owner_balance_before = Balances::free_balance(&new_owner);
 
@@ -1391,8 +1410,8 @@ mod end_2_end {
             ));
 
             // Send heartbeats for the new reward period
-            incr_heartbeats(reward_period, vec![context.ocw_node], (expected_uptime) as u64);
-            incr_heartbeats(reward_period, vec![new_node], (expected_uptime) as u64);
+            incr_heartbeats(reward_period, vec![context.ocw_node], expected_uptime as u64);
+            incr_heartbeats(reward_period, vec![new_node], expected_uptime as u64);
 
             let context_owner_balance_before = Balances::free_balance(&context.owner);
             let new_owner_balance_before = Balances::free_balance(&new_owner);
@@ -1481,16 +1500,23 @@ mod end_2_end {
         ext.execute_with(|| {
             let total_reward = 1_000u128;
             <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = total_reward;
+            });
+
             let context = Context::new(1u8);
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),
                 total_reward * 1_000_000u128,
             );
 
-            let first_period = <RewardPeriod<TestRuntime>>::get().current;
-            let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
-            let expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let first_period_info = <RewardPeriod<TestRuntime>>::get();
+            let first_period = first_period_info.current;
+            let reward_period_length = first_period_info.length as u64;
+            let expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                first_period_info.heartbeat_period,
+            );
 
             // Add enough heartbeats for a full reward (Context::new already added 1)
             incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
@@ -1548,16 +1574,23 @@ mod end_2_end {
         ext.execute_with(|| {
             let total_reward = 1_000u128;
             <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = total_reward;
+            });
+
             let context = Context::new(1u8);
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),
                 total_reward * 1_000_000u128,
             );
 
-            let first_period = <RewardPeriod<TestRuntime>>::get().current;
-            let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
-            let expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let first_period_info = <RewardPeriod<TestRuntime>>::get();
+            let first_period = first_period_info.current;
+            let reward_period_length = first_period_info.length as u64;
+            let expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                first_period_info.heartbeat_period,
+            );
 
             incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
 

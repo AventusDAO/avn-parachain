@@ -192,9 +192,16 @@ mod heartbeat {
             ));
 
             let expected_next_threshold =
-                NodeManager::calculate_uptime_threshold(reward_period.length);
+                NodeManager::calculate_uptime_threshold(reward_period.length, new_heartbeat_period);
+
+            assert_eq!(
+                RewardPeriod::<TestRuntime>::get().heartbeat_period,
+                reward_period.heartbeat_period
+            );
 
             roll_forward((reward_period.length as u64 - System::block_number()) + 1);
+
+            assert_eq!(RewardPeriod::<TestRuntime>::get().heartbeat_period, new_heartbeat_period);
 
             assert_eq!(
                 RewardPeriod::<TestRuntime>::get().uptime_threshold,
@@ -241,15 +248,46 @@ mod reward_amount_per_period {
     use super::*;
 
     #[test]
-    fn can_be_set() {
+    fn can_be_set_for_next_period_only() {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {
+            let reward_period = RewardPeriod::<TestRuntime>::get();
             let current_amount = RewardAmountPerPeriod::<TestRuntime>::get();
             let new_amount = current_amount + 1;
 
             let config = AdminConfig::RewardAmountPerPeriod(new_amount);
             assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
+
+            assert_eq!(RewardAmountPerPeriod::<TestRuntime>::get(), new_amount);
+            assert_eq!(
+                RewardPeriod::<TestRuntime>::get().reward_amount,
+                reward_period.reward_amount
+            );
+
             System::assert_last_event(Event::RewardAmountPerPeriodSet { new_amount }.into());
+        });
+    }
+
+    #[test]
+    fn new_reward_amount_is_applied_on_next_period() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            let reward_period = RewardPeriod::<TestRuntime>::get();
+            let new_amount = reward_period.reward_amount + 1;
+
+            assert_ok!(NodeManager::set_admin_config(
+                RawOrigin::Root.into(),
+                AdminConfig::RewardAmountPerPeriod(new_amount),
+            ));
+
+            assert_eq!(
+                RewardPeriod::<TestRuntime>::get().reward_amount,
+                reward_period.reward_amount
+            );
+
+            roll_forward((reward_period.length as u64 - System::block_number()) + 1);
+
+            assert_eq!(RewardPeriod::<TestRuntime>::get().reward_amount, new_amount);
         });
     }
 
@@ -353,8 +391,10 @@ mod min_uptime_threshold {
                 AdminConfig::MinUptimeThreshold(new_threshold),
             ));
 
-            let expected_next_threshold =
-                NodeManager::calculate_uptime_threshold(reward_period.length);
+            let expected_next_threshold = NodeManager::calculate_uptime_threshold(
+                reward_period.length,
+                reward_period.heartbeat_period,
+            );
 
             roll_forward((reward_period.length as u64 - System::block_number()) + 1);
 

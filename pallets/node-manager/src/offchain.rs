@@ -222,7 +222,7 @@ impl<T: Config> Pallet<T> {
     pub fn should_send_heartbeat(
         block_number: BlockNumberFor<T>,
         uptime_info: Option<UptimeInfo<BlockNumberFor<T>>>,
-        reward_period: &RewardPeriodInfo<BlockNumberFor<T>>,
+        reward_period: &RewardPeriodInfo<BlockNumberFor<T>, BalanceOf<T>>,
         heartbeat_count: u64,
     ) -> bool {
         if Self::heartbeat_submission_in_progress(
