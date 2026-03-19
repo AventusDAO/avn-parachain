@@ -82,6 +82,10 @@ impl RuntimeExtrinsicFilter {
 }
 
 impl ExtrinsicFilter for RuntimeExtrinsicFilter {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
     fn check(&self, xt: &sp_core::Bytes) -> FilterResult {
         if !self.enabled {
             return FilterResult::Allowed
