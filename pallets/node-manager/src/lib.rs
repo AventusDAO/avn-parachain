@@ -356,14 +356,15 @@ pub mod pallet {
 
             let uptime_threshold =
                 Pallet::<T>::calculate_uptime_threshold(self.reward_period, self.heartbeat_period);
-            let reward_period: RewardPeriodInfo<BlockNumberFor<T>, BalanceOf<T>> = RewardPeriodInfo::new(
-                0u64,
-                0u32.into(),
-                self.reward_period,
-                self.heartbeat_period,
-                uptime_threshold,
-                self.reward_amount_per_period,
-            );
+            let reward_period: RewardPeriodInfo<BlockNumberFor<T>, BalanceOf<T>> =
+                RewardPeriodInfo::new(
+                    0u64,
+                    0u32.into(),
+                    self.reward_period,
+                    self.heartbeat_period,
+                    uptime_threshold,
+                    self.reward_amount_per_period,
+                );
 
             <RewardPeriod<T>>::put(reward_period);
             OutstandingRewardToPay::<T>::put(BalanceOf::<T>::zero());
@@ -1375,8 +1376,8 @@ pub mod pallet {
                     Error::<T>::HeartbeatThresholdReached
                 );
 
-                let expected_submission =
-                    uptime_info.last_reported + BlockNumberFor::<T>::from(reward_period.heartbeat_period);
+                let expected_submission = uptime_info.last_reported +
+                    BlockNumberFor::<T>::from(reward_period.heartbeat_period);
                 ensure!(
                     frame_system::Pallet::<T>::block_number() >= expected_submission,
                     Error::<T>::DuplicateHeartbeat

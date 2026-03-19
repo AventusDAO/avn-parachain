@@ -40,21 +40,21 @@ impl<
 {
     pub fn new(
         current: RewardPeriodIndex,
-            first: B,
-            length: u32,
-            heartbeat_period: u32,
-            uptime_threshold: u32,
-            reward_amount: Balance,
-        ) -> Self {
-            RewardPeriodInfo {
-                current,
-                first,
-                length,
-                heartbeat_period,
-                uptime_threshold,
-                reward_amount,
-            }
+        first: B,
+        length: u32,
+        heartbeat_period: u32,
+        uptime_threshold: u32,
+        reward_amount: Balance,
+    ) -> Self {
+        RewardPeriodInfo {
+            current,
+            first,
+            length,
+            heartbeat_period,
+            uptime_threshold,
+            reward_amount,
         }
+    }
 
     /// Check if the reward period should be updated
     pub fn should_update(&self, now: B) -> bool {
@@ -72,14 +72,7 @@ impl<
     ) -> Self {
         let current = self.current.saturating_add(1u64);
         let first = now;
-        Self {
-            current,
-            first,
-            length,
-            heartbeat_period,
-            uptime_threshold,
-            reward_amount,
-        }
+        Self { current, first, length, heartbeat_period, uptime_threshold, reward_amount }
     }
 }
 

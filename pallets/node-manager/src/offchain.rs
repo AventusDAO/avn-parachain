@@ -240,7 +240,8 @@ impl<T: Config> Pallet<T> {
             // next allowed block.
             return below_threshold &&
                 block_number >=
-                    last_submission + BlockNumberFor::<T>::from(reward_period.heartbeat_period)
+                    last_submission +
+                        BlockNumberFor::<T>::from(reward_period.heartbeat_period)
         } else {
             // First heartbeat
             return true
