@@ -1933,6 +1933,7 @@ dependencies = [
  "hex-literal",
  "jsonrpsee",
  "log",
+ "orml-traits",
  "pallet-avn",
  "pallet-eth-bridge",
  "pallet-eth-bridge-runtime-api",
@@ -8942,7 +8943,7 @@ dependencies = [
 [[package]]
 name = "orml-asset-registry"
 version = "1.4.0"
-source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#74b8b08d09c2b74d670778d6ff81d8e4c783626f"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -8964,7 +8965,7 @@ dependencies = [
 [[package]]
 name = "orml-currencies"
 version = "1.4.0"
-source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#74b8b08d09c2b74d670778d6ff81d8e4c783626f"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -8981,7 +8982,7 @@ dependencies = [
 [[package]]
 name = "orml-tokens"
 version = "1.4.0"
-source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#74b8b08d09c2b74d670778d6ff81d8e4c783626f"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -8998,7 +8999,7 @@ dependencies = [
 [[package]]
 name = "orml-traits"
 version = "1.4.0"
-source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#74b8b08d09c2b74d670778d6ff81d8e4c783626f"
 dependencies = [
  "frame-support",
  "impl-trait-for-tuples",
@@ -9018,7 +9019,7 @@ dependencies = [
 [[package]]
 name = "orml-utilities"
 version = "1.4.0"
-source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#788be2369ac51d889eb9c9e6282117dcc4353b88"
+source = "git+https://github.com/AventusDAO/open-runtime-module-library?branch=aventus-polkadot-stable2503#74b8b08d09c2b74d670778d6ff81d8e4c783626f"
 dependencies = [
  "frame-support",
  "parity-scale-codec",

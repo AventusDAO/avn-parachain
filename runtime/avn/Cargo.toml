@@ -182,6 +182,9 @@ runtime-benchmarks = [
 	"pallet-parachain-staking/runtime-benchmarks",
 	# Avn Common Runtime
 	"runtime-common/runtime-benchmarks",
+	# Orml
+	"orml-asset-registry/runtime-benchmarks",
+	"orml-tokens/runtime-benchmarks",
 ]
 
 try-runtime = [

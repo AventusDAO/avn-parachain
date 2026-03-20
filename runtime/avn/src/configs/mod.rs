@@ -779,7 +779,7 @@ impl orml_tokens::Config for Runtime {
     type MaxLocks = MaxLocks;
     type MaxReserves = MaxReserves;
     type ReserveIdentifier = [u8; 8];
-    type WeightInfo = ();
+    type WeightInfo = crate::third_party_weights::orml_tokens::WeightInfo<Runtime>;
 }
 
 parameter_types! {
@@ -814,7 +814,7 @@ impl orml_currencies::Config for Runtime {
     type MultiCurrency = OrmlTokens;
     // handler for the native token (AVT) based on balances pallet
     type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances>;
-    type WeightInfo = ();
+    type WeightInfo = crate::third_party_weights::orml_currencies::WeightInfo<Runtime>;
 }
 
 pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
