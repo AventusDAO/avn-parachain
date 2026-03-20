@@ -20,9 +20,10 @@
 //! per-environment at genesis) and registers `Asset::Avt` with an `AvnAssetLocation::Ethereum`
 //! location. The migration is idempotent: if the asset is already registered it is a no-op.
 
-use frame_support::{pallet_prelude::PhantomData, traits::OnRuntimeUpgrade, weights::Weight};
+use polkadot_sdk::frame_support::{pallet_prelude::PhantomData, traits::OnRuntimeUpgrade, weights::Weight};
 use orml_traits::asset_registry::{AssetMetadata, AvnAssetLocation, AvnAssetMetadata};
 use sp_avn_common::Asset;
+use polkadot_sdk::{frame_system, sp_core};
 
 #[cfg(feature = "try-runtime")]
 use sp_runtime::TryRuntimeError;

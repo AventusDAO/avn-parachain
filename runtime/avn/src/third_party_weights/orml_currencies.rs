@@ -27,7 +27,8 @@
 #![allow(unused_imports)]
 
 use core::marker::PhantomData;
-use frame_support::{traits::Get, weights::Weight};
+use polkadot_sdk::frame_support::{traits::Get, weights::Weight};
+use polkadot_sdk::frame_system;
 
 /// Weight functions for orml_currencies (automatically generated)
 pub struct WeightInfo<T>(PhantomData<T>);
