@@ -177,6 +177,8 @@ pub type Executive = frame_executive::Executive<
         pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,
         pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
         pallet_token_manager::migration::SetLowerSchedulePeriod<Runtime>,
+        cumulus_pallet_xcmp_queue::migration::v3::MigrationToV3<Runtime>,
+        cumulus_pallet_xcmp_queue::migration::v4::MigrationToV4<Runtime>,
     ),
 >;
 
@@ -194,7 +196,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: create_runtime_str!("avn-parachain"),
     impl_name: create_runtime_str!("avn-parachain"),
     authoring_version: 1,
-    spec_version: 130,
+    spec_version: 131,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
