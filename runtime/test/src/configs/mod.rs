@@ -19,27 +19,34 @@ mod xcm_config;
 // Substrate and Polkadot dependencies
 use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
-use frame_support::{
-    derive_impl,
-    dispatch::DispatchClass,
-    parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, Contains, TransformOrigin, VariantCountOf},
-    weights::{ConstantMultiplier, Weight},
-    PalletId,
-};
-use frame_system::{
-    limits::{BlockLength, BlockWeights},
-    EnsureRoot,
-};
-use parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling};
-use polkadot_runtime_common::{
-    xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
-};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_runtime::Perbill;
-use sp_version::RuntimeVersion;
 
+use polkadot_sdk::{staging_parachain_info as parachain_info, *};
+#[cfg(not(feature = "runtime-benchmarks"))]
+use polkadot_sdk::{staging_xcm_builder as xcm_builder, staging_xcm_executor as xcm_executor};
+
+use polkadot_sdk::{
+    frame_support::{
+        derive_impl,
+        dispatch::DispatchClass,
+        parameter_types,
+        traits::{ConstBool, ConstU32, ConstU64, TransformOrigin, VariantCountOf},
+        weights::{ConstantMultiplier, Weight},
+        PalletId,
+    },
+    frame_system::{
+        limits::{BlockLength, BlockWeights},
+        EnsureRoot,
+    },
+    parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling},
+    polkadot_runtime_common::{
+        xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
+    },
+};
 use runtime_common::OperationalFeeMultiplier;
+
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_runtime::{traits::{AccountIdConversion, ConvertInto}, transaction_validity::TransactionPriority, Perbill};
+use sp_version::RuntimeVersion;
 
 use sp_avn_common::{
     constants::{currency::*, time::*},
@@ -47,10 +54,6 @@ use sp_avn_common::{
     Asset,
 };
 use sp_core::{ConstU128, H160};
-use sp_runtime::{
-    traits::{AccountIdConversion, ConvertInto},
-    transaction_validity::TransactionPriority,
-};
 use sp_watchtower::NoopWatchtower;
 
 use orml_traits::{
@@ -258,7 +261,7 @@ impl cumulus_pallet_xcmp_queue::Config for Runtime {
     type XcmpQueue = TransformOrigin<MessageQueue, AggregateMessageOrigin, ParaId, ParaIdToSibling>;
     type MaxInboundSuspended = sp_core::ConstU32<1_000>;
     type MaxActiveOutboundChannels = ConstU32<128>;
-    type MaxPageSize = ConstU32<{ 1 << 16 }>;
+    type MaxPageSize = ConstU32<{ 103 * 1024 }>;
     type ControllerOrigin = EnsureRoot<AccountId>;
     type ControllerOriginConverter = XcmOriginToTransactDispatchOrigin;
     type WeightInfo = ();

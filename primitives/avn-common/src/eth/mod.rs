@@ -142,6 +142,7 @@ pub enum BridgeContractMethod {
     TriggerGrowth,
     AddAuthor,
     RemoveAuthor,
+    MintRewards,
 }
 
 impl BridgeContractMethod {
@@ -154,6 +155,7 @@ impl BridgeContractMethod {
             BridgeContractMethod::TriggerGrowth => b"triggerGrowth",
             BridgeContractMethod::AddAuthor => b"addAuthor",
             BridgeContractMethod::RemoveAuthor => b"removeAuthor",
+            BridgeContractMethod::MintRewards => b"mintRewards",
         }
     }
 }
@@ -170,6 +172,7 @@ impl TryFrom<&[u8]> for BridgeContractMethod {
             b"triggerGrowth" => Ok(BridgeContractMethod::TriggerGrowth),
             b"addAuthor" => Ok(BridgeContractMethod::AddAuthor),
             b"removeAuthor" => Ok(BridgeContractMethod::RemoveAuthor),
+            b"mintRewards" => Ok(BridgeContractMethod::MintRewards),
             _ => Err(()),
         }
     }
@@ -220,6 +223,14 @@ sol! {
         bytes32 t2Sender;
         uint64 t2Timestamp;
     }
+}
+
+sol! {
+  struct MintRewards {
+    uint128 amount;
+    uint256 expiry;
+    uint32 t2TxId;
+  }
 }
 
 impl TryFrom<LowerParams> for LowerData {
@@ -339,6 +350,18 @@ pub fn create_function_confirmation_hash(
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
             let data =
                 RemoveAuthor { t2PubKey: t2_pub_key, t1PubKey: t1_pub_key, expiry, t2TxId: tx_id };
+            return Ok(eip712_hash(&data, &domain))
+        },
+
+        BridgeContractMethod::MintRewards => {
+            if params.len() != 3 {
+                return Err(())
+            }
+
+            let amount = parse_from_utf8::<u128>(&params[0].1)?;
+            let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
+
+            let data = MintRewards { amount, expiry, t2TxId: tx_id };
             return Ok(eip712_hash(&data, &domain))
         },
 

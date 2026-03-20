@@ -17,12 +17,14 @@
 //! Custom origins for governance interventions.
 
 pub use pallet_custom_origins::*;
+use polkadot_sdk::frame_support;
 
 #[frame_support::pallet]
 pub mod pallet_custom_origins {
-    use frame_support::pallet_prelude::*;
+    use polkadot_sdk::{frame_support::pallet_prelude::*, frame_system};
 
     #[pallet::config]
+    #[pallet::disable_frame_system_supertrait_check]
     pub trait Config: frame_system::Config {}
 
     #[pallet::pallet]

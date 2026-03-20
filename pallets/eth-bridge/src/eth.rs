@@ -6,12 +6,16 @@ use crate::{
 use ethabi::{Address, Function, Int, Param, ParamType, Token};
 use pallet_avn::{AccountToBytesConverter, EthereumPublicKeyChecker};
 use sp_avn_common::{
-    eth::EthereumId, recover_public_key_from_ecdsa_signature, EthQueryRequest,
+    eth::EthereumId, recover_public_key_from_ecdsa_signature, short_hex, EthQueryRequest,
     EthQueryResponseType, EthTransaction, ADDRESS, BYTES, BYTES32, UINT128, UINT256, UINT32,
 };
-use sp_core::{ecdsa, Get, H256};
+use sp_core::{blake2_256, ecdsa, Get, H256};
 use sp_runtime::DispatchError;
 use sp_std::vec;
+
+fn calldata_id(calldata: &[u8]) -> String {
+    short_hex(&blake2_256(calldata))
+}
 
 pub fn sign_msg_hash<T: Config<I>, I: 'static>(
     author: &Author<T>,
@@ -19,7 +23,9 @@ pub fn sign_msg_hash<T: Config<I>, I: 'static>(
 ) -> Result<ecdsa::Signature, DispatchError> {
     let msg_data = msg_hash.as_ref().to_vec();
     let hex_data = hex::encode(&msg_data).into_bytes();
-    log::debug!("Sending H256 to sign: {:?}", msg_hash);
+
+    log::debug!("📤 sign_msg_hash request: msg_hash=0x{}", hex::encode(msg_hash.as_bytes()));
+
     let proof = author.key.sign(&msg_data).ok_or(Error::<T, I>::SigningError)?;
     let confirmation = AVN::<T>::request_ecdsa_signature_from_external_service(hex_data, proof)?;
     Ok(confirmation)
@@ -42,16 +48,20 @@ fn eth_signature_is_valid<T: Config<I>, I: 'static>(
     validator: &Validator<T::AuthorityId, T::AccountId>,
     signature: &ecdsa::Signature,
 ) -> bool {
-    // verify that the incoming (unverified) pubkey is actually a validator
     if !AVN::<T>::is_validator(&validator.account_id) {
-        log::warn!("✋ Account: {:?} is not an authority.", &validator.account_id);
+        log::warn!("✋ Account {:?} is not a validator", &validator.account_id);
         return false
     }
 
     let recovered_public_key = recover_public_key_from_ecdsa_signature(signature, &msg_hash);
     if recovered_public_key.is_err() {
         log::error!(
-            "❌ Recovery of public key from ECDSA Signature: {:?} and data: {:?} failed",
+            "❌ ECDSA public key recovery failed: validator_account={:?}, msg_hash=0x{}",
+            &validator.account_id,
+            hex::encode(msg_hash.as_bytes())
+        );
+        log::debug!(
+            "❌ ECDSA public key recovery detail: signature={:?}, msg_hash={:?}",
             &signature,
             &msg_hash
         );
@@ -64,8 +74,12 @@ fn eth_signature_is_valid<T: Config<I>, I: 'static>(
         Some(maybe_validator) => maybe_validator == validator.account_id,
         _ => {
             log::error!(
-                "❌ ECDSA signature validation failed on data {:?} validator: {:?} signature {:?}.",
-                &msg_hash,
+                "❌ ECDSA signature validation failed: validator_account={:?}, msg_hash=0x{}",
+                validator.account_id,
+                hex::encode(msg_hash.as_bytes())
+            );
+            log::debug!(
+                "❌ ECDSA signature validation detail: validator={:?}, signature={:?}",
                 validator,
                 signature
             );
@@ -80,7 +94,7 @@ pub fn send_tx<T: Config<I>, I: 'static>(
 ) -> Result<H256, DispatchError> {
     if author.account_id != tx.data.sender {
         log::error!(
-            "❌ Author {:?} is not the sender {:?} of the transaction {:?}",
+            "✋ Author {:?} is not the sender {:?} of tx_id={:?}",
             author.account_id,
             tx.data.sender,
             tx.request.tx_id
@@ -88,12 +102,66 @@ pub fn send_tx<T: Config<I>, I: 'static>(
         return Err(Error::<T, I>::AuthorNotSender.into())
     }
 
+    let function_name = String::from_utf8_lossy(&tx.request.function_name);
+
+    log::info!(
+        "📤 eth-bridge preparing send: tx_id={:?}, sender={:?}, function={}, replay_attempt={}, expiry={}",
+        tx.request.tx_id,
+        tx.data.sender,
+        function_name,
+        tx.replay_attempt,
+        tx.data.expiry,
+    );
+
     match generate_send_calldata::<T, I>(tx) {
-        Ok(calldata) => match send_transaction::<T, I>(calldata, author) {
-            Ok(eth_tx_hash) => Ok(eth_tx_hash),
-            Err(_) => Err(Error::<T, I>::SendTransactionFailed.into()),
+        Ok(calldata) => {
+            let calldata_ref = calldata_id(&calldata);
+
+            log::debug!(
+                "📤 ETH SEND SUMMARY tx_id={:?} function={} sender={:?} expiry={} replay={} calldata_id={} calldata_len={}",
+                tx.request.tx_id,
+                function_name,
+                tx.data.sender,
+                tx.data.expiry,
+                tx.replay_attempt,
+                calldata_ref,
+                calldata.len(),
+            );
+
+            match send_transaction::<T, I>(calldata, author) {
+                Ok(eth_tx_hash) => {
+                    log::info!(
+                        "✅ eth-bridge send accepted by external-service: tx_id={:?}, eth_tx_hash=0x{}",
+                        tx.request.tx_id,
+                        hex::encode(eth_tx_hash.as_bytes())
+                    );
+                    Ok(eth_tx_hash)
+                },
+                Err(e) => {
+                    log::error!(
+                        "💔 eth-bridge external-service send failed: tx_id={:?}, function={}, error={:?}",
+                        tx.request.tx_id,
+                        function_name,
+                        e
+                    );
+                    Err(Error::<T, I>::SendTransactionFailed.into())
+                },
+            }
         },
-        Err(_) => Err(Error::<T, I>::InvalidSendCalldata.into()),
+        Err(e) => {
+            log::error!(
+                "💔 eth-bridge calldata generation failed: tx_id={:?}, function={}, error={:?}",
+                tx.request.tx_id,
+                function_name,
+                e,
+            );
+            log::debug!(
+                "💔 eth-bridge calldata generation detail: tx_id={:?}, params={:?}",
+                tx.request.tx_id,
+                tx.data
+            );
+            Err(Error::<T, I>::InvalidSendCalldata.into())
+        },
     }
 }
 
@@ -106,8 +174,11 @@ pub fn corroborate<T: Config<I>, I: 'static>(
         let (tx_hash_is_valid, confirmations) = check_tx_hash::<T, I>(tx, author)?;
         if tx_hash_is_valid && confirmations.unwrap_or_default() < T::MinEthBlockConfirmation::get()
         {
-            log::warn!("🚨 Transaction {:?} doesn't have the minimum eth confirmations yet, skipping corroboration. Current confirmation: {:?}",
-                tx.request.tx_id, confirmations
+            log::warn!(
+                "🚨 Transaction {:?} does not yet have enough ETH confirmations, skipping corroboration: current={:?}, required={}",
+                tx.request.tx_id,
+                confirmations,
+                T::MinEthBlockConfirmation::get()
             );
             return Ok((None, None))
         }
@@ -115,7 +186,7 @@ pub fn corroborate<T: Config<I>, I: 'static>(
         return Ok((status, Some(tx_hash_is_valid)))
     }
 
-    return Ok((None, None))
+    Ok((None, None))
 }
 
 fn check_tx_status<T: Config<I>, I: 'static>(
@@ -146,12 +217,39 @@ fn check_tx_hash<T: Config<I>, I: 'static>(
             get_transaction_call_data::<T, I>(tx.data.eth_tx_hash, &author.account_id)
         {
             let expected_call_data = generate_send_calldata::<T, I>(&tx)?;
-            return Ok((hex::encode(expected_call_data) == call_data, Some(num_confirmations)))
+            let expected_hex = hex::encode(&expected_call_data);
+            let matches = expected_hex == call_data;
+
+            if !matches {
+                log::error!(
+                    "💔 tx hash calldata mismatch: tx_id={:?}, eth_tx_hash=0x{}, expected_len={}, actual_len={}, confirmations={}",
+                    tx.request.tx_id,
+                    hex::encode(tx.data.eth_tx_hash.as_bytes()),
+                    expected_hex.len(),
+                    call_data.len(),
+                    num_confirmations
+                );
+                log::debug!(
+                    "💔 tx hash calldata mismatch detail: tx_id={:?}, expected=0x{}, actual=0x{}",
+                    tx.request.tx_id,
+                    expected_hex,
+                    call_data
+                );
+            } else {
+                log::debug!(
+                    "✅ tx hash calldata matched: tx_id={:?}, eth_tx_hash=0x{}, confirmations={}",
+                    tx.request.tx_id,
+                    hex::encode(tx.data.eth_tx_hash.as_bytes()),
+                    num_confirmations
+                );
+            }
+
+            return Ok((matches, Some(num_confirmations)))
         } else {
             return Err(Error::<T, I>::ErrorGettingEthereumCallData.into())
         }
     }
-    return Ok((TX_HASH_INVALID, None))
+    Ok((TX_HASH_INVALID, None))
 }
 
 pub fn encode_confirmations(
@@ -195,7 +293,7 @@ pub fn generate_encoded_lower_proof<T: Config<I>, I: 'static>(
     compact_lower_data.extend_from_slice(&lower_req.params.to_vec());
     compact_lower_data.extend_from_slice(&concatenated_confirmations);
 
-    return compact_lower_data
+    compact_lower_data
 }
 
 pub fn abi_encode_function<T: Config<I>, I: 'static>(
@@ -240,7 +338,6 @@ pub fn to_param_type(key: &Vec<u8>) -> Option<ParamType> {
         UINT128 => Some(ParamType::Uint(128)),
         UINT256 => Some(ParamType::Uint(256)),
         ADDRESS => Some(ParamType::Address),
-
         _ => None,
     }
 }
@@ -291,9 +388,28 @@ fn send_transaction<T: Config<I>, I: 'static>(
     author: &Author<T>,
 ) -> Result<H256, DispatchError> {
     let eth_instance = Instance::<T, I>::get();
-    let proof = author
-        .key
-        .sign(&(&author.account_id, &eth_instance.bridge_contract, &calldata).encode());
+    let sender = T::AccountToBytesConvert::into_bytes(&author.account_id);
+    let bridge_contract = eth_instance.bridge_contract;
+    let proof_data = (&sender, &bridge_contract, &calldata).encode();
+    let calldata_ref = calldata_id(&calldata);
+
+    log::info!(
+        "📤 eth-bridge send_transaction request: sender_account={:?}, bridge_contract=0x{}, calldata_id={}, calldata_len={}",
+        author.account_id,
+        hex::encode(bridge_contract.as_bytes()),
+        calldata_ref,
+        calldata.len(),
+    );
+
+    log::debug!(
+        "📤 eth-bridge send_transaction payload: sender_bytes=0x{}, calldata=0x{}, proof_data=0x{}",
+        hex::encode(&sender),
+        hex::encode(&calldata),
+        hex::encode(&proof_data),
+    );
+
+    let proof = author.key.sign(&proof_data);
+
     make_ethereum_call::<H256, T, I>(
         &author.account_id,
         "send",
@@ -326,17 +442,115 @@ pub fn make_ethereum_call<R, T: Config<I>, I: 'static>(
     eth_block: Option<u32>,
     proof_maybe: Option<<T::AuthorityId as RuntimeAppPublic>::Signature>,
 ) -> Result<R, DispatchError> {
-    let sender = T::AccountToBytesConvert::into_bytes(&author_account_id);
+    let sender = T::AccountToBytesConvert::into_bytes(author_account_id);
     let eth_instance = Instance::<T, I>::get();
+    let bridge_contract = eth_instance.bridge_contract;
+
     let ethereum_call =
-        EthTransaction::new(sender, eth_instance.bridge_contract, calldata).set_block(eth_block);
+        EthTransaction::new(sender.clone(), bridge_contract, calldata.clone()).set_block(eth_block);
+    let encoded_call = ethereum_call.encode();
     let url_path = format!("eth/{}", endpoint);
-    let result = AVN::<T>::post_data_to_service(url_path, ethereum_call.encode(), proof_maybe)?;
-    process_result(result)
+    let calldata_ref = calldata_id(&calldata);
+
+    log::debug!(
+        "🌉 eth-bridge make_ethereum_call request: endpoint={}, sender={:?}, to=0x{}, eth_block={:?}, calldata_id={}, calldata_len={}, encoded_call_len={}, has_proof={}",
+        url_path,
+        author_account_id,
+        hex::encode(bridge_contract.as_bytes()),
+        eth_block,
+        calldata_ref,
+        calldata.len(),
+        encoded_call.len(),
+        proof_maybe.is_some(),
+    );
+
+    log::debug!(
+        "🌉 eth-bridge make_ethereum_call payload: endpoint={}, sender_bytes=0x{}, calldata=0x{}, encoded_call=0x{}",
+        url_path,
+        hex::encode(&sender),
+        hex::encode(&calldata),
+        hex::encode(&encoded_call),
+    );
+
+    let result = match AVN::<T>::post_data_to_service(url_path.clone(), encoded_call, proof_maybe) {
+        Ok(result) => {
+            log::debug!(
+                "📥 eth-bridge make_ethereum_call response: endpoint={}, calldata_id={}, response_len={}",
+                url_path,
+                calldata_ref,
+                result.len(),
+            );
+            log::debug!(
+                "📥 eth-bridge make_ethereum_call response detail: endpoint={}, response_utf8={}, response_hex=0x{}",
+                url_path,
+                String::from_utf8_lossy(&result),
+                hex::encode(&result),
+            );
+            result
+        },
+        Err(e) => {
+            log::error!(
+                "💔 eth-bridge make_ethereum_call transport failed: endpoint={}, sender={:?}, to=0x{}, calldata_id={}, calldata_len={}, error={:?}",
+                url_path,
+                author_account_id,
+                hex::encode(bridge_contract.as_bytes()),
+                calldata_ref,
+                calldata.len(),
+                e,
+            );
+            log::debug!(
+                "💔 eth-bridge make_ethereum_call transport failed detail: endpoint={}, calldata=0x{}",
+                url_path,
+                hex::encode(&calldata),
+            );
+            return Err(e)
+        },
+    };
+
+    match process_result(result) {
+        Ok(parsed) => {
+            log::debug!(
+                "✅ eth-bridge make_ethereum_call processed: endpoint={}, calldata_id={} success",
+                url_path,
+                calldata_ref
+            );
+            Ok(parsed)
+        },
+        Err(e) => {
+            log::error!(
+                "💔 eth-bridge make_ethereum_call processing failed: endpoint={}, sender={:?}, to=0x{}, calldata_id={}, calldata_len={}, error={:?}",
+                url_path,
+                author_account_id,
+                hex::encode(bridge_contract.as_bytes()),
+                calldata_ref,
+                calldata.len(),
+                e,
+            );
+            log::debug!(
+                "💔 eth-bridge make_ethereum_call processing failed detail: endpoint={}, calldata=0x{}",
+                url_path,
+                hex::encode(&calldata),
+            );
+            Err(e)
+        },
+    }
 }
 
 fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, DispatchError> {
+    log::debug!("📥 process_tx_hash: raw_len={}", result.len());
+    log::debug!(
+        "📥 process_tx_hash detail: raw_utf8={}, raw_hex=0x{}",
+        String::from_utf8_lossy(&result),
+        hex::encode(&result),
+    );
+
     if result.len() != 64 {
+        log::error!("💔 process_tx_hash invalid length: expected=64, actual={}", result.len(),);
+        log::debug!(
+            "💔 process_tx_hash invalid length detail: raw_utf8={}, raw_hex=0x{}",
+            String::from_utf8_lossy(&result),
+            hex::encode(&result),
+        );
         return Err(Error::<T, I>::InvalidHashLength.into())
     }
 
@@ -346,7 +560,9 @@ fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, Di
     hex::decode_to_slice(tx_hash_string, &mut data[..])
         .map_err(|_| Error::<T, I>::InvalidHexString)?;
 
-    Ok(H256::from_slice(&data))
+    let tx_hash = H256::from_slice(&data);
+    log::debug!("✅ process_tx_hash decoded: tx_hash=0x{}", hex::encode(tx_hash.as_bytes()));
+    Ok(tx_hash)
 }
 
 fn process_corroborate_result<T: Config<I>, I: 'static>(

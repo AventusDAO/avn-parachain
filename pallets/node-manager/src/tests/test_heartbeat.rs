@@ -76,7 +76,9 @@ fn submit_multiple_heartbeats(n: u64, pool_state: Arc<RwLock<PoolState>>) {
 
         // Move forward
         System::set_block_number(
-            System::block_number() + <HeartbeatPeriod<TestRuntime>>::get() as u64 + 1u64,
+            System::block_number() +
+                <RewardPeriod<TestRuntime>>::get().heartbeat_period as u64 +
+                1u64,
         );
     }
 }
@@ -99,6 +101,11 @@ mod given_a_reward_period {
 
             let tx = pop_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
+
+            assert_eq!(
+                <RewardPeriod<TestRuntime>>::get().heartbeat_period,
+                <HeartbeatPeriod<TestRuntime>>::get()
+            );
 
             // Check if the transaction from the mempool is what we expected
             assert!(matches!(
@@ -228,7 +235,9 @@ mod given_a_reward_period {
 
             // Move forward
             System::set_block_number(
-                System::block_number() + <HeartbeatPeriod<TestRuntime>>::get() as u64 + 1u64,
+                System::block_number() +
+                    <RewardPeriod<TestRuntime>>::get().heartbeat_period as u64 +
+                    1u64,
             );
 
             // Call OCW and send transactions
@@ -338,7 +347,9 @@ mod given_a_reward_period {
 
             // Move forward
             System::set_block_number(
-                System::block_number() + <HeartbeatPeriod<TestRuntime>>::get() as u64 + 1u64,
+                System::block_number() +
+                    <RewardPeriod<TestRuntime>>::get().heartbeat_period as u64 +
+                    1u64,
             );
 
             NodeManager::offchain_worker(System::block_number());

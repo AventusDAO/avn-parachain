@@ -9,8 +9,6 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-#[cfg(not(feature = "std"))]
-use alloc::string::String;
 
 use sp_avn_common::eth::EthereumId;
 

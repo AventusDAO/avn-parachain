@@ -23,6 +23,12 @@ impl FilterResult {
 
 /// Filter that decides if an extrinsic (as raw bytes) is allowed in the pool.
 pub trait ExtrinsicFilter: Send + Sync + 'static {
+    /// Returns false if the filter is disabled and all extrinsics should pass through.
+    /// Checked before encoding in `check_allowed` to avoid unnecessary work.
+    fn is_enabled(&self) -> bool {
+        false
+    }
+
     /// Check if an extrinsic is allowed. Returns rich result for logging.
     fn check(&self, xt: &sp_core::Bytes) -> FilterResult;
 }
@@ -40,6 +46,10 @@ impl<Pool> FilteredPool<Pool> {
     }
 
     fn check_allowed(&self, xt: &impl Encode) -> Result<(), PoolError> {
+        if !self.filter.is_enabled() {
+            // No need to encode every extrinsic if filter is disabled
+            return Ok(())
+        }
         let result = self.filter.check(&xt.encode().into());
         if result.is_banned() {
             return Err(PoolError::InvalidTransaction(
