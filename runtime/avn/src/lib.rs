@@ -23,8 +23,12 @@ use core::cmp::Ordering;
 use codec::{Decode, Encode};
 use scale_info::TypeInfo;
 
-use sp_runtime::{generic, impl_opaque_keys};
-pub use sp_runtime::{MultiAddress, Perbill, Permill, RuntimeDebug};
+use governance::pallet_custom_origins;
+pub use polkadot_sdk::sp_runtime::{MultiAddress, Perbill, Permill, RuntimeDebug};
+use polkadot_sdk::{
+    sp_runtime::{generic, impl_opaque_keys},
+    staging_parachain_info as parachain_info, *,
+};
 
 use sp_std::{prelude::*, vec::Vec};
 
@@ -32,8 +36,11 @@ use sp_std::{prelude::*, vec::Vec};
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
-use frame_support::{
-    parameter_types,
+pub use frame_system::{
+    limits::{BlockLength, BlockWeights},
+    EnsureRoot, EnsureSigned, Event as SystemEvent, EventRecord, Phase,
+};
+use polkadot_sdk::frame_support::{
     traits::{
         fungible::{self as fungible, HoldConsideration},
         tokens::imbalance::ResolveTo,
@@ -42,13 +49,8 @@ use frame_support::{
     },
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
-pub use frame_system::{
-    limits::{BlockLength, BlockWeights},
-    EnsureRoot, EnsureSigned, Event as SystemEvent, EventRecord, Phase,
-};
-use governance::pallet_custom_origins;
+pub use polkadot_sdk::sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use proxy_config::AvnProxyConfig;
-pub use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 
 use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
 use pallet_session::historical::{self as pallet_session_historical};
@@ -183,7 +185,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 205,
+    spec_version: 216,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,

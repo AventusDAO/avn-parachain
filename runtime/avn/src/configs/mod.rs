@@ -20,43 +20,50 @@ mod xcm_config;
 // use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
 use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
-use frame_support::{
-    derive_impl,
-    dispatch::DispatchClass,
-    pallet_prelude::EnsureOrigin,
-    parameter_types,
-    traits::{ConstBool, ConstU32, ConstU64, Contains, TransformOrigin, VariantCountOf},
-    weights::{ConstantMultiplier, Weight},
-    PalletId,
-};
-use frame_system::{
-    limits::{BlockLength, BlockWeights},
-    EnsureRoot,
-};
-use parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling};
-use polkadot_runtime_common::{
-    xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
-};
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_version::RuntimeVersion;
+
+use polkadot_sdk::{staging_parachain_info as parachain_info, *};
+#[cfg(not(feature = "runtime-benchmarks"))]
+use polkadot_sdk::{staging_xcm_builder as xcm_builder, staging_xcm_executor as xcm_executor};
 
 use orml_traits::{
     asset_registry::{AvnAssetLocation, AvnAssetMetadata},
     parameter_type_with_key,
 };
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
+use polkadot_sdk::{
+    frame_support::{
+        derive_impl,
+        dispatch::DispatchClass,
+        parameter_types,
+        traits::{ConstBool, ConstU32, ConstU64, EnsureOrigin, TransformOrigin, VariantCountOf},
+        weights::{ConstantMultiplier, Weight},
+        PalletId,
+    },
+    frame_system::{
+        limits::{BlockLength, BlockWeights},
+        EnsureRoot,
+    },
+    parachains_common::message_queue::{NarrowOriginToSibling, ParaIdToSibling},
+    polkadot_runtime_common::{
+        xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
+    },
+};
 use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
     Asset, NODE_MANAGER_PALLET_ID,
 };
-use sp_core::{ConstU128, H160};
+
+use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::{
     traits::{AccountIdConversion, ConvertInto},
     transaction_validity::TransactionPriority,
     Perbill,
 };
+use sp_version::RuntimeVersion;
+
+use sp_core::{ConstU128, H160};
 
 // Local module imports
 use crate::{
@@ -65,9 +72,9 @@ use crate::{
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn,
     AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
-    BlockNumber, ConsensusHook, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
+    BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
     HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
-    Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
+    NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
     Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
     RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
@@ -262,7 +269,7 @@ impl cumulus_pallet_xcmp_queue::Config for Runtime {
     type XcmpQueue = TransformOrigin<MessageQueue, AggregateMessageOrigin, ParaId, ParaIdToSibling>;
     type MaxInboundSuspended = sp_core::ConstU32<1_000>;
     type MaxActiveOutboundChannels = ConstU32<128>;
-    type MaxPageSize = ConstU32<{ 1 << 16 }>;
+    type MaxPageSize = ConstU32<{ 103 * 1024 }>;
     type ControllerOrigin = EnsureRoot<AccountId>;
     type ControllerOriginConverter = XcmOriginToTransactDispatchOrigin;
     type WeightInfo = ();
@@ -428,7 +435,7 @@ parameter_types! {
 impl pallet_ethereum_events::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
-    type ProcessedEventHandler = (TokenManager, NftManager);
+    type ProcessedEventHandler = (NftManager, NodeManager, TokenManager);
     type MinEthBlockConfirmation = MinEthBlockConfirmation;
     type Public = <Signature as sp_runtime::traits::Verify>::Signer;
     type Signature = Signature;
@@ -557,7 +564,8 @@ impl pallet_eth_bridge::Config for Runtime {
     type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
-    type BridgeInterfaceNotification = (Summary, TokenManager, ParachainStaking, ValidatorsManager);
+    type BridgeInterfaceNotification =
+        (NodeManager, ParachainStaking, Summary, TokenManager, ValidatorsManager);
     type ProcessedEventsHandler = CorePrimaryEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
@@ -593,6 +601,8 @@ impl pallet_node_manager::Config for Runtime {
     type Token = EthAddress;
     type AppChainFeeHandler = TokenManager;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
+    type BridgeInterface = EthBridge;
+    type ProcessedEventsChecker = EthBridge;
 }
 
 // Other pallets

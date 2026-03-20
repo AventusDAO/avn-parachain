@@ -61,7 +61,8 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
     let uptime = 1u64;
     let node_info = <NodeRegistry<T>>::get(&node).unwrap();
-    let single_hb_weight = Pallet::<T>::effective_heartbeat_weight(&node_info, reward_period_index);
+    let single_hb_weight =
+        Pallet::<T>::effective_heartbeat_weight(&node_info, Pallet::<T>::time_now_sec());
     let weight = single_hb_weight.saturating_mul(uptime.into());
 
     <NodeUptime<T>>::mutate(&reward_period_index, &node, |maybe_info| {
@@ -85,7 +86,7 @@ fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPerio
 }
 
 fn fund_reward_pot<T: Config>() {
-    let reward_amount = RewardAmount::<T>::get() * 2000u32.into();
+    let reward_amount = RewardAmountPerPeriod::<T>::get() * 2000u32.into();
     let reward_pot_address = Pallet::<T>::compute_reward_account_id();
     T::Currency::make_free_balance_be(&reward_pot_address, reward_amount);
 }
@@ -96,7 +97,7 @@ fn create_author<T: Config>() -> Author<T> {
     Author::<T>::new(account, key)
 }
 
-fn create_nodes_and_hearbeat<T: Config>(
+fn create_nodes_and_heartbeat<T: Config>(
     owner: T::AccountId,
     reward_period_index: RewardPeriodIndex,
     node_to_create: u32,
@@ -135,14 +136,6 @@ where
     pallet_timestamp::Pallet::<T>::set_timestamp(10 * 12_000);
 }
 
-fn update_min_threshold<T: Config>(threshold: Perbill) {
-    <MinUptimeThreshold<T>>::set(Some(threshold));
-    let mut reward_period = RewardPeriod::<T>::get();
-    reward_period.length = 1000u32;
-    reward_period.uptime_threshold = 100u32.into();
-    <RewardPeriod<T>>::put(reward_period);
-}
-
 benchmarks! {
     where_clause {
         where T: pallet_timestamp::Config<Moment = u64>
@@ -174,13 +167,13 @@ benchmarks! {
     }
 
     set_admin_config_reward_period {
-        let current_reward_period = <RewardPeriod<T>>::get().length;
+        let current_reward_period = <ConfiguredRewardPeriodLength<T>>::get();
         let new_reward_period = current_reward_period + 1u32;
         let config = AdminConfig::RewardPeriod(new_reward_period);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
-        assert!(<RewardPeriod<T>>::get().length == new_reward_period);
+        assert!(<ConfiguredRewardPeriodLength<T>>::get() == new_reward_period);
     }
 
     set_admin_config_reward_batch_size {
@@ -204,13 +197,13 @@ benchmarks! {
     }
 
     set_admin_config_reward_amount {
-        let current_amount = <RewardAmount<T>>::get();
+        let current_amount = <RewardAmountPerPeriod<T>>::get();
         let new_amount = current_amount + 1u32.into();
-        let config = AdminConfig::RewardAmount(new_amount);
+        let config = AdminConfig::RewardAmountPerPeriod(new_amount);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
-        assert!(<RewardAmount<T>>::get() == new_amount);
+        assert!(<RewardAmountPerPeriod<T>>::get() == new_amount);
     }
 
     set_admin_config_reward_enabled {
@@ -224,7 +217,6 @@ benchmarks! {
     }
 
     set_admin_config_min_threshold {
-        let current_threshold = <MinUptimeThreshold<T>>::get();
         let new_threshold = Perbill::from_percent(80);
         let config = AdminConfig::MinUptimeThreshold(new_threshold);
 
@@ -282,23 +274,24 @@ benchmarks! {
             reward_period_index: new_reward_period_index,
             reward_period_length: reward_period.length,
             uptime_threshold: new_reward_period.uptime_threshold,
-            previous_period_reward: RewardAmount::<T>::get()}.into());
+            previous_period_reward: RewardAmountPerPeriod::<T>::get()}.into());
     }
 
     on_initialise_no_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
-        let block_number: BlockNumberFor<T> = BlockNumberFor::<T>::from(reward_period.length) - 1u32.into();
+        let block_number: BlockNumberFor<T> =
+            BlockNumberFor::<T>::from(reward_period.length) - 1u32.into();
         enable_rewards::<T>();
     }: { Pallet::<T>::on_initialize(block_number) }
     verify {
-        assert!(reward_period.current== <RewardPeriod<T>>::get().current);
+        assert!(reward_period.current == <RewardPeriod<T>>::get().current);
     }
 
     offchain_submit_heartbeat {
         enable_rewards::<T>();
 
         // update the min threshold first
-        update_min_threshold::<T>(Perbill::from_percent(99));
+        <MinUptimeThreshold<T>>::set(Some(Perbill::from_percent(99)));
 
         let reward_period = <RewardPeriod<T>>::get();
         let reward_period_index = reward_period.current;
@@ -338,7 +331,7 @@ benchmarks! {
         let owner: T::AccountId = account("owner", 0, 0);
         let author = create_author::<T>();
 
-        let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, registered_nodes);
+        let _ = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, registered_nodes);
 
         // Move forward to the next reward period
         <frame_system::Pallet<T>>::set_block_number((reward_period.length + 1).into());
@@ -353,7 +346,7 @@ benchmarks! {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(registered_nodes);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, registered_nodes as u128);
-        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
+        let total_rewards_u128: u128 = (RewardAmountPerPeriod::<T>::get()).saturated_into();
         let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
         let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
         let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
@@ -391,7 +384,7 @@ benchmarks! {
         let owner: T::AccountId = account("owner", 0, 0);
         let author = create_author::<T>();
 
-        let _ = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, n);
+        let _ = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, n);
 
         // Move forward to the next reward period
         <frame_system::Pallet<T>>::set_block_number((reward_period.length + 1).into());
@@ -406,7 +399,7 @@ benchmarks! {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(n);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, n as u128);
-        let total_rewards_u128: u128 = (RewardAmount::<T>::get()).saturated_into();
+        let total_rewards_u128: u128 = (RewardAmountPerPeriod::<T>::get()).saturated_into();
         let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
         let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
         let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
@@ -456,7 +449,7 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
 
-        let nodes_to_deregister = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, b);
+        let nodes_to_deregister = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, b);
 
         // Show that the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -490,7 +483,7 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
 
-        let nodes_to_deregister = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, b);
+        let nodes_to_deregister = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, b);
 
         // Show that at least some of the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -550,7 +543,7 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
         T::Currency::make_free_balance_be(&owner.clone(), 1_000_000u32.into());
-        let nodes = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
+        let nodes = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, 2);
         let node_id = nodes.first().cloned().unwrap();
     }: add_stake(RawOrigin::Signed(owner.clone()), node_id.clone(), 100u32.into())
     verify {
@@ -576,7 +569,7 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
         T::Currency::make_free_balance_be(&owner.clone(), 1_000_000u32.into());
-        let nodes = create_nodes_and_hearbeat::<T>(owner.clone(), reward_period_index, 2);
+        let nodes = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, 2);
         let node_id = nodes.first().cloned().unwrap();
         Pallet::<T>::do_add_stake(&owner, &node_id, 100u32.into()).unwrap();
         // Go forward in time to make the stake available for unstaking

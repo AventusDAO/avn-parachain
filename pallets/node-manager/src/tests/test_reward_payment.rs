@@ -17,7 +17,9 @@ impl Context {
     fn new(num_of_nodes: u8) -> Self {
         let registrar = TestAccount::new([1u8; 32]).account_id();
         let owner = TestAccount::new([209u8; 32]).account_id();
-        let reward_amount: BalanceOf<TestRuntime> = <RewardAmount<TestRuntime>>::get();
+        let reward_amount: BalanceOf<TestRuntime> = <RewardAmountPerPeriod<TestRuntime>>::get();
+
+        <NumPeriodsToMint<TestRuntime>>::put(2u32);
 
         Balances::make_free_balance_be(
             &NodeManager::compute_reward_account_id(),
@@ -86,8 +88,11 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
                 info.last_reported = System::block_number();
                 info.weight = info.weight.saturating_add(weight);
             } else {
-                *maybe_info =
-                    Some(UptimeInfo { count: 1, last_reported: System::block_number(), weight });
+                *maybe_info = Some(UptimeInfo {
+                    count: uptime,
+                    last_reported: System::block_number(),
+                    weight,
+                });
             }
         });
 
@@ -96,6 +101,28 @@ fn incr_heartbeats(reward_period: RewardPeriodIndex, nodes: Vec<NodeId<TestRunti
             total.total_weight = total.total_weight.saturating_add(weight);
         });
     }
+}
+
+fn pop_payment_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic {
+    let mut found_tx = None;
+    while !pool_state.read().transactions.is_empty() {
+        let tx = pop_tx_from_mempool(pool_state.clone());
+        if matches!(
+            tx.function,
+            RuntimeCall::NodeManager(crate::Call::offchain_pay_nodes {
+                reward_period_index: _,
+                author: _,
+                signature: _,
+            })
+        ) {
+            found_tx = Some(tx);
+            break
+        }
+    }
+
+    assert!(found_tx.is_some(), "No offchain_pay_nodes transaction found in mempool");
+
+    found_tx.unwrap()
 }
 
 fn pop_tx_from_mempool(pool_state: Arc<RwLock<PoolState>>) -> Extrinsic {
@@ -134,7 +161,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get();
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -151,6 +178,8 @@ mod reward {
                 <RewardPot<TestRuntime>>::get(reward_period_to_pay).unwrap().total_reward,
                 reward_amount
             );
+            assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), reward_amount);
+
             // mock finalised block response
             mock_get_finalised_block(
                 &mut offchain_state.write(),
@@ -158,7 +187,7 @@ mod reward {
             );
             // Trigger ocw and send the transaction
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Check if the transaction from the mempool is what we expected
@@ -186,6 +215,8 @@ mod reward {
                 Balances::free_balance(&NodeManager::compute_reward_account_id()),
                 reward_amount
             );
+            // The outstanding rewards should be cleared
+            assert_eq!(OutstandingRewardToPay::<TestRuntime>::get(), 0u128);
 
             System::assert_last_event(
                 Event::RewardPayoutCompleted { reward_period_index: reward_period_to_pay }.into(),
@@ -205,7 +236,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() * 2;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -217,7 +248,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state.clone());
+            let tx = pop_payment_tx_from_mempool(pool_state.clone());
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // We should have processed the first batch of payments
@@ -238,7 +269,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // This should complete the payment
@@ -274,8 +305,8 @@ mod reward {
         ext.execute_with(|| {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
-            let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmount<TestRuntime>>::get(); // 5
+            let reward_period = <RewardPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -294,8 +325,10 @@ mod reward {
                 None,
             );
 
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // The node falls below the min threshold to get the full rewards. They should still get
             // their share
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 2);
@@ -310,7 +343,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
             // The owner has received the reward
             // total_expected_uptime - 1 because we run the OCW
@@ -367,8 +400,8 @@ mod reward {
         ext.execute_with(|| {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
-            let reward_period = <RewardPeriod<TestRuntime>>::get(); // 200
-            let reward_amount = <RewardAmount<TestRuntime>>::get(); // 5
+            let reward_period = <RewardPeriod<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -387,8 +420,10 @@ mod reward {
                 None,
             );
 
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // The node's uptime is exactly the threshold, so they should get the full rewards
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
 
@@ -403,7 +438,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // The owner has received the reward
@@ -459,7 +494,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -479,8 +514,10 @@ mod reward {
                 None,
             );
 
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // The node's uptime is over the threshold. This is unexpected but handled
             incr_heartbeats(
                 reward_period_to_pay,
@@ -499,7 +536,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // The owner has received the reward
@@ -571,7 +608,7 @@ mod reward {
             let node_count = <MaxBatchSize<TestRuntime>>::get() - 1;
             let context = Context::new(node_count as u8);
             let reward_period = <RewardPeriod<TestRuntime>>::get();
-            let reward_amount = <RewardAmount<TestRuntime>>::get();
+            let reward_amount = reward_period.reward_amount;
             let reward_period_length = reward_period.length as u64;
             let reward_period_to_pay = reward_period.current;
 
@@ -589,16 +626,20 @@ mod reward {
                 199,
                 None,
             );
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period.heartbeat_period,
+            );
             // Increase the uptime of the node by 4 (total 5) to change the rewards
             incr_heartbeats(reward_period_to_pay, vec![new_node], total_expected_uptime as u64 - 1);
 
             let total_uptime = <TotalUptime<TestRuntime>>::get(reward_period_to_pay);
 
-            // Set a new threshold before rolling forward. This will change the current period's
-            // threshold but should not affect the rewards of the previous period
+            // Set a new threshold before rolling forward. This updates config for the next period
+            // only and must not affect payout for the current snapshotted period.
             MinUptimeThreshold::<TestRuntime>::put(Perbill::from_percent(5));
+
+            assert_eq!(RewardPeriod::<TestRuntime>::get().uptime_threshold, total_expected_uptime);
 
             // Complete a reward period
             roll_forward((reward_period_length - System::block_number()) + 1);
@@ -609,7 +650,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // The owner has received the reward
@@ -656,6 +697,55 @@ mod reward {
     }
 
     #[test]
+    fn threshold_update_applies_to_next_period_only() {
+        let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+
+        ext.execute_with(|| {
+            let current_reward_period = <RewardPeriod<TestRuntime>>::get();
+            let current_period_index = current_reward_period.current;
+            let current_period_length = current_reward_period.length;
+            let current_uptime_threshold = current_reward_period.uptime_threshold;
+
+            let new_min_threshold = Perbill::from_percent(5);
+
+            // Change the configured min threshold during the current period.
+            assert_ok!(NodeManager::set_admin_config(
+                RawOrigin::Root.into(),
+                AdminConfig::MinUptimeThreshold(new_min_threshold),
+            ));
+
+            // The stored config changes immediately...
+            assert_eq!(MinUptimeThreshold::<TestRuntime>::get(), Some(new_min_threshold));
+
+            // ...but the current reward period snapshot must stay unchanged.
+            let reward_period_after_config = <RewardPeriod<TestRuntime>>::get();
+            assert_eq!(reward_period_after_config.current, current_period_index);
+            assert_eq!(reward_period_after_config.length, current_period_length);
+            assert_eq!(reward_period_after_config.uptime_threshold, current_uptime_threshold);
+
+            // Roll into the next period.
+            roll_forward((current_period_length as u64 - System::block_number()) + 1);
+
+            let next_reward_period = <RewardPeriod<TestRuntime>>::get();
+            let expected_next_uptime_threshold = NodeManager::calculate_uptime_threshold(
+                next_reward_period.length,
+                next_reward_period.heartbeat_period,
+            );
+
+            assert_eq!(next_reward_period.current, current_period_index + 1);
+            assert_eq!(next_reward_period.length, current_period_length);
+            assert_eq!(next_reward_period.uptime_threshold, expected_next_uptime_threshold);
+
+            // And the threshold should actually have changed for the new period.
+            assert_ne!(next_reward_period.uptime_threshold, current_uptime_threshold);
+        });
+    }
+
+    #[test]
     fn reward_share_increases_with_genesis_and_stake_bonus() {
         let (mut ext, pool_state, offchain_state) = ExtBuilder::build_default()
             .with_genesis_config()
@@ -691,8 +781,10 @@ mod reward {
             assert_eq!(node_uptime_b.weight, 450_000_000u128);
 
             let reward_period_length = reward_period_info.length as u64;
-            let total_expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let total_expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period_info.heartbeat_period,
+            );
 
             // The node's uptime is exactly the threshold, so they should get the full rewards
             incr_heartbeats(
@@ -712,8 +804,11 @@ mod reward {
             // Node B: 50% genesis bonus + 3x stake multiplier => 4.5x base
             assert_eq!(node_uptime_b.weight, 450_000_000u128 * total_expected_uptime as u128);
 
-            // Set a custom reward amount for easier calculations
-            <RewardAmount<TestRuntime>>::put(1_000u128);
+            // Set a custom reward amount per period for easier calculations
+            <RewardAmountPerPeriod<TestRuntime>>::put(1_000u128);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = 1_000u128;
+            });
 
             // Complete a reward period
             roll_forward((reward_period_length - System::block_number()) + 1);
@@ -734,7 +829,7 @@ mod reward {
                 &Some(hex::encode(1u32.encode()).into()),
             );
             NodeManager::offchain_worker(System::block_number());
-            let tx = pop_tx_from_mempool(pool_state);
+            let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
 
             // Stake after payout
@@ -878,7 +973,7 @@ mod reward {
                 let node_count = <MaxBatchSize<TestRuntime>>::get();
                 let _ = Context::new(node_count as u8);
                 let reward_period = <RewardPeriod<TestRuntime>>::get();
-                let reward_amount = <RewardAmount<TestRuntime>>::get();
+                let reward_amount = reward_period.reward_amount;
                 let reward_period_length = reward_period.length as u64;
                 let reward_period_to_pay = reward_period.current;
 
@@ -1032,7 +1127,7 @@ mod end_2_end {
             &Some(hex::encode(1u32.encode()).into()),
         );
         NodeManager::offchain_worker(System::block_number());
-        let tx = pop_tx_from_mempool(pool_state.clone());
+        let tx = pop_payment_tx_from_mempool(pool_state.clone());
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
     }
 
@@ -1067,7 +1162,10 @@ mod end_2_end {
             Balances::make_free_balance_be(&new_owner, new_owner_stake * 2);
 
             // Set a custom reward amount for easier calculations
-            <RewardAmount<TestRuntime>>::put(total_reward_per_period);
+            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward_per_period);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = total_reward_per_period;
+            });
 
             // No genesis bonus, no stake for default context node
             let context = Context::new(1u8);
@@ -1088,8 +1186,10 @@ mod end_2_end {
             );
 
             let reward_period_length = reward_period_info.length as u64;
-            let expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                reward_period_info.heartbeat_period,
+            );
 
             // The node's uptime is exactly the threshold, so they should get the full rewards
             incr_heartbeats(reward_period, vec![context.ocw_node], expected_uptime as u64 - 1);
@@ -1187,7 +1287,6 @@ mod end_2_end {
             );
 
             // Set time to unlock the stake. Use context node because its registered first
-            //Timestamp::set_timestamp(context_node_info.auto_stake_expiry * 1000);
             set_timestamp(context_node_info.auto_stake_expiry).unwrap();
             let new_owner_balance_before = Balances::free_balance(&new_owner);
 
@@ -1311,8 +1410,8 @@ mod end_2_end {
             ));
 
             // Send heartbeats for the new reward period
-            incr_heartbeats(reward_period, vec![context.ocw_node], (expected_uptime) as u64);
-            incr_heartbeats(reward_period, vec![new_node], (expected_uptime) as u64);
+            incr_heartbeats(reward_period, vec![context.ocw_node], expected_uptime as u64);
+            incr_heartbeats(reward_period, vec![new_node], expected_uptime as u64);
 
             let context_owner_balance_before = Balances::free_balance(&context.owner);
             let new_owner_balance_before = Balances::free_balance(&new_owner);
@@ -1400,17 +1499,24 @@ mod end_2_end {
             .as_externality_with_state();
         ext.execute_with(|| {
             let total_reward = 1_000u128;
-            <RewardAmount<TestRuntime>>::put(total_reward);
+            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = total_reward;
+            });
+
             let context = Context::new(1u8);
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),
                 total_reward * 1_000_000u128,
             );
 
-            let first_period = <RewardPeriod<TestRuntime>>::get().current;
-            let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
-            let expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let first_period_info = <RewardPeriod<TestRuntime>>::get();
+            let first_period = first_period_info.current;
+            let reward_period_length = first_period_info.length as u64;
+            let expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                first_period_info.heartbeat_period,
+            );
 
             // Add enough heartbeats for a full reward (Context::new already added 1)
             incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
@@ -1467,17 +1573,24 @@ mod end_2_end {
             .as_externality_with_state();
         ext.execute_with(|| {
             let total_reward = 1_000u128;
-            <RewardAmount<TestRuntime>>::put(total_reward);
+            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
+            RewardPeriod::<TestRuntime>::mutate(|p| {
+                p.reward_amount = total_reward;
+            });
+
             let context = Context::new(1u8);
             Balances::make_free_balance_be(
                 &NodeManager::compute_reward_account_id(),
                 total_reward * 1_000_000u128,
             );
 
-            let first_period = <RewardPeriod<TestRuntime>>::get().current;
-            let reward_period_length = <RewardPeriod<TestRuntime>>::get().length as u64;
-            let expected_uptime =
-                NodeManager::calculate_uptime_threshold(reward_period_length as u32);
+            let first_period_info = <RewardPeriod<TestRuntime>>::get();
+            let first_period = first_period_info.current;
+            let reward_period_length = first_period_info.length as u64;
+            let expected_uptime = NodeManager::calculate_uptime_threshold(
+                reward_period_length as u32,
+                first_period_info.heartbeat_period,
+            );
 
             incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
 

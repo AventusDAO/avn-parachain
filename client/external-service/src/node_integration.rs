@@ -5,7 +5,7 @@ use crate::{
     server::AppState,
     signing::{KeystoreSignerProvider, SignerProvider},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
 use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
@@ -16,6 +16,7 @@ use sp_block_builder::BlockBuilder;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::sync::Mutex;
 use url::Url;
 
 #[derive(Clone)]
@@ -35,23 +36,26 @@ where
     Block: BlockT,
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
 {
-    let first_url = deps
-        .eth_node_urls
-        .first()
-        .cloned()
-        .ok_or_else(|| anyhow!("no ethereum node urls configured"))?;
+    let (chain, signer_provider) = if let Some(first_url) = deps.eth_node_urls.first().cloned() {
+        log::info!("external-service using RPC url for HTTP send path: {}", first_url);
 
-    let evm_rpc_url: Url = first_url
-        .parse()
-        .with_context(|| format!("invalid ethereum rpc url: {first_url}"))?;
+        let evm_rpc_url: Url = first_url
+            .parse()
+            .with_context(|| format!("invalid ethereum rpc url: {first_url}"))?;
 
-    let chain: Arc<dyn ChainClient> = Arc::new(
-        EvmClient::new_http(evm_rpc_url.as_str())
-            .map_err(|e| anyhow!("evm client init failed: {e:?}"))?,
-    );
+        let chain: Arc<dyn ChainClient> = Arc::new(
+            EvmClient::new_http(evm_rpc_url.as_str())
+                .map_err(|e| anyhow::anyhow!("evm client init failed: {e:?}"))?,
+        );
 
-    let signer_provider: Arc<dyn SignerProvider> =
-        Arc::new(KeystoreSignerProvider::new(deps.keystore_path.clone(), evm_rpc_url));
+        let signer_provider: Arc<dyn SignerProvider> =
+            Arc::new(KeystoreSignerProvider::new(deps.keystore_path.clone(), evm_rpc_url));
+
+        (Some(chain), Some(signer_provider))
+    } else {
+        log::info!("external-service starting without Ethereum RPC configuration");
+        (None, None)
+    };
 
     Ok(AppState::<Block, ClientT> {
         keystore: deps.keystore.clone(),
@@ -60,6 +64,7 @@ where
         chain,
         signer_provider,
         client: deps.client.clone(),
+        send_lock: Arc::new(Mutex::new(())),
         _block: Default::default(),
     })
 }

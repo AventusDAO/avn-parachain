@@ -77,6 +77,13 @@ pub enum Error {
     LiftedToPredictionMarketEventBadDataLength,
     LiftedToPredictionMarketEventWrongTopicCount,
     LiftedToPredictionMarketEventBadTopicLength,
+
+    AvtRewardsMintedEventShouldOnlyContainTopics,
+    AvtRewardsMintedEventWrongTopicCount,
+    AvtRewardsMintedEventBadTopicLength,
+    AvtRewardsMintedEventAmountOverflow,
+    AvtRewardsMintedEventNewSupplyOverflow,
+    AvtRewardsMintedEventTxIdConversion,
 }
 
 #[derive(
@@ -127,6 +134,8 @@ pub enum ValidEvents {
     Erc20DirectTransfer,
     /// A lower was reverted.
     LowerReverted,
+    /// AVT rewards were minted by either the validators or the T1 owner.
+    AvtRewardsMinted,
 }
 
 impl ValidEvents {
@@ -180,6 +189,10 @@ impl ValidEvents {
             // hex string of Keccak-256 for LogLowerReverted(address,bytes32,address,uint256,uint32)
             ValidEvents::LowerReverted =>
                 H256(hex!("3a534ee35b9cf37cfa5e5aac24f8d0d3a2a2841b1ff92db68501d3c46956daa8")),
+
+            // hex string of Keccak-256 for LogRewardsMinted(uint256,uint256,uint32)
+            ValidEvents::AvtRewardsMinted =>
+                H256(hex!("8780503b6efc49186826d97ab83686b74d0c76aa1052e08a81fa36a349472545")),
         }
     }
 
@@ -925,6 +938,79 @@ impl LowerRevertedData {
 }
 
 #[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub struct TotalSupplyUpdatedData {
+    pub amount: u128,
+    pub new_supply: u128,
+    pub t2_tx_id: u32,
+}
+
+impl TotalSupplyUpdatedData {
+    const TOPIC_AMOUNT: usize = 1;
+    const TOPIC_NEW_SUPPLY: usize = 2;
+    const TOPIC_T2_TX_ID: usize = 3;
+
+    pub fn is_valid(&self) -> bool {
+        self.amount > 0
+    }
+
+    pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
+        if data.is_some() {
+            return Err(Error::AvtRewardsMintedEventShouldOnlyContainTopics)
+        }
+
+        if topics.len() != 4 {
+            return Err(Error::AvtRewardsMintedEventWrongTopicCount)
+        }
+
+        if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_NEW_SUPPLY].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_T2_TX_ID].len() != WORD_LENGTH
+        {
+            return Err(Error::AvtRewardsMintedEventBadTopicLength)
+        }
+
+        if topics[Self::TOPIC_AMOUNT][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
+            return Err(Error::AvtRewardsMintedEventAmountOverflow)
+        }
+
+        if topics[Self::TOPIC_NEW_SUPPLY][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
+            return Err(Error::AvtRewardsMintedEventNewSupplyOverflow)
+        }
+
+        let amount = u128::from_be_bytes(
+            topics[Self::TOPIC_AMOUNT][HALF_WORD_LENGTH..WORD_LENGTH]
+                .try_into()
+                .expect("Slice is the correct size"),
+        );
+
+        let new_supply = u128::from_be_bytes(
+            topics[Self::TOPIC_NEW_SUPPLY][HALF_WORD_LENGTH..WORD_LENGTH]
+                .try_into()
+                .expect("Slice is the correct size"),
+        );
+
+        let t2_tx_id = u32::from_be_bytes(
+            topics[Self::TOPIC_T2_TX_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
+                .try_into()
+                .map_err(|_| Error::AvtRewardsMintedEventTxIdConversion)?,
+        );
+
+        Ok(TotalSupplyUpdatedData { amount, new_supply, t2_tx_id })
+    }
+}
+
+#[derive(
     Encode, Decode, Clone, PartialEq, Debug, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
 pub enum EventData {
@@ -940,6 +1026,7 @@ pub enum EventData {
     LogLowerReverted(LowerRevertedData),
     LogLiftedToPredictionMarket(LiftedData),
     LogErc20Transfer(LiftedData),
+    LogRewardsMinted(TotalSupplyUpdatedData),
 }
 
 impl EventData {
@@ -957,6 +1044,7 @@ impl EventData {
             EventData::LogLiftedToPredictionMarket(d) => d.is_valid(),
             EventData::LogErc20Transfer(d) => d.is_valid(),
             EventData::LogLowerReverted(d) => d.is_valid(),
+            EventData::LogRewardsMinted(d) => d.is_valid(),
             EventData::EmptyEvent => true,
             _ => false,
         }

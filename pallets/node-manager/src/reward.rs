@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 use crate::*;
 use sp_runtime::{ArithmeticError, SaturatedConversion};
 
@@ -129,6 +131,13 @@ impl<T: Config> Pallet<T> {
     }
 
     pub fn complete_reward_payout(period_index: RewardPeriodIndex) {
+        if let Some(reward_pot) = RewardPot::<T>::get(period_index) {
+            let paid_reward = reward_pot.total_reward;
+            OutstandingRewardToPay::<T>::mutate(|outstanding| {
+                *outstanding = outstanding.saturating_sub(paid_reward);
+            });
+        }
+
         // We finished paying all nodes for this period
         OldestUnpaidRewardPeriodIndex::<T>::put(period_index.saturating_add(1));
         LastPaidPointer::<T>::kill();
