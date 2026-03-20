@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use pallet_eth_bridge_runtime_api::EthEventHandlerApi;
+use polkadot_sdk::*;
 use sc_client_api::{BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;

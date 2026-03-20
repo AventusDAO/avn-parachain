@@ -19,6 +19,7 @@
 // limitations under the License.
 
 //! Key related CLI utilities
+use polkadot_sdk::*;
 
 use sc_cli::{
     Error, GenerateCmd, GenerateKeyCmdCommon, InspectKeyCmd, InspectNodeKeyCmd, SubstrateCli,
