@@ -693,7 +693,7 @@ pub mod pallet {
 
             Self::settle_transfer(&token_id, &from, &to, &amount)?;
 
-            let final_weight = if Self::is_avt_token(token_id) {
+            let final_weight = if Self::is_native_token(token_id) {
                 <T as pallet::Config>::WeightInfo::transfer_native()
             } else {
                 <T as pallet::Config>::WeightInfo::transfer_non_avt()
