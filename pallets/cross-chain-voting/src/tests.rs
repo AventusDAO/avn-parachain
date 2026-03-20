@@ -336,6 +336,39 @@ mod total_linked_balance {
     }
 
     #[test]
+    fn returns_totals_for_multiple_identities_in_order() {
+        new_test_ext().execute_with(|| {
+            let t1a_pair = test_ecdsa_pair(1);
+            let t1a = eth_address_from_pair(&t1a_pair);
+
+            let t1b_pair = test_ecdsa_pair(2);
+            let t1b = eth_address_from_pair(&t1b_pair);
+
+            let a1 = test_account(10);
+            let a2 = test_account(11);
+            let b1 = test_account(12);
+
+            set_balance(&a1, 100);
+            set_balance(&a2, 250);
+            set_balance(&b1, 999);
+
+            for t2 in [a1, a2] {
+                let p = payload(Action::Link, t1a, t2, 1);
+                let sig = sign_payload_string_format(&t1a_pair, &p);
+                assert_ok!(CrossChainVoting::link_account(RuntimeOrigin::signed(t2), p, sig));
+            }
+
+            let p = payload(Action::Link, t1b, b1, 1);
+            let sig = sign_payload_string_format(&t1b_pair, &p);
+            assert_ok!(CrossChainVoting::link_account(RuntimeOrigin::signed(b1), p, sig));
+
+            let totals = crate::Pallet::<TestRuntime>::get_total_linked_balances(vec![t1a, t1b]);
+
+            assert_eq!(totals, vec![350, 999]);
+        })
+    }
+
+    #[test]
     fn returns_zero_when_no_accounts_linked() {
         new_test_ext().execute_with(|| {
             let t1_pair = test_ecdsa_pair(1);
@@ -343,6 +376,18 @@ mod total_linked_balance {
 
             let total = crate::Pallet::<TestRuntime>::get_total_linked_balance(t1);
             assert_eq!(total, 0);
+        })
+    }
+
+    #[test]
+    fn returns_zero_for_unlinked_identity_in_bulk_lookup() {
+        new_test_ext().execute_with(|| {
+            let t1a = eth_address_from_pair(&test_ecdsa_pair(1));
+            let t1b = eth_address_from_pair(&test_ecdsa_pair(2));
+
+            let totals = crate::Pallet::<TestRuntime>::get_total_linked_balances(vec![t1a, t1b]);
+
+            assert_eq!(totals, vec![0, 0]);
         })
     }
 }
