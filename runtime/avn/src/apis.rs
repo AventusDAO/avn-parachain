@@ -29,7 +29,7 @@ use polkadot_sdk::{
     sp_runtime::{
         traits::Block as BlockT,
         transaction_validity::{TransactionSource, TransactionValidity},
-        ApplyExtrinsicResult,
+        ApplyExtrinsicResult, SaturatedConversion,
     },
     sp_version::RuntimeVersion,
     *,
@@ -291,12 +291,20 @@ impl_runtime_apis! {
             CrossChainVoting::get_total_linked_balance(t1_identity_account)
         }
 
+        fn get_total_linked_balances(t1_identity_accounts: Vec<H160>) -> Vec<Balance> {
+            CrossChainVoting::get_total_linked_balances(t1_identity_accounts)
+        }
+
         fn get_linked_accounts(t1_identity_account: H160) -> Vec<AccountId> {
             CrossChainVoting::get_linked_accounts(t1_identity_account).to_vec()
         }
 
         fn get_identity_account(t2_linked_account: AccountId) -> Option<H160> {
             CrossChainVoting::get_identity_account(t2_linked_account)
+        }
+
+        fn current_block_timestamp() -> u64 {
+            Timestamp::now().saturated_into::<u64>()
         }
     }
 
