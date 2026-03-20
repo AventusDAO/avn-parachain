@@ -56,7 +56,11 @@ use sp_avn_common::{
 };
 
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_runtime::{traits::{AccountIdConversion, ConvertInto}, transaction_validity::TransactionPriority, Perbill};
+use sp_runtime::{
+    traits::{AccountIdConversion, ConvertInto},
+    transaction_validity::TransactionPriority,
+    Perbill,
+};
 use sp_version::RuntimeVersion;
 
 use sp_core::{ConstU128, H160};
@@ -68,7 +72,7 @@ use crate::{
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn,
     AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
-    BlockNumber, ConsensusHook, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
+    BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
     HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
     NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
     ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
