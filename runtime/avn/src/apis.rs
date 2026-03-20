@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use polkadot_sdk::{
     frame_support::{
         genesis_builder_helper::{build_state, get_preset},
+        traits::Time,
         weights::Weight,
     },
     pallet_aura::Authorities,
@@ -29,7 +30,7 @@ use polkadot_sdk::{
     sp_runtime::{
         traits::Block as BlockT,
         transaction_validity::{TransactionSource, TransactionValidity},
-        ApplyExtrinsicResult, SaturatedConversion,
+        ApplyExtrinsicResult,
     },
     sp_version::RuntimeVersion,
     *,
@@ -44,7 +45,7 @@ use super::{
 
 use crate::{
     AdditionalEvents, AuthorityDiscovery, AuthorityDiscoveryId, Avn, CrossChainVoting,
-    EthBlockRange, EthBridge, EthBridgeInstance, EthereumEventsPartition, InstanceId,
+    EthBlockRange, EthBridge, EthBridgeInstance, EthereumEventsPartition, InstanceId, Timestamp,
     MAIN_ETH_BRIDGE_ID,
 };
 
@@ -304,7 +305,7 @@ impl_runtime_apis! {
         }
 
         fn current_block_timestamp() -> u64 {
-            Timestamp::now().saturated_into::<u64>()
+            Timestamp::now()
         }
     }
 

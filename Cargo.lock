@@ -1934,6 +1934,7 @@ dependencies = [
  "jsonrpsee",
  "log",
  "pallet-avn",
+ "pallet-cross-chain-voting-runtime-api",
  "pallet-eth-bridge",
  "pallet-eth-bridge-runtime-api",
  "pallet-im-online",

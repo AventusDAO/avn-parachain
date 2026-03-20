@@ -1,10 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use jsonrpsee::{
-    core::RpcResult,
-    proc_macros::rpc,
-    types::ErrorObjectOwned,
-};
+use jsonrpsee::{core::RpcResult, proc_macros::rpc, types::ErrorObjectOwned};
+use pallet_cross_chain_voting_runtime_api::CrossChainVotingApi;
 use runtime_common::opaque::Block;
 use serde::{Deserialize, Serialize};
 use sp_api::ProvideRuntimeApi;
@@ -166,11 +163,7 @@ where
         return block_info(client, a_num)
     }
 
-    let (mut lo, mut hi) = if a_ts < target_ts_ms {
-        (a_num, latest_number)
-    } else {
-        (0, a_num)
-    };
+    let (mut lo, mut hi) = if a_ts < target_ts_ms { (a_num, latest_number) } else { (0, a_num) };
 
     let step = ((a_ts.abs_diff(target_ts_ms)) / EXPECTED_BLOCK_TIME_MS).max(1) as u32;
     let second_guess = if a_ts < target_ts_ms {
@@ -203,7 +196,7 @@ where
         };
 
         if next_guess == a_num || next_guess == b_num {
-            break;
+            break
         }
 
         let (c_num, _, c_ts) = block_info(client, next_guess)?;
@@ -219,7 +212,7 @@ where
         }
 
         if hi.saturating_sub(lo) <= 1 {
-            break;
+            break
         }
 
         a_num = b_num;
