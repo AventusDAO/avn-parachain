@@ -520,12 +520,14 @@ pub mod pallet {
 
             Self::settle_lower(token_id, &from, &to_account_id, amount, t1_recipient, lower_id)?;
 
-            // TODO: replace with process known token vs unknown tokens
-            let final_weight = if Self::is_native_token(token_id) {
-                <T as pallet::Config>::WeightInfo::execute_avt_lower()
-            } else {
-                <T as pallet::Config>::WeightInfo::execute_non_avt_lower()
-            };
+            let final_weight =
+                if T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(token_id.into()))
+                    .is_some()
+                {
+                    <T as pallet::Config>::WeightInfo::execute_avt_lower()
+                } else {
+                    <T as pallet::Config>::WeightInfo::execute_non_avt_lower()
+                };
 
             Ok(Some(final_weight).into())
         }
@@ -693,11 +695,14 @@ pub mod pallet {
 
             Self::settle_transfer(&token_id, &from, &to, &amount)?;
 
-            let final_weight = if Self::is_native_token(token_id) {
-                <T as pallet::Config>::WeightInfo::transfer_native()
-            } else {
-                <T as pallet::Config>::WeightInfo::transfer_non_avt()
-            };
+            let final_weight =
+                if T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(token_id.into()))
+                    .is_some()
+                {
+                    <T as pallet::Config>::WeightInfo::transfer_native()
+                } else {
+                    <T as pallet::Config>::WeightInfo::transfer_non_avt()
+                };
 
             Ok(Some(final_weight).into())
         }
@@ -734,6 +739,7 @@ impl<T: Config> Pallet<T> {
                 )
             },
             None => {
+                ensure!(!Self::is_native_token(*token_id), Error::<T>::NativeTokenNotRegistered);
                 <Balances<T>>::try_mutate((token_id, from), |balance| -> DispatchResult {
                     *balance =
                         balance.checked_sub(amount).ok_or(Error::<T>::InsufficientSenderBalance)?;
