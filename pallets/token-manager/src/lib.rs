@@ -98,6 +98,8 @@ mod test_non_avt_tokens;
 mod test_proxying_signed_lower;
 #[cfg(test)]
 mod test_proxying_signed_transfer;
+#[cfg(test)]
+mod test_transfer;
 
 pub const SIGNED_TRANSFER_CONTEXT: &'static [u8] = b"authorization for transfer operation";
 pub const SIGNED_LOWER_CONTEXT: &'static [u8] = b"authorization for lower operation";
