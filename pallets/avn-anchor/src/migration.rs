@@ -5,11 +5,11 @@ use frame_support::{
     weights::Weight,
 };
 
-/// Migration v1 → v2: remove the `ChainData` storage map.
+/// Migration v1 -> v2: remove the `ChainData` storage map.
 ///
 /// `ChainData` stored a (chain_id, name) pair keyed by ChainId. The name field is no longer
 /// needed at runtime; chain registration now goes through `register_appchain` which stores the
-/// name exclusively in the asset registry. This migration clears all on-chain entries before the
+/// name in the asset registry. This migration clears all on-chain entries before the
 /// storage type is removed from the pallet.
 pub mod v2 {
     use super::*;
