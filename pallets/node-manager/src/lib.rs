@@ -704,11 +704,16 @@ pub mod pallet {
 
                     <NextHeartbeatPeriod<T>>::put(period);
 
-                    Self::deposit_event(Event::NextHeartbeatPeriodSet { new_heartbeat_period: period });
+                    Self::deposit_event(Event::NextHeartbeatPeriodSet {
+                        new_heartbeat_period: period,
+                    });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat()).into())
                 },
                 AdminConfig::NextRewardAmountPerPeriod(amount) => {
-                    ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::NextRewardAmountPerPeriodZero);
+                    ensure!(
+                        amount > BalanceOf::<T>::zero(),
+                        Error::<T>::NextRewardAmountPerPeriodZero
+                    );
                     <NextRewardAmountPerPeriod<T>>::put(amount);
                     Self::deposit_event(Event::NextRewardAmountPerPeriodSet { new_amount: amount });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_amount()).into())

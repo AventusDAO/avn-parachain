@@ -351,8 +351,7 @@ mod reward {
                 total_expected_uptime as u128 - 1,
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
-            let new_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+            let new_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -363,8 +362,7 @@ mod reward {
             );
 
             let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
-            let old_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+            let old_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -446,8 +444,7 @@ mod reward {
                 total_expected_uptime as u128,
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
-            let new_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+            let new_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -456,8 +453,7 @@ mod reward {
                 Balances::reserved_balance(&new_owner).abs_diff(expected_new_owner_reward)
             );
             let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
-            let old_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+            let old_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -545,8 +541,7 @@ mod reward {
                 total_expected_uptime as u128,
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
-            let new_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+            let new_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -561,8 +556,7 @@ mod reward {
                 Perquintill::from_rational(1u128, total_uptime.total_heartbeats as u128) *
                     reward_amount *
                     (node_count as u128);
-            let old_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+            let old_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -658,8 +652,7 @@ mod reward {
                 total_expected_uptime as u128,
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
-            let new_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+            let new_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -669,8 +662,7 @@ mod reward {
                 expected_new_owner_reward
             );
             let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
-            let old_owner_fee =
-                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+            let old_owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(

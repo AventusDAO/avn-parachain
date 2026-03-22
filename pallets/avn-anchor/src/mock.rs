@@ -19,7 +19,7 @@ use sp_avn_common::{
     avn_tests_helpers::utilities::TestAccountIdPK,
     eth::EthereumId,
     primitives::{Amount, Balance, CurrencyId},
-    Asset, PaymentHandler, InnerCallValidator, Proof,
+    Asset, InnerCallValidator, PaymentHandler, Proof,
 };
 use sp_core::{sr25519, Pair, H160, H256};
 

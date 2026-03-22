@@ -15,7 +15,7 @@ use frame_support::{
     traits::{Currency, IsSubType},
 };
 use frame_system::{self as system, ensure_signed};
-use sp_avn_common::{verify_multi_signature, PaymentHandler, InnerCallValidator, Proof};
+use sp_avn_common::{verify_multi_signature, InnerCallValidator, PaymentHandler, Proof};
 
 use core::convert::TryInto;
 pub use pallet::*;

@@ -38,7 +38,7 @@ use pallet_avn_proxy::{self as avn_proxy, ProvableProxy};
 use pallet_eth_bridge;
 use pallet_session as session;
 use pallet_transaction_payment::{ChargeTransactionPayment, CurrencyAdapter};
-use sp_avn_common::{eth::EthereumId, PaymentHandler, InnerCallValidator};
+use sp_avn_common::{eth::EthereumId, InnerCallValidator, PaymentHandler};
 use sp_core::{sr25519, ConstU64, Pair};
 use sp_io;
 use sp_runtime::{

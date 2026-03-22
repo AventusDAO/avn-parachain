@@ -54,7 +54,7 @@ use sp_avn_common::{
         LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
-    verify_signature, CallDecoder, PaymentHandler, InnerCallValidator, OnIdleHandler, Proof,
+    verify_signature, CallDecoder, InnerCallValidator, OnIdleHandler, PaymentHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{

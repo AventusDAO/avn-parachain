@@ -55,7 +55,7 @@ pub mod pallet {
         AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
         Inspect as AssetRegistryInspect, Mutate as AssetRegistryMutate,
     };
-    use sp_avn_common::{verify_signature, PaymentHandler, InnerCallValidator, Proof};
+    use sp_avn_common::{verify_signature, InnerCallValidator, PaymentHandler, Proof};
     use sp_core::H160;
     use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
 

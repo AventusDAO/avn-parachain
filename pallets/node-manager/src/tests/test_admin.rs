@@ -174,7 +174,9 @@ mod heartbeat {
             assert_eq!(NextHeartbeatPeriod::<TestRuntime>::get(), new_heartbeat_period);
             assert_eq!(RewardPeriod::<TestRuntime>::get().uptime_threshold, current_threshold);
 
-            System::assert_last_event(Event::NextHeartbeatPeriodSet { new_heartbeat_period }.into());
+            System::assert_last_event(
+                Event::NextHeartbeatPeriodSet { new_heartbeat_period }.into(),
+            );
         });
     }
 
