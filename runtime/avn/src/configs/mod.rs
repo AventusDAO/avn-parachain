@@ -542,6 +542,10 @@ impl pallet_avn_transaction_payment::Config for Runtime {
     type WeightInfo = pallet_avn_transaction_payment::default_weights::SubstrateWeight<Runtime>;
 }
 
+parameter_types! {
+    pub const MaxRegisteredAppChains: u32 = 100;
+}
+
 impl pallet_avn_anchor::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
@@ -552,6 +556,10 @@ impl pallet_avn_anchor::Config for Runtime {
     type Signature = Signature;
     type Token = EthAddress;
     type DefaultCheckpointFee = DefaultCheckpointFee;
+    type AppChainAssetId = CurrencyId;
+    type MaxRegisteredAppChains = MaxRegisteredAppChains;
+    type AssetRegistryStringLimit = AssetRegistryStringLimit;
+    type AssetRegistry = AssetRegistry;
 }
 
 impl pallet_eth_bridge::Config for Runtime {

@@ -53,10 +53,12 @@ pub mod v2 {
                 StorageVersion::get::<Pallet<T>>() == 2,
                 sp_runtime::TryRuntimeError::Other("storage version not bumped to 2")
             );
-            // Verify ChainData is empty
-            let result = clear_storage_prefix(b"AvnAnchor", b"ChainData", b"", Some(1), None);
+            // Verify ChainData is empty (non-destructive: check if any key still shares the prefix)
+            let prefix = frame_support::storage::storage_prefix(b"AvnAnchor", b"ChainData");
+            let is_empty =
+                sp_io::storage::next_key(&prefix).map_or(true, |next| !next.starts_with(&prefix));
             frame_support::ensure!(
-                result.unique == 0,
+                is_empty,
                 sp_runtime::TryRuntimeError::Other("ChainData storage was not fully cleared")
             );
             Ok(())

@@ -112,7 +112,7 @@ pub mod pallet {
         type MaxRegisteredAppChains: Get<u32>;
 
         /// The asset-id type used by the on-chain asset registry.
-        type AppChainAssetId: Parameter + Member + Copy + MaxEncodedLen;
+        type AppChainAssetId: Parameter + Member + Copy + MaxEncodedLen + Default;
 
         /// String size limit accepted by the asset registry for name/symbol fields.
         #[pallet::constant]

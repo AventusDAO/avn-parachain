@@ -7,7 +7,7 @@ use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_support::{traits::Currency, BoundedVec};
 use frame_system::RawOrigin;
 use sp_application_crypto::KeyTypeId;
-use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Asset, Proof};
 use sp_core::H256;
 use sp_runtime::{RuntimeAppPublic, Saturating};
 
@@ -84,9 +84,11 @@ benchmarks! {
         let caller: T::AccountId = create_account_id::<T>(0);
         let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(vec![0u8; 32]).unwrap();
         setup_balance::<T>(&caller);
-    }: _(RawOrigin::Signed(caller.clone()), name.clone())
+    }: {
+        // Call is deprecated and always returns CallDeprecated; ignore the error.
+        let _ = Pallet::<T>::register_chain_handler(RawOrigin::Signed(caller.clone()).into(), name.clone());
+    }
     verify {
-        // Call is deprecated; verify it returns CallDeprecated and leaves no state
         assert!(!ChainHandlers::<T>::contains_key(&caller));
     }
 
@@ -147,9 +149,11 @@ benchmarks! {
             handler.clone(),
             relayer,
         );
-    }: _(RawOrigin::Signed(handler.clone()), proof, handler.clone(), name.clone())
+    }: {
+        // Call is deprecated and always returns CallDeprecated; ignore the error.
+        let _ = Pallet::<T>::signed_register_chain_handler(RawOrigin::Signed(handler.clone()).into(), proof, handler.clone(), name.clone());
+    }
     verify {
-        // Call is deprecated; verify it returns CallDeprecated and leaves no state
         assert!(!ChainHandlers::<T>::contains_key(&handler));
     }
 
@@ -223,6 +227,21 @@ benchmarks! {
         );
         assert_eq!(NextCheckpointId::<T>::get(chain_id), initial_checkpoint_id + 1);
         assert!(T::Currency::free_balance(&handler) < initial_balance, "Fee was not deducted");
+    }
+
+    register_appchain {
+        let handler: T::AccountId = create_account_id::<T>(0);
+        let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(b"Benchmark Chain".to_vec()).unwrap();
+        let symbol: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(b"BCH".to_vec()).unwrap();
+        let token = T::Token::from(sp_core::H160::from([1u8; 20]));
+        let asset_id: T::AppChainAssetId =
+            T::AppChainAssetId::decode(&mut &Asset::ForeignAsset(2).encode()[..])
+                .unwrap_or_default();
+    }: _(RawOrigin::Root, handler.clone(), name, symbol, token, asset_id, 18u32)
+    verify {
+        assert!(ChainHandlers::<T>::contains_key(&handler));
+        let chain_id = ChainHandlers::<T>::get(&handler).expect("handler should be registered");
+        assert!(ChainIdToAssetId::<T>::get(chain_id).is_some());
     }
 
     set_checkpoint_fee {

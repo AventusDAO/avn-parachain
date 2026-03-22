@@ -497,6 +497,10 @@ impl pallet_summary::Config<AvnAnchorSummary> for Runtime {
     type ExternalValidator = NoopWatchtower<AccountId>;
 }
 
+parameter_types! {
+    pub const MaxRegisteredAppChains: u32 = 100;
+}
+
 impl pallet_avn_anchor::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
@@ -507,6 +511,10 @@ impl pallet_avn_anchor::Config for Runtime {
     type Signature = Signature;
     type Token = EthAddress;
     type DefaultCheckpointFee = DefaultCheckpointFee;
+    type AppChainAssetId = CurrencyId;
+    type MaxRegisteredAppChains = MaxRegisteredAppChains;
+    type AssetRegistryStringLimit = AssetRegistryStringLimit;
+    type AssetRegistry = AssetRegistry;
 }
 
 pub type EthAddress = H160;
