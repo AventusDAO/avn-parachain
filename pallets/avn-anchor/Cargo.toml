@@ -28,6 +28,8 @@ frame-system.workspace = true
 frame-benchmarking = { optional = true, workspace = true }
 sp-application-crypto.workspace = true
 
+orml-traits.workspace = true
+
 [dev-dependencies]
 parking_lot.workspace = true
 hex-literal = { workspace = true, default-features = true }
@@ -46,7 +48,6 @@ sp-avn-common = { workspace = true, default-features = true, features=["test-uti
 orml-currencies = { workspace = true, default-features = true }
 orml-asset-registry = { workspace = true, default-features = true}
 orml-tokens = { workspace = true, default-features = true }
-orml-traits = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -62,6 +63,7 @@ std = [
 	"frame-system/std",
 	"sp-avn-common/std",
 	"pallet-avn/std",
+	"orml-traits/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

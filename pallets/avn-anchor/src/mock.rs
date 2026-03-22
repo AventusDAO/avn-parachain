@@ -334,6 +334,10 @@ impl Config for TestRuntime {
     type Token = sp_core::H160;
     type Currency = Balances;
     type DefaultCheckpointFee = DefaultCheckpointFee;
+    type MaxRegisteredAppChains = ConstU32<256>;
+    type AppChainAssetId = CurrencyId;
+    type AssetRegistryStringLimit = ConstU32<1024>;
+    type AssetRegistry = AssetRegistry;
 }
 
 type AssetMetadata = orml_traits::asset_registry::AssetMetadata<
@@ -452,6 +456,8 @@ impl InnerCallValidator for TestAvnProxyConfig {
     fn signature_is_valid(call: &Box<Self::Call>) -> bool {
         match **call {
             RuntimeCall::System(..) => return true,
+            RuntimeCall::AvnAnchor(avn_anchor::Call::signed_register_chain_handler { .. }) =>
+                return true,
             RuntimeCall::AvnAnchor(..) => return AvnAnchor::signature_is_valid(call),
             _ => false,
         }

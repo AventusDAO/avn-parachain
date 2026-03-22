@@ -8,7 +8,7 @@ use alloc::string::String;
 use frame_support::{
     dispatch::DispatchResult,
     ensure,
-    traits::{Currency, StorageVersion},
+    traits::{Currency, OnRuntimeUpgrade, StorageVersion},
 };
 
 pub mod default_weights;
@@ -27,16 +27,16 @@ mod mock;
 mod tests;
 
 mod benchmarking;
+pub mod migration;
 
 pub type MaximumHandlersBound = ConstU32<256>;
 
 pub type ChainNameLimit = ConstU32<32>;
 
-pub const REGISTER_CHAIN_HANDLER: &'static [u8] = b"register_chain_handler";
 pub const UPDATE_CHAIN_HANDLER: &'static [u8] = b"update_chain_handler";
 pub const SUBMIT_CHECKPOINT: &'static [u8] = b"submit_checkpoint";
 
-const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 pub use self::pallet::*;
 pub type ChainId = u32;
@@ -51,17 +51,15 @@ pub mod pallet {
     use super::*;
     use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType};
     use frame_system::pallet_prelude::*;
+    use orml_traits::asset_registry::{
+        AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
+        Inspect as AssetRegistryInspect, Mutate as AssetRegistryMutate,
+    };
     use sp_avn_common::{verify_signature, FeePaymentHandler, InnerCallValidator, Proof};
     use sp_core::H160;
     use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
 
     pub type ChainId = u32;
-    #[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
-    #[scale_info(skip_type_params(T))]
-    pub struct ChainDataStruct {
-        pub chain_id: ChainId,
-        pub name: BoundedVec<u8, ChainNameLimit>,
-    }
     pub type CheckpointId = u64;
 
     #[derive(Encode, Decode, Clone, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
@@ -108,20 +106,44 @@ pub mod pallet {
 
         /// The default fee for checkpoint submission
         type DefaultCheckpointFee: Get<BalanceOf<Self>>;
+
+        /// Maximum number of app chains that can register a token for reward distribution.
+        #[pallet::constant]
+        type MaxRegisteredAppChains: Get<u32>;
+
+        /// The asset-id type used by the on-chain asset registry (e.g. `CurrencyId`).
+        type AppChainAssetId: Parameter + Member + Copy + MaxEncodedLen;
+
+        /// String size limit accepted by the asset registry for name/symbol fields.
+        #[pallet::constant]
+        type AssetRegistryStringLimit: Get<u32>;
+
+        /// Asset registry for registering app chain tokens on-chain.
+        type AssetRegistry: AssetRegistryMutate<
+            AvnAssetLocation,
+            AssetId = Self::AppChainAssetId,
+            Balance = BalanceOf<Self>,
+            CustomMetadata = AvnAssetMetadata,
+            StringLimit = Self::AssetRegistryStringLimit,
+        >;
     }
 
     #[pallet::pallet]
     #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T>(_);
 
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_runtime_upgrade() -> frame_support::weights::Weight {
+            migration::v2::Migration::<T>::on_runtime_upgrade()
+        }
+    }
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        /// A new chain handler was registered. [handler_account_id, chain_id, name]
-        ChainHandlerRegistered(T::AccountId, ChainId, BoundedVec<u8, ChainNameLimit>),
-        /// A chain handler was updated. [old_handler_account_id, new_handler_account_id, chain_id,
-        /// name]
-        ChainHandlerUpdated(T::AccountId, T::AccountId, ChainId, BoundedVec<u8, ChainNameLimit>),
+        /// A chain handler was updated. [old_handler_account_id, new_handler_account_id, chain_id]
+        ChainHandlerUpdated(T::AccountId, T::AccountId, ChainId),
         /// A new checkpoint was submitted. [handler_account_id, chain_id, checkpoint_id,
         /// checkpoint]
         CheckpointSubmitted(T::AccountId, ChainId, CheckpointId, H256),
@@ -130,6 +152,14 @@ pub mod pallet {
 
         /// Fee was charged for checkpoint submission [handler, fee, nonce]
         CheckpointFeeCharged { handler: T::AccountId, chain_id: ChainId, fee: BalanceOf<T> },
+
+        /// A new app chain was fully registered: handler, token, and asset registry entry.
+        AppChainRegistered {
+            chain_id: ChainId,
+            handler: T::AccountId,
+            token: T::Token,
+            asset_id: T::AppChainAssetId,
+        },
     }
 
     #[pallet::error]
@@ -139,13 +169,28 @@ pub mod pallet {
         UnauthorizedHandler,
         NoAvailableChainId,
         EmptyChainName,
+        /// The token symbol provided for the app chain is empty.
+        EmptyTokenSymbol,
         NoAvailableCheckpointId,
         UnauthorizedSignedTransaction,
         SenderNotValid,
         TransactionNotSupported,
         UnauthorizedProxyTransaction,
-        NoChainDataAvailable,
         CheckpointOriginAlreadyExists,
+        /// The app chain already has a token registered.
+        AppChainTokenAlreadyRegistered,
+        /// The app chain has no token registered yet.
+        AppChainTokenNotRegistered,
+        /// The maximum number of registered app chains has been reached.
+        MaxAppChainsReached,
+        /// The chain name is too long to fit in the asset registry string limit.
+        ChainNameTooLongForRegistry,
+        /// The token symbol is too long to fit in the asset registry string limit.
+        TokenSymbolTooLongForRegistry,
+        /// A token with the same Ethereum address is already registered in the asset registry.
+        TokenLocationAlreadyRegistered,
+        /// This extrinsic has been deprecated and is no longer available.
+        CallDeprecated,
     }
 
     #[pallet::storage]
@@ -160,10 +205,6 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn chain_handlers)]
     pub type ChainHandlers<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, ChainId>;
-
-    #[pallet::storage]
-    #[pallet::getter(fn chain_data)]
-    pub type ChainData<T: Config> = StorageMap<_, Blake2_128Concat, ChainId, ChainDataStruct>;
 
     #[pallet::storage]
     #[pallet::getter(fn next_chain_id)]
@@ -198,19 +239,31 @@ pub mod pallet {
     pub type NextCheckpointId<T> =
         StorageMap<_, Blake2_128Concat, ChainId, CheckpointId, ValueQuery>;
 
+    /// Maps a registered app chain ID to its on-chain asset ID in the asset registry.
+    #[pallet::storage]
+    #[pallet::getter(fn chain_asset_id)]
+    pub type ChainIdToAssetId<T: Config> =
+        StorageMap<_, Blake2_128Concat, ChainId, T::AppChainAssetId>;
+
+    /// Ordered list of asset IDs for all registered app chains.
+    /// Bounded by `MaxRegisteredAppChains` to allow safe iteration.
+    #[pallet::storage]
+    #[pallet::getter(fn registered_appchains)]
+    pub type RegisteredAppchains<T: Config> =
+        StorageValue<_, BoundedVec<T::AppChainAssetId, T::MaxRegisteredAppChains>, ValueQuery>;
+
     #[pallet::call]
     impl<T: Config> Pallet<T> {
+        /// Deprecated: use `register_appchain` instead.
+        /// This call index is preserved to avoid misrouting transactions.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::register_chain_handler())]
         #[pallet::call_index(0)]
         pub fn register_chain_handler(
             origin: OriginFor<T>,
-            name: BoundedVec<u8, ChainNameLimit>,
+            _name: BoundedVec<u8, ChainNameLimit>,
         ) -> DispatchResult {
-            let handler = ensure_signed(origin)?;
-
-            Self::do_register_chain_handler(&handler, name)?;
-
-            Ok(())
+            ensure_signed(origin)?;
+            Err(Error::<T>::CallDeprecated.into())
         }
 
         #[pallet::weight(<T as pallet::Config>::WeightInfo::update_chain_handler())]
@@ -250,28 +303,18 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Deprecated: use `register_appchain` instead.
+        /// This call index is preserved to avoid misrouting transactions.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::signed_register_chain_handler())]
         #[pallet::call_index(3)]
         pub fn signed_register_chain_handler(
             origin: OriginFor<T>,
-            proof: Proof<T::Signature, T::AccountId>,
-            handler: T::AccountId,
-            name: BoundedVec<u8, ChainNameLimit>,
+            _proof: Proof<T::Signature, T::AccountId>,
+            _handler: T::AccountId,
+            _name: BoundedVec<u8, ChainNameLimit>,
         ) -> DispatchResult {
-            let sender = ensure_signed(origin)?;
-            ensure!(sender == handler, Error::<T>::SenderNotValid);
-
-            let signed_payload =
-                encode_signed_register_chain_handler_params::<T>(&proof.relayer, &handler, &name);
-
-            ensure!(
-                verify_signature::<T::Signature, T::AccountId>(&proof, &signed_payload).is_ok(),
-                Error::<T>::UnauthorizedSignedTransaction
-            );
-
-            Self::do_register_chain_handler(&handler, name)?;
-
-            Ok(())
+            ensure_signed(origin)?;
+            Err(Error::<T>::CallDeprecated.into())
         }
         #[pallet::weight(<T as pallet::Config>::WeightInfo::signed_update_chain_handler())]
         #[pallet::call_index(4)]
@@ -359,6 +402,63 @@ pub mod pallet {
 
             Ok(())
         }
+        /// Register a new app chain: assigns a chain ID, stores the handler, registers the native
+        /// token, and creates an asset-registry entry with `appchain_native: true`.
+        ///
+        /// The `asset_id` must be a unique `CurrencyId` not yet registered in the asset registry.
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::register_appchain())]
+        #[pallet::call_index(7)]
+        pub fn register_appchain(
+            origin: OriginFor<T>,
+            handler: T::AccountId,
+            name: BoundedVec<u8, ChainNameLimit>,
+            symbol: BoundedVec<u8, ChainNameLimit>,
+            token: T::Token,
+            asset_id: T::AppChainAssetId,
+            decimals: u32,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(
+                !ChainHandlers::<T>::contains_key(&handler),
+                Error::<T>::HandlerAlreadyRegistered
+            );
+            ensure!(!name.is_empty(), Error::<T>::EmptyChainName);
+            ensure!(!symbol.is_empty(), Error::<T>::EmptyTokenSymbol);
+            ensure!(
+                T::AssetRegistry::asset_id(&AvnAssetLocation::Ethereum(token.into())).is_none(),
+                Error::<T>::TokenLocationAlreadyRegistered
+            );
+
+            let name_inner = name.into_inner();
+            let name_bytes: BoundedVec<u8, T::AssetRegistryStringLimit> = name_inner
+                .clone()
+                .try_into()
+                .map_err(|_| Error::<T>::ChainNameTooLongForRegistry)?;
+
+            let symbol_inner = symbol.into_inner();
+            let symbol_bytes: BoundedVec<u8, T::AssetRegistryStringLimit> =
+                symbol_inner.try_into().map_err(|_| Error::<T>::TokenSymbolTooLongForRegistry)?;
+
+            let metadata = RegistryAssetMetadata {
+                decimals,
+                name: name_bytes,
+                symbol: symbol_bytes,
+                existential_deposit: BalanceOf::<T>::default(),
+                location: Some(AvnAssetLocation::Ethereum(token.into())),
+                additional: AvnAssetMetadata { appchain_native: true },
+            };
+
+            let chain_id = Self::get_next_chain_id()?;
+            ChainHandlers::<T>::insert(handler.clone(), chain_id);
+
+            T::AssetRegistry::register_asset(Some(asset_id), metadata)?;
+            ChainIdToAssetId::<T>::insert(chain_id, asset_id);
+            RegisteredAppchains::<T>::try_mutate(|ids| ids.try_push(asset_id))
+                .map_err(|_| Error::<T>::MaxAppChainsReached)?;
+
+            Self::deposit_event(Event::AppChainRegistered { chain_id, handler, token, asset_id });
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -392,32 +492,6 @@ pub mod pallet {
             })
         }
 
-        fn do_register_chain_handler(
-            handler: &T::AccountId,
-            name: BoundedVec<u8, ChainNameLimit>,
-        ) -> Result<ChainId, DispatchError> {
-            ensure!(
-                !ChainHandlers::<T>::contains_key(handler),
-                Error::<T>::HandlerAlreadyRegistered
-            );
-            ensure!(!name.is_empty(), Error::<T>::EmptyChainName);
-
-            let chain_id = Self::get_next_chain_id()?;
-            let chain_data = ChainDataStruct { chain_id, name: name.clone() };
-
-            ChainHandlers::<T>::insert(handler, chain_id);
-            ChainData::<T>::insert(chain_id, chain_data);
-            <Nonces<T>>::insert(chain_id, 0);
-
-            Self::deposit_event(Event::ChainHandlerRegistered(
-                handler.clone(),
-                chain_id,
-                name.clone(),
-            ));
-
-            Ok(chain_id)
-        }
-
         fn do_update_chain_handler(
             old_handler: &T::AccountId,
             new_handler: &T::AccountId,
@@ -430,8 +504,6 @@ pub mod pallet {
 
             ensure!(ChainHandlers::<T>::contains_key(&old_handler), Error::<T>::ChainNotRegistered);
 
-            let chain_data =
-                ChainData::<T>::get(chain_id).ok_or(Error::<T>::NoChainDataAvailable)?;
             ChainHandlers::<T>::insert(&new_handler, chain_id);
             ChainHandlers::<T>::remove(&old_handler);
 
@@ -439,7 +511,6 @@ pub mod pallet {
                 old_handler.clone(),
                 new_handler.clone(),
                 chain_id,
-                chain_data.name,
             ));
 
             Ok(())
@@ -500,15 +571,6 @@ pub mod pallet {
             };
 
             match call {
-                Call::signed_register_chain_handler { ref proof, ref handler, ref name } => {
-                    let encoded_data = encode_signed_register_chain_handler_params::<T>(
-                        &proof.relayer,
-                        handler,
-                        name,
-                    );
-
-                    Some((proof, encoded_data))
-                },
                 Call::signed_update_chain_handler {
                     ref proof,
                     ref old_handler,
@@ -571,7 +633,6 @@ pub mod pallet {
             };
 
             match call {
-                Call::signed_register_chain_handler { proof, .. } => Ok(proof.clone()),
                 Call::signed_update_chain_handler { proof, .. } => Ok(proof.clone()),
                 Call::signed_submit_checkpoint_with_identity { proof, .. } => Ok(proof.clone()),
                 _ => Err(Error::<T>::TransactionNotSupported),
@@ -596,14 +657,6 @@ pub mod pallet {
     }
 }
 
-pub fn encode_signed_register_chain_handler_params<T: Config>(
-    relayer: &T::AccountId,
-    handler: &T::AccountId,
-    name: &BoundedVec<u8, ChainNameLimit>,
-) -> Vec<u8> {
-    (REGISTER_CHAIN_HANDLER, relayer, handler, name).encode()
-}
-
 pub fn encode_signed_update_chain_handler_params<T: Config>(
     relayer: &T::AccountId,
     old_handler: &T::AccountId,
@@ -623,8 +676,4 @@ pub fn encode_signed_submit_checkpoint_params<T: Config>(
     origin_id: &CheckpointId,
 ) -> Vec<u8> {
     (SUBMIT_CHECKPOINT, relayer.clone(), handler, checkpoint, chain_id, nonce, *origin_id).encode()
-}
-
-pub fn get_chain_data_for_handler<T: Config>(handler: &T::AccountId) -> Option<ChainDataStruct> {
-    Pallet::<T>::chain_handlers(handler).and_then(|chain_id| Pallet::<T>::chain_data(chain_id))
 }
