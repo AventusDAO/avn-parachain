@@ -1,3 +1,5 @@
+// Copyright 2026 Aventus DAO Ltd
+
 // No storage mutation allowed in this file
 #[cfg(not(feature = "std"))]
 extern crate alloc;
@@ -5,6 +7,7 @@ extern crate alloc;
 use alloc::string::String;
 
 use crate::*;
+
 // We allow up to 5 blocks for ocw transactions
 const BLOCK_INCLUSION_PERIOD: u32 = 5;
 const PALLET_REGISTERED_NODE_KEY: &'static [u8; 26] = b"ocw_pallet_registered_node";
@@ -30,7 +33,11 @@ impl<T: Config> Pallet<T> {
                     );
 
                     if let Err(e) = SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
-                        log::error!("💔 Error submitting transaction to trigger payment. Period: {:?}, Error: {:?}", reward_period_index, e);
+                        log::error!(
+                            "💔 Error submitting transaction to trigger payment. Period: {:?}, Error: {:?}",
+                            reward_period_index,
+                            e
+                        );
                     }
                 },
                 None => {
@@ -38,6 +45,38 @@ impl<T: Config> Pallet<T> {
                         "💔 Error signing payment transaction. Period: {:?}",
                         reward_period_index
                     );
+                },
+            }
+        }
+    }
+
+    pub fn trigger_mint_if_required(author: Author<T>) {
+        if let Some(amount) = Self::next_mint_amount_to_request() {
+            log::info!("🛠️  Triggering mint request for amount: {:?}", amount);
+
+            let signature = author.key.sign(&(MINT_REWARDS_CONTEXT, amount).encode());
+
+            match signature {
+                Some(signature) => {
+                    let call = T::create_inherent(
+                        Call::<T>::offchain_mint_rewards {
+                            amount,
+                            author: author.clone(),
+                            signature,
+                        }
+                        .into(),
+                    );
+
+                    if let Err(e) = SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
+                        log::error!(
+                            "💔 Error submitting mint request transaction. Amount: {:?}, Error: {:?}",
+                            amount,
+                            e
+                        );
+                    }
+                },
+                None => {
+                    log::error!("💔 Error signing mint request transaction. Amount: {:?}", amount);
                 },
             }
         }
@@ -183,7 +222,7 @@ impl<T: Config> Pallet<T> {
     pub fn should_send_heartbeat(
         block_number: BlockNumberFor<T>,
         uptime_info: Option<UptimeInfo<BlockNumberFor<T>>>,
-        reward_period: &RewardPeriodInfo<BlockNumberFor<T>>,
+        reward_period: &RewardPeriodInfo<BlockNumberFor<T>, BalanceOf<T>>,
         heartbeat_count: u64,
     ) -> bool {
         if Self::heartbeat_submission_in_progress(
@@ -194,14 +233,15 @@ impl<T: Config> Pallet<T> {
             return false
         }
 
-        let heartbeat_period = HeartbeatPeriod::<T>::get();
         if let Some(uptime_info) = uptime_info {
             let last_submission = uptime_info.last_reported;
             let below_threshold = uptime_info.count < reward_period.uptime_threshold as u64;
             // Send heartbeat if threshold is not reached and the current block is at or past the
             // next allowed block.
             return below_threshold &&
-                block_number >= last_submission + BlockNumberFor::<T>::from(heartbeat_period)
+                block_number >=
+                    last_submission +
+                        BlockNumberFor::<T>::from(reward_period.heartbeat_period)
         } else {
             // First heartbeat
             return true

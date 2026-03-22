@@ -55,7 +55,7 @@ impl<T: Config> Pallet<T> {
         raw_amount: u128,
     ) -> Result<(), Error<T>> {
         let amount_balance = Self::u128_to_balance(raw_amount)?;
-        T::AssetManager::withdraw(asset, from, amount_balance, ExistenceRequirement::AllowDeath)
+        T::AssetManager::withdraw(asset, from, amount_balance, ExistenceRequirement::KeepAlive)
             .map_err(|_| Error::<T>::InsufficientSenderBalance)?;
         Ok(())
     }

@@ -144,12 +144,13 @@ pub(crate) fn testnet_genesis(
             "rewardPeriod": 30u32,
             "maxBatchSize": 10u32,
             "heartbeatPeriod": 10u32,
-            "rewardAmount": 20 * AVT,
+            "rewardAmountPerPeriod": 20 * AVT,
             "autoStakeDurationSec": 60 * 5 as u64, // 5 min
             "maxUnstakePercentage": Perbill::from_percent(10),
             "unstakePeriodSec": 60u64, // 1 min
             "restrictedUnstakeDurationSec": 60 * 10 as u64, // 10 min
             "appChainFeePercentage": Perbill::from_percent(0),
+            "numPeriodsToMint": 2u32,
         },
         "assetRegistry": {
             "assets": asset_registry_config,

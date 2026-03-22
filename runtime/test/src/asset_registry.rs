@@ -3,8 +3,8 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use orml_traits::asset_registry::{
     AssetMetadata, AssetProcessor, AvnAssetLocation, AvnAssetMetadata,
 };
+use polkadot_sdk::sp_runtime::DispatchError;
 use scale_info::TypeInfo;
-use sp_runtime::DispatchError;
 
 #[derive(
     Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug, Encode, Decode, TypeInfo, MaxEncodedLen,

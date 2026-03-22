@@ -64,9 +64,28 @@ impl EvmClient {
     /// NOTE: The signer is configured on the provider via `ProviderBuilder::wallet(...)`,
     /// so we do *not* pass a wallet here.
     pub async fn send_transaction_data(&self, to: Address, data: Bytes) -> Result<B256> {
-        let tx = TransactionRequest::default().to(to).value(U256::ZERO).input(data.into());
+        let chain_id = self.provider.get_chain_id().await?;
+        log::info!(
+            "external-service evm send: chain_id={}, to={:?}, data_len={}, data=0x{}",
+            chain_id,
+            to,
+            data.len(),
+            hex::encode(data.as_ref())
+        );
+
+        let tx = TransactionRequest::default()
+            .to(to)
+            .value(U256::ZERO)
+            .input(data.clone().into());
+
+        log::debug!("external-service evm tx request: {:?}", tx);
+
         let pending = self.provider.send_transaction(tx).await?;
-        Ok(*pending.tx_hash())
+        let tx_hash = *pending.tx_hash();
+
+        log::info!("external-service evm send submitted: tx_hash={:?}", tx_hash);
+
+        Ok(tx_hash)
     }
 
     pub async fn logs(&self, filter: Filter) -> Result<Vec<Log>> {
