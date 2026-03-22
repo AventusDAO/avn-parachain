@@ -530,7 +530,7 @@ impl pallet_avn_proxy::Config for Runtime {
     type Signature = Signature;
     type ProxyConfig = AvnProxyConfig;
     type WeightInfo = pallet_avn_proxy::default_weights::SubstrateWeight<Runtime>;
-    type FeeHandler = TokenManager;
+    type PaymentHandler = TokenManager;
     type Token = EthAddress;
 }
 
@@ -552,7 +552,7 @@ impl pallet_avn_anchor::Config for Runtime {
     type Currency = Balances;
     type WeightInfo = pallet_avn_anchor::default_weights::SubstrateWeight<Runtime>;
     type Public = <Signature as sp_runtime::traits::Verify>::Signer;
-    type FeeHandler = TokenManager;
+    type PaymentHandler = TokenManager;
     type Signature = Signature;
     type Token = EthAddress;
     type DefaultCheckpointFee = DefaultCheckpointFee;
@@ -607,7 +607,7 @@ impl pallet_node_manager::Config for Runtime {
     type TimeProvider = pallet_timestamp::Pallet<Runtime>;
     type VirtualNodeStake = VirtualNodeStake;
     type Token = EthAddress;
-    type AppChainFeeHandler = TokenManager;
+    type RewardFeeHandler = TokenManager;
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterface = EthBridge;
     type ProcessedEventsChecker = EthBridge;

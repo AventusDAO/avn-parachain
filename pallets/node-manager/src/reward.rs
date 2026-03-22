@@ -71,8 +71,8 @@ impl<T: Config> Pallet<T> {
         }
 
         let reward_pot_account_id = Self::compute_reward_account_id();
-        let appchain_fee = Self::calculate_appchain_fee(amount);
-        let net_reward = amount.saturating_sub(appchain_fee);
+        let reward_fee = Self::calculate_reward_fee(amount);
+        let net_reward = amount.saturating_sub(reward_fee);
 
         // First pay the owner, this is the most important step here.
         T::Currency::transfer(
@@ -90,8 +90,8 @@ impl<T: Config> Pallet<T> {
         });
 
         // Pay the fee to the treasury
-        if let Err(e) = T::AppChainFeeHandler::pay_treasury(&appchain_fee, &reward_pot_account_id) {
-            log::error!("💔 Failed to pay appchain fee of {:?} from reward pot. Node {:?}. Period: {:?}. Error: {:?}", appchain_fee, node_id, period, e);
+        if let Err(e) = T::RewardFeeHandler::pay_treasury(&reward_fee, &reward_pot_account_id) {
+            log::error!("💔 Failed to pay reward fee of {:?} from reward pot. Node {:?}. Period: {:?}. Error: {:?}", reward_fee, node_id, period, e);
         }
 
         if net_reward <= Zero::zero() {
@@ -189,8 +189,8 @@ impl<T: Config> Pallet<T> {
         T::TimeProvider::now().as_secs()
     }
 
-    pub fn calculate_appchain_fee(amount: BalanceOf<T>) -> BalanceOf<T> {
-        let fee_percentage = AppChainFeePercentage::<T>::get();
+    pub fn calculate_reward_fee(amount: BalanceOf<T>) -> BalanceOf<T> {
+        let fee_percentage = RewardFeePercentage::<T>::get();
         fee_percentage.mul_floor(amount)
     }
 }

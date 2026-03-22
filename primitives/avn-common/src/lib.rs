@@ -164,7 +164,7 @@ pub trait InnerCallValidator {
     }
 }
 
-pub trait FeePaymentHandler {
+pub trait PaymentHandler {
     // The type that represents an account id defined in the trait (T::AccountId)
     type AccountId;
     // The type that represents a non native token balance
@@ -174,7 +174,7 @@ pub trait FeePaymentHandler {
     // The type used to throw an error (Error<T>)
     type Error;
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,
@@ -187,13 +187,13 @@ pub trait FeePaymentHandler {
     ) -> Result<(), Self::Error>;
 }
 
-impl FeePaymentHandler for () {
+impl PaymentHandler for () {
     type Token = ();
     type TokenBalance = ();
     type AccountId = ();
     type Error = ();
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,

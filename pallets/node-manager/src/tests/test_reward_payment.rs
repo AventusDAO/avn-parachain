@@ -17,7 +17,7 @@ impl Context {
     fn new(num_of_nodes: u8) -> Self {
         let registrar = TestAccount::new([1u8; 32]).account_id();
         let owner = TestAccount::new([209u8; 32]).account_id();
-        let reward_amount: BalanceOf<TestRuntime> = <RewardAmountPerPeriod<TestRuntime>>::get();
+        let reward_amount: BalanceOf<TestRuntime> = <NextRewardAmountPerPeriod<TestRuntime>>::get();
 
         <NumPeriodsToMint<TestRuntime>>::put(2u32);
 
@@ -207,7 +207,7 @@ mod reward {
             );
             assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_none());
             // The owner has received the reward
-            let reward_fee = <AppChainFeePercentage<TestRuntime>>::get() * reward_amount;
+            let reward_fee = <RewardFeePercentage<TestRuntime>>::get() * reward_amount;
             let net_reward = reward_amount - reward_fee;
             assert_eq!(Balances::reserved_balance(&context.owner), net_reward);
             // The pot has gone down by half
@@ -254,7 +254,7 @@ mod reward {
             // We should have processed the first batch of payments
             assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_some());
             let gross_owner_reward = reward_amount / 2;
-            let owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward;
+            let owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_owner_reward;
             let expected_owner_reward = gross_owner_reward - owner_fee;
             assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward);
 
@@ -280,7 +280,7 @@ mod reward {
             );
             assert_eq!(true, <LastPaidPointer<TestRuntime>>::get().is_none());
             let gross_owner_reward = reward_amount;
-            let owner_fee = <AppChainFeePercentage<TestRuntime>>::get() * gross_owner_reward;
+            let owner_fee = <RewardFeePercentage<TestRuntime>>::get() * gross_owner_reward;
             let expected_owner_reward = gross_owner_reward - owner_fee;
             assert_eq!(Balances::reserved_balance(&context.owner), expected_owner_reward);
             // The pot has gone down by half
@@ -352,7 +352,7 @@ mod reward {
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -364,7 +364,7 @@ mod reward {
 
             let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
             let old_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -447,7 +447,7 @@ mod reward {
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -457,7 +457,7 @@ mod reward {
             );
             let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
             let old_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -546,7 +546,7 @@ mod reward {
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -562,7 +562,7 @@ mod reward {
                     reward_amount *
                     (node_count as u128);
             let old_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -659,7 +659,7 @@ mod reward {
                 total_uptime.total_heartbeats as u128,
             ) * reward_amount;
             let new_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_new_owner_reward;
             let expected_new_owner_reward = gross_new_owner_reward - new_owner_fee;
 
             assert!(
@@ -670,7 +670,7 @@ mod reward {
             );
             let gross_old_owner_reward = reward_amount - gross_new_owner_reward;
             let old_owner_fee =
-                <AppChainFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
+                <RewardFeePercentage<TestRuntime>>::get() * gross_old_owner_reward;
             let expected_old_owner_reward = gross_old_owner_reward - old_owner_fee;
 
             assert!(
@@ -805,7 +805,7 @@ mod reward {
             assert_eq!(node_uptime_b.weight, 450_000_000u128 * total_expected_uptime as u128);
 
             // Set a custom reward amount per period for easier calculations
-            <RewardAmountPerPeriod<TestRuntime>>::put(1_000u128);
+            <NextRewardAmountPerPeriod<TestRuntime>>::put(1_000u128);
             RewardPeriod::<TestRuntime>::mutate(|p| {
                 p.reward_amount = 1_000u128;
             });
@@ -1162,7 +1162,7 @@ mod end_2_end {
             Balances::make_free_balance_be(&new_owner, new_owner_stake * 2);
 
             // Set a custom reward amount for easier calculations
-            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward_per_period);
+            <NextRewardAmountPerPeriod<TestRuntime>>::put(total_reward_per_period);
             RewardPeriod::<TestRuntime>::mutate(|p| {
                 p.reward_amount = total_reward_per_period;
             });
@@ -1212,7 +1212,7 @@ mod end_2_end {
             // Stake after payout - we are still in auto stake period
             let gross_per_node_reward = total_reward_per_period / 2; // equal share 500
             let node_reward =
-                gross_per_node_reward - NodeManager::calculate_appchain_fee(gross_per_node_reward);
+                gross_per_node_reward - NodeManager::calculate_reward_fee(gross_per_node_reward);
 
             assert_eq!(new_node_info.stake.amount, node_reward);
             assert_eq!(context_node_info.stake.amount, new_node_info.stake.amount);
@@ -1245,7 +1245,7 @@ mod end_2_end {
             let gross_new_node_reward = total_reward_per_period * 2 / 3;
             let gross_context_node_reward = total_reward_per_period / 3;
             let expected_new_node_net_reward =
-                gross_new_node_reward - NodeManager::calculate_appchain_fee(gross_new_node_reward);
+                gross_new_node_reward - NodeManager::calculate_reward_fee(gross_new_node_reward);
             // Get the remaining 1/3rd of the rewards
             let expected_gross_context_node_stake = node_reward + gross_context_node_reward;
             // 4K stake should give 2 extra virtual nodes (3 in total). But half of the heartbeats
@@ -1268,12 +1268,12 @@ mod end_2_end {
             assert_eq!(
                 context_node_stake,
                 expected_gross_context_node_stake -
-                    NodeManager::calculate_appchain_fee(gross_context_node_reward)
+                    NodeManager::calculate_reward_fee(gross_context_node_reward)
             );
             assert_eq!(
                 new_node_stake,
                 expected_gross_new_node_stake -
-                    NodeManager::calculate_appchain_fee(gross_new_node_reward)
+                    NodeManager::calculate_reward_fee(gross_new_node_reward)
             );
 
             // Unstaking is still now allowed
@@ -1428,7 +1428,7 @@ mod end_2_end {
             // We are back to sharing rewards equally because all the stake has been removed
             let gross_per_node_reward = total_reward_per_period / 2; // equal share 500
             let node_reward =
-                gross_per_node_reward - NodeManager::calculate_appchain_fee(gross_per_node_reward);
+                gross_per_node_reward - NodeManager::calculate_reward_fee(gross_per_node_reward);
 
             let context_node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let new_node_info = NodeRegistry::<TestRuntime>::get(&new_node).unwrap();
@@ -1499,7 +1499,7 @@ mod end_2_end {
             .as_externality_with_state();
         ext.execute_with(|| {
             let total_reward = 1_000u128;
-            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
+            <NextRewardAmountPerPeriod<TestRuntime>>::put(total_reward);
             RewardPeriod::<TestRuntime>::mutate(|p| {
                 p.reward_amount = total_reward;
             });
@@ -1573,7 +1573,7 @@ mod end_2_end {
             .as_externality_with_state();
         ext.execute_with(|| {
             let total_reward = 1_000u128;
-            <RewardAmountPerPeriod<TestRuntime>>::put(total_reward);
+            <NextRewardAmountPerPeriod<TestRuntime>>::put(total_reward);
             RewardPeriod::<TestRuntime>::mutate(|p| {
                 p.reward_amount = total_reward;
             });

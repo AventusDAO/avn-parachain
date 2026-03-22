@@ -55,7 +55,7 @@ pub mod pallet {
         AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
         Inspect as AssetRegistryInspect, Mutate as AssetRegistryMutate,
     };
-    use sp_avn_common::{verify_signature, FeePaymentHandler, InnerCallValidator, Proof};
+    use sp_avn_common::{verify_signature, PaymentHandler, InnerCallValidator, Proof};
     use sp_core::H160;
     use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
 
@@ -97,7 +97,7 @@ pub mod pallet {
         type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
 
         /// A handler to process relayer fee payments
-        type FeeHandler: FeePaymentHandler<
+        type PaymentHandler: PaymentHandler<
             AccountId = Self::AccountId,
             Token = Self::Token,
             TokenBalance = <Self::Currency as Currency<Self::AccountId>>::Balance,
@@ -465,7 +465,7 @@ pub mod pallet {
         pub(crate) fn charge_fee(handler: T::AccountId, chain_id: ChainId) -> DispatchResult {
             let checkpoint_fee = Self::checkpoint_fee(chain_id);
 
-            T::FeeHandler::pay_treasury(&checkpoint_fee, &handler)?;
+            T::PaymentHandler::pay_treasury(&checkpoint_fee, &handler)?;
 
             Self::deposit_event(Event::CheckpointFeeCharged {
                 handler: handler.clone(),

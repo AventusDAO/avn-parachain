@@ -373,18 +373,18 @@ impl<Balance: Copy + Debug> StakeInfo<Balance> {
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Debug, Clone, PartialEq)]
 pub enum AdminConfig<AccountId, Balance> {
     NodeRegistrar(AccountId),
-    RewardPeriod(u32),
+    NextRewardPeriodLength(u32),
     BatchSize(u32),
-    Heartbeat(u32),
-    RewardAmountPerPeriod(Balance),
+    NextHeartbeatPeriod(u32),
+    NextRewardAmountPerPeriod(Balance),
     NumPeriodsToMint(u32),
-    RewardToggle(bool),
+    RewardEnabled(bool),
     MinUptimeThreshold(Perbill),
     AutoStakeDuration(Duration),
     MaxUnstakePercentage(Perbill),
     UnstakePeriod(Duration),
     RestrictedUnstakeDuration(Duration),
-    AppChainFee(Perbill),
+    RewardFee(Perbill),
 }
 
 #[derive(

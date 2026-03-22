@@ -108,7 +108,7 @@ impl Config for TestRuntime {
     type SignedTxLifetime = ConstU32<64>;
     type VirtualNodeStake = VirtualNodeStake;
     type Token = H160;
-    type AppChainFeeHandler = Self;
+    type RewardFeeHandler = Self;
     type WeightInfo = ();
     type BridgeInterface = TestBridgeInterface;
     type ProcessedEventsChecker = TestProcessedEventsChecker;
@@ -253,7 +253,7 @@ impl ExtBuilder {
             max_unstake_percentage: Perbill::from_percent(10),
             unstake_period_sec: 7 * 24 * 60 * 60,
             restricted_unstake_duration_sec: 10 * 7 * 24 * 60 * 60,
-            app_chain_fee_percentage: Perbill::from_percent(0),
+            reward_fee_percentage: Perbill::from_percent(0),
         }
         .assimilate_storage(&mut self.storage);
         self
@@ -356,13 +356,13 @@ pub fn mock_get_finalised_block(state: &mut OffchainState, response: &Option<Vec
     });
 }
 
-impl FeePaymentHandler for TestRuntime {
+impl PaymentHandler for TestRuntime {
     type Token = H160;
     type TokenBalance = u128;
     type AccountId = AccountId;
     type Error = DispatchError;
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,

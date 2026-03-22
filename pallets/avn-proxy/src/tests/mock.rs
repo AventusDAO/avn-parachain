@@ -104,7 +104,7 @@ impl Config for TestRuntime {
     type Signature = Signature;
     type ProxyConfig = TestAvnProxyConfig;
     type WeightInfo = ();
-    type FeeHandler = TokenManager;
+    type PaymentHandler = TokenManager;
     type Token = H160;
 }
 

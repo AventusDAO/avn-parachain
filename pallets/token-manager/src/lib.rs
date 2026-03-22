@@ -54,7 +54,7 @@ use sp_avn_common::{
         LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
-    verify_signature, CallDecoder, FeePaymentHandler, InnerCallValidator, OnIdleHandler, Proof,
+    verify_signature, CallDecoder, PaymentHandler, InnerCallValidator, OnIdleHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
@@ -1201,13 +1201,13 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
     }
 }
 
-impl<T: Config> FeePaymentHandler for Pallet<T> {
+impl<T: Config> PaymentHandler for Pallet<T> {
     type Token = T::TokenId;
     type TokenBalance = T::TokenBalance;
     type AccountId = T::AccountId;
     type Error = sp_runtime::DispatchError;
 
-    fn pay_fee(
+    fn pay_recipient(
         token_id: &Self::Token,
         amount: &Self::TokenBalance,
         payer: &Self::AccountId,

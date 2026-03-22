@@ -86,7 +86,7 @@ fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPerio
 }
 
 fn fund_reward_pot<T: Config>() {
-    let reward_amount = RewardAmountPerPeriod::<T>::get() * 2000u32.into();
+    let reward_amount = NextRewardAmountPerPeriod::<T>::get() * 2000u32.into();
     let reward_pot_address = Pallet::<T>::compute_reward_account_id();
     T::Currency::make_free_balance_be(&reward_pot_address, reward_amount);
 }
@@ -167,13 +167,13 @@ benchmarks! {
     }
 
     set_admin_config_reward_period {
-        let current_reward_period = <ConfiguredRewardPeriodLength<T>>::get();
+        let current_reward_period = <NextRewardPeriodLength<T>>::get();
         let new_reward_period = current_reward_period + 1u32;
-        let config = AdminConfig::RewardPeriod(new_reward_period);
+        let config = AdminConfig::NextRewardPeriodLength(new_reward_period);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
-        assert!(<ConfiguredRewardPeriodLength<T>>::get() == new_reward_period);
+        assert!(<NextRewardPeriodLength<T>>::get() == new_reward_period);
     }
 
     set_admin_config_reward_batch_size {
@@ -187,29 +187,29 @@ benchmarks! {
     }
 
     set_admin_config_reward_heartbeat {
-        let current_heartbeat = <HeartbeatPeriod<T>>::get();
+        let current_heartbeat = <NextHeartbeatPeriod<T>>::get();
         let new_heartbeat = current_heartbeat + 1u32;
-        let config = AdminConfig::Heartbeat(new_heartbeat);
+        let config = AdminConfig::NextHeartbeatPeriod(new_heartbeat);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
-        assert!(<HeartbeatPeriod<T>>::get() == new_heartbeat);
+        assert!(<NextHeartbeatPeriod<T>>::get() == new_heartbeat);
     }
 
     set_admin_config_reward_amount {
-        let current_amount = <RewardAmountPerPeriod<T>>::get();
+        let current_amount = <NextRewardAmountPerPeriod<T>>::get();
         let new_amount = current_amount + 1u32.into();
-        let config = AdminConfig::RewardAmountPerPeriod(new_amount);
+        let config = AdminConfig::NextRewardAmountPerPeriod(new_amount);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
-        assert!(<RewardAmountPerPeriod<T>>::get() == new_amount);
+        assert!(<NextRewardAmountPerPeriod<T>>::get() == new_amount);
     }
 
     set_admin_config_reward_enabled {
         let current_flag = <RewardEnabled<T>>::get();
         let new_flag = !current_flag;
-        let config = AdminConfig::RewardToggle(new_flag);
+        let config = AdminConfig::RewardEnabled(new_flag);
 
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
@@ -274,7 +274,7 @@ benchmarks! {
             reward_period_index: new_reward_period_index,
             reward_period_length: reward_period.length,
             uptime_threshold: new_reward_period.uptime_threshold,
-            previous_period_reward: RewardAmountPerPeriod::<T>::get()}.into());
+            previous_period_reward: reward_period.reward_amount}.into());
     }
 
     on_initialise_no_reward_period {
@@ -302,7 +302,7 @@ benchmarks! {
 
         // Move forward to the next heartbeat period
         <frame_system::Pallet<T>>::set_block_number(
-            frame_system::Pallet::<T>::block_number() + <HeartbeatPeriod<T>>::get().into() + 1u32.into()
+            frame_system::Pallet::<T>::block_number() + <NextHeartbeatPeriod<T>>::get().into() + 1u32.into()
         );
 
         let heartbeat_count = 1u64;
@@ -346,10 +346,10 @@ benchmarks! {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(registered_nodes);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, registered_nodes as u128);
-        let total_rewards_u128: u128 = (RewardAmountPerPeriod::<T>::get()).saturated_into();
+        let total_rewards_u128: u128 = (NextRewardAmountPerPeriod::<T>::get()).saturated_into();
         let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
-        let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
-        let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
+        let reward_fee = RewardFeePercentage::<T>::get().mul_floor(gross_expected_balance);
+        let expected_balance = gross_expected_balance.saturating_sub(reward_fee);
 
         assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
     }
@@ -399,10 +399,10 @@ benchmarks! {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(n);
         let ratio = Perquintill::from_rational(nodes_to_pay as u128, n as u128);
-        let total_rewards_u128: u128 = (RewardAmountPerPeriod::<T>::get()).saturated_into();
+        let total_rewards_u128: u128 = (NextRewardAmountPerPeriod::<T>::get()).saturated_into();
         let gross_expected_balance = ratio.mul_floor(total_rewards_u128).saturated_into::<BalanceOf<T>>();
-        let app_chain_fee = AppChainFeePercentage::<T>::get().mul_floor(gross_expected_balance);
-        let expected_balance = gross_expected_balance.saturating_sub(app_chain_fee);
+        let reward_fee = RewardFeePercentage::<T>::get().mul_floor(gross_expected_balance);
+        let expected_balance = gross_expected_balance.saturating_sub(reward_fee);
 
         assert_approx!(T::Currency::free_balance(&owner.clone()), expected_balance, 1_000u32.saturated_into::<BalanceOf<T>>());
     }

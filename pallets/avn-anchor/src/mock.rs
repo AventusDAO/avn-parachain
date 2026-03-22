@@ -19,7 +19,7 @@ use sp_avn_common::{
     avn_tests_helpers::utilities::TestAccountIdPK,
     eth::EthereumId,
     primitives::{Amount, Balance, CurrencyId},
-    Asset, FeePaymentHandler, InnerCallValidator, Proof,
+    Asset, PaymentHandler, InnerCallValidator, Proof,
 };
 use sp_core::{sr25519, Pair, H160, H256};
 
@@ -247,7 +247,7 @@ impl avn_proxy::Config for TestRuntime {
     type Signature = Signature;
     type ProxyConfig = TestAvnProxyConfig;
     type WeightInfo = ();
-    type FeeHandler = Self;
+    type PaymentHandler = Self;
     type Token = sp_core::H160;
 }
 
@@ -330,7 +330,7 @@ impl Config for TestRuntime {
     type Public = AccountId;
     type Signature = Signature;
     type WeightInfo = default_weights::SubstrateWeight<TestRuntime>;
-    type FeeHandler = TokenManager;
+    type PaymentHandler = TokenManager;
     type Token = sp_core::H160;
     type Currency = Balances;
     type DefaultCheckpointFee = DefaultCheckpointFee;
@@ -538,13 +538,13 @@ fn fake_treasury() -> AccountId {
     return TestAccount::new(seed).account_id()
 }
 
-impl FeePaymentHandler for TestRuntime {
+impl PaymentHandler for TestRuntime {
     type Token = sp_core::H160;
     type TokenBalance = u128;
     type AccountId = AccountId;
     type Error = DispatchError;
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,
