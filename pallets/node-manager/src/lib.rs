@@ -293,7 +293,7 @@ pub mod pallet {
     #[pallet::storage]
     pub type RestrictedUnstakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
-    /// App-chain fee percentage
+    /// Reward fee percentage
     #[pallet::storage]
     pub type RewardFeePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
 
@@ -456,7 +456,7 @@ pub mod pallet {
         },
         /// Restricted unstake duration set
         RestrictedUnstakeDurationSet { duration_sec: Duration },
-        /// App-chain fee percentage set
+        /// Reward fee percentage set
         RewardFeePercentageSet { percentage: Perbill },
         /// Auto-stake preference updated
         AutoStakePreferenceUpdated {
@@ -595,7 +595,7 @@ pub mod pallet {
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
         /// Token identifier type
         type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
-        /// App-chain fee handler
+        /// Reward fee handler
         type RewardFeeHandler: PaymentHandler<
             AccountId = Self::AccountId,
             Token = Self::Token,
