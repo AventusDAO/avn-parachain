@@ -9,15 +9,17 @@ use frame_support::{
     dispatch::DispatchResult,
     ensure,
     traits::{Currency, OnRuntimeUpgrade, StorageVersion},
+    PalletId,
 };
 
 pub mod default_weights;
 pub use default_weights::WeightInfo;
 
-use codec::{Decode, Encode};
-use sp_avn_common::CallDecoder;
+use codec::{Decode, Encode, MaxEncodedLen};
+use scale_info::TypeInfo;
+use sp_avn_common::{CallDecoder, RewardPeriodIndex};
 use sp_core::{ConstU32, Get, H256};
-use sp_runtime::BoundedVec;
+use sp_runtime::{traits::AccountIdConversion, BoundedVec, Perquintill};
 use sp_std::prelude::*;
 
 #[cfg(test)]
@@ -49,15 +51,23 @@ pub(crate) type BalanceOf<T> =
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType};
+    use frame_support::{
+        dispatch::GetDispatchInfo, pallet_prelude::*,
+        storage::generator::StorageDoubleMap as StorageDoubleMapHelper, traits::IsSubType,
+    };
     use frame_system::pallet_prelude::*;
     use orml_traits::asset_registry::{
         AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
         Inspect as AssetRegistryInspect, Mutate as AssetRegistryMutate,
     };
-    use sp_avn_common::{verify_signature, InnerCallValidator, PaymentHandler, Proof};
+    use sp_avn_common::{
+        verify_signature, InnerCallValidator, PaymentHandler, Proof,
+    };
     use sp_core::H160;
-    use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
+    use sp_runtime::{
+        traits::{Dispatchable, IdentifyAccount, Verify},
+        SaturatedConversion,
+    };
 
     pub type ChainId = u32;
     pub type CheckpointId = u64;
@@ -239,11 +249,11 @@ pub mod pallet {
     pub type NextCheckpointId<T> =
         StorageMap<_, Blake2_128Concat, ChainId, CheckpointId, ValueQuery>;
 
-    /// Maps a registered app chain ID to its on-chain asset ID in the asset registry.
+    /// Maps a registered asset Id in the asset registry to its on-chain chain Id.
     #[pallet::storage]
-    #[pallet::getter(fn chain_asset_id)]
-    pub type ChainIdToAssetId<T: Config> =
-        StorageMap<_, Blake2_128Concat, ChainId, T::AppChainAssetId>;
+    #[pallet::getter(fn asset_chain_id)]
+    pub type AssetIdToChainId<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AppChainAssetId, ChainId, OptionQuery>;
 
     /// Ordered list of asset IDs for all registered app chains.
     /// Bounded by `MaxRegisteredAppChains` to allow safe iteration.
@@ -316,6 +326,7 @@ pub mod pallet {
             ensure_signed(origin)?;
             Err(Error::<T>::CallDeprecated.into())
         }
+
         #[pallet::weight(<T as pallet::Config>::WeightInfo::signed_update_chain_handler())]
         #[pallet::call_index(4)]
         pub fn signed_update_chain_handler(
@@ -452,7 +463,7 @@ pub mod pallet {
             ChainHandlers::<T>::insert(handler.clone(), chain_id);
 
             T::AssetRegistry::register_asset(Some(asset_id), metadata)?;
-            ChainIdToAssetId::<T>::insert(chain_id, asset_id);
+            AssetIdToChainId::<T>::insert(asset_id, chain_id);
             RegisteredAppchains::<T>::try_mutate(|ids| ids.try_push(asset_id))
                 .map_err(|_| Error::<T>::MaxAppChainsReached)?;
 

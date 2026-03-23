@@ -47,6 +47,7 @@ pub trait WeightInfo {
 	fn set_checkpoint_fee() -> Weight;
 	fn fund_appchain_reward_pot() -> Weight;
 	fn claim_reward(n: u32) -> Weight;
+	fn on_new_reward_period(n: u32) -> Weight;
 }
 
 /// Weights for pallet_avn_anchor using the Substrate node and recommended hardware.
@@ -189,6 +190,13 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(2_u64));
 		base.saturating_add(per_chain.saturating_mul(n as u64))
 	}
+	fn on_new_reward_period(n: u32) -> Weight {
+		// TODO: replace with benchmarked weight — 1 read for RegisteredAppchains + n reads/writes
+		let per_chain = T::DbWeight::get().reads_writes(1_u64, 1_u64);
+		let base = Weight::from_parts(5_000_000, 0)
+			.saturating_add(T::DbWeight::get().reads(1_u64));
+		base.saturating_add(per_chain.saturating_mul(n as u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -328,6 +336,13 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(2_u64));
 		let base = Weight::from_parts(20_000_000, 6196)
 			.saturating_add(RocksDbWeight::get().reads(2_u64));
+		base.saturating_add(per_chain.saturating_mul(n as u64))
+	}
+	fn on_new_reward_period(n: u32) -> Weight {
+		// TODO: replace with benchmarked weight — 1 read for RegisteredAppchains + n reads/writes
+		let per_chain = RocksDbWeight::get().reads_writes(1_u64, 1_u64);
+		let base = Weight::from_parts(5_000_000, 0)
+			.saturating_add(RocksDbWeight::get().reads(1_u64));
 		base.saturating_add(per_chain.saturating_mul(n as u64))
 	}
 }
