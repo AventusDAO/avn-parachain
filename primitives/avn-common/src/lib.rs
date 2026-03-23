@@ -489,6 +489,26 @@ pub trait AppChainInterface {
     fn on_reward_period_completed(period_index: &RewardPeriodIndex);
 }
 
+pub struct NoopAppChainInterface<AccountId>(sp_std::marker::PhantomData<AccountId>);
+
+impl<AccountId> AppChainInterface for NoopAppChainInterface<AccountId> {
+    type AccountId = AccountId;
+
+    fn on_new_reward_period(_period_index: &RewardPeriodIndex) -> Weight {
+        Weight::zero()
+    }
+
+    fn on_reward_paid(
+        _period_index: &RewardPeriodIndex,
+        _node_owner: &AccountId,
+        _node_id: &AccountId,
+        _reward_percentage: sp_runtime::Perquintill,
+    ) {
+    }
+
+    fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {}
+}
+
 impl AppChainInterface for () {
     type AccountId = ();
 

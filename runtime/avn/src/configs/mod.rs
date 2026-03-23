@@ -52,7 +52,7 @@ use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
-    Asset, NODE_MANAGER_PALLET_ID,
+    Asset, NoopAppChainInterface, NODE_MANAGER_PALLET_ID,
 };
 
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -611,7 +611,7 @@ impl pallet_node_manager::Config for Runtime {
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterface = EthBridge;
     type ProcessedEventsChecker = EthBridge;
-    type AppChainInterface = ();
+    type AppChainInterface = NoopAppChainInterface<AccountId>;
 }
 
 // Other pallets

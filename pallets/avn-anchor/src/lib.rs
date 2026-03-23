@@ -9,7 +9,6 @@ use frame_support::{
     dispatch::DispatchResult,
     ensure,
     traits::{Currency, OnRuntimeUpgrade, StorageVersion},
-    PalletId,
 };
 
 pub mod default_weights;
@@ -17,9 +16,9 @@ pub use default_weights::WeightInfo;
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sp_avn_common::{CallDecoder, RewardPeriodIndex};
+use sp_avn_common::CallDecoder;
 use sp_core::{ConstU32, Get, H256};
-use sp_runtime::{traits::AccountIdConversion, BoundedVec, Perquintill};
+use sp_runtime::BoundedVec;
 use sp_std::prelude::*;
 
 #[cfg(test)]
@@ -51,23 +50,15 @@ pub(crate) type BalanceOf<T> =
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{
-        dispatch::GetDispatchInfo, pallet_prelude::*,
-        storage::generator::StorageDoubleMap as StorageDoubleMapHelper, traits::IsSubType,
-    };
+    use frame_support::{dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType};
     use frame_system::pallet_prelude::*;
     use orml_traits::asset_registry::{
         AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
         Inspect as AssetRegistryInspect, Mutate as AssetRegistryMutate,
     };
-    use sp_avn_common::{
-        verify_signature, InnerCallValidator, PaymentHandler, Proof,
-    };
+    use sp_avn_common::{verify_signature, InnerCallValidator, PaymentHandler, Proof};
     use sp_core::H160;
-    use sp_runtime::{
-        traits::{Dispatchable, IdentifyAccount, Verify},
-        SaturatedConversion,
-    };
+    use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
 
     pub type ChainId = u32;
     pub type CheckpointId = u64;
@@ -179,13 +170,13 @@ pub mod pallet {
         UnauthorizedHandler,
         NoAvailableChainId,
         EmptyChainName,
-        /// The token symbol provided for the app chain is empty.
-        EmptyTokenSymbol,
         NoAvailableCheckpointId,
         UnauthorizedSignedTransaction,
         SenderNotValid,
         TransactionNotSupported,
         UnauthorizedProxyTransaction,
+        // Deprecated, keeping so indexes don't break
+        _NoChainDataAvailable,
         CheckpointOriginAlreadyExists,
         /// The app chain already has a token registered.
         AppChainTokenAlreadyRegistered,
@@ -201,6 +192,8 @@ pub mod pallet {
         TokenLocationAlreadyRegistered,
         /// This extrinsic has been deprecated and is no longer available.
         CallDeprecated,
+        /// The token symbol provided for the app chain is empty.
+        EmptyTokenSymbol,
     }
 
     #[pallet::storage]
