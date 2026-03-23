@@ -19,7 +19,7 @@ use sp_avn_common::{
     avn_tests_helpers::utilities::TestAccountIdPK,
     eth::EthereumId,
     primitives::{Amount, Balance, CurrencyId},
-    Asset, InnerCallValidator, PaymentHandler, Proof,
+    Asset, InnerCallValidator, PaymentHandler, Proof, NODE_MANAGER_PALLET_ID
 };
 use sp_core::{sr25519, Pair, H160, H256};
 
@@ -168,6 +168,7 @@ impl system::Config for TestRuntime {
 parameter_types! {
     pub const ExistentialDeposit: Balance = 1;
     pub const AvnTreasuryPotId: PalletId = PalletId(*b"Treasury");
+    pub const AppChainRewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
     pub static TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub RuntimeBlockWeights: BlockWeights = BlockWeights::builder()
         .base_block(Weight::from_parts(10 as u64, 0))
@@ -338,6 +339,7 @@ impl Config for TestRuntime {
     type AppChainAssetId = CurrencyId;
     type AssetRegistryStringLimit = ConstU32<1024>;
     type AssetRegistry = AssetRegistry;
+    type RewardPotId = AppChainRewardPotId;
 }
 
 type AssetMetadata = orml_traits::asset_registry::AssetMetadata<

@@ -55,7 +55,7 @@ use sp_version::RuntimeVersion;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{AllEventsFilter, NoEventsFilter},
-    Asset,
+    Asset, NODE_MANAGER_PALLET_ID,
 };
 use sp_core::{ConstU128, H160};
 use sp_watchtower::NoopWatchtower;

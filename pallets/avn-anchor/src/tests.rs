@@ -1,6 +1,6 @@
 use crate::{
-    encode_signed_submit_checkpoint_params, mock::*, tests::RuntimeCall, ChainHandlers,
-    ChainIdToAssetId, CheckpointData, CheckpointId, Error, Event, NextCheckpointId, Nonces,
+    encode_signed_submit_checkpoint_params, mock::*, tests::RuntimeCall, AssetIdToChainId,
+    ChainHandlers, CheckpointData, CheckpointId, Error, Event, NextCheckpointId, Nonces,
     RegisteredAppchains, SUBMIT_CHECKPOINT, UPDATE_CHAIN_HANDLER,
 };
 use codec::Encode;
@@ -840,7 +840,7 @@ fn register_appchain_works() {
         assert_ok!(register_appchain_call(handler, b"Test Chain", b"TST", token, asset_id));
 
         let chain_id = AvnAnchor::chain_handlers(handler).expect("handler should be registered");
-        assert_eq!(AvnAnchor::chain_asset_id(chain_id), Some(asset_id));
+        assert_eq!(AvnAnchor::asset_chain_id(asset_id), Some(chain_id));
         assert_eq!(RegisteredAppchains::<TestRuntime>::get().to_vec(), vec![asset_id]);
 
         System::assert_last_event(
@@ -867,8 +867,8 @@ fn register_appchain_increments_chain_id_and_updates_both_storage_items() {
         assert_eq!(chain_id1, 0);
         assert_eq!(chain_id2, 1);
 
-        assert_eq!(AvnAnchor::chain_asset_id(chain_id1), Some(asset_id1));
-        assert_eq!(AvnAnchor::chain_asset_id(chain_id2), Some(asset_id2));
+        assert_eq!(AvnAnchor::asset_chain_id(asset_id1), Some(chain_id1));
+        assert_eq!(AvnAnchor::asset_chain_id(asset_id2), Some(chain_id2));
         assert_eq!(RegisteredAppchains::<TestRuntime>::get().to_vec(), vec![asset_id1, asset_id2]);
     });
 }
@@ -1007,7 +1007,7 @@ fn register_appchain_does_not_update_storage_on_failure() {
         let _ = register_appchain_call(handler, b"", b"TST", token, Asset::ForeignAsset(1));
 
         assert!(AvnAnchor::chain_handlers(handler).is_none());
-        assert!(ChainIdToAssetId::<TestRuntime>::get(0).is_none());
+        assert!(AssetIdToChainId::<TestRuntime>::get(Asset::ForeignAsset(1)).is_none());
         assert!(RegisteredAppchains::<TestRuntime>::get().is_empty());
     });
 }

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
-use frame_support::PalletId;
+use frame_support::{weights::Weight, PalletId};
 use sp_core::{bounded::BoundedVec, crypto::KeyTypeId, ecdsa, sr25519, H160, H256};
 use sp_io::{
     crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed},
@@ -465,6 +465,46 @@ impl<BlockNumber, Weight: Zero> OnIdleHandler<BlockNumber, Weight> for () {
     fn run_on_idle_process(_block_number: BlockNumber, _remaining_weight: Weight) -> Weight {
         Weight::zero()
     }
+}
+
+/// Shared index type for reward periods, used by both node-manager and avn-anchor.
+pub type RewardPeriodIndex = u64;
+
+/// Interface for interacting with app chains.
+pub trait AppChainInterface {
+    type AccountId;
+
+    /// Called when a new reward period has started. Returns the weight consumed.
+    fn on_new_reward_period(period_index: &RewardPeriodIndex) -> Weight;
+
+    /// Called when a node receives a reward.
+    fn on_reward_paid(
+        period_index: &RewardPeriodIndex,
+        node_owner: &Self::AccountId,
+        node_id: &Self::AccountId,
+        reward_percentage: sp_runtime::Perquintill,
+    );
+
+    /// Called when all rewards for `period_index` have been paid out.
+    fn on_reward_period_completed(period_index: &RewardPeriodIndex);
+}
+
+impl AppChainInterface for () {
+    type AccountId = ();
+
+    fn on_new_reward_period(_period_index: &RewardPeriodIndex) -> Weight {
+        Weight::zero()
+    }
+
+    fn on_reward_paid(
+        _period_index: &RewardPeriodIndex,
+        _node_owner: &(),
+        _node_id: &(),
+        _reward_percentage: sp_runtime::Perquintill,
+    ) {
+    }
+
+    fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {}
 }
 
 #[derive(

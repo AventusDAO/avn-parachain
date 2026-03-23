@@ -112,6 +112,7 @@ impl Config for TestRuntime {
     type WeightInfo = ();
     type BridgeInterface = TestBridgeInterface;
     type ProcessedEventsChecker = TestProcessedEventsChecker;
+    type AppChainInterface = Self;
 }
 
 parameter_types! {
@@ -379,4 +380,22 @@ impl PaymentHandler for TestRuntime {
         Balances::make_free_balance_be(&payer, balance.saturating_sub(*amount));
         Ok(())
     }
+}
+
+impl sp_avn_common::AppChainInterface for TestRuntime {
+    type AccountId = AccountId;
+
+    fn on_new_reward_period(_period_index: &u64) -> frame_support::weights::Weight {
+        frame_support::weights::Weight::zero()
+    }
+
+    fn on_reward_paid(
+        _period_index: &u64,
+        _node_owner: &AccountId,
+        _node_id: &AccountId,
+        _reward_percentage: sp_runtime::Perquintill,
+    ) {
+    }
+
+    fn on_reward_period_completed(_period_index: &u64) {}
 }

@@ -241,7 +241,7 @@ benchmarks! {
     verify {
         assert!(ChainHandlers::<T>::contains_key(&handler));
         let chain_id = ChainHandlers::<T>::get(&handler).expect("handler should be registered");
-        assert!(ChainIdToAssetId::<T>::get(chain_id).is_some());
+        assert!(AssetIdToChainId::<T>::get(asset_id).is_some());
     }
 
     set_checkpoint_fee {

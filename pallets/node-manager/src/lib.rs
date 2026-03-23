@@ -29,7 +29,8 @@ use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::{
     eth::EthereumId,
     event_types::{EthEvent, EventData, ProcessedEventHandler, TotalSupplyUpdatedData, Validator},
-    BridgeContractMethod, PaymentHandler, REGISTERED_NODE_KEY,
+    AppChainInterface, BridgeContractMethod, PaymentHandler, RewardPeriodIndex,
+    REGISTERED_NODE_KEY,
 };
 use sp_core::{MaxEncodedLen, H160};
 use sp_runtime::{
@@ -131,7 +132,6 @@ pub(crate) type BalanceOf<T> =
 pub(crate) type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
     <T as frame_system::Config>::AccountId,
 >>::PositiveImbalance;
-pub(crate) type RewardPeriodIndex = u64;
 /// Node account ID
 pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 /// Max nodes per deregistration call
@@ -613,10 +613,12 @@ pub mod pallet {
         type VirtualNodeStake: Get<BalanceOf<Self>>;
         /// Extrinsic weight provider
         type WeightInfo: WeightInfo;
-
+        /// Interface to the Ethereum bridge pallet
         type BridgeInterface: BridgeInterface;
-
+        /// Hook to check for processed events
         type ProcessedEventsChecker: ProcessedEventsChecker;
+        /// Interface to interfact with app chains
+        type AppChainInterface: AppChainInterface<AccountId = Self::AccountId>;
     }
 
     #[pallet::call]
@@ -841,10 +843,16 @@ pub mod pallet {
                     reward_pot.reward_end_time,
                 );
 
-                let reward_amount =
+                let (reward_amount, reward_percentage) =
                     Self::calculate_reward(node_weight, &total_uptime.total_weight, &total_reward)?;
 
-                Self::pay_reward(&oldest_period, node.clone(), &node_info, reward_amount)?;
+                Self::pay_reward(
+                    &oldest_period,
+                    node.clone(),
+                    &node_info,
+                    reward_amount,
+                    reward_percentage,
+                )?;
                 Ok(())
             };
 
@@ -1221,6 +1229,10 @@ pub mod pallet {
                 *outstanding = outstanding.saturating_add(reward_amount);
             });
 
+            // Notify app chains that a new reward period has started.
+            let hook_weight =
+                T::AppChainInterface::on_new_reward_period(&next_reward_period.current);
+
             Self::deposit_event(Event::NewRewardPeriodStarted {
                 reward_period_index: next_reward_period.current,
                 reward_period_length: next_reward_period.length,
@@ -1229,6 +1241,7 @@ pub mod pallet {
             });
 
             <T as Config>::WeightInfo::on_initialise_with_new_reward_period()
+                .saturating_add(hook_weight)
         }
 
         fn offchain_worker(n: BlockNumberFor<T>) {

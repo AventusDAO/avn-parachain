@@ -611,6 +611,7 @@ impl pallet_node_manager::Config for Runtime {
     type WeightInfo = pallet_node_manager::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterface = EthBridge;
     type ProcessedEventsChecker = EthBridge;
+    type AppChainInterface = ();
 }
 
 // Other pallets
