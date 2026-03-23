@@ -176,6 +176,8 @@ pub mod pallet {
         SenderNotValid,
         TransactionNotSupported,
         UnauthorizedProxyTransaction,
+        // Deprecated, keeping so indexes don't break
+        _NoChainDataAvailable,
         CheckpointOriginAlreadyExists,
         /// The app chain already has a token registered.
         AppChainTokenAlreadyRegistered,
@@ -191,6 +193,8 @@ pub mod pallet {
         TokenLocationAlreadyRegistered,
         /// This extrinsic has been deprecated and is no longer available.
         CallDeprecated,
+        /// The token symbol provided for the app chain is empty.
+        EmptyTokenSymbol,
     }
 
     #[pallet::storage]
