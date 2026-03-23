@@ -169,8 +169,6 @@ pub mod pallet {
         UnauthorizedHandler,
         NoAvailableChainId,
         EmptyChainName,
-        /// The token symbol provided for the app chain is empty.
-        EmptyTokenSymbol,
         NoAvailableCheckpointId,
         UnauthorizedSignedTransaction,
         SenderNotValid,
