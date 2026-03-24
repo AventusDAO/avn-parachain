@@ -1201,8 +1201,13 @@ pub mod pallet {
             let previous_uptime_threshold = reward_period.uptime_threshold;
             let reward_amount = reward_period.reward_amount;
 
+            // We don't want to read unecessary reads so we have a separate check and exit early
             let next_reward_period_length = NextRewardPeriodLength::<T>::get();
             let next_heartbeat_period = NextHeartbeatPeriod::<T>::get();
+            if next_reward_period_length == 0 || next_heartbeat_period == 0 {
+                return <T as Config>::WeightInfo::on_initialise_no_reward_period()
+            }
+
             let next_reward_amount = NextRewardAmountPerPeriod::<T>::get();
             let next_uptime_threshold =
                 Self::calculate_uptime_threshold(next_reward_period_length, next_heartbeat_period);

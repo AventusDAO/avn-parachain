@@ -163,7 +163,6 @@ where
 fn find_block_at_or_before_timestamp<C>(
     client: &Arc<C>,
     latest_number: u32,
-    latest_hash: <Block as BlockT>::Hash,
     latest_ts: u64,
     target_ts_ms: u64,
     block_time_ms: u64,
@@ -296,7 +295,6 @@ where
             find_block_at_or_before_timestamp(
                 &client,
                 latest_number,
-                latest_hash,
                 latest_ts,
                 target_ts_ms,
                 block_time_ms,
