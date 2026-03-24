@@ -657,7 +657,7 @@ pub mod pallet {
             .max(<T as Config>::WeightInfo::set_admin_config_max_unstake_percentage())
             .max(<T as Config>::WeightInfo::set_admin_config_unstake_period())
             .max(<T as Config>::WeightInfo::set_admin_config_restricted_unstake_duration())
-            .max(<T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage())
+            .max(<T as Config>::WeightInfo::set_admin_config_reward_fee_percentage())
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
@@ -767,7 +767,7 @@ pub mod pallet {
                 AdminConfig::RewardFee(percentage) => {
                     <RewardFeePercentage<T>>::put(percentage);
                     Self::deposit_event(Event::RewardFeePercentageSet { percentage });
-                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage())
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_fee_percentage())
                         .into())
                 },
             }

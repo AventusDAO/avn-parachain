@@ -261,6 +261,24 @@ benchmarks! {
         assert!(<RestrictedUnstakeDurationSec<T>>::get() == new_duration);
     }
 
+    set_admin_config_reward_fee_percentage {
+        let current_percentage = <RewardFeePercentage<T>>::get();
+        let new_percentage = Perbill::from_percent(5);
+        let config = AdminConfig::RewardFee(new_percentage);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<RewardFeePercentage<T>>::get() == new_percentage);
+    }
+
+    set_admin_config_num_periods_to_mint {
+        let current_periods = <NumPeriodsToMint<T>>::get();
+        let new_periods = current_periods + 1;
+        let config = AdminConfig::NumPeriodsToMint(new_periods);
+    }: set_admin_config(RawOrigin::Root, config.clone())
+    verify {
+        assert!(<NumPeriodsToMint<T>>::get() == new_periods);
+    }
+
     on_initialise_with_new_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
         let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();
@@ -291,7 +309,9 @@ benchmarks! {
         enable_rewards::<T>();
 
         // update the min threshold first
-        <MinUptimeThreshold<T>>::set(Some(Perbill::from_percent(99)));
+        RewardPeriod::<T>::mutate(|reward_period| {
+            reward_period.uptime_threshold = 10;
+        });
 
         let reward_period = <RewardPeriod<T>>::get();
         let reward_period_index = reward_period.current;
@@ -341,7 +361,7 @@ benchmarks! {
         let signature = author.key.sign(
             &(PAYOUT_REWARD_CONTEXT, reward_period_index).encode()
         ).expect("Error signing");
-    }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author ,signature)
+    }: offchain_pay_nodes(RawOrigin::None, reward_period_index, author, signature)
     verify {
         let max_batch_size = MaxBatchSize::<T>::get();
         let nodes_to_pay = max_batch_size.min(registered_nodes);
@@ -596,6 +616,25 @@ benchmarks! {
         let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
         assert_eq!(node_info.auto_stake_rewards, !preference);
         assert_last_event::<T>(Event::AutoStakePreferenceUpdated {owner, node_id, auto_stake_rewards: !preference}.into());
+    }
+
+    offchain_mint_rewards {
+        let author = create_author::<T>();
+        // Register the author in the AVN validator set so signature_is_valid passes
+        avn::Validators::<T>::put(sp_runtime::WeakBoundedVec::force_from(
+            vec![author.clone()],
+            Some("Too many validators for session"),
+        ));
+        let amount: BalanceOf<T> = 1_000u32.into();
+        let signature = author.key.sign(
+            &(MINT_REWARDS_CONTEXT, amount).encode()
+        ).expect("Error signing");
+    }: offchain_mint_rewards(RawOrigin::None, amount, author, signature)
+    verify {
+        assert!(<PendingMintRequestState<T>>::exists());
+        let pending = <PendingMintRequestState<T>>::get().expect("Pending mint request must exist");
+        assert_eq!(pending.amount, amount);
+        assert_last_event::<T>(Event::MintRequestSubmitted { amount, tx_id: pending.tx_id }.into());
     }
 }
 

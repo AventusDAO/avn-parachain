@@ -149,7 +149,7 @@ pub(crate) fn testnet_genesis(
             "maxUnstakePercentage": Perbill::from_percent(10),
             "unstakePeriodSec": 60u64, // 1 min
             "restrictedUnstakeDurationSec": 60 * 10 as u64, // 10 min
-            "appChainFeePercentage": Perbill::from_percent(0),
+            "rewardFeePercentage": Perbill::from_percent(0),
             "numPeriodsToMint": 2u32,
         },
         "assetRegistry": {
