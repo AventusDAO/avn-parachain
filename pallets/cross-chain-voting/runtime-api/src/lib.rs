@@ -11,5 +11,6 @@ sp_api::decl_runtime_apis! {
         fn get_linked_accounts(t1_identity_account: H160) -> Vec<AccountId>;
         fn get_identity_account(t2_linked_account: AccountId) -> Option<H160>;
         fn current_block_timestamp() -> u64;
+        fn block_time_ms() -> u64;
     }
 }

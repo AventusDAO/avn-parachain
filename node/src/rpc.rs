@@ -48,14 +48,14 @@ where
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
     use substrate_frame_rpc_system::{System, SystemApiServer};
 
-    use crate::rpc::cross_chain_voting::{AvnApiServer, AvnRpc};
+    use crate::rpc::cross_chain_voting::{AvnApiServer, CrossChainRpc};
 
     let mut module = RpcExtension::new(());
     let FullDeps { client, pool } = deps;
 
     module.merge(System::new(client.clone(), pool).into_rpc())?;
     module.merge(TransactionPayment::new(client.clone()).into_rpc())?;
-    module.merge(AvnRpc::new(client).into_rpc())?;
+    module.merge(CrossChainRpc::new(client).into_rpc())?;
 
     Ok(module)
 }

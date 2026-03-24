@@ -9,6 +9,8 @@ use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};
 use sp_core::H160;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
+const MAX_IDENTITY_ADDRESSES: usize = 500;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinkedBalancesAtTimestampResponse {
     pub block_hash: String,
@@ -27,11 +29,11 @@ pub trait AvnApi {
     ) -> RpcResult<LinkedBalancesAtTimestampResponse>;
 }
 
-pub struct AvnRpc<C> {
+pub struct CrossChainRpc<C> {
     client: Arc<C>,
 }
 
-impl<C> AvnRpc<C> {
+impl<C> CrossChainRpc<C> {
     pub fn new(client: Arc<C>) -> Self {
         Self { client }
     }
@@ -41,11 +43,27 @@ fn internal_err(message: impl Into<String>) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(-32000, message.into(), None::<()>)
 }
 
+fn invalid_params_err(message: impl Into<String>) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(-32602, message.into(), None::<()>)
+}
+
+fn validate_addresses_len(addresses: &[H160]) -> RpcResult<()> {
+    if addresses.len() > MAX_IDENTITY_ADDRESSES {
+        return Err(invalid_params_err(format!(
+            "Too many addresses supplied: got {}, max {}",
+            addresses.len(),
+            MAX_IDENTITY_ADDRESSES
+        )))
+    }
+
+    Ok(())
+}
+
 fn clamp(n: u32, min: u32, max: u32) -> u32 {
     n.max(min).min(max)
 }
 
-fn project_next_guess(
+fn interpolate_next_guess(
     a_num: u32,
     a_ts: u64,
     b_num: u32,
@@ -136,25 +154,25 @@ where
     block_info(client, lo)
 }
 
+/// Finds the highest block whose timestamp is less than or equal to `target_ts_ms`.
+///
+/// Strategy:
+/// 1. Make an initial estimate based on the configured block time.
+/// 2. Refine the estimate using interpolation/secant-style guesses.
+/// 3. Fall back to binary search once the range is tight or interpolation stalls.
 fn find_block_at_or_before_timestamp<C>(
     client: &Arc<C>,
     latest_number: u32,
+    latest_hash: <Block as BlockT>::Hash,
+    latest_ts: u64,
     target_ts_ms: u64,
+    block_time_ms: u64,
 ) -> Result<(u32, <Block as BlockT>::Hash, u64), ErrorObjectOwned>
 where
     C: ProvideRuntimeApi<Block> + HeaderBackend<Block> + Send + Sync + 'static,
     C::Api: pallet_cross_chain_voting_runtime_api::CrossChainVotingApi<Block>,
 {
-    const EXPECTED_BLOCK_TIME_MS: u64 = 12_000;
-
-    let latest_hash = block_hash_by_number(client, latest_number)?;
-    let latest_ts = block_timestamp(client, latest_hash)?;
-
-    if target_ts_ms >= latest_ts {
-        return Ok((latest_number, latest_hash, latest_ts))
-    }
-
-    let blocks_back = ((latest_ts - target_ts_ms) / EXPECTED_BLOCK_TIME_MS) as u32;
+    let blocks_back = ((latest_ts - target_ts_ms) / block_time_ms) as u32;
     let initial_estimate = latest_number.saturating_sub(blocks_back);
 
     let (mut a_num, _, mut a_ts) = block_info(client, initial_estimate)?;
@@ -165,7 +183,7 @@ where
 
     let (mut lo, mut hi) = if a_ts < target_ts_ms { (a_num, latest_number) } else { (0, a_num) };
 
-    let step = ((a_ts.abs_diff(target_ts_ms)) / EXPECTED_BLOCK_TIME_MS).max(1) as u32;
+    let step = ((a_ts.abs_diff(target_ts_ms)) / block_time_ms).max(1) as u32;
     let second_guess = if a_ts < target_ts_ms {
         clamp(a_num.saturating_add(step), lo, hi)
     } else {
@@ -190,7 +208,7 @@ where
 
     for _ in 0..6 {
         let Some(next_guess) =
-            project_next_guess(a_num, a_ts, b_num, b_ts, target_ts_ms, lo, hi)
+            interpolate_next_guess(a_num, a_ts, b_num, b_ts, target_ts_ms, lo, hi)
         else {
             break;
         };
@@ -224,7 +242,7 @@ where
     binary_search_range(client, lo, hi, target_ts_ms)
 }
 
-impl<C> AvnApiServer for AvnRpc<C>
+impl<C> AvnApiServer for CrossChainRpc<C>
 where
     C: ProvideRuntimeApi<Block>
         + HeaderBackend<Block>
@@ -239,6 +257,8 @@ where
         addresses: Vec<H160>,
         timestamp_sec: u64,
     ) -> RpcResult<LinkedBalancesAtTimestampResponse> {
+        validate_addresses_len(&addresses)?;
+
         let client = self.client.clone();
 
         let latest_hash = client.info().finalized_hash;
@@ -261,21 +281,39 @@ where
             .current_block_timestamp(latest_hash)
             .map_err(|e| internal_err(format!("Failed to read latest block timestamp: {e}")))?;
 
+        let block_time_ms = client
+            .runtime_api()
+            .block_time_ms(latest_hash)
+            .map_err(|e| internal_err(format!("Failed to read expected block time: {e}")))?;
+
+        if block_time_ms == 0 {
+            return Err(internal_err("Runtime returned zero expected block time"))
+        }
+
         let (block_number, block_hash, timestamp_ms) = if target_ts_ms >= latest_ts {
             (latest_number, latest_hash, latest_ts)
         } else {
-            find_block_at_or_before_timestamp(&client, latest_number, target_ts_ms)?
+            find_block_at_or_before_timestamp(
+                &client,
+                latest_number,
+                latest_hash,
+                latest_ts,
+                target_ts_ms,
+                block_time_ms,
+            )?
         };
+
+        let requested_addresses = addresses;
 
         let balances = client
             .runtime_api()
-            .get_total_linked_balances(block_hash, addresses.clone())
+            .get_total_linked_balances(block_hash, requested_addresses.clone())
             .map_err(|e| internal_err(format!("Failed to read linked balances: {e}")))?;
 
-        let balances = addresses
+        let balances = requested_addresses
             .into_iter()
             .zip(balances)
-            .map(|(address, balance)| (format!("{address:#x}"), balance.to_string()))
+            .map(|(address, balance)| (format!("{address:#x}").to_lowercase(), balance.to_string()))
             .collect();
 
         Ok(LinkedBalancesAtTimestampResponse {

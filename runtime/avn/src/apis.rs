@@ -307,6 +307,10 @@ impl_runtime_apis! {
         fn current_block_timestamp() -> u64 {
             Timestamp::now()
         }
+
+        fn block_time_ms() -> u64 {
+            SLOT_DURATION
+        }
     }
 
     impl cumulus_primitives_core::CollectCollationInfo<Block> for Runtime {
