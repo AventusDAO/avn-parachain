@@ -100,6 +100,7 @@ const PAYOUT_REWARD_CONTEXT: &'static [u8] = b"NodeManager_RewardPayout";
 const MINT_REWARDS_CONTEXT: &'static [u8] = b"NodeManager_MintRewards";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
 const MAX_BATCH_SIZE: u32 = 1_000;
+const MINT_SAFETY_CAP_MULTIPLIER: u32 = 4;
 pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
@@ -1294,7 +1295,7 @@ pub mod pallet {
                         signature,
                     ) {
                         ValidTransaction::with_tag_prefix("NodeManagerPayout")
-                            .and_provides((call, reward_period_index))
+                            .and_provides((PAYOUT_REWARD_CONTEXT, reward_period_index, author))
                             .priority(TransactionPriority::max_value() - reduce_priority)
                             .longevity(64_u64)
                             // We don't propagate this transaction,
@@ -1337,7 +1338,12 @@ pub mod pallet {
                             }
 
                             return ValidTransaction::with_tag_prefix("NodeManagerHeartbeat")
-                                .and_provides(call)
+                                .and_provides((
+                                    HEARTBEAT_CONTEXT,
+                                    node,
+                                    reward_period_index,
+                                    heartbeat_count,
+                                ))
                                 .priority(TransactionPriority::max_value() - reduce_priority)
                                 .longevity(64_u64)
                                 .build()
@@ -1361,7 +1367,7 @@ pub mod pallet {
                         signature,
                     ) {
                         ValidTransaction::with_tag_prefix("NodeManagerMint")
-                            .and_provides(call)
+                            .and_provides((MINT_REWARDS_CONTEXT, amount, author))
                             .priority(TransactionPriority::max_value() - reduce_priority)
                             .longevity(64_u64)
                             .propagate(false)
@@ -1577,28 +1583,76 @@ pub mod pallet {
                 return None
             }
 
-            let num_periods_to_mint = NumPeriodsToMint::<T>::get();
-            if num_periods_to_mint == 0 {
+            let num_periods = NumPeriodsToMint::<T>::get();
+            if num_periods == 0 {
                 return None
             }
 
-            let reward_amount_per_period = NextRewardAmountPerPeriod::<T>::get();
-            if reward_amount_per_period == BalanceOf::<T>::zero() {
+            let reward_per_period = NextRewardAmountPerPeriod::<T>::get();
+            if reward_per_period == BalanceOf::<T>::zero() {
                 return None
             }
 
-            let outstanding_to_pay = OutstandingRewardToPay::<T>::get();
-            let window = reward_amount_per_period.checked_mul(&(num_periods_to_mint.into()))?;
-
-            let low_watermark = outstanding_to_pay.checked_add(&window)?;
-            let high_watermark = low_watermark.checked_add(&window)?;
-
+            let outstanding = OutstandingRewardToPay::<T>::get();
             let current_balance = Self::reward_pot_balance();
-            if current_balance >= low_watermark {
+
+            // N periods of runway
+            let runway = reward_per_period.checked_mul(&(num_periods.into())).or_else(|| {
+                log::error!(
+                    "💔 Mint overflow: reward_per_period * num_periods ({:?} * {:?})",
+                    reward_per_period,
+                    num_periods
+                );
                 None
-            } else {
-                high_watermark.checked_sub(&current_balance)
+            })?;
+
+            // Mint triggers when pot drops below this (N periods of buffer above obligations)
+            let refill_threshold = outstanding.checked_add(&runway).or_else(|| {
+                log::error!(
+                    "💔 Mint overflow: outstanding + runway ({:?} + {:?})",
+                    outstanding,
+                    runway
+                );
+                None
+            })?;
+
+            // After minting, pot should reach this (2N periods of buffer above obligations)
+            let target = refill_threshold.checked_add(&runway).or_else(|| {
+                log::error!(
+                    "💔 Mint overflow: refill_threshold + runway ({:?} + {:?})",
+                    refill_threshold,
+                    runway
+                );
+                None
+            })?;
+
+            if current_balance >= refill_threshold {
+                // We have enough in the pot to cover obligations + runway, no need to mint yet
+                return None
             }
+
+            let mint_amount = target.checked_sub(&current_balance).or_else(|| {
+                log::error!(
+                    "💔 Mint underflow: target - balance ({:?} - {:?})",
+                    target,
+                    current_balance
+                );
+                None
+            })?;
+
+            // In normal operation mint ≈ runway (N × reward).
+            // Add a cap as a safety ceiling.
+            let max_mint = runway.saturating_mul(MINT_SAFETY_CAP_MULTIPLIER.into());
+            if mint_amount > max_mint {
+                log::error!(
+                    "💔💔 Mint amount {:?} exceeds safety cap {:?} ({} x N x reward). There might be bridge issues or payout has stalled.",
+                    mint_amount, max_mint, MINT_SAFETY_CAP_MULTIPLIER
+                );
+
+                return None
+            }
+
+            Some(mint_amount)
         }
 
         /// Insert signing key reverse index. Fails if key already belongs to another node.

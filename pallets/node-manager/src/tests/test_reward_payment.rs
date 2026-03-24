@@ -1631,3 +1631,204 @@ mod end_2_end {
         });
     }
 }
+
+mod next_mint_amount_to_request {
+    use super::*;
+
+    const REWARD: u128 = 100;
+    // num_periods_to_mint. window = N * REWARD = 200
+    const N: u32 = 2;
+
+    fn setup(pot_balance: u128, outstanding: u128) {
+        <NextRewardAmountPerPeriod<TestRuntime>>::put(REWARD);
+        <NumPeriodsToMint<TestRuntime>>::put(N);
+        <OutstandingRewardToPay<TestRuntime>>::put(outstanding);
+        Balances::make_free_balance_be(&NodeManager::compute_reward_account_id(), pot_balance);
+    }
+
+    #[test]
+    fn returns_none_when_pending_mint_request_exists() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                setup(0, 0);
+                PendingMintRequestState::<TestRuntime>::put(PendingMintRequest {
+                    tx_id: 1u32,
+                    amount: 100u128,
+                    bridge_confirmed: false,
+                    credit_received: false,
+                });
+
+                assert_eq!(NodeManager::next_mint_amount_to_request(), None);
+            });
+    }
+
+    #[test]
+    fn returns_none_when_num_periods_to_mint_is_zero() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                setup(0, 0);
+                <NumPeriodsToMint<TestRuntime>>::put(0u32);
+
+                assert_eq!(NodeManager::next_mint_amount_to_request(), None);
+            });
+    }
+
+    #[test]
+    fn returns_none_when_reward_amount_per_period_is_zero() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                setup(0, 0);
+                <NextRewardAmountPerPeriod<TestRuntime>>::put(0u128);
+
+                assert_eq!(NodeManager::next_mint_amount_to_request(), None);
+            });
+    }
+
+    #[test]
+    fn returns_none_when_pot_equals_window_with_no_outstanding() {
+        // pot == window: exactly funded for N periods, no mint needed
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                setup(window, 0);
+
+                assert_eq!(NodeManager::next_mint_amount_to_request(), None);
+            });
+    }
+
+    #[test]
+    fn returns_none_when_pot_exceeds_window_with_no_outstanding() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                setup(window + 1, 0);
+
+                assert_eq!(NodeManager::next_mint_amount_to_request(), None);
+            });
+    }
+
+    // on_initialize adds the just-ended period's reward to
+    // outstanding_to_pay before the OCW calls this function. Outstanding obligations
+    // raise the refill_threshold, so even a fully-funded pot triggers a mint when there
+    // is unpaid outstanding.
+    #[test]
+    fn triggers_mint_at_period_boundary_when_pot_is_funded_but_outstanding_exists() {
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                let outstanding = REWARD; // 100
+                                          // Simulate: on_initialize just added one period to outstanding, pot unchanged
+                                          // refill_threshold = outstanding + window = 300 > pot (200) → mint triggered
+                setup(window, outstanding);
+
+                // target = outstanding + 2*window = 500; mint = 500 - 200 = 300
+                assert_eq!(NodeManager::next_mint_amount_to_request(), Some(outstanding + window));
+            });
+    }
+
+    #[test]
+    fn triggers_mint_when_pot_exceeds_window_but_outstanding_raises_threshold() {
+        // pot > window but refill_threshold = outstanding + window > pot, so mint is still needed
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                let pot_balance = window + 50; // 250
+                let outstanding = window; // 200 — many periods unpaid
+                setup(pot_balance, outstanding);
+
+                // target = outstanding + 2*window = 600; mint = 600 - 250 = 350
+                let expected_mint = outstanding + 2 * window - pot_balance;
+                assert_eq!(NodeManager::next_mint_amount_to_request(), Some(expected_mint));
+            });
+    }
+
+    #[test]
+    fn returns_mint_amount_when_pot_is_below_window_with_no_outstanding() {
+        // pot < window -> mint to 0 + 2*window; amount = 2*window - pot
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                let pot = window - 50; // 150
+                setup(pot, 0);
+
+                let expected_mint = 2 * window - pot; // 250
+                assert_eq!(NodeManager::next_mint_amount_to_request(), Some(expected_mint));
+            });
+    }
+
+    #[test]
+    fn mint_amount_covers_outstanding_plus_two_windows_when_pot_is_below_window() {
+        // When a mint is needed the target is outstanding + 2*window, so after outstanding
+        // obligations drain the pot the N-period buffer is fully restored.
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                let outstanding = REWARD; // 100
+                let pot = window - 50; // 150 — below window, so mint is triggered
+                setup(pot, outstanding);
+
+                // (100 + 400) - 150 = 350
+                let expected_mint = outstanding + 2 * window - pot;
+                assert_eq!(NodeManager::next_mint_amount_to_request(), Some(expected_mint));
+            });
+    }
+
+    #[test]
+    fn mint_amount_accounts_for_all_accumulated_outstanding_periods() {
+        // Multiple accumulated unpaid periods must all be reflected in the mint target.
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let window = REWARD * N as u128; // 200
+                let outstanding = REWARD * 3; // 300 – three periods unpaid
+                let pot = window - 1; // 199 — just below window
+                setup(pot, outstanding);
+
+                // (300 + 400) - 199 = 501
+                let expected_mint = outstanding + 2 * window - pot;
+                assert_eq!(NodeManager::next_mint_amount_to_request(), Some(expected_mint));
+            });
+    }
+
+    #[test]
+    fn returns_none_when_mint_amount_exceeds_safety_cap() {
+        // Safety cap: mint_amount must not exceed MINT_SAFETY_CAP_MULTIPLIER * runway.
+        // This triggers when outstanding >> pot (e.g. bridge has stalled for many periods).
+        // mint_amount = outstanding + 2*runway - pot
+        // max_mint = MINT_SAFETY_CAP_MULTIPLIER * runway
+        // Exceeds cap when: outstanding > (MINT_SAFETY_CAP_MULTIPLIER - 2) * runway + pot
+        ExtBuilder::build_default()
+            .with_genesis_config()
+            .as_externality()
+            .execute_with(|| {
+                let runway = REWARD * N as u128; // 200
+                let max_mint = runway * MINT_SAFETY_CAP_MULTIPLIER as u128; // 4 * 200 = 800
+                let outstanding = max_mint + 1; // just above the cap to trigger the safety check
+                let pot = 0;
+                setup(pot, outstanding);
+
+                // mint_amount = outstanding + 2*runway - pot = 801 + 400 - 0 = 1201, but max_mint =
+                // 800
+                assert_eq!(NodeManager::next_mint_amount_to_request(), None);
+            });
+    }
+}
