@@ -100,6 +100,9 @@ pallet-eth-bridge-runtime-api = { default-features = true, workspace = true }
 pallet-cross-chain-voting-runtime-api = { default-features = true, workspace = true }
 pallet-avn = { default-features = true, workspace = true }
 
+# Orml
+orml-traits = { default-features = true, workspace = true }
+
 [build-dependencies]
 substrate-build-script-utils = { default-features = true, workspace = true }
 

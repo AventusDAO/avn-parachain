@@ -20,32 +20,36 @@ use frame_support::{
     derive_impl,
     dispatch::{DispatchClass, DispatchInfo},
     parameter_types,
-    traits::{ConstU8, EqualPrivilegeOnly, Hooks},
+    traits::{ConstU8, EqualPrivilegeOnly, Everything, Hooks, Imbalance},
     weights::{Weight, WeightToFee as WeightToFeeT},
     PalletId,
 };
-use frame_system::DefaultConfig;
 
 use frame_system::{self as system, limits, EnsureRoot};
 use sp_state_machine::BasicExternalities;
 
 use hex_literal::hex;
+use orml_traits::{
+    asset_registry::{AssetProcessor, AvnAssetLocation, AvnAssetMetadata},
+    parameter_type_with_key,
+};
 use pallet_avn::BridgeInterfaceNotification;
 use pallet_parachain_staking::{self as parachain_staking};
 use pallet_session as session;
-use pallet_transaction_payment::CurrencyAdapter;
+use pallet_transaction_payment::FungibleAdapter;
 use sp_avn_common::{
-    avn_tests_helpers::ethereum_converters::*,
+    avn_tests_helpers::{ethereum_converters::*, utilities::TestAccountIdPK},
     eth::EthereumId,
     event_types::{EthEventId, LiftedData, ValidEvents},
-    OnIdleHandler,
+    primitives::Amount,
+    Asset, OnIdleHandler,
 };
 use sp_core::{sr25519, ConstU64, Pair, H256};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
     traits::{ConvertInto, IdentifyAccount, IdentityLookup, Verify},
-    BuildStorage, Perbill, SaturatedConversion,
+    BuildStorage, DispatchError, Perbill, SaturatedConversion,
 };
 use std::{cell::RefCell, sync::Arc};
 
@@ -66,6 +70,7 @@ pub const NON_AVT_TOKEN_ID_2: H160 = H160(hex!("20202020202020202020202020202020
 const TOPIC_RECEIVER_INDEX: usize = 2;
 
 type Block = frame_system::mocking::MockBlock<TestRuntime>;
+type Balance = u128;
 
 frame_support::construct_runtime!(
     pub enum TestRuntime
@@ -82,6 +87,9 @@ frame_support::construct_runtime!(
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
         Preimage: pallet_preimage,
         Scheduler: pallet_scheduler::{Pallet, Call, Storage, Event<T>},
+        AssetRegistry: orml_asset_registry,
+        AssetManager: orml_currencies,
+        Tokens: orml_tokens,
     }
 );
 
@@ -96,7 +104,7 @@ impl token_manager::Config for TestRuntime {
     type Currency = Balances;
     type ProcessedEventsChecker = Self;
     type TokenId = sp_core::H160;
-    type TokenBalance = u128;
+    type TokenBalance = Balance;
     type Public = AccountId;
     type Signature = Signature;
     type AvnTreasuryPotId = AvnTreasuryPotId;
@@ -110,6 +118,8 @@ impl token_manager::Config for TestRuntime {
     type OnIdleHandler = TestOnIdleHandler;
     type AccountToBytesConvert = Avn;
     type TimeProvider = Timestamp;
+    type AssetRegistry = AssetRegistry;
+    type AssetManager = AssetManager;
 }
 
 parameter_types! {
@@ -194,7 +204,7 @@ impl system::Config for TestRuntime {
     type Block = Block;
     type AccountId = AccountId;
     type Lookup = IdentityLookup<Self::AccountId>;
-    type AccountData = pallet_balances::AccountData<u128>;
+    type AccountData = pallet_balances::AccountData<Balance>;
 }
 
 #[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
@@ -208,18 +218,19 @@ parameter_types! {
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
 impl pallet_balances::Config for TestRuntime {
-    type Balance = u128;
+    type Balance = Balance;
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
+    type ReserveIdentifier = [u8; 8];
 }
 
 parameter_types! {
-    pub static WeightToFee: u128 = 1u128;
-    pub static TransactionByteFee: u128 = 0u128;
+    pub static WeightToFee: Balance = 1u128;
+    pub static TransactionByteFee: Balance = 0u128;
 }
 impl pallet_transaction_payment::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
-    type OnChargeTransaction = CurrencyAdapter<Balances, ()>;
+    type OnChargeTransaction = FungibleAdapter<Balances, ()>;
     type LengthToFee = TransactionByteFee;
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
@@ -308,6 +319,76 @@ impl pallet_timestamp::Config for TestRuntime {
     type WeightInfo = ();
 }
 
+type AssetMetadata = orml_traits::asset_registry::AssetMetadata<
+    Balance,
+    AvnAssetMetadata,
+    AvnAssetLocation,
+    ConstU32<1024>,
+>;
+type BasicCurrencyAdapter<R, B> = orml_currencies::BasicCurrencyAdapter<R, B, Amount, Balance>;
+
+pub struct NoopAssetProcessor {}
+impl AssetProcessor<CurrencyId, AssetMetadata> for NoopAssetProcessor {
+    fn pre_register(
+        id: Option<CurrencyId>,
+        asset_metadata: AssetMetadata,
+    ) -> Result<(CurrencyId, AssetMetadata), DispatchError> {
+        assert!(id.is_some(), "Id must be set");
+        Ok((id.unwrap(), asset_metadata))
+    }
+}
+
+parameter_types! {
+    pub const GetNativeCurrencyId: CurrencyId = Asset::Avt;
+}
+
+impl orml_currencies::Config for TestRuntime {
+    type GetNativeCurrencyId = GetNativeCurrencyId;
+    type MultiCurrency = Tokens;
+    type NativeCurrency = BasicCurrencyAdapter<TestRuntime, Balances>;
+    type WeightInfo = ();
+}
+
+impl orml_asset_registry::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
+    type CustomMetadata = AvnAssetMetadata;
+    type AssetId = CurrencyId;
+    type AuthorityOrigin = EnsureRoot<TestAccountIdPK>;
+    type Balance = Balance;
+    type StringLimit = ConstU32<1024>;
+    type AssetProcessor = NoopAssetProcessor;
+    type AssetLocation = AvnAssetLocation;
+    type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const MaxLocks: u32 = 50;
+    pub const MaxReserves: u32 = 50;
+}
+
+parameter_type_with_key! {
+    pub ExistentialDeposits: |currency_id: CurrencyId| -> Balance {
+        match currency_id {
+            Asset::Avt => ExistentialDeposit::get().into(),
+            _ => 1
+        }
+    };
+}
+
+impl orml_tokens::Config for TestRuntime {
+    type Amount = Amount;
+    type Balance = Balance;
+    type CurrencyId = CurrencyId;
+    type DustRemovalWhitelist = Everything;
+    type RuntimeEvent = RuntimeEvent;
+    type ExistentialDeposits = ExistentialDeposits;
+    type MaxLocks = MaxLocks;
+    type MaxReserves = MaxReserves;
+    type CurrencyHooks = ();
+    type ReserveIdentifier = [u8; 8];
+    type WeightInfo = ();
+}
+
 impl BridgeInterfaceNotification for TestRuntime {
     fn process_result(
         _tx_id: EthereumId,
@@ -319,7 +400,7 @@ impl BridgeInterfaceNotification for TestRuntime {
 }
 
 impl WeightToFeeT for WeightToFee {
-    type Balance = u128;
+    type Balance = Balance;
 
     fn weight_to_fee(weight: &Weight) -> Self::Balance {
         Self::Balance::saturated_from(weight.ref_time())
@@ -328,7 +409,7 @@ impl WeightToFeeT for WeightToFee {
 }
 
 impl WeightToFeeT for TransactionByteFee {
-    type Balance = u128;
+    type Balance = Balance;
 
     fn weight_to_fee(weight: &Weight) -> Self::Balance {
         Self::Balance::saturated_from(weight.ref_time())
@@ -390,7 +471,7 @@ impl ProcessedEventsChecker for TestRuntime {
 impl TokenManager {
     pub fn initialise_non_avt_tokens_to_account(
         account_id: <TestRuntime as system::Config>::AccountId,
-        amount: u128,
+        amount: Balance,
     ) {
         TokenManagerBalances::<TestRuntime>::insert((NON_AVT_TOKEN_ID, account_id), amount);
     }
@@ -417,6 +498,23 @@ impl ExtBuilder {
             avt_token_contract: AVT_TOKEN_CONTRACT,
             lower_schedule_period: 10,
             balances: vec![],
+        }
+        .assimilate_storage(&mut self.storage);
+
+        let _ = orml_asset_registry::GenesisConfig::<TestRuntime> {
+            assets: vec![(
+                Asset::Avt,
+                AssetMetadata {
+                    decimals: 18,
+                    name: "AVT Test".as_bytes().to_vec().try_into().unwrap(),
+                    symbol: "AVT".as_bytes().to_vec().try_into().unwrap(),
+                    existential_deposit: 0,
+                    location: Some(AvnAssetLocation::Ethereum(AVT_TOKEN_CONTRACT)),
+                    additional: AvnAssetMetadata { appchain_native: false },
+                }
+                .encode(),
+            )],
+            last_asset_id: Asset::Avt,
         }
         .assimilate_storage(&mut self.storage);
 
@@ -475,7 +573,10 @@ impl ExtBuilder {
         let mut ext = sp_io::TestExternalities::from(self.storage);
         ext.register_extension(KeystoreExt(Arc::new(keystore)));
         // Events do not get emitted on block 0, so we increment the block here
-        ext.execute_with(|| System::set_block_number(1));
+        ext.execute_with(|| {
+            System::set_block_number(1);
+            Timestamp::set_timestamp(1);
+        });
         ext
     }
 }
@@ -696,11 +797,10 @@ impl MockData {
     ) -> bool {
         let amount =
             <BalanceOf<TestRuntime> as TryFrom<u128>>::try_from(amount).expect("amount is valid");
-        let imbalance: PositiveImbalanceOf<TestRuntime> =
-            <mock::TestRuntime as token_manager::Config>::Currency::deposit_creating(
-                &account_id,
-                amount,
-            );
+        let imbalance = <mock::TestRuntime as token_manager::Config>::Currency::deposit_creating(
+            &account_id,
+            amount,
+        );
         if imbalance.peek() == BalanceOf::<TestRuntime>::zero() {
             return false
         }

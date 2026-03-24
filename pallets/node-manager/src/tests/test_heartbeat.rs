@@ -104,7 +104,7 @@ mod given_a_reward_period {
 
             assert_eq!(
                 <RewardPeriod<TestRuntime>>::get().heartbeat_period,
-                <HeartbeatPeriod<TestRuntime>>::get()
+                <NextHeartbeatPeriod<TestRuntime>>::get()
             );
 
             // Check if the transaction from the mempool is what we expected

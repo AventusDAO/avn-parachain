@@ -44,6 +44,7 @@ pub trait WeightInfo {
 	fn signed_update_chain_handler() -> Weight;
 	fn signed_submit_checkpoint_with_identity() -> Weight;
 	fn set_checkpoint_fee() -> Weight;
+	fn register_appchain() -> Weight;
 }
 
 /// Weights for pallet_avn_anchor using the Substrate node and recommended hardware.
@@ -171,6 +172,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(9_740_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
+	fn register_appchain() -> Weight {
+		Weight::from_parts(50_000_000, 3517)
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -296,5 +302,10 @@ impl WeightInfo for () {
 		// Minimum execution time: 9_400_000 picoseconds.
 		Weight::from_parts(9_740_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	fn register_appchain() -> Weight {
+		Weight::from_parts(50_000_000, 3517)
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
 	}
 }

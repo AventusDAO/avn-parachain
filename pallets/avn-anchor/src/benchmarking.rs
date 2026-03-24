@@ -1,16 +1,13 @@
 #![cfg(feature = "runtime-benchmarks")]
 
 use super::*;
-use crate::{
-    encode_signed_register_chain_handler_params, encode_signed_submit_checkpoint_params,
-    encode_signed_update_chain_handler_params,
-};
+use crate::{encode_signed_submit_checkpoint_params, encode_signed_update_chain_handler_params};
 use codec::{Decode, Encode};
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_support::{traits::Currency, BoundedVec};
 use frame_system::RawOrigin;
 use sp_application_crypto::KeyTypeId;
-use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Asset, Proof};
 use sp_core::H256;
 use sp_runtime::{RuntimeAppPublic, Saturating};
 
@@ -74,13 +71,12 @@ fn create_proof<T: Config>(
     Proof { signer, relayer, signature: convert_sr25519_signature::<T::Signature>(signature) }
 }
 
-fn setup_chain<T: Config>(
-    handler: &T::AccountId,
-) -> Result<(ChainId, BoundedVec<u8, ConstU32<32>>), &'static str> {
-    let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(vec![0u8; 32]).unwrap();
-    Pallet::<T>::register_chain_handler(RawOrigin::Signed(handler.clone()).into(), name.clone())?;
-    let chain_id = ChainHandlers::<T>::get(handler).ok_or("Chain not registered")?;
-    Ok((chain_id, name))
+fn setup_chain<T: Config>(handler: &T::AccountId) -> Result<ChainId, &'static str> {
+    let chain_id = NextChainId::<T>::get();
+    NextChainId::<T>::mutate(|id| *id = id.saturating_add(1));
+    ChainHandlers::<T>::insert(handler, chain_id);
+    Nonces::<T>::insert(chain_id, 0u64);
+    Ok(chain_id)
 }
 
 benchmarks! {
@@ -88,11 +84,12 @@ benchmarks! {
         let caller: T::AccountId = create_account_id::<T>(0);
         let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(vec![0u8; 32]).unwrap();
         setup_balance::<T>(&caller);
-    }: _(RawOrigin::Signed(caller.clone()), name.clone())
+    }: {
+        // Call is deprecated and always returns CallDeprecated; ignore the error.
+        let _ = Pallet::<T>::register_chain_handler(RawOrigin::Signed(caller.clone()).into(), name.clone());
+    }
     verify {
-        assert!(ChainHandlers::<T>::contains_key(&caller));
-        let chain_data = ChainData::<T>::get(ChainHandlers::<T>::get(&caller).unwrap()).unwrap();
-        assert_eq!(chain_data.name, name);
+        assert!(!ChainHandlers::<T>::contains_key(&caller));
     }
 
     update_chain_handler {
@@ -100,18 +97,16 @@ benchmarks! {
         let new_handler: T::AccountId = create_account_id::<T>(1);
         setup_balance::<T>(&old_handler);
         setup_balance::<T>(&new_handler);
-        let (chain_id, name) = setup_chain::<T>(&old_handler)?;
+        let chain_id = setup_chain::<T>(&old_handler)?;
     }: _(RawOrigin::Signed(old_handler.clone()), new_handler.clone())
     verify {
         assert!(!ChainHandlers::<T>::contains_key(&old_handler));
         assert!(ChainHandlers::<T>::contains_key(&new_handler));
-        let chain_data = ChainData::<T>::get(ChainHandlers::<T>::get(&new_handler).unwrap()).unwrap();
-        assert_eq!(chain_data.name, name);
     }
 
     submit_checkpoint_with_identity {
         let handler: T::AccountId = create_account_id::<T>(0);
-        let chain_id = setup_chain::<T>(&handler)?.0;
+        let chain_id = setup_chain::<T>(&handler)?;
         setup_balance::<T>(&handler);
         ensure_fee_payment_possible::<T>(chain_id, &handler)?;
 
@@ -148,14 +143,18 @@ benchmarks! {
         setup_balance::<T>(&handler);
         setup_balance::<T>(&relayer);
 
-        let payload = encode_signed_register_chain_handler_params::<T>(&relayer, &handler, &name);
-        let signature = signer_pair.sign(&payload).ok_or("Error signing proof")?;
-        let proof = create_proof::<T>(signature.into(), handler.clone(), relayer);
-    }: _(RawOrigin::Signed(handler.clone()), proof, handler.clone(), name.clone())
+        // Build a dummy proof — the call is deprecated and will return CallDeprecated immediately.
+        let proof = create_proof::<T>(
+            sp_core::sr25519::Signature::default(),
+            handler.clone(),
+            relayer,
+        );
+    }: {
+        // Call is deprecated and always returns CallDeprecated; ignore the error.
+        let _ = Pallet::<T>::signed_register_chain_handler(RawOrigin::Signed(handler.clone()).into(), proof, handler.clone(), name.clone());
+    }
     verify {
-        assert!(ChainHandlers::<T>::contains_key(&handler));
-        let chain_data = ChainData::<T>::get(ChainHandlers::<T>::get(&handler).unwrap()).unwrap();
-        assert_eq!(chain_data.name, name);
+        assert!(!ChainHandlers::<T>::contains_key(&handler));
     }
 
     signed_update_chain_handler {
@@ -167,7 +166,7 @@ benchmarks! {
         setup_balance::<T>(&old_handler);
         setup_balance::<T>(&new_handler);
         setup_balance::<T>(&relayer);
-        let (chain_id, _) = setup_chain::<T>(&old_handler)?;
+        let chain_id = setup_chain::<T>(&old_handler)?;
         let nonce = Nonces::<T>::get(chain_id);
 
         let payload = encode_signed_update_chain_handler_params::<T>(
@@ -194,7 +193,7 @@ benchmarks! {
         setup_balance::<T>(&handler);
         setup_balance::<T>(&relayer);
 
-        let (chain_id, _) = setup_chain::<T>(&handler)?;
+        let chain_id = setup_chain::<T>(&handler)?;
         ensure_fee_payment_possible::<T>(chain_id, &handler)?;
 
         let checkpoint = H256::from([0u8; 32]);
@@ -228,6 +227,21 @@ benchmarks! {
         );
         assert_eq!(NextCheckpointId::<T>::get(chain_id), initial_checkpoint_id + 1);
         assert!(T::Currency::free_balance(&handler) < initial_balance, "Fee was not deducted");
+    }
+
+    register_appchain {
+        let handler: T::AccountId = create_account_id::<T>(0);
+        let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(b"Benchmark Chain".to_vec()).unwrap();
+        let symbol: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(b"BCH".to_vec()).unwrap();
+        let token = T::Token::from(sp_core::H160::from([1u8; 20]));
+        let asset_id: T::AppChainAssetId =
+            T::AppChainAssetId::decode(&mut &Asset::ForeignAsset(2).encode()[..])
+                .unwrap_or_default();
+    }: _(RawOrigin::Root, handler.clone(), name, symbol, token, asset_id, 18u32)
+    verify {
+        assert!(ChainHandlers::<T>::contains_key(&handler));
+        let chain_id = ChainHandlers::<T>::get(&handler).expect("handler should be registered");
+        assert!(ChainIdToAssetId::<T>::get(chain_id).is_some());
     }
 
     set_checkpoint_fee {

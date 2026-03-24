@@ -61,13 +61,13 @@ mod reward_period {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let reward_period = RewardPeriod::<TestRuntime>::get();
-            let old_configured_period = ConfiguredRewardPeriodLength::<TestRuntime>::get();
+            let old_configured_period = NextRewardPeriodLength::<TestRuntime>::get();
             let new_period = old_configured_period + 1;
 
-            let config = AdminConfig::RewardPeriod(new_period);
+            let config = AdminConfig::NextRewardPeriodLength(new_period);
             assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
 
-            assert_eq!(ConfiguredRewardPeriodLength::<TestRuntime>::get(), new_period);
+            assert_eq!(NextRewardPeriodLength::<TestRuntime>::get(), new_period);
             assert_eq!(RewardPeriod::<TestRuntime>::get().length, reward_period.length);
 
             System::assert_last_event(
@@ -90,7 +90,7 @@ mod reward_period {
 
             assert_ok!(NodeManager::set_admin_config(
                 RawOrigin::Root.into(),
-                AdminConfig::RewardPeriod(new_period),
+                AdminConfig::NextRewardPeriodLength(new_period),
             ));
 
             assert_eq!(RewardPeriod::<TestRuntime>::get().length, reward_period.length);
@@ -108,10 +108,10 @@ mod reward_period {
         fn period_is_smaller_than_heartbeat() {
             let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
             ext.execute_with(|| {
-                let heartbeat = <HeartbeatPeriod<TestRuntime>>::get();
+                let heartbeat = <NextHeartbeatPeriod<TestRuntime>>::get();
                 let new_period = heartbeat - 1;
 
-                let config = AdminConfig::RewardPeriod(new_period);
+                let config = AdminConfig::NextRewardPeriodLength(new_period);
                 assert_noop!(
                     NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
                     Error::<TestRuntime>::RewardPeriodInvalid
@@ -163,18 +163,20 @@ mod heartbeat {
     fn can_be_set_for_next_period_only() {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {
-            let current_period = HeartbeatPeriod::<TestRuntime>::get();
+            let current_period = NextHeartbeatPeriod::<TestRuntime>::get();
             let reward_period = RewardPeriod::<TestRuntime>::get();
             let current_threshold = reward_period.uptime_threshold;
             let new_heartbeat_period = current_period + 1;
 
-            let config = AdminConfig::Heartbeat(new_heartbeat_period);
+            let config = AdminConfig::NextHeartbeatPeriod(new_heartbeat_period);
             assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
 
-            assert_eq!(HeartbeatPeriod::<TestRuntime>::get(), new_heartbeat_period);
+            assert_eq!(NextHeartbeatPeriod::<TestRuntime>::get(), new_heartbeat_period);
             assert_eq!(RewardPeriod::<TestRuntime>::get().uptime_threshold, current_threshold);
 
-            System::assert_last_event(Event::HeartbeatPeriodSet { new_heartbeat_period }.into());
+            System::assert_last_event(
+                Event::NextHeartbeatPeriodSet { new_heartbeat_period }.into(),
+            );
         });
     }
 
@@ -183,12 +185,12 @@ mod heartbeat {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let reward_period = RewardPeriod::<TestRuntime>::get();
-            let current_heartbeat = HeartbeatPeriod::<TestRuntime>::get();
+            let current_heartbeat = NextHeartbeatPeriod::<TestRuntime>::get();
             let new_heartbeat_period = current_heartbeat + 1;
 
             assert_ok!(NodeManager::set_admin_config(
                 RawOrigin::Root.into(),
-                AdminConfig::Heartbeat(new_heartbeat_period),
+                AdminConfig::NextHeartbeatPeriod(new_heartbeat_period),
             ));
 
             let expected_next_threshold =
@@ -219,25 +221,25 @@ mod heartbeat {
             ext.execute_with(|| {
                 let new_heartbeat_period = 0u32;
 
-                let config = AdminConfig::Heartbeat(new_heartbeat_period);
+                let config = AdminConfig::NextHeartbeatPeriod(new_heartbeat_period);
                 assert_noop!(
                     NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
-                    Error::<TestRuntime>::HeartbeatPeriodZero
+                    Error::<TestRuntime>::NextHeartbeatPeriodZero
                 );
             });
         }
 
         #[test]
-        fn period_is_longer_than_configured_reward_period() {
+        fn period_is_longer_than_next_reward_period_length() {
             let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
             ext.execute_with(|| {
-                let reward_period = ConfiguredRewardPeriodLength::<TestRuntime>::get();
+                let reward_period = NextRewardPeriodLength::<TestRuntime>::get();
                 let new_heartbeat_period = reward_period + 1;
 
-                let config = AdminConfig::Heartbeat(new_heartbeat_period);
+                let config = AdminConfig::NextHeartbeatPeriod(new_heartbeat_period);
                 assert_noop!(
                     NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
-                    Error::<TestRuntime>::HeartbeatPeriodInvalid
+                    Error::<TestRuntime>::NextHeartbeatPeriodInvalid
                 );
             });
         }
@@ -252,19 +254,19 @@ mod reward_amount_per_period {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {
             let reward_period = RewardPeriod::<TestRuntime>::get();
-            let current_amount = RewardAmountPerPeriod::<TestRuntime>::get();
+            let current_amount = NextRewardAmountPerPeriod::<TestRuntime>::get();
             let new_amount = current_amount + 1;
 
-            let config = AdminConfig::RewardAmountPerPeriod(new_amount);
+            let config = AdminConfig::NextRewardAmountPerPeriod(new_amount);
             assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
 
-            assert_eq!(RewardAmountPerPeriod::<TestRuntime>::get(), new_amount);
+            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(), new_amount);
             assert_eq!(
                 RewardPeriod::<TestRuntime>::get().reward_amount,
                 reward_period.reward_amount
             );
 
-            System::assert_last_event(Event::RewardAmountPerPeriodSet { new_amount }.into());
+            System::assert_last_event(Event::NextRewardAmountPerPeriodSet { new_amount }.into());
         });
     }
 
@@ -277,7 +279,7 @@ mod reward_amount_per_period {
 
             assert_ok!(NodeManager::set_admin_config(
                 RawOrigin::Root.into(),
-                AdminConfig::RewardAmountPerPeriod(new_amount),
+                AdminConfig::NextRewardAmountPerPeriod(new_amount),
             ));
 
             assert_eq!(
@@ -300,10 +302,10 @@ mod reward_amount_per_period {
             ext.execute_with(|| {
                 let new_amount: BalanceOf<TestRuntime> = 0u128;
 
-                let config = AdminConfig::RewardAmountPerPeriod(new_amount);
+                let config = AdminConfig::NextRewardAmountPerPeriod(new_amount);
                 assert_noop!(
                     NodeManager::set_admin_config(RawOrigin::Root.into(), config,),
-                    Error::<TestRuntime>::RewardAmountPerPeriodZero
+                    Error::<TestRuntime>::NextRewardAmountPerPeriodZero
                 );
             });
         }
@@ -347,9 +349,9 @@ mod reward_enabled {
             let current_flag = RewardEnabled::<TestRuntime>::get();
             let new_flag = !current_flag;
 
-            let config = AdminConfig::RewardToggle(new_flag);
+            let config = AdminConfig::RewardEnabled(new_flag);
             assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config,));
-            System::assert_last_event(Event::RewardToggled { enabled: new_flag }.into());
+            System::assert_last_event(Event::RewardEnabledSet { enabled: new_flag }.into());
         });
     }
 }

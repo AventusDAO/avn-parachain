@@ -80,6 +80,12 @@ polkadot-sdk = { workspace = true, default-features = false, features = [
 # Balances added explicitly to ensure the features we need are enabled
 pallet-balances.workspace = true
 
+# ORML
+orml-currencies = { workspace = true }
+orml-asset-registry = { workspace = true }
+orml-tokens = { workspace = true }
+orml-traits = { workspace = true }
+
 # AvN pallets
 sp-avn-common.workspace = true
 sp-watchtower.workspace = true
@@ -143,6 +149,11 @@ std = [
 	"pallet-summary-watchtower/std",
 	# Avn Common Runtime
 	"runtime-common/std",
+	# ORML
+	"orml-currencies/std",
+	"orml-asset-registry/std",
+	"orml-tokens/std",
+	"orml-traits/std",
 ]
 
 runtime-benchmarks = [
@@ -170,6 +181,9 @@ runtime-benchmarks = [
 	"pallet-parachain-staking/runtime-benchmarks",
 	# Avn Common Runtime
 	"runtime-common/runtime-benchmarks",
+	# Orml
+	"orml-asset-registry/runtime-benchmarks",
+	"orml-tokens/runtime-benchmarks",
 ]
 
 try-runtime = [

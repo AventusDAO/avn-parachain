@@ -9,9 +9,11 @@ use crate::chain_spec::{
 };
 use avn_parachain_runtime::{self as avn_runtime};
 
+use codec::Encode;
 use sp_core::{H160, H256};
 
 use hex_literal::hex;
+use orml_traits::asset_registry::{AssetMetadata, AvnAssetLocation, AvnAssetMetadata};
 use sp_avn_common::{eth::EthereumNetwork, primitives::AccountId};
 use sp_runtime::{traits::ConstU32, BoundedVec, Perbill};
 
@@ -56,6 +58,18 @@ pub(crate) fn testnet_genesis(
     } else {
         vec![]
     };
+
+    let asset_metadata: AssetMetadata<Balance, AvnAssetMetadata, AvnAssetLocation, ConstU32<1024>> =
+        AssetMetadata {
+            decimals: 18,
+            name: "AVT Test".as_bytes().to_vec().try_into().unwrap(),
+            symbol: "AVT".as_bytes().to_vec().try_into().unwrap(),
+            existential_deposit: 0,
+            location: Some(AvnAssetLocation::Ethereum(avt_token_contract)),
+            additional: AvnAssetMetadata { appchain_native: false },
+        };
+
+    let asset_registry_config = vec![("Avt", asset_metadata.encode())];
 
     serde_json::json!({
         "balances": {
@@ -130,12 +144,17 @@ pub(crate) fn testnet_genesis(
             "rewardPeriod": 30u32,
             "maxBatchSize": 10u32,
             "heartbeatPeriod": 10u32,
-            "rewardAmount": 20 * AVT,
+            "rewardAmountPerPeriod": 20 * AVT,
             "autoStakeDurationSec": 60 * 5 as u64, // 5 min
             "maxUnstakePercentage": Perbill::from_percent(10),
             "unstakePeriodSec": 60u64, // 1 min
             "restrictedUnstakeDurationSec": 60 * 10 as u64, // 10 min
             "appChainFeePercentage": Perbill::from_percent(0),
-        }
+            "numPeriodsToMint": 2u32,
+        },
+        "assetRegistry": {
+            "assets": asset_registry_config,
+            "lastAssetId": "Avt",
+        },
     })
 }

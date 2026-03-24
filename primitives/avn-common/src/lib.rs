@@ -8,6 +8,9 @@ use alloc::{
     string::{String, ToString},
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::bounds::VotingSessionIdBound;
 use codec::{Codec, Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 pub use eth::{BridgeContractMethod, ECDSAVerificationError};
@@ -161,7 +164,7 @@ pub trait InnerCallValidator {
     }
 }
 
-pub trait FeePaymentHandler {
+pub trait PaymentHandler {
     // The type that represents an account id defined in the trait (T::AccountId)
     type AccountId;
     // The type that represents a non native token balance
@@ -171,7 +174,7 @@ pub trait FeePaymentHandler {
     // The type used to throw an error (Error<T>)
     type Error;
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,
@@ -184,13 +187,13 @@ pub trait FeePaymentHandler {
     ) -> Result<(), Self::Error>;
 }
 
-impl FeePaymentHandler for () {
+impl PaymentHandler for () {
     type Token = ();
     type TokenBalance = ();
     type AccountId = ();
     type Error = ();
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,
@@ -514,4 +517,28 @@ impl<BlockNumber: AtLeast32Bit + Encode> RootId<BlockNumber> {
     pub fn session_id(&self) -> BoundedVec<u8, VotingSessionIdBound> {
         BoundedVec::truncate_from(self.encode())
     }
+}
+
+/// The `Asset` enum represents all types of assets available in Aventus
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Decode,
+    DecodeWithMemTracking,
+    Default,
+    Eq,
+    Encode,
+    MaxEncodedLen,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    TypeInfo,
+)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(all(feature = "std", feature = "serde"), serde(rename_all = "camelCase"))]
+pub enum Asset {
+    #[default]
+    Avt,
+    ForeignAsset(u32),
 }

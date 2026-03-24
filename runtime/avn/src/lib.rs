@@ -9,11 +9,14 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 extern crate alloc;
 
 pub mod apis;
+pub mod asset_registry;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 mod configs;
 pub mod governance;
+pub mod migrations;
 pub mod proxy_config;
+pub mod third_party_weights;
 
 use core::cmp::Ordering;
 
@@ -66,7 +69,9 @@ use sp_avn_common::{
 };
 
 use crate::apis::RUNTIME_API_VERSIONS;
-pub(crate) use sp_avn_common::primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
+pub(crate) use sp_avn_common::primitives::{
+    Amount, Balance, BlockNumber, CurrencyId, Hash, Moment, Nonce,
+};
 pub use sp_avn_common::{
     constants::{currency::*, time::*},
     primitives::{AccountId, Signature},
@@ -153,6 +158,7 @@ pub type Executive = frame_executive::Executive<
     Runtime,
     AllPalletsWithSystem,
     (
+        migrations::register_avt_token::RegisterAvtToken<Runtime>,
         pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
         pallet_session::migrations::v1::MigrateV0ToV1<
             Runtime,
@@ -205,6 +211,7 @@ pub use block_times::*;
 
 /// The existential deposit. Set to 1/10 of the Connected Relay Chain.
 pub const EXISTENTIAL_DEPOSIT: Balance = 0;
+pub const FOREIGN_ASSET_DEFAULT_ED: Balance = 1;
 
 /// We assume that ~5% of the block weight is consumed by `on_initialize` handlers. This is
 /// used to limit the maximal weight of a single extrinsic.
@@ -435,6 +442,16 @@ mod runtime {
 
     #[runtime::pallet_index(103)]
     pub type CrossChainVoting = pallet_cross_chain_voting;
+
+    // ORML pallets
+    #[runtime::pallet_index(110)]
+    pub type OrmlTokens = orml_tokens;
+
+    #[runtime::pallet_index(111)]
+    pub type AssetManager = orml_currencies;
+
+    #[runtime::pallet_index(112)]
+    pub type AssetRegistry = orml_asset_registry;
 }
 
 #[docify::export(register_validate_block)]

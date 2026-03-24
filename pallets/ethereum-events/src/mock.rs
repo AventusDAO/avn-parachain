@@ -32,7 +32,7 @@ use avn::AvnBridgeContractAddress;
 use pallet_avn::{self as avn, Error as avn_error};
 use sp_avn_common::{
     bounds::MaximumValidatorsBound, event_discovery::filters::AllEventsFilter,
-    event_types::EthEvent, EthQueryRequest, EthQueryResponseType, FeePaymentHandler,
+    event_types::EthEvent, EthQueryRequest, EthQueryResponseType, PaymentHandler,
 };
 use sp_io::TestExternalities;
 
@@ -417,7 +417,7 @@ impl pallet_avn_proxy::Config for TestRuntime {
     type Signature = Signature;
     type ProxyConfig = TestAvnProxyConfig;
     type WeightInfo = ();
-    type FeeHandler = Self;
+    type PaymentHandler = Self;
     type Token = sp_core::H160;
 }
 
@@ -798,13 +798,13 @@ impl ExtBuilder {
     }
 }
 
-impl FeePaymentHandler for TestRuntime {
+impl PaymentHandler for TestRuntime {
     type Token = sp_core::H160;
     type TokenBalance = u128;
     type AccountId = AccountId;
     type Error = DispatchError;
 
-    fn pay_fee(
+    fn pay_recipient(
         _token: &Self::Token,
         _amount: &Self::TokenBalance,
         _payer: &Self::AccountId,

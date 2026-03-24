@@ -102,6 +102,12 @@ pallet-cross-chain-voting-runtime-api.workspace = true
 # Common Runtime
 runtime-common.workspace = true
 
+# ORML
+orml-currencies = { workspace = true }
+orml-asset-registry = { workspace = true }
+orml-tokens = { workspace = true }
+orml-traits = { workspace = true }
+
 [features]
 default = [
 	"std",
@@ -136,6 +142,11 @@ std = [
 	"pallet-parachain-staking/std",
 	# Avn Common Runtime
 	"runtime-common/std",
+	# ORML
+	"orml-currencies/std",
+	"orml-asset-registry/std",
+	"orml-tokens/std",
+	"orml-traits/std",
 ]
 
 runtime-benchmarks = [

@@ -36,7 +36,7 @@ mod app_sr25519 {
 use sp_avn_common::{benchmarking::convert_sr25519_signature, eth::concat_lower_data};
 
 type SignerId = app_sr25519::Public;
-
+// This must be the same as the one used in the chainspec.
 pub const AVT_TOKEN_CONTRACT: H160 = H160(hex!("dB1Cff52f66195f0a5Bd3db91137db98cfc54AE6"));
 
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
@@ -51,7 +51,7 @@ fn assert_last_nth_event<T: Config>(generic_event: <T as Config>::RuntimeEvent, 
     assert_eq!(event, &system_event);
 }
 
-struct Transfer<T: Config> {
+struct Transfer<T: Config + pallet_timestamp::Config<Moment = u64>> {
     relayer: T::AccountId,
     from: T::AccountId,
     to: T::AccountId,
@@ -60,7 +60,7 @@ struct Transfer<T: Config> {
     nonce: u64,
 }
 
-impl<T: Config> Transfer<T> {
+impl<T: Config + pallet_timestamp::Config<Moment = u64>> Transfer<T> {
     fn new(token_id: H160) -> Self {
         let mnemonic: &str =
             "news slush supreme milk chapter athlete soap sausage put clutch what kitten";
@@ -80,6 +80,7 @@ impl<T: Config> Transfer<T> {
     }
 
     fn setup(self) -> Self {
+        pallet_timestamp::Pallet::<T>::set_timestamp(1);
         Balances::<T>::insert((self.token_id, self.from.clone()), self.amount);
         Nonces::<T>::insert(self.from.clone(), self.nonce);
         return self
@@ -111,7 +112,7 @@ impl<T: Config> Transfer<T> {
     }
 }
 
-struct Lower<T: Config> {
+struct Lower<T: Config + pallet_timestamp::Config<Moment = u64>> {
     from_account_id: T::AccountId,
     lower_account: H256,
     lower_account_id: T::AccountId,
@@ -121,7 +122,7 @@ struct Lower<T: Config> {
     lower_id: u32,
 }
 
-impl<T: Config> Lower<T> {
+impl<T: Config + pallet_timestamp::Config<Moment = u64>> Lower<T> {
     fn new() -> Self {
         let mnemonic: &str =
             "news slush supreme milk chapter athlete soap sausage put clutch what kitten";
@@ -131,7 +132,7 @@ impl<T: Config> Lower<T> {
         let lower_account: H256 =
             H256(hex!("000000000000000000000000000000000000000000000000000000000000dead"));
         let lower_account_id =
-            T::AccountId::decode(&mut lower_account.as_bytes()).expect("valid lower account id");
+            T::AccountId::decode(&mut lower_account.as_bytes()).expect("valid context account id");
         let non_avt_token_id: T::TokenId =
             H160(hex!("1414141414141414141414141414141414141414")).into();
         let t1_recipient: H160 = H160(hex!("afdf36201bf70F1232111b5c6a9a424558755134"));
@@ -150,6 +151,8 @@ impl<T: Config> Lower<T> {
     }
 
     fn setup(self) -> Self {
+        pallet_timestamp::Pallet::<T>::set_timestamp(1);
+
         // setup AVT token contract
         <AVTTokenContract<T>>::put(AVT_TOKEN_CONTRACT);
 
@@ -171,149 +174,193 @@ impl<T: Config> Lower<T> {
 
     fn get_proof(
         &self,
-        relayer_account_id: &T::AccountId,
+        relayer: &T::AccountId,
         signature: &[u8],
     ) -> Proof<T::Signature, T::AccountId> {
+        let signature = sr25519::Signature::from_slice(signature).expect("valid sr25519 signature");
         return Proof {
             signer: self.from_account_id.clone(),
-            relayer: relayer_account_id.clone(),
-            signature: T::Signature::decode(&mut &signature[..]).unwrap(),
+            relayer: relayer.clone(),
+            signature: convert_sr25519_signature::<T::Signature>(signature),
         }
     }
 }
 
 benchmarks! {
+    where_clause {
+        where T: pallet_timestamp::Config<Moment = u64>
+    }
+
     proxy_with_non_avt_token {
         let signature = &hex!("a6350211fcdf1d7f0c79bf0a9c296de17449ca88a899f0cd19a70b07513fc107b7d34249dba71d4761ceeec2ed6bc1305defeb96418e6869e6b6199ed0de558e");
         let token_id = H160(hex!("1414141414141414141414141414141414141414"));
-        let transfer: Transfer<T> = Transfer::new(token_id).setup();
-        let call: <T as Config>::RuntimeCall = transfer.generate_signed_transfer_call(signature);
+        let context: Transfer<T> = Transfer::<T>::new(token_id).setup();
+        let call: <T as Config>::RuntimeCall = context.generate_signed_transfer_call(signature);
         let boxed_call: Box<<T as Config>::RuntimeCall> = Box::new(call);
         let call_hash: T::Hash = T::Hashing::hash_of(&boxed_call);
-    }: proxy(RawOrigin::<T::AccountId>::Signed(transfer.relayer.clone()), boxed_call)
+    }: proxy(RawOrigin::<T::AccountId>::Signed(context.relayer.clone()), boxed_call)
     verify {
-        assert_eq!(Balances::<T>::get((transfer.token_id, transfer.from.clone())), 0u32.into());
-        assert_eq!(Balances::<T>::get((transfer.token_id, transfer.to.clone())), transfer.amount);
-        assert_eq!(Nonces::<T>::get(transfer.from.clone()), transfer.nonce + 1);
-        assert_eq!(Nonces::<T>::get(transfer.to.clone()), 0);
+        assert_eq!(Balances::<T>::get((context.token_id, context.from.clone())), 0u32.into());
+        assert_eq!(Balances::<T>::get((context.token_id, context.to.clone())), context.amount);
+        assert_eq!(Nonces::<T>::get(context.from.clone()), context.nonce + 1);
+        assert_eq!(Nonces::<T>::get(context.to.clone()), 0);
 
-        assert_last_event::<T>(Event::<T>::CallDispatched{ relayer: transfer.relayer.clone(), call_hash: call_hash }.into());
+        assert_last_event::<T>(Event::<T>::CallDispatched{ relayer: context.relayer.clone(), call_hash: call_hash }.into());
         assert_last_nth_event::<T>(Event::<T>::TokenTransferred {
-            token_id: transfer.token_id.clone(),
-            sender: transfer.from.clone(),
-            recipient: transfer.to.clone(),
-            token_balance: transfer.amount
+            token_id: context.token_id.clone(),
+            sender: context.from.clone(),
+            recipient: context.to.clone(),
+            token_balance: context.amount
         }.into(), 2);
     }
 
     signed_transfer {
         let signature = &hex!("a875c83f0709276ffd87bf401d1563bd8bcabcfda24ebb51170b72d4cd5edd6e3816f56712fa4df421260447ff483f69bcdb5a55f6356c3ffedace7fee12288e");
         let token_id = H160(hex!("1414141414141414141414141414141414141414"));
-        let transfer: Transfer<T> = Transfer::new(token_id).setup();
-        let proof: Proof<T::Signature, T::AccountId> = transfer.get_proof(&transfer.from, signature);
+        let context: Transfer<T> = Transfer::<T>::new(token_id).setup();
+        let proof: Proof<T::Signature, T::AccountId> = context.get_proof(&context.from, signature);
     }: _ (
-            RawOrigin::<T::AccountId>::Signed(transfer.from.clone()),
+            RawOrigin::<T::AccountId>::Signed(context.from.clone()),
             proof,
-            transfer.from.clone(),
-            transfer.to.clone(),
-            transfer.token_id,
-            transfer.amount
+            context.from.clone(),
+            context.to.clone(),
+            context.token_id,
+            context.amount
         )
     verify {
-        assert_eq!(Balances::<T>::get((transfer.token_id, transfer.from.clone())), 0u32.into());
-        assert_eq!(Balances::<T>::get((transfer.token_id, transfer.to.clone())), transfer.amount);
-        assert_eq!(Nonces::<T>::get(transfer.from.clone()), transfer.nonce + 1);
-        assert_eq!(Nonces::<T>::get(transfer.to.clone()), 0);
+        assert_eq!(Balances::<T>::get((context.token_id, context.from.clone())), 0u32.into());
+        assert_eq!(Balances::<T>::get((context.token_id, context.to.clone())), context.amount);
+        assert_eq!(Nonces::<T>::get(context.from.clone()), context.nonce + 1);
+        assert_eq!(Nonces::<T>::get(context.to.clone()), 0);
 
         assert_last_event::<T>(Event::<T>::TokenTransferred {
-            token_id: transfer.token_id.clone(),
-            sender: transfer.from.clone(),
-            recipient: transfer.to.clone(),
-            token_balance: transfer.amount
+            token_id: context.token_id.clone(),
+            sender: context.from.clone(),
+            recipient: context.to.clone(),
+            token_balance: context.amount
         }.into());
     }
 
+    transfer_non_avt {
+        let token_id = H160(hex!("1414141414141414141414141414141414141414"));
+        let context: Transfer<T> = Transfer::<T>::new(token_id).setup();
+    }: transfer (
+            RawOrigin::<T::AccountId>::Signed(context.from.clone()),
+            context.to.clone(),
+            context.token_id,
+            context.amount
+        )
+    verify {
+        assert_eq!(Balances::<T>::get((context.token_id, context.from.clone())), 0u32.into());
+        assert_eq!(Balances::<T>::get((context.token_id, context.to.clone())), context.amount);
+
+        assert_last_event::<T>(Event::<T>::TokenTransferred {
+            token_id: context.token_id.clone(),
+            sender: context.from.clone(),
+            recipient: context.to.clone(),
+            token_balance: context.amount
+        }.into());
+    }
+
+    transfer_native {
+        let token_id = AVT_TOKEN_CONTRACT.into();
+        let context: Transfer<T> = Transfer::<T>::new(token_id).setup();
+        <T as pallet::Config>::Currency::make_free_balance_be(&context.from, context.amount.into());
+    }: transfer (
+            RawOrigin::<T::AccountId>::Signed(context.from.clone()),
+            context.to.clone(),
+            context.token_id,
+            context.amount
+        )
+    verify {
+        assert_eq!(<T as pallet::Config>::Currency::free_balance(&context.from.clone()), 0u32.into());
+        assert_eq!(<T as pallet::Config>::Currency::free_balance(&context.to.clone()), context.amount.into());
+        // No nonce changes
+        assert_eq!(Nonces::<T>::get(context.from.clone()), context.nonce);
+        assert_eq!(Nonces::<T>::get(context.to.clone()), 0);
+    }
+
     schedule_direct_lower {
-        let lower: Lower<T> = Lower::new().setup();
+        let context: Lower<T> = Lower::<T>::new().setup();
     }: schedule_direct_lower(
-        RawOrigin::<T::AccountId>::Signed(lower.from_account_id.clone()),
-        lower.from_account_id.clone(),
+        RawOrigin::<T::AccountId>::Signed(context.from_account_id.clone()),
+        context.from_account_id.clone(),
         AVT_TOKEN_CONTRACT.into(),
-        lower.amount.into(),
-        lower.t1_recipient
+        context.amount.into(),
+        context.t1_recipient
     )
     verify {
-        assert_eq!(<T as pallet::Config>::Currency::free_balance(&lower.from_account_id), 1000u32.into());
+        assert_eq!(<T as pallet::Config>::Currency::free_balance(&context.from_account_id), 1000u32.into());
     }
 
     execute_avt_lower {
-        let lower: Lower<T> = Lower::new().setup();
+        let context: Lower<T> = Lower::<T>::new().setup();
     }: execute_lower(
         RawOrigin::<T::AccountId>::Root,
-        lower.from_account_id.clone(),
-        lower.lower_account_id.clone(),
+        context.from_account_id.clone(),
+        context.lower_account_id.clone(),
         AVT_TOKEN_CONTRACT.into(),
-        lower.amount.into(),
-        lower.t1_recipient,
-        lower.lower_id
+        context.amount.into(),
+        context.t1_recipient,
+        context.lower_id
     )
     verify {
-        assert_eq!(<T as pallet::Config>::Currency::free_balance(&lower.from_account_id), 0u32.into());
+        assert_eq!(<T as pallet::Config>::Currency::free_balance(&context.from_account_id), 0u32.into());
         assert_last_nth_event::<T>(Event::<T>::AvtLowered {
-            sender: lower.from_account_id,
-            recipient: lower.lower_account_id,
-            amount: lower.amount.into(),
-            t1_recipient: lower.t1_recipient,
-            lower_id: lower.lower_id
+            sender: context.from_account_id,
+            recipient: context.lower_account_id,
+            amount: context.amount.into(),
+            t1_recipient: context.t1_recipient,
+            lower_id: context.lower_id
         }.into(), 2);
     }
 
     execute_non_avt_lower {
-        let lower: Lower<T> = Lower::new().setup();
+        let context: Lower<T> = Lower::<T>::new().setup();
     }: execute_lower(
         RawOrigin::<T::AccountId>::Root,
-        lower.from_account_id.clone(),
-        lower.lower_account_id.clone(),
-        lower.non_avt_token_id,
-        lower.amount.into(),
-        lower.t1_recipient,
-        lower.lower_id
+        context.from_account_id.clone(),
+        context.lower_account_id.clone(),
+        context.non_avt_token_id,
+        context.amount.into(),
+        context.t1_recipient,
+        context.lower_id
     )
     verify {
-        assert_eq!(Balances::<T>::get((lower.non_avt_token_id, lower.from_account_id.clone())), 0u32.into());
+        assert_eq!(Balances::<T>::get((context.non_avt_token_id, context.from_account_id.clone())), 0u32.into());
         assert_last_nth_event::<T>(Event::<T>::TokenLowered {
-            token_id: lower.non_avt_token_id,
-            sender: lower.from_account_id,
-            recipient: lower.lower_account_id,
-            amount: lower.amount.into(),
-            t1_recipient: lower.t1_recipient,
-            lower_id: lower.lower_id
+            token_id: context.non_avt_token_id,
+            sender: context.from_account_id,
+            recipient: context.lower_account_id,
+            amount: context.amount.into(),
+            t1_recipient: context.t1_recipient,
+            lower_id: context.lower_id
         }.into(), 2);
     }
 
     schedule_signed_lower {
         let signature = &hex!("32620d56eb6272109a32ddafe132e7d7932ac210a16de25f016aa15845cb43738d4fcdaaa23be0025a8eb164779e14c46ec8c3d37e093e6017c1b59f8c450c8d");
-        let lower: Lower<T> = Lower::new().setup();
-        let proof: Proof<T::Signature, T::AccountId> = lower.get_proof(&lower.from_account_id, signature);
+        let context: Lower<T> = Lower::<T>::new().setup();
+        let proof: Proof<T::Signature, T::AccountId> = context.get_proof(&context.from_account_id, signature);
     }: schedule_signed_lower(
-        RawOrigin::<T::AccountId>::Signed(lower.from_account_id.clone()),
+        RawOrigin::<T::AccountId>::Signed(context.from_account_id.clone()),
         proof,
-        lower.from_account_id.clone(),
+        context.from_account_id.clone(),
         AVT_TOKEN_CONTRACT.into(),
-        lower.amount.into(),
-        lower.t1_recipient
+        context.amount.into(),
+        context.t1_recipient
     )
     verify {
-        assert_eq!(<T as pallet::Config>::Currency::free_balance(&lower.from_account_id), 1000u32.into());
+        assert_eq!(<T as pallet::Config>::Currency::free_balance(&context.from_account_id), 1000u32.into());
         assert_last_event::<T>(
             Event::<T>::LowerRequested {
                 token_id: AVT_TOKEN_CONTRACT.into(),
-                from: lower.from_account_id.clone(),
-                amount: lower.amount.into(),
-                t1_recipient: lower.t1_recipient,
+                from: context.from_account_id.clone(),
+                amount: context.amount.into(),
+                t1_recipient: context.t1_recipient,
                 sender_nonce: Some(0),
-                schedule_name: ("Lower", &lower.lower_id).using_encoded(sp_io::hashing::blake2_256),
-                lower_id: lower.lower_id,
+                schedule_name: ("Lower", &context.lower_id).using_encoded(sp_io::hashing::blake2_256),
+                lower_id: context.lower_id,
             }.into()
         );
     }
@@ -332,15 +379,15 @@ benchmarks! {
     }
 
     regenerate_lower_proof {
-        let lower: Lower<T> = Lower::new().setup();
+        let context: Lower<T> = Lower::<T>::new().setup();
         let token_id = H160(hex_literal::hex!("97d9b397189e8b771ffac3cb04cf26c780a93431"));
-        let t2_sender: H256 = H256::from(T::AccountToBytesConvert::into_bytes(&lower.from_account_id));
+        let t2_sender: H256 = H256::from(T::AccountToBytesConvert::into_bytes(&context.from_account_id));
         let t2_timestamp: u64 = T::TimeProvider::now().as_secs();
         let params = concat_lower_data(
-            lower.lower_id,
+            context.lower_id,
             token_id.into(),
-            &lower.amount.into(),
-            &lower.t1_recipient,
+            &context.amount.into(),
+            &context.t1_recipient,
             t2_sender,
             t2_timestamp,
         );
@@ -352,11 +399,11 @@ benchmarks! {
             encoded_lower_data: BoundedVec::<u8, LowerDataLimit>::try_from(lower_data).expect("test"),
         };
 
-        <LowersReadyToClaim<T>>::insert(lower.lower_id, lower_proof_data);
-    }: _(RawOrigin::<T::AccountId>::Signed(lower.from_account_id.clone()), lower.lower_id)
+        <LowersReadyToClaim<T>>::insert(context.lower_id, lower_proof_data);
+    }: _(RawOrigin::<T::AccountId>::Signed(context.from_account_id.clone()), context.lower_id)
     verify {
-        assert!(<LowersPendingProof<T>>::contains_key(lower.lower_id));
-        assert_last_event::<T>(Event::<T>::RegeneratingLowerProof { lower_id: lower.lower_id, requester: lower.from_account_id }.into());
+        assert!(<LowersPendingProof<T>>::contains_key(context.lower_id));
+        assert_last_event::<T>(Event::<T>::RegeneratingLowerProof { lower_id: context.lower_id, requester: context.from_account_id }.into());
     }
 
     set_lower_schedule_period {
@@ -384,6 +431,6 @@ benchmarks! {
 
 impl_benchmark_test_suite!(
     Pallet,
-    crate::mock::ExtBuilder::build_default().as_externality(),
+    crate::mock::ExtBuilder::build_default().with_genesis_config().as_externality(),
     crate::mock::TestRuntime,
 );

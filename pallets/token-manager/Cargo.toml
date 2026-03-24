@@ -28,12 +28,15 @@ frame-support.workspace = true
 frame-system.workspace = true
 pallet-avn.workspace = true
 
+# orml
+orml-traits = { workspace = true }
+
 # Optional imports for benchmarking
 frame-benchmarking = { optional = true, workspace = true }
+pallet-timestamp = { optional = true, workspace = true }
 
 [dev-dependencies]
 pallet-balances = { workspace = true, default-features = true, features=["insecure_zero_ed"] }
-pallet-timestamp = { workspace = true, default-features = true }
 pallet-transaction-payment = { default-features = true, workspace = true }
 sp-keystore = { default-features = true, workspace = true }
 pallet-parachain-staking = { workspace = true, default-features = true }
@@ -43,6 +46,11 @@ pallet-scheduler = { workspace = true, default-features = true }
 pallet-preimage = { workspace = true, default-features = true }
 sp-state-machine = { default-features = true, workspace = true }
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
+
+# orml dependencies for testing
+orml-currencies = { workspace = true, default-features = true }
+orml-asset-registry = { workspace = true, default-features = true}
+orml-tokens = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -62,11 +70,15 @@ std = [
 	"pallet-timestamp/std",
 	"log/std",
 	"enumflags2/std",
+	"orml-traits/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"sp-avn-common/runtime-benchmarks",
+	"orml-asset-registry/runtime-benchmarks",
+	"orml-tokens/runtime-benchmarks",
+	"pallet-timestamp/runtime-benchmarks",
 ]
 try-runtime = ["frame-support/try-runtime"]

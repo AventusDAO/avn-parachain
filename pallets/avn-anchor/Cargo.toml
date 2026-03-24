@@ -28,8 +28,11 @@ frame-system.workspace = true
 frame-benchmarking = { optional = true, workspace = true }
 sp-application-crypto.workspace = true
 
+orml-traits.workspace = true
+
 [dev-dependencies]
 parking_lot.workspace = true
+hex-literal = { workspace = true, default-features = true }
 sp-io = { default-features = true, workspace = true }
 sp-keystore = { default-features = true, workspace = true }
 pallet-scheduler.workspace = true
@@ -41,6 +44,10 @@ pallet-avn-proxy = { workspace = true, default-features = true }
 pallet-token-manager = { workspace = true, default-features = true }
 pallet-eth-bridge  = { workspace = true, default-features = true }
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
+
+orml-currencies = { workspace = true, default-features = true }
+orml-asset-registry = { workspace = true, default-features = true}
+orml-tokens = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -56,11 +63,14 @@ std = [
 	"frame-system/std",
 	"sp-avn-common/std",
 	"pallet-avn/std",
+	"orml-traits/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"sp-avn-common/runtime-benchmarks",
+	"orml-asset-registry/runtime-benchmarks",
+	"orml-tokens/runtime-benchmarks",
 ]
 try-runtime = ["frame-support/try-runtime"]

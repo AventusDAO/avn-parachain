@@ -29,7 +29,7 @@ use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::{
     eth::EthereumId,
     event_types::{EthEvent, EventData, ProcessedEventHandler, TotalSupplyUpdatedData, Validator},
-    BridgeContractMethod, FeePaymentHandler, REGISTERED_NODE_KEY,
+    BridgeContractMethod, PaymentHandler, REGISTERED_NODE_KEY,
 };
 use sp_core::{MaxEncodedLen, H160};
 use sp_runtime::{
@@ -195,15 +195,15 @@ pub mod pallet {
 
     /// Heartbeat period in blocks for the next reward period
     #[pallet::storage]
-    pub type HeartbeatPeriod<T: Config> = StorageValue<_, u32, ValueQuery>;
+    pub type NextHeartbeatPeriod<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     /// Length of the next reward period in blocks
     #[pallet::storage]
-    pub type ConfiguredRewardPeriodLength<T: Config> = StorageValue<_, u32, ValueQuery>;
+    pub type NextRewardPeriodLength<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     /// Reward amount for the next reward period
     #[pallet::storage]
-    pub type RewardAmountPerPeriod<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+    pub type NextRewardAmountPerPeriod<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     /// Future periods to keep funded
     #[pallet::storage]
@@ -293,9 +293,9 @@ pub mod pallet {
     #[pallet::storage]
     pub type RestrictedUnstakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
 
-    /// App-chain fee percentage
+    /// Reward fee percentage
     #[pallet::storage]
-    pub type AppChainFeePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
+    pub type RewardFeePercentage<T: Config> = StorageValue<_, Perbill, ValueQuery>;
 
     /// Total stake by owner
     #[pallet::storage]
@@ -314,7 +314,7 @@ pub mod pallet {
         pub max_unstake_percentage: Perbill,
         pub unstake_period_sec: Duration,
         pub restricted_unstake_duration_sec: Duration,
-        pub app_chain_fee_percentage: Perbill,
+        pub reward_fee_percentage: Perbill,
     }
 
     impl<T: Config> Default for GenesisConfig<T> {
@@ -330,7 +330,7 @@ pub mod pallet {
                 max_unstake_percentage: Perbill::from_percent(10),
                 unstake_period_sec: 7 * 24 * 60 * 60, // 1 week
                 restricted_unstake_duration_sec: 10 * 7 * 24 * 60 * 60, // 10 weeks
-                app_chain_fee_percentage: Perbill::from_percent(0),
+                reward_fee_percentage: Perbill::from_percent(0),
             }
         }
     }
@@ -342,17 +342,17 @@ pub mod pallet {
             assert!(self.unstake_period_sec > 0);
             let default_threshold = Pallet::<T>::get_default_threshold();
 
-            ConfiguredRewardPeriodLength::<T>::set(self.reward_period);
-            RewardAmountPerPeriod::<T>::set(self.reward_amount_per_period);
+            NextRewardPeriodLength::<T>::set(self.reward_period);
+            NextRewardAmountPerPeriod::<T>::set(self.reward_amount_per_period);
             NumPeriodsToMint::<T>::set(self.num_periods_to_mint);
             MaxBatchSize::<T>::set(self.max_batch_size);
-            HeartbeatPeriod::<T>::set(self.heartbeat_period);
+            NextHeartbeatPeriod::<T>::set(self.heartbeat_period);
             MinUptimeThreshold::<T>::set(Some(default_threshold));
             AutoStakeDurationSec::<T>::set(self.auto_stake_duration_sec);
             MaxUnstakePercentage::<T>::set(self.max_unstake_percentage);
             UnstakePeriodSec::<T>::set(self.unstake_period_sec);
             RestrictedUnstakeDurationSec::<T>::set(self.restricted_unstake_duration_sec);
-            AppChainFeePercentage::<T>::set(self.app_chain_fee_percentage);
+            RewardFeePercentage::<T>::set(self.reward_fee_percentage);
 
             let uptime_threshold =
                 Pallet::<T>::calculate_uptime_threshold(self.reward_period, self.heartbeat_period);
@@ -417,15 +417,15 @@ pub mod pallet {
         /// Batch size set
         BatchSizeSet { new_size: u32 },
         /// Heartbeat period set
-        HeartbeatPeriodSet { new_heartbeat_period: u32 },
+        NextHeartbeatPeriodSet { new_heartbeat_period: u32 },
         /// Heartbeat received
         HeartbeatReceived { reward_period_index: RewardPeriodIndex, node: NodeId<T> },
         /// Reward amount per period set
-        RewardAmountPerPeriodSet { new_amount: BalanceOf<T> },
+        NextRewardAmountPerPeriodSet { new_amount: BalanceOf<T> },
         /// Number of periods to mint set
         NumPeriodsToMintSet { periods: u32 },
         /// Reward payment toggled
-        RewardToggled { enabled: bool },
+        RewardEnabledSet { enabled: bool },
         /// Min uptime threshold set
         MinUptimeThresholdSet { threshold: Perbill },
         /// Max unstake percentage set
@@ -456,8 +456,8 @@ pub mod pallet {
         },
         /// Restricted unstake duration set
         RestrictedUnstakeDurationSet { duration_sec: Duration },
-        /// App-chain fee percentage set
-        AppChainFeePercentageSet { percentage: Perbill },
+        /// Reward fee percentage set
+        RewardFeePercentageSet { percentage: Perbill },
         /// Auto-stake preference updated
         AutoStakePreferenceUpdated {
             owner: T::AccountId,
@@ -491,9 +491,9 @@ pub mod pallet {
         /// Invalid batch size
         BatchSizeInvalid,
         /// Invalid heartbeat period
-        HeartbeatPeriodInvalid,
+        NextHeartbeatPeriodInvalid,
         /// Heartbeat period is zero
-        HeartbeatPeriodZero,
+        NextHeartbeatPeriodZero,
         /// Reward pot has insufficient balance
         InsufficientBalanceForReward,
         /// Total uptime not found
@@ -553,7 +553,7 @@ pub mod pallet {
         /// Reward pot snapshot not found
         RewardPotNotFound,
         /// Reward amount per period must be greater than zero
-        RewardAmountPerPeriodZero,
+        NextRewardAmountPerPeriodZero,
         /// Mint amount cannot fit balance type
         MintAmountOverflow,
         /// No Tier1 event found for reward minting
@@ -595,8 +595,8 @@ pub mod pallet {
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
         /// Token identifier type
         type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
-        /// App-chain fee handler
-        type AppChainFeeHandler: FeePaymentHandler<
+        /// Reward fee handler
+        type RewardFeeHandler: PaymentHandler<
             AccountId = Self::AccountId,
             Token = Self::Token,
             TokenBalance = <Self::Currency as Currency<Self::AccountId>>::Balance,
@@ -671,14 +671,14 @@ pub mod pallet {
                     Self::deposit_event(Event::NodeRegistrarSet { new_registrar: registrar });
                     return Ok(Some(<T as Config>::WeightInfo::set_admin_config_registrar()).into())
                 },
-                AdminConfig::RewardPeriod(period) => {
-                    let heartbeat = <HeartbeatPeriod<T>>::get();
+                AdminConfig::NextRewardPeriodLength(period) => {
+                    let heartbeat = <NextHeartbeatPeriod<T>>::get();
                     ensure!(period > heartbeat, Error::<T>::RewardPeriodInvalid);
 
                     let period_index = RewardPeriod::<T>::get().current;
-                    let old_period = ConfiguredRewardPeriodLength::<T>::get();
+                    let old_period = NextRewardPeriodLength::<T>::get();
 
-                    ConfiguredRewardPeriodLength::<T>::put(period);
+                    NextRewardPeriodLength::<T>::put(period);
 
                     Self::deposit_event(Event::RewardPeriodLengthSet {
                         period_index,
@@ -694,23 +694,28 @@ pub mod pallet {
                     Self::deposit_event(Event::BatchSizeSet { new_size: size });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_batch_size()).into())
                 },
-                AdminConfig::Heartbeat(period) => {
-                    let configured_reward_period_length = ConfiguredRewardPeriodLength::<T>::get();
-                    ensure!(period > 0, Error::<T>::HeartbeatPeriodZero);
+                AdminConfig::NextHeartbeatPeriod(period) => {
+                    let next_reward_period_length = NextRewardPeriodLength::<T>::get();
+                    ensure!(period > 0, Error::<T>::NextHeartbeatPeriodZero);
                     ensure!(
-                        period < configured_reward_period_length,
-                        Error::<T>::HeartbeatPeriodInvalid
+                        period < next_reward_period_length,
+                        Error::<T>::NextHeartbeatPeriodInvalid
                     );
 
-                    <HeartbeatPeriod<T>>::put(period);
+                    <NextHeartbeatPeriod<T>>::put(period);
 
-                    Self::deposit_event(Event::HeartbeatPeriodSet { new_heartbeat_period: period });
+                    Self::deposit_event(Event::NextHeartbeatPeriodSet {
+                        new_heartbeat_period: period,
+                    });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_heartbeat()).into())
                 },
-                AdminConfig::RewardAmountPerPeriod(amount) => {
-                    ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::RewardAmountPerPeriodZero);
-                    <RewardAmountPerPeriod<T>>::put(amount);
-                    Self::deposit_event(Event::RewardAmountPerPeriodSet { new_amount: amount });
+                AdminConfig::NextRewardAmountPerPeriod(amount) => {
+                    ensure!(
+                        amount > BalanceOf::<T>::zero(),
+                        Error::<T>::NextRewardAmountPerPeriodZero
+                    );
+                    <NextRewardAmountPerPeriod<T>>::put(amount);
+                    Self::deposit_event(Event::NextRewardAmountPerPeriodSet { new_amount: amount });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_amount()).into())
                 },
                 AdminConfig::NumPeriodsToMint(periods) => {
@@ -719,9 +724,9 @@ pub mod pallet {
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_num_periods_to_mint())
                         .into())
                 },
-                AdminConfig::RewardToggle(enabled) => {
+                AdminConfig::RewardEnabled(enabled) => {
                     <RewardEnabled<T>>::put(enabled);
-                    Self::deposit_event(Event::RewardToggled { enabled });
+                    Self::deposit_event(Event::RewardEnabledSet { enabled });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_enabled()).into())
                 },
                 AdminConfig::MinUptimeThreshold(threshold) => {
@@ -757,9 +762,9 @@ pub mod pallet {
                     )
                     .into())
                 },
-                AdminConfig::AppChainFee(percentage) => {
-                    <AppChainFeePercentage<T>>::put(percentage);
-                    Self::deposit_event(Event::AppChainFeePercentageSet { percentage });
+                AdminConfig::RewardFee(percentage) => {
+                    <RewardFeePercentage<T>>::put(percentage);
+                    Self::deposit_event(Event::RewardFeePercentageSet { percentage });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_appchain_fee_percentage())
                         .into())
                 },
@@ -1187,9 +1192,9 @@ pub mod pallet {
             let previous_uptime_threshold = reward_period.uptime_threshold;
             let reward_amount = reward_period.reward_amount;
 
-            let next_reward_period_length = ConfiguredRewardPeriodLength::<T>::get();
-            let next_heartbeat_period = HeartbeatPeriod::<T>::get();
-            let next_reward_amount = RewardAmountPerPeriod::<T>::get();
+            let next_reward_period_length = NextRewardPeriodLength::<T>::get();
+            let next_heartbeat_period = NextHeartbeatPeriod::<T>::get();
+            let next_reward_amount = NextRewardAmountPerPeriod::<T>::get();
             let next_uptime_threshold =
                 Self::calculate_uptime_threshold(next_reward_period_length, next_heartbeat_period);
 
@@ -1564,7 +1569,7 @@ pub mod pallet {
                 return None
             }
 
-            let reward_amount_per_period = RewardAmountPerPeriod::<T>::get();
+            let reward_amount_per_period = NextRewardAmountPerPeriod::<T>::get();
             if reward_amount_per_period == BalanceOf::<T>::zero() {
                 return None
             }

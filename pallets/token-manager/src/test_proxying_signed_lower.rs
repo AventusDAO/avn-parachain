@@ -933,7 +933,7 @@ mod fees {
                             crate::Event::<TestRuntime>::LowerRequested {
                                 from,
                                 amount: DEFAULT_AMOUNT,
-                                t1_recipient: t1_recipient,
+                                t1_recipient: _,
                                 ..
                             }
                         ) if *from == sender

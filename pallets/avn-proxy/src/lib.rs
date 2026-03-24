@@ -15,7 +15,7 @@ use frame_support::{
     traits::{Currency, IsSubType},
 };
 use frame_system::{self as system, ensure_signed};
-use sp_avn_common::{verify_multi_signature, FeePaymentHandler, InnerCallValidator, Proof};
+use sp_avn_common::{verify_multi_signature, InnerCallValidator, PaymentHandler, Proof};
 
 use core::convert::TryInto;
 pub use pallet::*;
@@ -72,7 +72,7 @@ pub mod pallet {
         type Token: Parameter + Default + Copy + From<H160> + Into<H160> + MaxEncodedLen;
 
         /// A handler to process relayer fee payments
-        type FeeHandler: FeePaymentHandler<
+        type PaymentHandler: PaymentHandler<
             AccountId = Self::AccountId,
             Token = Self::Token,
             TokenBalance = <Self::Currency as Currency<Self::AccountId>>::Balance,
@@ -230,7 +230,7 @@ impl<T: Config> Pallet<T> {
             Error::<T>::UnauthorizedFee
         );
 
-        T::FeeHandler::pay_fee(
+        T::PaymentHandler::pay_recipient(
             &payment_info.token,
             &payment_info.amount,
             &payment_info.payer,

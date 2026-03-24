@@ -9,6 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 extern crate alloc;
 
 pub mod apis;
+pub mod asset_registry;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarks;
 mod configs;
@@ -62,7 +63,9 @@ use sp_avn_common::{
 
 use crate::apis::RUNTIME_API_VERSIONS;
 pub use sp_avn_common::primitives::{AccountId, Signature};
-pub(crate) use sp_avn_common::primitives::{Balance, BlockNumber, Hash, Moment, Nonce};
+pub(crate) use sp_avn_common::primitives::{
+    Amount, Balance, BlockNumber, CurrencyId, Hash, Moment, Nonce,
+};
 
 use runtime_common::{weights, Address, Header, TransactionByteFee, WeightToFee};
 
@@ -376,6 +379,16 @@ mod runtime {
 
     #[runtime::pallet_index(103)]
     pub type CrossChainVoting = pallet_cross_chain_voting;
+
+    // ORML pallets
+    #[runtime::pallet_index(120)]
+    pub type OrmlTokens = orml_tokens;
+
+    #[runtime::pallet_index(121)]
+    pub type AssetManager = orml_currencies;
+
+    #[runtime::pallet_index(122)]
+    pub type AssetRegistry = orml_asset_registry;
 }
 
 #[docify::export(register_validate_block)]
