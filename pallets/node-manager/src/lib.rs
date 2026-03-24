@@ -618,7 +618,7 @@ pub mod pallet {
         type BridgeInterface: BridgeInterface;
         /// Hook to check for processed events
         type ProcessedEventsChecker: ProcessedEventsChecker;
-        /// Interface to interfact with app chains
+        /// Interface to interact with app chains
         type AppChainInterface: AppChainInterface<AccountId = Self::AccountId>;
     }
 
