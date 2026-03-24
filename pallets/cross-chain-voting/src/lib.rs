@@ -249,5 +249,10 @@ pub mod pallet {
                 .map(|acc| T::Currency::free_balance(&acc))
                 .fold(Zero::zero(), |a, b| a + b)
         }
+
+        /// Get linked account balances for multiple T1 identities.
+        pub fn get_total_linked_balances(t1_identity_accounts: Vec<H160>) -> Vec<BalanceOf<T>> {
+            t1_identity_accounts.into_iter().map(Self::get_total_linked_balance).collect()
+        }
     }
 }

@@ -144,7 +144,6 @@ std = [
 	"pallet-avn-transaction-payment/std",
 	"pallet-parachain-staking/std",
 	"pallet-cross-chain-voting/std",
-	"pallet-cross-chain-voting-runtime-api/std",
 	"pallet-node-manager/std",
 	"pallet-watchtower/std",
 	"pallet-summary-watchtower/std",

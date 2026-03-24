@@ -97,6 +97,7 @@ cumulus-relay-chain-interface = { default-features = true, workspace = true }
 external-service.workspace = true
 pallet-eth-bridge = { default-features = true, workspace = true }
 pallet-eth-bridge-runtime-api = { default-features = true, workspace = true }
+pallet-cross-chain-voting-runtime-api = { default-features = true, workspace = true }
 pallet-avn = { default-features = true, workspace = true }
 
 # Orml

@@ -7,7 +7,10 @@ use sp_std::vec::Vec;
 sp_api::decl_runtime_apis! {
     pub trait CrossChainVotingApi {
         fn get_total_linked_balance(t1_identity_account: H160) -> Balance;
+        fn get_total_linked_balances(t1_identity_accounts: Vec<H160>) -> Vec<Balance>;
         fn get_linked_accounts(t1_identity_account: H160) -> Vec<AccountId>;
         fn get_identity_account(t2_linked_account: AccountId) -> Option<H160>;
+        fn current_block_timestamp() -> u64;
+        fn block_time_ms() -> u64;
     }
 }

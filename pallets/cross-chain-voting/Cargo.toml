@@ -34,7 +34,7 @@ frame-benchmarking = { optional = true, workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true, default-features = true }
-pallet-balances = { workspace = true, features = ["insecure_zero_ed"] }
+pallet-balances = { workspace = true, default-features = true, features = ["insecure_zero_ed"] }
 sp-state-machine = { default-features = true, workspace = true }
 libsecp256k1 = { version = "0.7.0", default-features = false, features = ["hmac","static-context"] }
 
@@ -52,6 +52,7 @@ std = [
   "sp-avn-common/std",
   "frame-support/std",
   "frame-system/std",
+  "pallet-balances/std",
 ]
 runtime-benchmarks = [
   "frame-benchmarking/runtime-benchmarks",

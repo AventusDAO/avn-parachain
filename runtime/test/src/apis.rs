@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use polkadot_sdk::{
     frame_support::{
         genesis_builder_helper::{build_state, get_preset},
+        traits::Time,
         weights::Weight,
     },
     pallet_aura::Authorities,
@@ -45,7 +46,7 @@ use super::{
 use crate::{
     AdditionalEvents, AuthorityDiscovery, AuthorityDiscoveryId, Avn, CrossChainVoting,
     EthBlockRange, EthBridge, EthBridgeInstance, EthSecondBridge, EthereumEventsPartition,
-    InstanceId, MAIN_ETH_BRIDGE_ID, SECONDARY_ETH_BRIDGE_ID,
+    InstanceId, Timestamp, MAIN_ETH_BRIDGE_ID, SECONDARY_ETH_BRIDGE_ID,
 };
 
 use codec::Encode;
@@ -352,12 +353,24 @@ impl_runtime_apis! {
             CrossChainVoting::get_total_linked_balance(t1_identity_account)
         }
 
+        fn get_total_linked_balances(t1_identity_accounts: Vec<H160>) -> Vec<Balance> {
+            CrossChainVoting::get_total_linked_balances(t1_identity_accounts)
+        }
+
         fn get_linked_accounts(t1_identity_account: H160) -> Vec<AccountId> {
             CrossChainVoting::get_linked_accounts(t1_identity_account).to_vec()
         }
 
         fn get_identity_account(t2_linked_account: AccountId) -> Option<H160> {
             CrossChainVoting::get_identity_account(t2_linked_account)
+        }
+
+        fn current_block_timestamp() -> u64 {
+            Timestamp::now()
+        }
+
+        fn block_time_ms() -> u64 {
+            SLOT_DURATION
         }
     }
 
