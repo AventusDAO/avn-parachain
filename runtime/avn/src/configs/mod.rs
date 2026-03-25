@@ -592,7 +592,7 @@ impl pallet_cross_chain_voting::Config for Runtime {
 
 parameter_types! {
     pub const NodeManagerPalletId: PalletId = NODE_MANAGER_PALLET_ID;
-    pub const VirtualNodeStake: Balance = 2000 * AVT;
+    pub const VirtualNodeStake: Balance = 10000 * AVT;
 }
 
 impl pallet_node_manager::Config for Runtime {
