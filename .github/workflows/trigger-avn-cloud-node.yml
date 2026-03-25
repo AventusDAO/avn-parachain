@@ -1,0 +1,24 @@
+name: Trigger AvN Cloud Node
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      PAT_TOKEN:
+        description: "GitHub PAT with Actions workflow dispatch on AventusDAO/avn-cloud-node."
+        required: true
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger workflow in avn-cloud-node
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/AventusDAO/avn-cloud-node/actions/workflows/build.yml/dispatches \
+            -d '{"ref":"main","inputs":{"version":"${{ inputs.version }}"}}'

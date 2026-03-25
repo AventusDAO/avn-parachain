@@ -134,3 +134,12 @@ jobs:
             target/release/wbuild/avn-parachain-runtime/avn_parachain_runtime.compact.compressed.wasm.sha256
             target/release/wbuild/avn-parachain-test-runtime/avn_parachain_test_runtime.compact.compressed.wasm
             target/release/wbuild/avn-parachain-test-runtime/avn_parachain_test_runtime.compact.compressed.wasm.sha256
+
+  trigger-avn-cloud-node:
+    needs: gh-release
+    if: ${{ !inputs.hotfix }}
+    uses: ./.github/workflows/trigger-avn-cloud-node.yml
+    with:
+      version: ${{ inputs.repo_tag }}
+    secrets:
+      PAT_TOKEN: ${{ secrets.CI_GITHUB_PAT }}
