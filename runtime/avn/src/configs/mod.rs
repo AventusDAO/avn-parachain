@@ -75,13 +75,12 @@ use crate::{
     BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
     HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
     NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
-    Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
-    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
-    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
-    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, Runtime, RuntimeCall, RuntimeEvent,
+    RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, SessionKeys,
+    Signature, Summary, SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee,
+    UncheckedExtrinsic, ValidatorsManager, Watchtower, WeightToFee, XcmpQueue,
+    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -137,7 +136,7 @@ impl frame_system::Config for Runtime {
     /// The weight of database operations that the runtime can invoke.
     type DbWeight = RocksDbWeight;
     /// The basic call filter to use in dispatchable.
-    type BaseCallFilter = RestrictedEndpointFilter;
+    type BaseCallFilter = frame_support::traits::Everything;
     /// Block & extrinsics weights: base values and limits.
     type BlockWeights = RuntimeBlockWeights;
     /// The maximum length of a block (in bytes).
@@ -168,7 +167,7 @@ impl pallet_timestamp::Config for Runtime {
 
 impl pallet_authorship::Config for Runtime {
     type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, Aura>;
-    type EventHandler = (ParachainStaking,);
+    type EventHandler = ();
 }
 
 parameter_types! {
@@ -198,7 +197,7 @@ impl pallet_balances::Config for Runtime {
 
 impl pallet_transaction_payment::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
-    type OnChargeTransaction = AvnGasFeeAdapter<Balances, DealWithFees<Runtime>>;
+    type OnChargeTransaction = AvnGasFeeAdapter<Balances, DealWithFees>;
     type WeightToFee = WeightToFee;
     type LengthToFee = ConstantMultiplier<Balance, TransactionByteFee>;
     type FeeMultiplierUpdate = SlowAdjustingFeeUpdate<Self>;
@@ -285,14 +284,22 @@ parameter_types! {
     pub const Offset: u32 = 0;
 }
 
+pub struct IdentityValidatorIdOf;
+
+impl sp_runtime::traits::Convert<AccountId, Option<AccountId>> for IdentityValidatorIdOf {
+    fn convert(account: AccountId) -> Option<AccountId> {
+        Some(account)
+    }
+}
+
 impl pallet_session::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = <Self as frame_system::Config>::AccountId;
+    type ValidatorIdOf = IdentityValidatorIdOf;
     // we don't have stash and controller, thus we don't need the convert as well.
-    type ValidatorIdOf = ConvertInto;
-    type ShouldEndSession = ParachainStaking;
-    type NextSessionRotation = ParachainStaking;
-    type SessionManager = ParachainStaking;
+    type ShouldEndSession = pallet_session::PeriodicSessions<Period, Offset>;
+    type NextSessionRotation = pallet_session::PeriodicSessions<Period, Offset>;
+    type SessionManager = ValidatorsManager;
     // Essentially just Aura, but let's be pedantic.
     type SessionHandler = <SessionKeys as sp_runtime::traits::OpaqueKeys>::KeyTypeIdProviders;
     type Keys = SessionKeys;
@@ -307,42 +314,6 @@ impl pallet_aura::Config for Runtime {
     type MaxAuthorities = ConstU32<100_000>;
     type AllowMultipleBlocksPerSlot = ConstBool<false>;
     type SlotDuration = ConstU64<SLOT_DURATION>;
-}
-
-parameter_types! {
-    // The accountId that will hold the reward for the staking pallet
-    pub const RewardPotId: PalletId = PalletId(*b"av/vamgr");
-}
-impl pallet_parachain_staking::Config for Runtime {
-    type RuntimeCall = RuntimeCall;
-    type RuntimeEvent = RuntimeEvent;
-    type Currency = Balances;
-    /// Minimum era length is 4 minutes (20 * 12 second block times)
-    type MinBlocksPerEra = ConstU32<20>;
-    /// Eras before the reward is paid
-    type RewardPaymentDelay = ConstU32<2>;
-    /// Minimum collators selected per era, default at genesis and minimum forever after
-    type MinSelectedCandidates = ConstU32<20>;
-    /// Maximum top nominations per candidate
-    type MaxTopNominationsPerCandidate = ConstU32<300>;
-    /// Maximum bottom nominations per candidate
-    type MaxBottomNominationsPerCandidate = ConstU32<50>;
-    /// Maximum nominations per nominator
-    type MaxNominationsPerNominator = ConstU32<100>;
-    /// Minimum stake required to be reserved to be a nominator
-    type MinNominationPerCollator = ConstU128<1>;
-    type RewardPotId = RewardPotId;
-    type ErasPerGrowthPeriod = ConstU32<30>; // 30 eras (~ 1 month if era = 1 day)
-    type ProcessedEventsChecker = EthBridge;
-    type Public = <Signature as sp_runtime::traits::Verify>::Signer;
-    type Signature = Signature;
-    type CollatorSessionRegistration = Session;
-    type CollatorPayoutDustHandler = TokenManager;
-    type WeightInfo = pallet_parachain_staking::weights::SubstrateWeight<Runtime>;
-    type MaxCandidates = ConstU32<100>;
-    type AccountToBytesConvert = Avn;
-    type BridgeInterface = EthBridge;
-    type GrowthEnabled = ConstBool<false>;
 }
 
 // Substrate pallets that AvN has dependency
@@ -389,7 +360,7 @@ parameter_types! {
 impl pallet_im_online::Config for Runtime {
     type AuthorityId = ImOnlineId;
     type RuntimeEvent = RuntimeEvent;
-    type NextSessionRotation = ParachainStaking;
+    type NextSessionRotation = pallet_session::PeriodicSessions<Period, Offset>;
     type ValidatorSet = Historical;
     type ReportUnresponsiveness = Offences;
     type UnsignedPriority = ImOnlineUnsignedPriority;
@@ -424,7 +395,6 @@ impl pallet_avn::Config for Runtime {
     type EthereumPublicKeyChecker = ValidatorsManager;
     type NewSessionHandler = ValidatorsManager;
     type DisabledValidatorChecker = ();
-    type WeightInfo = pallet_avn::default_weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
@@ -466,7 +436,6 @@ parameter_types! {
     pub const AdvanceSlotGracePeriod: BlockNumber = 5;
     pub const MinBlockAge: BlockNumber = 5;
     pub const AvnTreasuryPotId: PalletId = PalletId(*b"Treasury");
-    pub const TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub const EthAutoSubmitSummaries: bool = true;
     pub const EthereumInstanceId: u8 = 1u8;
     pub const ExternalValidationEnabled: bool = false;
@@ -484,6 +453,7 @@ impl pallet_summary::Config for Runtime {
     type InstanceId = EthereumInstanceId;
     type ExternalValidationEnabled = ExternalValidationEnabled;
     type ExternalValidator = Watchtower;
+    type Quorum = Avn;
 }
 
 pub type EthAddress = H160;
@@ -497,8 +467,6 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type ProcessedEventsChecker = EthBridge;
     type Public = <Signature as sp_runtime::traits::Verify>::Signer;
     type Signature = Signature;
-    type OnGrowthLiftedHandler = ParachainStaking;
-    type TreasuryGrowthPercentage = TreasuryGrowthPercentage;
     type AvnTreasuryPotId = AvnTreasuryPotId;
     type WeightInfo = pallet_token_manager::default_weights::SubstrateWeight<Runtime>;
     type Scheduler = Scheduler;
@@ -572,8 +540,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type TimeProvider = Timestamp;
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
-    type BridgeInterfaceNotification =
-        (NodeManager, ParachainStaking, Summary, TokenManager, ValidatorsManager);
+    type BridgeInterfaceNotification = (NodeManager, Summary, TokenManager, ValidatorsManager);
     type ProcessedEventsHandler = CorePrimaryEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
@@ -826,28 +793,21 @@ impl orml_currencies::Config for Runtime {
     type WeightInfo = crate::third_party_weights::orml_currencies::WeightInfo<Runtime>;
 }
 
-pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
-impl<R> OnUnbalanced<fungible::Credit<R::AccountId, pallet_balances::Pallet<R>>> for DealWithFees<R>
-where
-    R: pallet_balances::Config + pallet_parachain_staking::Config,
-    <R as frame_system::Config>::AccountId: From<AccountId>,
-    <R as frame_system::Config>::AccountId: Into<AccountId>,
-    <R as frame_system::Config>::RuntimeEvent: From<pallet_balances::Event<R>>,
-{
+pub struct DealWithFees;
+
+impl OnUnbalanced<fungible::Credit<AccountId, Balances>> for DealWithFees {
     fn on_unbalanceds(
-        mut fees_then_tips: impl Iterator<
-            Item = fungible::Credit<R::AccountId, pallet_balances::Pallet<R>>,
-        >,
+        mut fees_then_tips: impl Iterator<Item = fungible::Credit<AccountId, Balances>>,
     ) {
         if let Some(mut fees) = fees_then_tips.next() {
             if let Some(tips) = fees_then_tips.next() {
                 tips.merge_into(&mut fees);
             }
-            ResolveTo::<StakingPotAccountId<R>, pallet_balances::Pallet<R>>::on_unbalanced(fees)
+
+            ResolveTo::<AvnTreasuryAccount, Balances>::on_unbalanced(fees)
         }
     }
 }
-
 pub struct RuntimeNodeManager;
 impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeNodeManager {
     fn is_authorized_watchtower(node: &AccountId) -> bool {
@@ -897,8 +857,7 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
 }
 
 // Accounts protected from being deleted due to a too low amount of funds.
-const IMMORTAL_ACCOUNTS: &[PalletId] =
-    &[AvnTreasuryPotId::get(), NodeManagerPalletId::get(), RewardPotId::get()];
+const IMMORTAL_ACCOUNTS: &[PalletId] = &[AvnTreasuryPotId::get(), NodeManagerPalletId::get()];
 pub struct DustRemovalWhitelist;
 
 impl Contains<AccountId> for DustRemovalWhitelist

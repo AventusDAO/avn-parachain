@@ -139,7 +139,6 @@ pub enum BridgeContractMethod {
     CheckReferenceRate,
     UpdateReferenceRate,
     PublishRoot,
-    TriggerGrowth,
     AddAuthor,
     RemoveAuthor,
     MintRewards,
@@ -152,7 +151,6 @@ impl BridgeContractMethod {
             BridgeContractMethod::CheckReferenceRate => b"checkReferenceRate",
             BridgeContractMethod::UpdateReferenceRate => b"updateReferenceRate",
             BridgeContractMethod::PublishRoot => b"publishRoot",
-            BridgeContractMethod::TriggerGrowth => b"triggerGrowth",
             BridgeContractMethod::AddAuthor => b"addAuthor",
             BridgeContractMethod::RemoveAuthor => b"removeAuthor",
             BridgeContractMethod::MintRewards => b"mintRewards",
@@ -169,7 +167,6 @@ impl TryFrom<&[u8]> for BridgeContractMethod {
             b"checkReferenceRate" => Ok(BridgeContractMethod::CheckReferenceRate),
             b"updateReferenceRate" => Ok(BridgeContractMethod::UpdateReferenceRate),
             b"publishRoot" => Ok(BridgeContractMethod::PublishRoot),
-            b"triggerGrowth" => Ok(BridgeContractMethod::TriggerGrowth),
             b"addAuthor" => Ok(BridgeContractMethod::AddAuthor),
             b"removeAuthor" => Ok(BridgeContractMethod::RemoveAuthor),
             b"mintRewards" => Ok(BridgeContractMethod::MintRewards),
@@ -181,16 +178,6 @@ impl TryFrom<&[u8]> for BridgeContractMethod {
 sol! {
     struct PublishRoot {
         bytes32 rootHash;
-        uint256 expiry;
-        uint32 t2TxId;
-    }
-}
-
-sol! {
-    struct TriggerGrowth {
-        uint256 rewards;
-        uint256 avgStaked;
-        uint32 period;
         uint256 expiry;
         uint32 t2TxId;
     }
@@ -308,20 +295,6 @@ pub fn create_function_confirmation_hash(
                 expiry,
                 t2TxId: tx_id,
             };
-            return Ok(eip712_hash(&data, &domain))
-        },
-        BridgeContractMethod::TriggerGrowth => {
-            if params.len() != 5 {
-                return Err(()) // Ensure there are at least 5 elements in params
-            }
-
-            let rewards = AlloyU256::from(parse_from_utf8::<u128>(&params[0].1)?);
-            let avg_staked = AlloyU256::from(parse_from_utf8::<u128>(&params[1].1)?);
-            let period = parse_from_utf8::<u32>(&params[2].1)?;
-
-            let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
-            let data =
-                TriggerGrowth { rewards, avgStaked: avg_staked, period, expiry, t2TxId: tx_id };
             return Ok(eip712_hash(&data, &domain))
         },
 
@@ -471,27 +444,6 @@ mod test {
         assert_eq!(
             hash,
             H256(hex!("2cdf5c4ea05f21718a8028baeb214a34e7830b42fbb064054f07271e2c8743df")) /* Generated via the EnergyBridge contract */
-        );
-    }
-
-    #[test]
-    fn trigger_growth_eip_712_hash() {
-        use hex_literal::hex;
-
-        let growth = TriggerGrowth {
-            rewards: AlloyU256::from(500_000_000_000_000_000_000u128),
-            avgStaked: AlloyU256::from(1_000_000_000_000_000_000_000u128),
-            period: 30,
-            expiry: AlloyU256::from(1695811529),
-            t2TxId: 1,
-        };
-
-        let eip712_domain: Eip712Domain = domain();
-        let hash = eip712_hash(&growth, &eip712_domain);
-
-        assert_eq!(
-            hash,
-            H256(hex!("560ddcd37021adc249014f89c426ee711d1928db1d6e3e145101ddc128aae27c")) /* Generated via the EnergyBridge contract */
         );
     }
 

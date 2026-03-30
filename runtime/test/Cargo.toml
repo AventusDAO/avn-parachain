@@ -94,7 +94,6 @@ pallet-avn-proxy.workspace = true
 pallet-avn-transaction-payment.workspace = true
 pallet-eth-bridge.workspace = true
 pallet-eth-bridge-runtime-api.workspace = true
-pallet-parachain-staking.workspace = true
 pallet-avn-anchor.workspace = true
 pallet-cross-chain-voting.workspace = true
 pallet-cross-chain-voting-runtime-api.workspace = true
@@ -139,7 +138,6 @@ std = [
 	"pallet-token-manager/std",
 	"pallet-validators-manager/std",
 	"pallet-avn-transaction-payment/std",
-	"pallet-parachain-staking/std",
 	# Avn Common Runtime
 	"runtime-common/std",
 	# ORML
@@ -167,7 +165,6 @@ runtime-benchmarks = [
 	"pallet-token-manager/runtime-benchmarks",
 	"pallet-validators-manager/runtime-benchmarks",
 	"pallet-avn-transaction-payment/runtime-benchmarks",
-	"pallet-parachain-staking/runtime-benchmarks",
 	# Avn Common Runtime
 	"runtime-common/runtime-benchmarks",
 ]
@@ -188,7 +185,6 @@ try-runtime = [
 	"pallet-nft-manager/try-runtime",
 	"pallet-avn-proxy/try-runtime",
 	"pallet-avn-transaction-payment/try-runtime",
-	"pallet-parachain-staking/try-runtime",
 	"pallet-eth-bridge/try-runtime",
 	"pallet-cross-chain-voting/try-runtime",
 ]

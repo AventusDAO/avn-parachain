@@ -53,33 +53,29 @@ fn eth_signature_is_valid<T: Config<I>, I: 'static>(
         return false
     }
 
-    let recovered_public_key = recover_public_key_from_ecdsa_signature(signature, &msg_hash);
-    if recovered_public_key.is_err() {
-        log::error!(
-            "❌ ECDSA public key recovery failed: validator_account={:?}, msg_hash=0x{}",
-            &validator.account_id,
-            hex::encode(msg_hash.as_bytes())
-        );
-        log::debug!(
-            "❌ ECDSA public key recovery detail: signature={:?}, msg_hash={:?}",
-            &signature,
-            &msg_hash
-        );
-        return false
-    }
+    let recovered_public_key = match recover_public_key_from_ecdsa_signature(signature, &msg_hash) {
+        Ok(key) => key,
+        Err(error) => {
+            log::debug!(
+                "❌ ECDSA public key recovery failed: validator_account={:?}, msg_hash=0x{}, signature={:?}, error={:?}",
+                &validator.account_id,
+                hex::encode(msg_hash.as_bytes()),
+                signature,
+                error
+            );
+            return false
+        },
+    };
 
     match <T as pallet_avn::Config>::EthereumPublicKeyChecker::get_validator_for_eth_public_key(
-        &recovered_public_key.expect("Checked for error"),
+        &recovered_public_key,
     ) {
         Some(maybe_validator) => maybe_validator == validator.account_id,
         _ => {
-            log::error!(
-                "❌ ECDSA signature validation failed: validator_account={:?}, msg_hash=0x{}",
-                validator.account_id,
-                hex::encode(msg_hash.as_bytes())
-            );
             log::debug!(
-                "❌ ECDSA signature validation detail: validator={:?}, signature={:?}",
+                "❌ ECDSA signature validation failed: validator_account={:?}, msg_hash=0x{}, validator={:?}, signature={:?}",
+                validator.account_id,
+                hex::encode(msg_hash.as_bytes()),
                 validator,
                 signature
             );
@@ -221,17 +217,13 @@ fn check_tx_hash<T: Config<I>, I: 'static>(
             let matches = expected_hex == call_data;
 
             if !matches {
-                log::error!(
-                    "💔 tx hash calldata mismatch: tx_id={:?}, eth_tx_hash=0x{}, expected_len={}, actual_len={}, confirmations={}",
+                log::debug!(
+                    "💔 tx hash calldata mismatch: tx_id={:?}, eth_tx_hash=0x{}, expected_len={}, actual_len={}, confirmations={}, expected=0x{}, actual=0x{}",
                     tx.request.tx_id,
                     hex::encode(tx.data.eth_tx_hash.as_bytes()),
                     expected_hex.len(),
                     call_data.len(),
-                    num_confirmations
-                );
-                log::debug!(
-                    "💔 tx hash calldata mismatch detail: tx_id={:?}, expected=0x{}, actual=0x{}",
-                    tx.request.tx_id,
+                    num_confirmations,
                     expected_hex,
                     call_data
                 );
@@ -545,9 +537,9 @@ fn process_tx_hash<T: Config<I>, I: 'static>(result: Vec<u8>) -> Result<H256, Di
     );
 
     if result.len() != 64 {
-        log::error!("💔 process_tx_hash invalid length: expected=64, actual={}", result.len(),);
         log::debug!(
-            "💔 process_tx_hash invalid length detail: raw_utf8={}, raw_hex=0x{}",
+            "💔 process_tx_hash invalid length: expected=64, actual={}, raw_utf8={}, raw_hex=0x{}",
+            result.len(),
             String::from_utf8_lossy(&result),
             hex::encode(&result),
         );
@@ -583,7 +575,7 @@ fn process_query_result<T: Config<I>, I: 'static>(
     let result_bytes = hex::decode(&result).map_err(|_| Error::<T, I>::InvalidBytes)?;
     let (call_data, eth_tx_confirmations) = try_process_query_result::<Vec<u8>, T, I>(result_bytes)
         .map_err(|e| {
-            log::error!("❌ Error processing query result from Ethereum: {:?}", e);
+            log::debug!("❌ Error processing query result from Ethereum: {:?}", e);
             e
         })?;
 

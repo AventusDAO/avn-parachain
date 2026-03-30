@@ -12,9 +12,6 @@ use sp_avn_common::{eth::EthereumId, BridgeContractMethod};
 use sp_runtime::{testing::UintAuthorityId, DispatchError};
 
 const ROOT_HASH: &str = "30b83f0d722d1d4308ab4660a72dbaf0a7392d5674eca3cd21d57256d42df7a0";
-const REWARDS: u128 = 500_000_000_000_000_000_000;
-const AVG_STAKED: u128 = 1_000_000_000_000_000_000_000;
-const PERIOD: u32 = 3;
 const T2_PUB_KEY: &str = "14aeac90dbd3573458f9e029eb2de122ee94f2f0bc5ee4b6c6c5839894f1a547";
 const T1_PUB_KEY: &str = "23d79f6492dddecb436333a5e7a4cfcc969f568e01283fa2964aae15327fb8a3b685a4d0f3ef9b3c2adb20f681dbc74b7f82c1cf8438d37f2c10e9c79591e9ea";
 
@@ -41,15 +38,6 @@ sol! {
         uint32 t2TxId,
         bytes calldata confirmations
     ) external;
-
-    function triggerGrowth(
-        uint256 rewards,
-        uint256 avgStaked,
-        uint32 period,
-        uint256 expiry,
-        uint32 t2TxId,
-        bytes calldata confirmations
-    );
 }
 
 fn corroborate_good_transactions(
@@ -95,35 +83,6 @@ fn check_publish_root_encoding() {
         hex::encode(
             publishRootCall {
                 rootHash: B256::from_slice(&hex::decode(ROOT_HASH).unwrap()[..]),
-                expiry: U256::from(expected_expiry),
-                t2TxId: 1,
-                confirmations: confirmations.into(),
-            }
-            .abi_encode(),
-        )
-        .to_ascii_lowercase()
-    };
-
-    run_checks(function_name, params, expected_msg_hash, &expected_calldata);
-}
-
-#[test]
-fn check_trigger_growth_encoding() {
-    let function_name = BridgeContractMethod::TriggerGrowth.name_as_bytes().to_vec();
-    let params = vec![
-        (b"uint256".to_vec(), format!("{}", REWARDS).as_bytes().to_vec()),
-        (b"uint256".to_vec(), format!("{}", AVG_STAKED).as_bytes().to_vec()),
-        (b"uint32".to_vec(), format!("{}", PERIOD).as_bytes().to_vec()),
-    ];
-    let expected_msg_hash = "0ab8ebf8d3d8b7e38643e6eab2e47f065be1c0c583c1190af7c36e425029d484";
-
-    let expected_calldata = |expected_expiry: u64| -> String {
-        let confirmations = vec![];
-        hex::encode(
-            triggerGrowthCall {
-                rewards: U256::from(REWARDS),
-                avgStaked: U256::from(AVG_STAKED),
-                period: PERIOD,
                 expiry: U256::from(expected_expiry),
                 t2TxId: 1,
                 confirmations: confirmations.into(),

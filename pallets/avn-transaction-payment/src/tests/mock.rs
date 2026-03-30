@@ -9,7 +9,7 @@ use frame_support::{
     traits::{ConstU8, Imbalance, OnFinalize, OnInitialize, OnUnbalanced},
     weights::{Weight, WeightToFee as WeightToFeeT},
 };
-use frame_system::{self as system, DefaultConfig};
+use frame_system::{self as system};
 use pallet_balances;
 use sp_core::{sr25519, Pair};
 use sp_runtime::{

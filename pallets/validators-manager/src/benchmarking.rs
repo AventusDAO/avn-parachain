@@ -9,11 +9,11 @@ use super::*;
 
 use crate::{Pallet as ValidatorManager, *};
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
+use frame_support::traits::ValidatorSet;
 use frame_system::{EventRecord, Pallet as System, RawOrigin};
 use hex_literal::hex;
 use libsecp256k1::{PublicKey, SecretKey};
 use pallet_avn::{self as avn};
-use pallet_parachain_staking::{Currency, Pallet as ParachainStaking};
 use pallet_session::Pallet as Session;
 use sp_avn_common::eth_key_actions::decompress_eth_public_key;
 use sp_core::{ecdsa::Public, ByteArray, H512};
@@ -147,13 +147,11 @@ fn advance_session<T: Config>() {
     use frame_support::traits::{OnFinalize, OnInitialize};
 
     let now = System::<T>::block_number().max(1u32.into());
-    pallet_parachain_staking::ForceNewEra::<T>::put(true);
 
     System::<T>::on_finalize(System::<T>::block_number());
     System::<T>::set_block_number(now + 1u32.into());
     System::<T>::on_initialize(System::<T>::block_number());
     Session::<T>::on_initialize(System::<T>::block_number());
-    ParachainStaking::<T>::on_initialize(System::<T>::block_number());
 }
 
 fn set_session_keys<T: Config>(collator_id: &T::AccountId, index: u64) {
@@ -207,15 +205,11 @@ fn get_tx_id_for_validator<T: Config>(account_id: &T::AccountId) -> Option<Ether
 
 fn force_add_collator<T: Config>(collator_id: &T::AccountId, index: u64, eth_public_key: &Public) {
     set_session_keys::<T>(collator_id, index);
-    <T as pallet_parachain_staking::Config>::Currency::make_free_balance_be(
-        &collator_id,
-        ParachainStaking::<T>::min_collator_stake() * 2u32.into(),
-    );
+
     ValidatorManager::<T>::add_collator(
         RawOrigin::Root.into(),
         collator_id.clone(),
         eth_public_key.clone(),
-        None,
     )
     .unwrap();
 
@@ -235,18 +229,15 @@ fn force_add_collator<T: Config>(collator_id: &T::AccountId, index: u64, eth_pub
 benchmarks! {
     add_collator {
         let candidate = account("collator_candidate", 1, 1);
-        <T as pallet_parachain_staking::Config>::Currency::make_free_balance_be(&candidate, ParachainStaking::<T>::min_collator_stake() * 2u32.into());
         let eth_public_key: ecdsa::Public = Public::from_raw(NEW_COLLATOR_ETHEREUM_PUBLIC_KEY);
         set_session_keys::<T>(&candidate, 20u64);
 
-        assert_eq!(false, pallet_parachain_staking::CandidateInfo::<T>::contains_key(&candidate));
-    }: _(RawOrigin::Root, candidate.clone(), eth_public_key, None)
+    }: _(RawOrigin::Root, candidate.clone(), eth_public_key)
     verify {
         // After extrinsic, ValidatorActions entry is created but candidate not yet joined
         // Need to simulate T1 callback to complete
         let tx_id = get_tx_id_for_validator::<T>(&candidate).unwrap();
         simulate_t1_callback_success::<T>(tx_id);
-        assert!(pallet_parachain_staking::CandidateInfo::<T>::contains_key(&candidate));
 
         // Clean up action to allow subsequent benchmarks to run
         let ingress_counter = <TotalIngresses<T>>::get();

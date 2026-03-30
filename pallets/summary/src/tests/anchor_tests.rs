@@ -82,7 +82,11 @@ fn vote_and_end_summary(context: &Context) {
         context.tx_id,
     );
     AnchorSummary::insert_pending_approval(&context.root_id);
-    AnchorSummary::register_root_for_voting(&context.root_id, QUORUM, VOTING_PERIOD_END);
+    AnchorSummary::register_root_for_voting(
+        &context.root_id,
+        <TestRuntime as Config>::Quorum::get_quorum(),
+        VOTING_PERIOD_END,
+    );
 
     let validators = vec![
         get_validator(FIRST_VALIDATOR_INDEX),

@@ -8,6 +8,8 @@ use pallet_avn::Error as AvNError;
 use sp_runtime::{generic::Preamble, testing::UintAuthorityId, traits::BadOrigin};
 use system::RawOrigin;
 
+const TEST_VOTING_THRESHOLD: u32 = 3;
+
 fn setup_voting_for_root_id(context: &Context) {
     setup_blocks(&context);
 
@@ -18,7 +20,7 @@ fn setup_voting_for_root_id(context: &Context) {
         context.tx_id,
     );
     Summary::insert_pending_approval(&context.root_id);
-    Summary::register_root_for_voting(&context.root_id, QUORUM, VOTING_PERIOD_END);
+    Summary::register_root_for_voting(&context.root_id, TEST_VOTING_THRESHOLD, VOTING_PERIOD_END);
 
     assert_eq!(Summary::get_vote(context.root_id).ayes.is_empty(), true);
     assert_eq!(Summary::get_vote(context.root_id).nays.is_empty(), true);
@@ -291,7 +293,11 @@ mod approve_root {
             ext.execute_with(|| {
                 let context = setup_context();
 
-                Summary::register_root_for_voting(&context.root_id, QUORUM, VOTING_PERIOD_END);
+                Summary::register_root_for_voting(
+                    &context.root_id,
+                    TEST_VOTING_THRESHOLD,
+                    VOTING_PERIOD_END,
+                );
                 Summary::deregister_root_for_voting(&context.root_id);
 
                 assert_noop!(
@@ -636,7 +642,11 @@ mod reject_root {
             ext.execute_with(|| {
                 let context = setup_context();
 
-                Summary::register_root_for_voting(&context.root_id, QUORUM, VOTING_PERIOD_END);
+                Summary::register_root_for_voting(
+                    &context.root_id,
+                    TEST_VOTING_THRESHOLD,
+                    VOTING_PERIOD_END,
+                );
                 Summary::deregister_root_for_voting(&context.root_id);
 
                 assert_noop!(

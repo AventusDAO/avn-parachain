@@ -1,8 +1,9 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
+
 use crate::EthQueryResponse;
 #[cfg(not(feature = "std"))]
-use alloc::{format, string::String};
+use alloc::{string::String, vec::Vec};
 use codec::Decode;
 use hex::FromHex;
 use simple_json2::{
@@ -13,13 +14,15 @@ use simple_json2::{
 };
 use sp_core::{H160, H256};
 use sp_std::prelude::*;
+
 // TODO [TYPE: refactoring][PRI: unknown][NOTE: clarify]: extend the parser to work with named
 // properties
 const INDEX_EVENT_SIGNATURE_TOPIC: usize = 0;
 
-fn get_value_of(key: String, object: &JsonObject) -> Result<&JsonValue, SimpleError> {
+fn get_value_of<'a>(key: &str, object: &'a JsonObject) -> Result<&'a JsonValue, SimpleError> {
     let key_char: Vec<char> = key.chars().collect();
     let value = object.into_iter().find(|v| v.0 == key_char);
+
     if let Some(value) = value {
         return Ok(&value.1)
     }
@@ -27,47 +30,25 @@ fn get_value_of(key: String, object: &JsonObject) -> Result<&JsonValue, SimpleEr
     return Err(SimpleError::plain_str("key not found in object"))
 }
 
-pub fn parse_response_to_json(response_body: Vec<u8>) -> Result<(JsonObject, u64), ()> {
-    let body = hex::decode(&response_body).map_err(|e| {
-        log::error!("❌ Error decoding hex response {:?} - {:?}", response_body, e);
-    })?;
+pub fn parse_response_to_json(response_body: Vec<u8>) -> Result<(JsonObject, u64), SimpleError> {
+    let body = hex::decode(&response_body)
+        .map_err(|_| SimpleError::plain_str("error decoding hex response"))?;
 
-    let eth_query_response = EthQueryResponse::decode(&mut &body[..]).map_err(|e| {
-        log::error!("❌ Error decoding eth query response {:?} - {:?}", body, e);
-    })?;
+    let eth_query_response = EthQueryResponse::decode(&mut &body[..])
+        .map_err(|_| SimpleError::plain_str("error decoding eth query response"))?;
 
-    let response_data_bytes: Vec<u8> =
-        Decode::decode(&mut &eth_query_response.data[..]).map_err(|e| {
-            log::error!(
-                "❌ Invalid response data from ethereum: {:?} - {:?}",
-                eth_query_response.data,
-                e
-            );
-        })?;
+    let response_data_bytes: Vec<u8> = Decode::decode(&mut &eth_query_response.data[..])
+        .map_err(|_| SimpleError::plain_str("invalid response data from ethereum"))?;
 
-    let response_data_string = &core::str::from_utf8(&response_data_bytes).map_err(|e| {
-        log::error!(
-            "❌ Invalid (non utf8) response data bytes {:?} - {:?}",
-            response_data_bytes,
-            e
-        );
-    })?;
+    let response_data_string = core::str::from_utf8(&response_data_bytes)
+        .map_err(|_| SimpleError::plain_str("invalid (non utf8) response data bytes"))?;
 
-    let response_data_json = json::parse_json(&response_data_string).map_err(|e| {
-        log::error!(
-            "❌ Response from ethereum is not a valid json {:?} - {:?}",
-            response_data_string,
-            e
-        );
-    })?;
+    let response_data_json = json::parse_json(response_data_string)
+        .map_err(|_| SimpleError::plain_str("response from ethereum is not valid json"))?;
 
-    let response_json_object = response_data_json.get_object().map_err(|e| {
-        log::error!(
-            "❌ Error converting json {:?} into a json object - {:?}",
-            response_data_json,
-            e
-        );
-    })?;
+    let response_json_object = response_data_json
+        .get_object()
+        .map_err(|_| SimpleError::plain_str("error converting json into json object"))?;
 
     return Ok((response_json_object.clone(), eth_query_response.num_confirmations))
 }
@@ -94,13 +75,10 @@ pub fn find_event(
 }
 
 pub fn get_status(response: &JsonObject) -> Result<u8, SimpleError> {
-    let status = get_value_of(String::from("status"), response)?.get_string()?;
+    let status = get_value_of("status", response)?.get_string()?;
     match u8::from_str_radix(status.trim_start_matches("0x"), 16) {
         Ok(s) => Ok(s),
-        Err(e) => {
-            log::error!("❌ Status {:?} is not a valid hex number - {:?}", status, e);
-            Err(SimpleError::plain_str("not a valid hex number"))
-        },
+        Err(_) => Err(SimpleError::plain_str("not a valid hex number")),
     }
 }
 
@@ -111,21 +89,13 @@ fn get_topics_with_data(event: &JsonValue) -> Result<(Option<Vec<u8>>, Vec<Vec<u
 }
 
 fn get_events(response: &JsonObject) -> Result<&Vec<JsonValue>, SimpleError> {
-    let events = get_value_of(String::from("logs"), response)?.get_array().map_err(|e| {
-        log::error!("❌ Unable to find events from response {:?} - {:?}", response, e);
-        e
-    })?;
-
+    let events = get_value_of("logs", response)?.get_array()?;
     return Ok(events)
 }
 
 fn get_data(event: &JsonValue) -> Result<Option<Vec<u8>>, SimpleError> {
     let event = event.get_object()?;
-    let data = get_value_of(String::from("data"), event)?.get_string().map_err(|e| {
-        log::error!("❌ Unable to extract data from event {:?} - {:?}", event, e);
-        e
-    })?;
-
+    let data = get_value_of("data", event)?.get_string()?;
     let bytes = hex_to_bytes(data)?;
 
     if !bytes.is_empty() {
@@ -137,10 +107,7 @@ fn get_data(event: &JsonValue) -> Result<Option<Vec<u8>>, SimpleError> {
 
 fn get_topics(event: &JsonValue) -> Result<Vec<Vec<u8>>, SimpleError> {
     let event = event.get_object()?;
-    let topics = get_value_of(String::from("topics"), event)?.get_array().map_err(|e| {
-        log::error!("❌ Unable to extract topics from event {:?} - {:?}", event, e);
-        e
-    })?;
+    let topics = get_value_of("topics", event)?.get_array()?;
 
     let mut topics_bytes: Vec<Vec<u8>> = Vec::<Vec<u8>>::new();
     for topic in topics.into_iter() {
@@ -154,16 +121,24 @@ fn get_topics(event: &JsonValue) -> Result<Vec<Vec<u8>>, SimpleError> {
 
 fn get_event_signature(event: &JsonValue) -> Result<String, SimpleError> {
     let event = event.get_object()?;
-    let topics = get_value_of(String::from("topics"), event)?.get_array()?;
-    let event_signature = topics[INDEX_EVENT_SIGNATURE_TOPIC].get_string()?;
+    let topics = get_value_of("topics", event)?.get_array()?;
 
+    if topics.len() <= INDEX_EVENT_SIGNATURE_TOPIC {
+        return Err(SimpleError::plain_str("missing event signature topic"))
+    }
+
+    let event_signature = topics[INDEX_EVENT_SIGNATURE_TOPIC].get_string()?;
     return Ok(event_signature)
 }
 
 fn get_contract_address(event: &JsonValue) -> Result<H160, SimpleError> {
     let event = event.get_object()?;
-    let address = get_value_of(String::from("address"), event)?.get_string()?;
+    let address = get_value_of("address", event)?.get_string()?;
     let bytes = hex_to_bytes(address)?;
+
+    if bytes.len() != 20 {
+        return Err(SimpleError::plain_str("invalid contract address length"))
+    }
 
     return Ok(H160::from_slice(&bytes))
 }

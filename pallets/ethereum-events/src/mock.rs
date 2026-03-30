@@ -12,7 +12,7 @@ use sp_runtime::{
 use sp_state_machine::BasicExternalities;
 use std::{cell::RefCell, collections::BTreeSet};
 
-use frame_system::{self as system, DefaultConfig};
+use frame_system::{self as system};
 use hex_literal::hex;
 use pallet_avn_proxy::ProvableProxy;
 use pallet_session as session;

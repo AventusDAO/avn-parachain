@@ -9,18 +9,8 @@ use parking_lot::RwLock;
 use sp_core::offchain::testing::PoolState;
 use sp_runtime::{generic::Preamble, offchain::storage::StorageValueRef, testing::UintAuthorityId};
 
-type MockValidator = Validator<UintAuthorityId, u64>;
-
 pub struct LocalContext {
-    pub current_block: BlockNumber,
     pub block_number_for_next_slot: BlockNumber,
-    pub slot_validator: MockValidator,
-    pub other_validator: MockValidator,
-    pub slot_number: BlockNumber,
-    pub grace_period: BlockNumber,
-    pub summary_last_block_in_range: BlockNumber,
-    pub block_after_grace_period: BlockNumber,
-    pub challenge_reason: SummaryChallengeReason,
     pub finalised_block_vec: Option<Vec<u8>>,
 }
 
@@ -52,18 +42,11 @@ pub fn setup_success_preconditions() -> LocalContext {
 
     UintAuthorityId::set_all_keys(vec![UintAuthorityId(slot_validator.account_id)]);
 
-    return LocalContext {
-        current_block,
-        slot_number,
-        slot_validator,
-        other_validator,
-        block_number_for_next_slot,
-        grace_period,
-        summary_last_block_in_range,
-        block_after_grace_period,
-        challenge_reason,
-        finalised_block_vec,
-    }
+    let _ = grace_period;
+    let _ = challenge_reason;
+    let _ = block_after_grace_period;
+
+    LocalContext { block_number_for_next_slot, finalised_block_vec }
 }
 
 mod advance_slot_locks {
@@ -185,7 +168,7 @@ mod record_summary_locks {
             )
             .expect("Signature is signed");
 
-        return crate::Call::record_summary_calculation {
+        crate::Call::record_summary_calculation {
             new_block_number: context.last_block_in_range,
             root_hash: context.root_hash_h256,
             ingress_counter: context.root_id.ingress_counter,

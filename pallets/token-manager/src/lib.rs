@@ -20,8 +20,6 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-#[cfg(not(feature = "std"))]
-use alloc::{format, string::String};
 use codec::{Decode, Encode};
 use core::convert::{TryFrom, TryInto};
 use frame_support::{
@@ -40,7 +38,7 @@ use frame_system::ensure_signed;
 pub use pallet::*;
 use pallet_avn::{
     self as avn, AccountToBytesConverter, BridgeInterface, BridgeInterfaceNotification,
-    CollatorPayoutDustHandler, OnGrowthLiftedHandler, ProcessedEventsChecker,
+    CollatorPayoutDustHandler, ProcessedEventsChecker,
 };
 
 use orml_traits::{
@@ -50,8 +48,8 @@ use orml_traits::{
 use sp_avn_common::{
     eth::{concat_lower_data, LowerParams},
     event_types::{
-        AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
-        LowerRevertedData, ProcessedEventHandler, TokenInterface,
+        AvtLowerClaimedData, EthEvent, EventData, LiftedData, LowerRevertedData,
+        ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
     verify_signature, CallDecoder, InnerCallValidator, OnIdleHandler, PaymentHandler, Proof,
@@ -63,7 +61,6 @@ use sp_runtime::{
         AccountIdConversion, AtLeast32Bit, CheckedAdd, CheckedSub, Dispatchable, Hash,
         IdentifyAccount, Member, Saturating, Verify, Zero,
     },
-    Perbill,
 };
 use sp_std::prelude::*;
 
@@ -88,8 +85,6 @@ mod test_avt_tokens;
 mod test_common_cases;
 #[cfg(test)]
 mod test_deferred_lower;
-#[cfg(test)]
-mod test_growth;
 #[cfg(test)]
 mod test_lower_proof_generation;
 #[cfg(test)]
@@ -147,11 +142,6 @@ pub mod pallet {
         type Signature: Verify<Signer = Self::Public> + Member + Decode + Encode + TypeInfo;
         /// Id of the account that will hold treasury funds
         type AvnTreasuryPotId: Get<PalletId>;
-        /// Percentage of growth to store in the treasury
-        #[pallet::constant]
-        type TreasuryGrowthPercentage: Get<Perbill>;
-        /// Handler to notify the runtime when AVT growth is lifted.
-        type OnGrowthLiftedHandler: OnGrowthLiftedHandler<BalanceOf<Self>>;
         type Scheduler: ScheduleAnon<BlockNumberFor<Self>, CallOf<Self>, Self::PalletsOrigin>
             + ScheduleNamed<
                 BlockNumberFor<Self>,
@@ -249,11 +239,6 @@ pub mod pallet {
             recipient: T::AccountId,
             amount: BalanceOf<T>,
         },
-        AVTGrowthLifted {
-            treasury_share: BalanceOf<T>,
-            collators_share: BalanceOf<T>,
-            eth_tx_hash: H256,
-        },
         LowerRequested {
             token_id: T::TokenId,
             from: T::AccountId,
@@ -317,7 +302,6 @@ pub mod pallet {
         ErrorConvertingAccountId,
         ErrorConvertingTokenBalance,
         ErrorConvertingToBalance,
-        NoTier1EventForLogAvtGrowthLifted,
         Overflow,
         InvalidLowerCall,
         LowerDataLimitExceeded,
@@ -949,38 +933,6 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    fn process_avt_growth_lift(event: &EthEvent, data: &AvtGrowthLiftedData) -> DispatchResult {
-        let event_id = &event.event_id;
-        let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
-        let avt_token_id: T::TokenId = Self::avt_token_contract().into();
-        ensure!(event_validity, Error::<T>::NoTier1EventForLogAvtGrowthLifted);
-        ensure!(data.amount != 0, Error::<T>::AmountIsZero);
-
-        let treasury_share = T::TreasuryGrowthPercentage::get() * data.amount;
-
-        // Send a portion of the funds to the treasury
-        let treasury_amount = Self::credit_user_balance(
-            avt_token_id,
-            &Self::compute_treasury_account_id(),
-            treasury_share,
-        )?;
-
-        // Now let the runtime know we have a lift so we can payout collators
-        let remaining_amount = Self::u128_to_balance(
-            data.amount.checked_sub(treasury_share).ok_or(Error::<T>::AmountOverflow)?,
-        )?;
-
-        Self::deposit_event(Event::<T>::AVTGrowthLifted {
-            treasury_share: treasury_amount,
-            collators_share: remaining_amount,
-            eth_tx_hash: event_id.transaction_hash,
-        });
-
-        T::OnGrowthLiftedHandler::on_growth_lifted(remaining_amount.into(), data.period)?;
-
-        Ok(())
-    }
-
     fn process_lower_claim(event: &EthEvent, data: &AvtLowerClaimedData) -> DispatchResult {
         let event_id = &event.event_id;
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
@@ -1079,7 +1031,6 @@ impl<T: Config> Pallet<T> {
     fn processed_event_handler(event: &EthEvent) -> DispatchResult {
         return match &event.event_data {
             EventData::LogLifted(d) => return Self::process_lift(event, d),
-            EventData::LogAvtGrowthLifted(d) => return Self::process_avt_growth_lift(event, d),
             EventData::LogLowerClaimed(d) => return Self::process_lower_claim(event, d),
             EventData::LogLowerReverted(d) => return Self::process_lower_reverted(event, d),
 

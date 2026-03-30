@@ -169,7 +169,6 @@ parameter_types! {
     pub const ExistentialDeposit: Balance = 1;
     pub const AvnTreasuryPotId: PalletId = PalletId(*b"Treasury");
     pub const AppChainRewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
-    pub static TreasuryGrowthPercentage: Perbill = Perbill::from_percent(75);
     pub RuntimeBlockWeights: BlockWeights = BlockWeights::builder()
         .base_block(Weight::from_parts(10 as u64, 0))
         .for_class(DispatchClass::all(), |weights| {
@@ -213,8 +212,6 @@ impl pallet_token_manager::Config for TestRuntime {
     type Public = AccountId;
     type Signature = Signature;
     type AvnTreasuryPotId = AvnTreasuryPotId;
-    type TreasuryGrowthPercentage = TreasuryGrowthPercentage;
-    type OnGrowthLiftedHandler = ();
     type WeightInfo = ();
     type Scheduler = Scheduler;
     type Preimages = ();

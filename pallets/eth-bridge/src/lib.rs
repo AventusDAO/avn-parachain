@@ -990,7 +990,7 @@ pub mod pallet {
                         if let Err(err) =
                             process_ethereum_event::<T, I>(network, &discovered_event.event)
                         {
-                            log::error!(
+                            log::debug!(
                                 "💔 Invalid event to process: {:?}. Error: {:?}",
                                 discovered_event.event,
                                 err
@@ -1043,7 +1043,7 @@ pub mod pallet {
                 });
             },
             Err(err) => {
-                log::error!("💔 Processing ethereum event failed: {:?}", err);
+                log::debug!("💔 Processing ethereum event failed: {:?}", err);
                 <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
                     eth_event_id: event.event_id.clone(),
                     reason: err,
@@ -1248,20 +1248,13 @@ pub mod pallet {
 
         fn latest_finalised_ethereum_block() -> Result<u32, DispatchError> {
             let response = AVN::<T>::get_data_from_service(String::from("/eth/latest_block"))
-                .map_err(|e| {
-                    log::error!("❌ Error getting finalised ethereum block: {:?}", e);
-                    Error::<T, I>::ErrorGettingFinalisedEthereumBlock
-                })?;
+                .map_err(|_| Error::<T, I>::ErrorGettingFinalisedEthereumBlock)?;
 
-            let latest_block_bytes = hex::decode(&response).map_err(|e| {
-                log::error!("❌ Error decoding finalised eth block data {:?}", e);
-                Error::<T, I>::InvalidResponse
-            })?;
+            let latest_block_bytes =
+                hex::decode(&response).map_err(|_| Error::<T, I>::InvalidResponse)?;
 
-            let latest_block = u32::decode(&mut &latest_block_bytes[..]).map_err(|e| {
-                log::error!("❌ Finalised block is not a valid u32: {:?}", e);
-                Error::<T, I>::ErrorDecodingU32
-            })?;
+            let latest_block = u32::decode(&mut &latest_block_bytes[..])
+                .map_err(|_| Error::<T, I>::ErrorDecodingU32)?;
 
             Ok(latest_block)
         }

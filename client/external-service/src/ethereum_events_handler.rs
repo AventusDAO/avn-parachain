@@ -16,10 +16,9 @@ use sp_avn_common::{
         DiscoveredEvent, EthBlockRange, EthereumEventsPartition,
     },
     event_types::{
-        AddedValidatorData, AvtGrowthLiftedData, AvtLowerClaimedData, Error, EthEvent, EthEventId,
-        EthTransactionId, EventData, LiftedData, LowerRevertedData, NftCancelListingData,
-        NftEndBatchListingData, NftMintData, NftTransferToData, TotalSupplyUpdatedData,
-        ValidEvents,
+        AddedValidatorData, AvtLowerClaimedData, Error, EthEvent, EthEventId, EthTransactionId,
+        EventData, LiftedData, LowerRevertedData, NftCancelListingData, NftEndBatchListingData,
+        NftMintData, NftTransferToData, TotalSupplyUpdatedData, ValidEvents,
     },
     primitives::AccountId,
     AVN_KEY_ID,
@@ -82,17 +81,6 @@ impl EventRegistry {
                     LiftedData::parse_bytes(data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
                         .map(EventData::LogLifted)
-                },
-            },
-        );
-
-        m.insert(
-            ValidEvents::AvtGrowthLifted.signature(),
-            EventInfo {
-                parser: |data, topics| {
-                    AvtGrowthLiftedData::parse_bytes(data, topics)
-                        .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(EventData::LogAvtGrowthLifted)
                 },
             },
         );

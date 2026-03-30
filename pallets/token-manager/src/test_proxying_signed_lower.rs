@@ -21,9 +21,8 @@ use crate::{
     Balances as TokenManagerBalances, Call, *,
 };
 use codec::Encode;
-use frame_support::{assert_err, assert_noop, assert_ok};
+use frame_support::{assert_err, assert_noop, assert_ok, pallet_prelude::Weight};
 use hex_literal::hex;
-use pallet_parachain_staking::Weight;
 use pallet_transaction_payment::ChargeTransactionPayment;
 use sp_avn_common::verify_signature;
 use sp_core::{sr25519, ByteArray, Pair};

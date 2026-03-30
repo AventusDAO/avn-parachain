@@ -123,7 +123,6 @@ pub(crate) fn init_active_range() {
             vec![
                 ValidEvents::AddedValidator,
                 ValidEvents::Lifted,
-                ValidEvents::AvtGrowthLifted,
                 ValidEvents::AvtLowerClaimed,
                 ValidEvents::LowerReverted,
             ]

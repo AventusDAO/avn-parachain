@@ -145,47 +145,52 @@ pub fn cast_votes_if_required<T: Config<I>, I: 'static>(
         let mut lock = AVN::<T>::get_ocw_locker(&vote_lock_name);
 
         if let Ok(guard) = lock.try_lock() {
-            let root_hash = Summary::<T, I>::compute_root_hash(
+            let root_hash = match Summary::<T, I>::compute_root_hash(
                 root_id.range.from_block,
                 root_id.range.to_block,
-            );
-
-            if root_hash.is_err() {
-                log::error!(
-                    "💔️ Error getting root hash while signing root id {:?} to vote",
-                    &root_id
-                );
-                continue
-            }
-
-            let root_data = Summary::<T, I>::try_get_root_data(&root_id);
-            if let Err(e) = root_data {
-                log::error!(
-                    "💔️ Error getting root data while signing root id {:?} to vote. {:?}",
-                    &root_id,
-                    e
-                );
-                continue
-            }
-
-            if root_hash.expect("has valid hash") == root_data.expect("checked for error").root_hash
-            {
-                if send_approve_vote::<T, I>(&root_id, this_validator).is_err() {
-                    // TODO: should we output any error message here?
+            ) {
+                Ok(root_hash) => root_hash,
+                Err(e) => {
+                    log::debug!(
+                        "💔️ Error getting root hash while signing root id {:?} to vote: {:?}",
+                        &root_id,
+                        e
+                    );
                     continue
-                }
+                },
+            };
+
+            let root_data = match Summary::<T, I>::try_get_root_data(&root_id) {
+                Ok(root_data) => root_data,
+                Err(e) => {
+                    log::debug!(
+                        "💔️ Error getting root data while signing root id {:?} to vote: {:?}",
+                        &root_id,
+                        e
+                    );
+                    continue
+                },
+            };
+
+            let vote_result = if root_hash == root_data.root_hash {
+                send_approve_vote::<T, I>(&root_id, this_validator)
             } else {
-                if send_reject_vote::<T, I>(&root_id, this_validator).is_err() {
-                    // TODO: should we output any error message here?
-                    continue
-                }
+                send_reject_vote::<T, I>(&root_id, this_validator)
+            };
+
+            if vote_result.is_err() {
+                continue
             }
 
             // keep the lock until it expires
             guard.forget();
             return
         } else {
-            log::trace!(target: "avn", "🤷 Unable to acquire local lock for root {:?}. Lock probably exists already", &root_id);
+            log::trace!(
+                target: "avn",
+                "🤷 Unable to acquire local lock for root {:?}. Lock probably exists already",
+                &root_id
+            );
             continue
         };
     }

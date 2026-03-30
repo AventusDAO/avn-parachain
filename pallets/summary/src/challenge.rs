@@ -105,22 +105,27 @@ pub fn challenge_slot_if_required<T: Config<I>, I: 'static>(
     this_validator: &Validator<T::AuthorityId, T::AccountId>,
 ) {
     let slot_number: BlockNumberFor<T> = CurrentSlot::<T, I>::get();
-    let slot_as_u32 = AVN::<T>::convert_block_number_to_u32(slot_number);
-    if let Err(_) = slot_as_u32 {
-        log::error!("💔 Error converting block number: {:?} into u32", slot_number);
-        return
-    }
 
-    let current_slot_validator = CurrentSlotsValidator::<T, I>::get();
-    if current_slot_validator.is_none() {
-        log::error!("💔 Current slot validator is not found for slot: {:?}", slot_number);
-        return
-    }
+    let slot_as_u32 = match AVN::<T>::convert_block_number_to_u32(slot_number) {
+        Ok(slot) => slot,
+        Err(_) => {
+            log::debug!("💔 Error converting block number: {:?} into u32", slot_number);
+            return
+        },
+    };
+
+    let current_slot_validator = match CurrentSlotsValidator::<T, I>::get() {
+        Some(validator) => validator,
+        None => {
+            log::warn!("💔 Current slot validator is not found for slot: {:?}", slot_number);
+            return
+        },
+    };
 
     let challenge = SummaryChallenge::new(
-        SummaryChallengeReason::SlotNotAdvanced(slot_as_u32.expect("Checked for error")),
+        SummaryChallengeReason::SlotNotAdvanced(slot_as_u32),
         this_validator.account_id.clone(),
-        current_slot_validator.expect("Checked for none"),
+        current_slot_validator,
     );
 
     if can_challenge::<T, I>(&challenge, this_validator, offchain_worker_block_number) {

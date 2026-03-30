@@ -932,7 +932,7 @@ pub mod record_summary_calculation {
                     Summary::get_vote(context.root_id),
                     VotingSessionData {
                         voting_session_id: context.root_id.session_id(),
-                        threshold: QUORUM,
+                        threshold: <TestRuntime as Config>::Quorum::get_quorum(),
                         ayes: BoundedVec::default(),
                         nays: BoundedVec::default(),
                         end_of_voting_period: VOTING_PERIOD_END,
@@ -1103,7 +1103,11 @@ pub mod record_summary_calculation {
 
                 setup_blocks(&context);
                 setup_total_ingresses(&context);
-                Summary::register_root_for_voting(&context.root_id, QUORUM, VOTING_PERIOD_END);
+                Summary::register_root_for_voting(
+                    &context.root_id,
+                    <TestRuntime as Config>::Quorum::get_quorum(),
+                    VOTING_PERIOD_END,
+                );
                 Summary::record_approve_vote(&context.root_id, context.validator.account_id);
 
                 assert_noop!(
@@ -1359,7 +1363,6 @@ mod if_process_summary_is_called_a_second_time {
                 last_block_in_range,
             ),
             tx_id,
-            current_slot: CURRENT_SLOT + 1,
             finalised_block_vec,
         }
     }
@@ -1406,7 +1409,11 @@ mod if_process_summary_is_called_a_second_time {
             context.tx_id,
         );
         Summary::insert_pending_approval(&context.root_id);
-        Summary::register_root_for_voting(&context.root_id, QUORUM, VOTING_PERIOD_END);
+        Summary::register_root_for_voting(
+            &context.root_id,
+            <TestRuntime as Config>::Quorum::get_quorum(),
+            VOTING_PERIOD_END,
+        );
 
         let validators = vec![
             get_validator(FIRST_VALIDATOR_INDEX),
