@@ -2,12 +2,20 @@
 
 use super::*;
 use crate::mock::*;
-use frame_support::{assert_noop, assert_ok};
+use frame_support::{
+    assert_noop, assert_ok,
+    traits::{Currency, ReservableCurrency},
+};
 use sp_avn_common::hash_string_data_with_ethereum_prefix;
 
 fn set_balance(who: &AccountId, amount: u128) {
     Balances::make_free_balance_be(who, amount);
     assert_eq!(Balances::free_balance(who), amount);
+}
+
+fn reserve_balance(who: &AccountId, amount: u128) {
+    assert_ok!(Balances::reserve(who, amount));
+    assert_eq!(Balances::reserved_balance(who), amount);
 }
 
 fn payload(action: Action, t1: H160, t2: AccountId, chain_id: u64) -> LinkPayload<AccountId> {
@@ -296,7 +304,7 @@ mod total_linked_balance {
     use super::*;
 
     #[test]
-    fn sums_free_balance_of_all_linked_accounts_only() {
+    fn sums_total_balance_of_all_linked_accounts_only() {
         new_test_ext().execute_with(|| {
             let t1_pair = test_ecdsa_pair(1);
             let t1 = eth_address_from_pair(&t1_pair);
@@ -308,6 +316,10 @@ mod total_linked_balance {
             set_balance(&a, 100);
             set_balance(&b, 250);
             set_balance(&c, 999);
+
+            reserve_balance(&a, 40);
+            reserve_balance(&b, 50);
+            reserve_balance(&c, 900);
 
             // link a and b
             for t2 in [a, b] {
@@ -336,6 +348,48 @@ mod total_linked_balance {
     }
 
     #[test]
+    fn includes_reserved_balance_in_total() {
+        new_test_ext().execute_with(|| {
+            let t1_pair = test_ecdsa_pair(1);
+            let t1 = eth_address_from_pair(&t1_pair);
+
+            let a = test_account(10);
+            let b = test_account(11);
+
+            set_balance(&a, 100);
+            set_balance(&b, 250);
+
+            reserve_balance(&a, 70);
+            reserve_balance(&b, 150);
+
+            // link a and b
+            for t2 in [a, b] {
+                let p = payload(Action::Link, t1, t2, 1);
+                let sig = sign_payload_string_format(&t1_pair, &p);
+                assert_ok!(CrossChainVoting::link_account(RuntimeOrigin::signed(t2), p, sig));
+            }
+
+            // free balances are reduced by reserves
+            assert_eq!(Balances::free_balance(&a), 30);
+            assert_eq!(Balances::free_balance(&b), 100);
+
+            // reserved balances hold the staked amounts
+            assert_eq!(Balances::reserved_balance(&a), 70);
+            assert_eq!(Balances::reserved_balance(&b), 150);
+
+            // total balance should still include both free + reserved
+            assert_eq!(Balances::total_balance(&a), 100);
+            assert_eq!(Balances::total_balance(&b), 250);
+
+            let total = crate::Pallet::<TestRuntime>::get_total_linked_balance(t1);
+
+            // total should include reserved balance, not just free balance
+            assert_eq!(total, 350);
+            assert_ne!(total, Balances::free_balance(&a) + Balances::free_balance(&b));
+        })
+    }
+
+    #[test]
     fn returns_totals_for_multiple_identities_in_order() {
         new_test_ext().execute_with(|| {
             let t1a_pair = test_ecdsa_pair(1);
@@ -351,6 +405,10 @@ mod total_linked_balance {
             set_balance(&a1, 100);
             set_balance(&a2, 250);
             set_balance(&b1, 999);
+
+            reserve_balance(&a1, 20);
+            reserve_balance(&a2, 100);
+            reserve_balance(&b1, 400);
 
             for t2 in [a1, a2] {
                 let p = payload(Action::Link, t1a, t2, 1);

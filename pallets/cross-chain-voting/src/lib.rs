@@ -240,13 +240,13 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Sum balances across all linked accounts for a T1 identity.
+        /// Sum full (free + staked) balances across all linked accounts for a T1 identity.
         pub fn get_total_linked_balance(t1_identity_account: H160) -> BalanceOf<T> {
             let linked = LinkedAccounts::<T>::get(t1_identity_account);
 
             linked
                 .into_iter()
-                .map(|acc| T::Currency::free_balance(&acc))
+                .map(|acc| T::Currency::total_balance(&acc))
                 .fold(Zero::zero(), |a, b| a + b)
         }
 
