@@ -72,6 +72,10 @@ pub struct AvnRunCmd {
     /// malformed). No effect if --enable-transaction-filter is not set.
     #[arg(long = "transaction-filter-log-rejections")]
     pub transaction_filter_log_rejections: bool,
+
+    /// Api key for the chosen finance provider
+    #[arg(long = "finance-provider-api-key", value_name = "FINANCE API KEY")]
+    pub finance_api_key: Option<String>,
 }
 
 impl std::ops::Deref for AvnRunCmd {

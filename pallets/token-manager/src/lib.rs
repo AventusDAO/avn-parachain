@@ -20,21 +20,23 @@
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-use codec::{Decode, Encode};
+use codec::{Decode, DecodeWithMemTracking, Encode};
 use core::convert::{TryFrom, TryInto};
 use frame_support::{
     dispatch::{DispatchResult, DispatchResultWithPostInfo, GetDispatchInfo},
     ensure,
+    pallet_prelude::*,
     traits::{
         schedule::{
             v3::{Anon as ScheduleAnon, Named as ScheduleNamed, TaskName},
             DispatchTime, HARD_DEADLINE,
         },
-        Currency, ExistenceRequirement, Get, IsSubType, QueryPreimage, StorePreimage, UnixTime,
+        Currency, ExistenceRequirement, Get, IsSubType, QueryPreimage, ReservableCurrency,
+        StorePreimage, UnixTime,
     },
     BoundedVec, PalletId, Parameter,
 };
-use frame_system::ensure_signed;
+use frame_system::{ensure_signed, pallet_prelude::BlockNumberFor};
 pub use pallet::*;
 use pallet_avn::{
     self as avn, AccountToBytesConverter, BridgeInterface, BridgeInterfaceNotification,
@@ -49,7 +51,7 @@ use sp_avn_common::{
     eth::{concat_lower_data, LowerParams},
     event_types::{
         AvtLowerClaimedData, EthEvent, EventData, LiftedData, LowerRevertedData,
-        ProcessedEventHandler, TokenInterface,
+        ProcessedEventHandler, TokenInterface, TotalSupplyUpdatedData,
     },
     primitives::CurrencyId,
     verify_signature, CallDecoder, InnerCallValidator, OnIdleHandler, PaymentHandler, Proof,
@@ -58,13 +60,14 @@ use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
     scale_info::TypeInfo,
     traits::{
-        AccountIdConversion, AtLeast32Bit, CheckedAdd, CheckedSub, Dispatchable, Hash,
-        IdentifyAccount, Member, Saturating, Verify, Zero,
+        AtLeast32Bit, CheckedAdd, CheckedSub, Dispatchable, Hash, IdentifyAccount, Member, Verify,
+        Zero,
     },
+    Perbill,
 };
 use sp_std::prelude::*;
 
-type BalanceOf<T> =
+pub type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
 type CallOf<T> = <T as Config>::RuntimeCall;
@@ -72,8 +75,10 @@ pub type LowerId = u32;
 pub type LowerDataLimit = ConstU32<10000>; // Max lower proof len. 10kB
 
 mod benchmarking;
+mod burn;
 pub mod default_weights;
 pub mod migration;
+mod treasury;
 mod utils;
 pub use default_weights::WeightInfo;
 
@@ -81,6 +86,8 @@ pub use default_weights::WeightInfo;
 mod mock;
 #[cfg(test)]
 mod test_avt_tokens;
+#[cfg(test)]
+mod test_burn_tokens;
 #[cfg(test)]
 mod test_common_cases;
 #[cfg(test)]
@@ -96,6 +103,7 @@ mod test_proxying_signed_transfer;
 #[cfg(test)]
 mod test_transfer;
 
+pub const DEFAULT_TREASURY_BURN_THRESHOLD_PERCENT: u32 = 15;
 pub const SIGNED_TRANSFER_CONTEXT: &'static [u8] = b"authorization for transfer operation";
 pub const SIGNED_LOWER_CONTEXT: &'static [u8] = b"authorization for lower operation";
 const PALLET_ID: &'static [u8; 13] = b"token_manager";
@@ -104,7 +112,7 @@ const PALLET_ID: &'static [u8; 13] = b"token_manager";
 pub mod pallet {
 
     use super::*;
-    use frame_support::{pallet_prelude::*, Blake2_128Concat};
+    use frame_support::Blake2_128Concat;
     use frame_system::{ensure_root, pallet_prelude::*};
 
     // Public interface of this pallet
@@ -122,7 +130,7 @@ pub mod pallet {
             + GetDispatchInfo
             + From<frame_system::Call<Self>>;
         /// Currency type for lifting
-        type Currency: Currency<Self::AccountId>;
+        type Currency: Currency<Self::AccountId> + ReservableCurrency<Self::AccountId>;
         /// The units in which we record balances of tokens others than AVT
         type TokenBalance: Member
             + Parameter
@@ -173,6 +181,18 @@ pub mod pallet {
             Balance = BalanceOf<Self>,
             CustomMetadata = AvnAssetMetadata,
         >;
+        /// Minimum Burn Refresh range
+        #[pallet::constant]
+        type MinBurnPeriod: Get<u32>;
+        /// Treasury burn threshold as percentage of total supply
+        #[pallet::constant]
+        type TreasuryBurnThreshold: Get<Perbill>;
+        /// Flag to enable burn mechanism
+        #[pallet::constant]
+        type BurnEnabled: Get<bool>;
+        /// Max amount allowed to be burned at once
+        #[pallet::constant]
+        type TreasuryBurnCap: Get<BalanceOf<Self>>;
     }
 
     #[pallet::pallet]
@@ -235,7 +255,7 @@ pub mod pallet {
             lower_id: LowerId,
             t1_reverted_recipient: H160,
         },
-        AvtTransferredFromTreasury {
+        TransferFromTreasury {
             recipient: T::AccountId,
             amount: BalanceOf<T>,
         },
@@ -281,6 +301,38 @@ pub mod pallet {
             old_address: H160,
             new_address: H160,
         },
+        BurnPeriodUpdated {
+            burn_period: u32,
+        },
+        BurnRequested {
+            burner: T::AccountId,
+            amount: BalanceOf<T>,
+            tx_id: u32,
+        },
+        BurnRequestFailed {
+            burner: T::AccountId,
+            amount: BalanceOf<T>,
+        },
+        BurnConfirmed {
+            tx_id: u32,
+            amount: BalanceOf<T>,
+        },
+        BurnFailed {
+            tx_id: u32,
+        },
+        TreasuryExcessSentToBurnPot {
+            amount: BalanceOf<T>,
+        },
+        TreasuryFunded {
+            from: T::AccountId,
+            amount: BalanceOf<T>,
+        },
+        TotalSupplyUpdated {
+            old_supply: BalanceOf<T>,
+            new_supply: BalanceOf<T>,
+            change: SupplyChangeType,
+            eth_tx_hash: H256,
+        },
     }
 
     #[pallet::error]
@@ -312,6 +364,22 @@ pub mod pallet {
         InvalidToken,
         NativeTokenNotRegistered,
         WithdrawFailed,
+        InvalidBurnPeriod,
+        ErrorLockingTokens,
+        FailedToSubmitBurnRequest,
+        NoTier1EventForLogTotalSupplyUpdated,
+        InvalidTotalSupplyUpdate,
+        TotalSupplyNotSet,
+        TotalSupplyZero,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
+    )]
+    pub enum SupplyChangeType {
+        Burn,
+        Inflation,
+        NoChange,
     }
 
     #[pallet::storage]
@@ -367,6 +435,31 @@ pub mod pallet {
     #[pallet::getter(fn lowers_disabled)]
     pub type LowersDisabled<T: Config> = StorageValue<_, bool, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn next_burn_at)]
+    pub type NextBurnAt<T: Config> = StorageValue<_, BlockNumberFor<T>, ValueQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn burn_submission)]
+    pub type PendingBurnSubmission<T: Config> =
+        StorageMap<_, Blake2_128Concat, u32, (T::AccountId, BalanceOf<T>), OptionQuery>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn burn_period)]
+    pub type BurnPeriod<T> = StorageValue<_, u32, ValueQuery, DefaultBurnPeriod<T>>;
+
+    #[pallet::storage]
+    #[pallet::getter(fn total_supply)]
+    pub type TotalSupply<T: Config> = StorageValue<_, BalanceOf<T>, OptionQuery>;
+
+    #[pallet::storage]
+    pub type BurnEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
+
+    #[pallet::type_value]
+    pub fn DefaultBurnPeriod<T: Config>() -> u32 {
+        T::MinBurnPeriod::get()
+    }
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -374,6 +467,7 @@ pub mod pallet {
         pub avt_token_contract: H160,
         pub lower_schedule_period: BlockNumberFor<T>,
         pub balances: Vec<(H160, T::AccountId, u128)>,
+        pub treasury_burn_threshold: Perbill,
     }
 
     impl<T: Config> Default for GenesisConfig<T> {
@@ -384,6 +478,9 @@ pub mod pallet {
                 avt_token_contract: H160::zero(),
                 lower_schedule_period: BlockNumberFor::<T>::zero(),
                 balances: vec![],
+                treasury_burn_threshold: Perbill::from_percent(
+                    DEFAULT_TREASURY_BURN_THRESHOLD_PERCENT,
+                ),
             }
         }
     }
@@ -475,18 +572,7 @@ pub mod pallet {
             amount: BalanceOf<T>,
         ) -> DispatchResult {
             ensure_root(origin)?;
-            ensure!(amount != BalanceOf::<T>::zero(), Error::<T>::AmountIsZero);
-
-            <T as pallet::Config>::Currency::transfer(
-                &Self::compute_treasury_account_id(),
-                &recipient,
-                amount,
-                ExistenceRequirement::KeepAlive,
-            )?;
-
-            Self::deposit_event(Event::<T>::AvtTransferredFromTreasury { recipient, amount });
-
-            Ok(())
+            Self::transfer_treasury_funds(&recipient, amount)
         }
 
         /// Lower an amount of token from tier2 to tier1
@@ -692,10 +778,45 @@ pub mod pallet {
 
             Ok(Some(final_weight).into())
         }
+
+        #[pallet::call_index(13)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::set_burn_period())]
+        pub fn set_burn_period(origin: OriginFor<T>, burn_period: u32) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(burn_period >= T::MinBurnPeriod::get(), Error::<T>::InvalidBurnPeriod);
+
+            BurnPeriod::<T>::put(burn_period);
+
+            Self::deposit_event(Event::<T>::BurnPeriodUpdated { burn_period });
+            Ok(())
+        }
+
+        #[pallet::call_index(14)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::burn_native_token())]
+        pub fn burn_native_token(origin: OriginFor<T>, amount: BalanceOf<T>) -> DispatchResult {
+            let burner = ensure_signed(origin)?;
+
+            ensure!(amount > Zero::zero(), Error::<T>::AmountIsZero);
+
+            let free = T::Currency::free_balance(&burner);
+            ensure!(free >= amount, Error::<T>::InsufficientSenderBalance);
+
+            Self::burn_from_user_pot(&burner, amount)?;
+            Ok(())
+        }
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_initialize(n: BlockNumberFor<T>) -> Weight {
+            if !Self::is_burning_enabled() || !Self::is_burn_due(n) {
+                return <T as Config>::WeightInfo::on_initialize_burn_not_due()
+            }
+
+            Self::schedule_next_burn(n);
+            return Self::burn_from_burn_pot()
+        }
+
         fn on_idle(n: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
             T::OnIdleHandler::run_on_idle_process(n, remaining_weight)
         }
@@ -983,6 +1104,48 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
+    fn process_total_supply_update(
+        event: &EthEvent,
+        data: &TotalSupplyUpdatedData,
+    ) -> DispatchResult {
+        let event_id = &event.event_id;
+        let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
+        ensure!(event_validity, Error::<T>::NoTier1EventForLogTotalSupplyUpdated);
+
+        let new_supply_u128: u128 =
+            data.new_supply.try_into().map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        let new_supply_balance: BalanceOf<T> =
+            <BalanceOf<T> as TryFrom<u128>>::try_from(new_supply_u128)
+                .map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        let old_supply_balance = TotalSupply::<T>::get().ok_or(Error::<T>::TotalSupplyNotSet)?;
+
+        let old_supply_u128: u128 = old_supply_balance
+            .try_into()
+            .map_err(|_| Error::<T>::InvalidTotalSupplyUpdate)?;
+
+        // Determine supply change type based on event payload
+        let change = if new_supply_u128 < old_supply_u128 {
+            SupplyChangeType::Burn
+        } else if new_supply_u128 > old_supply_u128 {
+            SupplyChangeType::Inflation
+        } else {
+            SupplyChangeType::NoChange
+        };
+
+        TotalSupply::<T>::put(new_supply_balance);
+
+        Self::deposit_event(Event::<T>::TotalSupplyUpdated {
+            old_supply: old_supply_balance,
+            new_supply: new_supply_balance,
+            change,
+            eth_tx_hash: event_id.transaction_hash,
+        });
+
+        Ok(())
+    }
+
     fn schedule_lower(
         from: &T::AccountId,
         to_account_id: T::AccountId,
@@ -1033,6 +1196,7 @@ impl<T: Config> Pallet<T> {
             EventData::LogLifted(d) => return Self::process_lift(event, d),
             EventData::LogLowerClaimed(d) => return Self::process_lower_claim(event, d),
             EventData::LogLowerReverted(d) => return Self::process_lower_reverted(event, d),
+            EventData::LogFeesBurned(d) => Self::process_total_supply_update(event, d),
 
             // Event handled or it is not for us, in which case ignore it.
             _ => Ok(()),
@@ -1116,7 +1280,28 @@ pub struct LowerProofData {
 }
 
 impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
-    fn process_result(_: u32, _: Vec<u8>, _: bool) -> DispatchResult {
+    fn process_result(tx_id: u32, caller_id: Vec<u8>, succeeded: bool) -> DispatchResult {
+        if caller_id != PALLET_ID.to_vec() {
+            return Ok(()) // Ignore irrelevant transactions
+        }
+
+        let (burner, amount) = match PendingBurnSubmission::<T>::take(tx_id) {
+            Some(entry) => entry,
+            None => return Ok(()),
+        };
+
+        T::Currency::unreserve(&burner, amount);
+
+        if succeeded {
+            let (imbalance, _) = T::Currency::slash(&burner, amount);
+            drop(imbalance);
+
+            Self::deposit_event(Event::<T>::BurnConfirmed { tx_id, amount });
+        } else {
+            Self::deposit_event(Event::<T>::BurnFailed { tx_id });
+            log::error!("Transaction failed on Ethereum. TxId: {:?}", tx_id);
+        }
+
         Ok(())
     }
 

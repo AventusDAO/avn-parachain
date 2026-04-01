@@ -15,7 +15,7 @@ use sp_avn_common::primitives::AccountId;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, string::String, sync::Arc};
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -27,6 +27,7 @@ pub struct NodeDeps<Block: BlockT, ClientT> {
     pub eth_node_urls: Vec<String>,
     pub client: Arc<ClientT>,
     pub offchain_transaction_pool_factory: OffchainTransactionPoolFactory<Block>,
+    pub finance_api_key: Option<String>,
 }
 
 pub fn build_app_state<Block, ClientT>(
@@ -66,6 +67,7 @@ where
         client: deps.client.clone(),
         send_lock: Arc::new(Mutex::new(())),
         _block: Default::default(),
+        finance_api_key: deps.finance_api_key.clone().unwrap_or_default(),
     })
 }
 

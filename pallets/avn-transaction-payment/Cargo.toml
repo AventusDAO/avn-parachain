@@ -24,6 +24,7 @@ sp-std.workspace = true
 sp-runtime.workspace = true
 frame-support.workspace = true
 frame-system.workspace = true
+pallet-authorship.workspace = true
 pallet-transaction-payment.workspace = true
 
 # Optional imports for benchmarking

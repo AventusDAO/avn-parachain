@@ -1,0 +1,63 @@
+[package]
+name = "pallet-avn-oracle"
+description = "Handles management of token-related oracle rates"
+license = "GPL-3.0"
+
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+codec.workspace = true
+scale-info.workspace = true
+log.workspace = true
+serde_json = { workspace = true, default-features = false }
+
+sp-std.workspace = true
+sp-core.workspace = true
+sp-io.workspace = true
+sp-runtime.workspace = true
+sp-avn-common.workspace = true
+
+frame-support.workspace = true
+frame-system.workspace = true
+frame-benchmarking = { optional = true, workspace = true }
+
+pallet-avn = { workspace = true }
+pallet-timestamp = { workspace = true }
+pallet-session = { workspace = true, features = ["historical"] }
+
+[dev-dependencies]
+sp-state-machine = { default-features = true, workspace = true }
+
+[features]
+default = ["std"]
+std = [
+  "frame-benchmarking?/std",
+  "codec/std",
+  "scale-info/std",
+  "log/std",
+  "serde_json/std",
+  "sp-std/std",
+  "sp-core/std",
+  "sp-io/std",
+  "sp-runtime/std",
+  "sp-avn-common/std",
+  "frame-support/std",
+  "frame-system/std",
+  "pallet-avn/std",
+  "pallet-timestamp/std",
+  "pallet-session/std",
+]
+runtime-benchmarks = [
+  "frame-benchmarking/runtime-benchmarks",
+  "frame-support/runtime-benchmarks",
+  "frame-system/runtime-benchmarks",
+]
+try-runtime = ["frame-support/try-runtime"]

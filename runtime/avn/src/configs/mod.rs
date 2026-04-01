@@ -29,13 +29,17 @@ use orml_traits::{
     asset_registry::{AvnAssetLocation, AvnAssetMetadata},
     parameter_type_with_key,
 };
+use pallet_avn_transaction_payment::NativeRateProvider;
 use pallet_node_manager::sr25519::AuthorityId as NodeManagerKeyId;
 use polkadot_sdk::{
     frame_support::{
         derive_impl,
         dispatch::DispatchClass,
         parameter_types,
-        traits::{ConstBool, ConstU32, ConstU64, EnsureOrigin, TransformOrigin, VariantCountOf},
+        traits::{
+            fungible, ConstBool, ConstU32, ConstU64, Currency, EnsureOrigin, ExistenceRequirement,
+            OnUnbalanced, TransformOrigin, VariantCountOf,
+        },
         weights::{ConstantMultiplier, Weight},
         PalletId,
     },
@@ -47,40 +51,41 @@ use polkadot_sdk::{
     polkadot_runtime_common::{
         xcm_sender::NoPriceForMessageDelivery, BlockHashCount, SlowAdjustingFeeUpdate,
     },
+    sp_arithmetic::FixedPointNumber,
 };
 use runtime_common::OperationalFeeMultiplier;
+use smallvec::smallvec;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
     Asset, NoopAppChainInterface, NODE_MANAGER_PALLET_ID,
 };
-
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::{
     traits::{AccountIdConversion, ConvertInto},
     transaction_validity::TransactionPriority,
-    Perbill,
+    FixedU128, Perbill,
 };
 use sp_version::RuntimeVersion;
 
 use sp_core::{ConstU128, H160};
+use sp_weights::{WeightToFeeCoefficient, WeightToFeeCoefficients, WeightToFeePolynomial};
 
 // Local module imports
 use crate::{
     asset_registry::AvnAssetProcessor,
-    fungible,
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn,
     AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
     BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
-    HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
-    NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
-    ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, Runtime, RuntimeCall, RuntimeEvent,
-    RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, SessionKeys,
-    Signature, Summary, SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee,
-    UncheckedExtrinsic, ValidatorsManager, Watchtower, WeightToFee, XcmpQueue,
-    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS,
-    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    HoldConsideration, ImOnlineId, LinearStoragePrice, MessageQueue, Moment, NftManager,
+    NodeManager, Nonce, Offences, Ordering, OriginCaller, OrmlTokens, PalletInfo, ParachainSystem,
+    Preimage, PrivilegeCmp, Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason,
+    RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, SessionKeys, Signature, Summary,
+    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
+    ValidatorsManager, Watchtower, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
+    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
+    VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -153,6 +158,42 @@ impl cumulus_pallet_weight_reclaim::Config for Runtime {
     type WeightInfo = ();
 }
 
+parameter_types! {
+    pub const MinimumPeriodValue: u64 = SLOT_DURATION / 2;
+}
+
+// Timestamp
+/// Custom getter for minimum timestamp delta.
+/// This ensures that consensus systems like Aura don't break assertions
+/// in a benchmark environment
+pub struct MinimumPeriod;
+impl MinimumPeriod {
+    /// Returns the value of this parameter type.
+    pub fn get() -> u64 {
+        #[cfg(feature = "runtime-benchmarks")]
+        {
+            use frame_benchmarking::benchmarking::get_whitelist;
+            // Should that condition be true, we can assume that we are in a benchmark environment.
+            if !get_whitelist().is_empty() {
+                return u64::MAX
+            }
+        }
+
+        MinimumPeriodValue::get()
+    }
+}
+impl<I: From<u64>> frame_support::traits::Get<I> for MinimumPeriod {
+    fn get() -> I {
+        I::from(Self::get())
+    }
+}
+impl frame_support::traits::TypedGet for MinimumPeriod {
+    type Type = u64;
+    fn get() -> u64 {
+        Self::get()
+    }
+}
+
 impl pallet_timestamp::Config for Runtime {
     /// A timestamp: milliseconds since the unix epoch.
     type Moment = Moment;
@@ -161,7 +202,7 @@ impl pallet_timestamp::Config for Runtime {
     #[cfg(not(feature = "runtime-benchmarks"))]
     type OnTimestampSet = Aura;
     // Set to 0 when async backing is enabled
-    type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
+    type MinimumPeriod = MinimumPeriod;
     type WeightInfo = ();
 }
 
@@ -342,6 +383,17 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
+impl<C> frame_system::offchain::CreateTransaction<C> for Runtime
+where
+    RuntimeCall: From<C>,
+{
+    type Extension = ();
+
+    fn create_transaction(call: Self::RuntimeCall, _extension: Self::Extension) -> Self::Extrinsic {
+        UncheckedExtrinsic::new_bare(call)
+    }
+}
+
 impl<C> frame_system::offchain::CreateInherent<C> for Runtime
 where
     RuntimeCall: From<C>,
@@ -439,6 +491,12 @@ parameter_types! {
     pub const EthAutoSubmitSummaries: bool = true;
     pub const EthereumInstanceId: u8 = 1u8;
     pub const ExternalValidationEnabled: bool = false;
+    pub const MinRatesRefreshRange: u32 = 5;
+    pub const PriceRefreshRangeInBlocks: u32 = 50; // 10 minutes
+    pub const MinBurnPeriod: u32 = 7200;
+    pub const BurnEnabled: bool = false;
+    pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const TreasuryBurnCap: u128 = 10 * AVT;
 }
 
 impl pallet_summary::Config for Runtime {
@@ -478,6 +536,10 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type TimeProvider = Timestamp;
     type AssetRegistry = AssetRegistry;
     type AssetManager = AssetManager;
+    type MinBurnPeriod = MinBurnPeriod;
+    type BurnEnabled = BurnEnabled;
+    type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 impl pallet_nft_manager::Config for Runtime {
@@ -502,12 +564,44 @@ impl pallet_avn_proxy::Config for Runtime {
     type Token = EthAddress;
 }
 
+pub struct OracleNativeRateProvider;
+impl NativeRateProvider for OracleNativeRateProvider {
+    fn native_rate_usd() -> Option<u128> {
+        let usd_key = pallet_avn_oracle::Pallet::<Runtime>::to_currency(b"usd".to_vec()).ok()?;
+        pallet_avn_oracle::NativeTokenRateByCurrency::<Runtime>::get(usd_key)
+    }
+}
+
+pub struct PayTreasury;
+impl pallet_avn_transaction_payment::FeeDistributor<Runtime> for PayTreasury {
+    fn distribute_fees(
+        fee_pot: &AccountId,
+        total_fees: Balance,
+        _used_weight: u128,
+        _max_weight: u128,
+    ) {
+        if total_fees == 0 {
+            return
+        }
+
+        let treasury_account: AccountId = AvnTreasuryPotId::get().into_account_truncating();
+        let _ = <Balances as Currency<AccountId>>::transfer(
+            fee_pot,
+            &treasury_account,
+            total_fees,
+            ExistenceRequirement::AllowDeath,
+        );
+    }
+}
+
 impl pallet_avn_transaction_payment::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type KnownUserOrigin = EnsureRoot<AccountId>;
     type WeightInfo = pallet_avn_transaction_payment::default_weights::SubstrateWeight<Runtime>;
+    type NativeRateProvider = OracleNativeRateProvider;
+    type FeeDistributor = PayTreasury;
 }
 
 parameter_types! {
@@ -581,6 +675,15 @@ impl pallet_node_manager::Config for Runtime {
     type AppChainInterface = NoopAppChainInterface<AccountId>;
 }
 
+impl pallet_avn_oracle::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    type WeightInfo = ();
+    type ConsensusGracePeriod = ConsensusGracePeriod;
+    type MaxCurrencies = MaxCurrencies;
+    type MinRatesRefreshRange = MinRatesRefreshRange;
+    type Quorum = Avn;
+}
+
 // Other pallets
 parameter_types! {
     pub const AssetDeposit: Balance = 10 * MILLI_AVT;
@@ -589,6 +692,8 @@ parameter_types! {
     pub const MetadataDepositBase: Balance = 1 * MILLI_AVT;
     pub const MetadataDepositPerByte: Balance = 100 * MICRO_AVT;
     pub const DefaultCheckpointFee: Balance = 60 * MILLI_AVT;
+    pub const ConsensusGracePeriod: u32 = 300;
+    pub const MaxCurrencies: u32 = 10;
 }
 const ASSET_ACCOUNT_DEPOSIT: Balance = 100 * MICRO_AVT;
 
@@ -799,15 +904,37 @@ impl OnUnbalanced<fungible::Credit<AccountId, Balances>> for DealWithFees {
     fn on_unbalanceds(
         mut fees_then_tips: impl Iterator<Item = fungible::Credit<AccountId, Balances>>,
     ) {
-        if let Some(mut fees) = fees_then_tips.next() {
-            if let Some(tips) = fees_then_tips.next() {
-                tips.merge_into(&mut fees);
-            }
-
-            ResolveTo::<AvnTreasuryAccount, Balances>::on_unbalanced(fees)
+        if let Some(fees) = fees_then_tips.next() {
+            let fee_pot = pallet_avn_transaction_payment::Pallet::<Runtime>::fee_pot_account();
+            let _ = <Balances as fungible::Balanced<AccountId>>::resolve(&fee_pot, fees);
         }
     }
 }
+
+pub struct WeightToFee;
+impl WeightToFeePolynomial for WeightToFee {
+    type Balance = Balance;
+    fn polynomial() -> WeightToFeeCoefficients<Self::Balance> {
+        // We adjust the fee conversion so that a simple token transfer
+        // direct to chain costs base_fee USD.
+        let min_fee: u128 = pallet_avn_transaction_payment::Pallet::<Runtime>::get_min_avt_fee();
+
+        // The magic number (0.09124) is the result of :
+        // setting p = 50 * MILLI_BASE, the cost of a simple transfer was 4.5620 milli AVT
+        // (visual observation on polkadot.js). magic_number = 4.5620 / 50 = 0.09124
+        let factor = FixedU128::from_rational(1_000_000u128, 91_240u128);
+
+        let p = factor.saturating_mul_int(min_fee);
+        let q = Balance::from(ExtrinsicBaseWeight::get().ref_time());
+        smallvec![WeightToFeeCoefficient {
+            degree: 1,
+            negative: false,
+            coeff_frac: Perbill::from_rational(p % q, q),
+            coeff_integer: p / q,
+        }]
+    }
+}
+
 pub struct RuntimeNodeManager;
 impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeNodeManager {
     fn is_authorized_watchtower(node: &AccountId) -> bool {

@@ -31,6 +31,9 @@ use sp_std::{boxed::Box, vec::Vec};
 pub const OPEN_BYTES_TAG: &'static [u8] = b"<Bytes>";
 pub const CLOSE_BYTES_TAG: &'static [u8] = b"</Bytes>";
 
+pub const BURN_POT_ID: [u8; 8] = *b"avn/burn";
+pub const FEE_POT_ID: [u8; 8] = *b"avn/fees";
+
 /// Result of checking an extrinsic against the transaction filter.
 ///
 /// Used by both runtime (to return filter results) and node (to process them).

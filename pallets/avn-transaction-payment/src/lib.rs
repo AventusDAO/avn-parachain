@@ -14,17 +14,22 @@ use frame_support::{
         Imbalance, OnUnbalanced,
     },
     unsigned::TransactionValidityError,
+    PalletId,
 };
-use frame_system::{self as system};
+use frame_system::{self as system, Pallet as System};
 
 use core::convert::TryInto;
 pub use pallet::*;
-use sp_runtime::{
-    traits::{DispatchInfoOf, Dispatchable, PostDispatchInfoOf, Saturating, Zero},
-    transaction_validity::InvalidTransaction,
-};
-
+use pallet_authorship;
 use pallet_transaction_payment::OnChargeTransaction;
+use sp_runtime::{
+    traits::{
+        AccountIdConversion, DispatchInfoOf, Dispatchable, One, PostDispatchInfoOf, Saturating,
+        Zero,
+    },
+    transaction_validity::InvalidTransaction,
+    FixedPointNumber, FixedU128,
+};
 use sp_std::{marker::PhantomData, prelude::*};
 
 pub mod fee_adjustment_config;
@@ -33,6 +38,24 @@ use fee_adjustment_config::{
     *,
 };
 
+// If something happens with the fee calculation, use this value
+pub const FALLBACK_MIN_FEE: u128 = 11_090_000u128;
+
+pub trait NativeRateProvider {
+    /// Return price of 1 native token in USD (8 decimals), or None if unavailable
+    fn native_rate_usd() -> Option<u128>;
+}
+
+/// Runtime-provided policy for distributing fees from the fee pot.
+pub trait FeeDistributor<T: Config> {
+    fn distribute_fees(
+        fee_pot: &T::AccountId,
+        total_fees: BalanceOf<T>,
+        used_weight_ref_time: u128,
+        max_weight_ref_time: u128,
+    );
+}
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -40,7 +63,9 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
 
     #[pallet::config]
-    pub trait Config: frame_system::Config + pallet_transaction_payment::Config {
+    pub trait Config:
+        frame_system::Config + pallet_transaction_payment::Config + pallet_authorship::Config
+    {
         /// The overarching event type.
         type RuntimeEvent: From<Event<Self>>
             + Into<<Self as system::Config>::RuntimeEvent>
@@ -59,10 +84,39 @@ pub mod pallet {
         type KnownUserOrigin: EnsureOrigin<Self::RuntimeOrigin>;
 
         type WeightInfo: WeightInfo;
+
+        /// Provider of the native token USD rate (8 decimals)
+        type NativeRateProvider: NativeRateProvider;
+
+        /// Fee distribution strategy configured by the runtime (no default, must be provided).
+        type FeeDistributor: FeeDistributor<Self>;
     }
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
+
+    /// The base gas fee for a simple token transfer in usd
+    #[pallet::storage]
+    pub type BaseGasFeeUsd<T: Config> = StorageValue<_, u128, ValueQuery>;
+
+    #[pallet::genesis_config]
+    pub struct GenesisConfig<T: Config> {
+        pub base_gas_fee_usd: u128,
+        pub _phantom: sp_std::marker::PhantomData<T>,
+    }
+
+    impl<T: Config> Default for GenesisConfig<T> {
+        fn default() -> Self {
+            Self { base_gas_fee_usd: FALLBACK_MIN_FEE, _phantom: Default::default() }
+        }
+    }
+
+    #[pallet::genesis_build]
+    impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+        fn build(&self) {
+            BaseGasFeeUsd::<T>::put(self.base_gas_fee_usd);
+        }
+    }
 
     #[pallet::event]
     #[pallet::generate_deposit(pub fn deposit_event)]
@@ -86,6 +140,10 @@ pub mod pallet {
             who: T::AccountId,
             fee: BalanceOf<T>,
         },
+        /// A new base gas fee has been set
+        BaseGasFeeUsdSet {
+            new_base_gas_fee: u128,
+        },
     }
 
     #[pallet::error]
@@ -94,6 +152,7 @@ pub mod pallet {
         InvalidFeeType,
         KnownSenderMustMatchAccount,
         KnownSenderMissing,
+        BaseGasFeeZero,
     }
 
     #[pallet::storage]
@@ -181,6 +240,113 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// Set the base gas fee in usd (8 decimals)
+        #[pallet::call_index(2)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::set_base_gas_fee_usd())]
+        pub fn set_base_gas_fee_usd(origin: OriginFor<T>, base_fee: u128) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(base_fee > 0u128, Error::<T>::BaseGasFeeZero);
+
+            <BaseGasFeeUsd<T>>::mutate(|a| *a = base_fee.clone());
+            Self::deposit_event(Event::BaseGasFeeUsdSet { new_base_gas_fee: base_fee });
+
+            Ok(())
+        }
+    }
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_finalize(_n: BlockNumberFor<T>) {
+            let fee_pot = Self::fee_pot_account();
+
+            let total_fees: BalanceOf<T> = T::Currency::balance(&fee_pot);
+            if total_fees.is_zero() {
+                return
+            }
+
+            let used_weight: u128 = System::<T>::block_weight().total().ref_time() as u128;
+
+            let max_weight: u128 =
+                <T as frame_system::Config>::BlockWeights::get().max_block.ref_time() as u128;
+
+            T::FeeDistributor::distribute_fees(&fee_pot, total_fees, used_weight, max_weight);
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        pub fn get_min_avt_fee() -> u128 {
+            // Base fee in USD (8 decimals)
+            let min_usd_fee = BaseGasFeeUsd::<T>::get();
+
+            // Price of 1 native token in USD (8 decimals)
+            let rate = T::NativeRateProvider::native_rate_usd().unwrap_or(0);
+
+            // Any invalid or zero values → fallback
+            if min_usd_fee == 0 || rate == 0 {
+                return FALLBACK_MIN_FEE
+            }
+
+            // Safe integer division with fallback
+            min_usd_fee.checked_div(rate).unwrap_or(FALLBACK_MIN_FEE)
+        }
+
+        pub fn fee_pot_account() -> T::AccountId {
+            PalletId(sp_avn_common::FEE_POT_ID).into_account_truncating()
+        }
+
+        pub fn burn_pot_account() -> T::AccountId {
+            PalletId(sp_avn_common::BURN_POT_ID).into_account_truncating()
+        }
+
+        /// ```text
+        /// Collator reward ratio formula:
+        ///
+        ///     collator_ratio = min( desired_fullness / (block_fullness + epsilon), 1 )
+        ///
+        /// Where:
+        ///   block_fullness   = used_weight / max_weight
+        ///   desired_fullness = 0.005     (0.5% of block capacity)
+        ///   epsilon          = 0.001     (0.1% — avoids division by zero for empty blocks)
+        ///
+        /// Meaning:
+        ///   • If block is < 0.5% full → collator gets 100% of fees
+        ///   • If block is > 0.5% full → collator only gets the amount needed to cover costs,
+        ///                               and the rest is burned.
+        ///
+        /// When `max_weight == 0`, the chain cannot compute fullness,
+        /// so fallback behavior gives 100% of fees to the collator:
+        ///
+        ///     collator_ratio = 1
+        /// ```
+        pub fn collator_ratio_from_weights(used_weight: u128, max_weight: u128) -> FixedU128 {
+            let one = FixedU128::one();
+
+            // fallback: if we somehow have no limit, give everything to collator
+            if max_weight == 0 {
+                return one
+            }
+
+            let fullness =
+                FixedU128::saturating_from_rational(used_weight.min(max_weight), max_weight);
+
+            // We want the cutoff at 0.5% fullness.
+            // But the formula clamps when: fullness <= desired_fullness - epsilon.
+            // So to get a real cutoff of 0.5%, we set:
+            // desired_fullness = 0.5% + epsilon = 0.6%.
+            let desired_fullness = FixedU128::saturating_from_rational(6u128, 1000u128);
+
+            // epsilon = 0.1% (0.001)
+            let epsilon = FixedU128::saturating_from_rational(1u128, 1000u128);
+
+            let denom = fullness.saturating_add(epsilon);
+            let mut ratio = desired_fullness / denom;
+
+            if ratio > one {
+                ratio = one;
+            }
+            ratio
+        }
     }
 }
 
@@ -216,7 +382,7 @@ impl<T: Config> Pallet<T> {
         }
 
         let refund_amount = amount_paid.saturating_sub(fee_to_pay);
-        return (has_active_config, refund_amount)
+        (has_active_config, refund_amount)
     }
 }
 
@@ -462,6 +628,10 @@ pub mod set_known_sender_tests;
 #[cfg(test)]
 #[path = "tests/adjustment_fee_tests.rs"]
 pub mod adjustment_fee_tests;
+
+#[cfg(test)]
+#[path = "tests/base_fee_tests.rs"]
+pub mod base_fee_tests;
 
 pub mod default_weights;
 pub use default_weights::WeightInfo;

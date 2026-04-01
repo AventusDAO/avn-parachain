@@ -222,7 +222,6 @@ fn avn_test_lower_should_fail_when_amount_is_zero() {
 
 mod on_idle {
     use super::*;
-    use frame_support::traits::OnIdle;
 
     #[test]
     fn avn_test_on_idle_should_run() {
@@ -232,7 +231,9 @@ mod on_idle {
             set_on_idle_run(false);
             assert!(!on_idle_has_run());
 
-            TokenManager::on_idle(System::block_number(), 1_000_000_000.into());
+            <crate::pallet::Pallet<TestRuntime> as frame_support::traits::Hooks<
+                frame_system::pallet_prelude::BlockNumberFor<TestRuntime>,
+            >>::on_idle(System::block_number(), 1_000_000_000.into());
 
             assert!(on_idle_has_run());
         });

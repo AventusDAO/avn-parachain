@@ -334,6 +334,17 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
+impl<C> frame_system::offchain::CreateTransaction<C> for Runtime
+where
+    RuntimeCall: From<C>,
+{
+    type Extension = ();
+
+    fn create_transaction(call: Self::RuntimeCall, _extension: Self::Extension) -> Self::Extrinsic {
+        UncheckedExtrinsic::new_bare(call)
+    }
+}
+
 impl<C> frame_system::offchain::CreateInherent<C> for Runtime
 where
     RuntimeCall: From<C>,
@@ -490,6 +501,13 @@ impl pallet_avn_anchor::Config for Runtime {
 
 pub type EthAddress = H160;
 
+parameter_types! {
+    pub const MinBurnPeriod: BlockNumber = 1;
+    pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const BurnEnabled: bool = false;
+    pub const TreasuryBurnCap: Balance = 0;
+}
+
 impl pallet_token_manager::pallet::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -510,6 +528,10 @@ impl pallet_token_manager::pallet::Config for Runtime {
     type TimeProvider = Timestamp;
     type AssetRegistry = AssetRegistry;
     type AssetManager = AssetManager;
+    type MinBurnPeriod = MinBurnPeriod;
+    type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type BurnEnabled = BurnEnabled;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 impl pallet_nft_manager::Config for Runtime {
