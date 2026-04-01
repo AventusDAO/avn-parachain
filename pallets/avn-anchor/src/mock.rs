@@ -202,6 +202,13 @@ impl pallet_scheduler::Config for TestRuntime {
     type BlockNumberProvider = System;
 }
 
+parameter_types! {
+    pub const MinBurnPeriod: u32 = 7200;
+    pub const BurnEnabled: bool = false;
+    pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const TreasuryBurnCap: u128 = 10_000000_000000_000000u128;
+}
+
 impl pallet_token_manager::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -222,6 +229,10 @@ impl pallet_token_manager::Config for TestRuntime {
     type TimeProvider = Timestamp;
     type AssetRegistry = AssetRegistry;
     type AssetManager = AssetManager;
+    type MinBurnPeriod = MinBurnPeriod;
+    type BurnEnabled = BurnEnabled;
+    type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
@@ -472,6 +483,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
         avt_token_contract: AVT_TOKEN_CONTRACT,
         lower_schedule_period: 10,
         balances: vec![],
+        treasury_burn_threshold: Default::default(),
     }
     .assimilate_storage(&mut t);
 

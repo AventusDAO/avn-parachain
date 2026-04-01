@@ -325,6 +325,7 @@ pub async fn start_parachain_node(
     let import_queue_service = params.import_queue.service();
     let offchain_worker_enabled = parachain_config.offchain_worker.enabled;
     let avn_port = avn_cli_config.avn_port.clone();
+    let finance_api_key = avn_cli_config.finance_api_key.clone();
 
     // NOTE: because we use Aura here explicitly, we can use `CollatorSybilResistance::Resistant`
     // when starting the network.
@@ -477,6 +478,7 @@ pub async fn start_parachain_node(
             offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
                 transaction_pool.clone(),
             ),
+            finance_api_key: finance_api_key.clone(),
         };
 
         let avn_state = node_integration::build_app_state(&node_deps).map_err(|e| {

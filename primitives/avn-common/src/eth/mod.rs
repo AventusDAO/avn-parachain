@@ -142,6 +142,7 @@ pub enum BridgeContractMethod {
     AddAuthor,
     RemoveAuthor,
     MintRewards,
+    BurnFees,
 }
 
 impl BridgeContractMethod {
@@ -154,6 +155,7 @@ impl BridgeContractMethod {
             BridgeContractMethod::AddAuthor => b"addAuthor",
             BridgeContractMethod::RemoveAuthor => b"removeAuthor",
             BridgeContractMethod::MintRewards => b"mintRewards",
+            BridgeContractMethod::BurnFees => b"burnFees",
         }
     }
 }
@@ -170,6 +172,7 @@ impl TryFrom<&[u8]> for BridgeContractMethod {
             b"addAuthor" => Ok(BridgeContractMethod::AddAuthor),
             b"removeAuthor" => Ok(BridgeContractMethod::RemoveAuthor),
             b"mintRewards" => Ok(BridgeContractMethod::MintRewards),
+            b"burnFees" => Ok(BridgeContractMethod::BurnFees),
             _ => Err(()),
         }
     }
@@ -214,6 +217,14 @@ sol! {
 
 sol! {
   struct MintRewards {
+    uint128 amount;
+    uint256 expiry;
+    uint32 t2TxId;
+  }
+}
+
+sol! {
+  struct BurnFees {
     uint128 amount;
     uint256 expiry;
     uint32 t2TxId;
@@ -335,6 +346,18 @@ pub fn create_function_confirmation_hash(
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
 
             let data = MintRewards { amount, expiry, t2TxId: tx_id };
+            return Ok(eip712_hash(&data, &domain))
+        },
+
+        BridgeContractMethod::BurnFees => {
+            if params.len() != 3 {
+                return Err(())
+            }
+
+            let amount = parse_from_utf8::<u128>(&params[0].1)?;
+            let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
+
+            let data = BurnFees { amount, expiry, t2TxId: tx_id };
             return Ok(eip712_hash(&data, &domain))
         },
 

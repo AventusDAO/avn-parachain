@@ -39,6 +39,7 @@ use core::marker::PhantomData;
 pub trait WeightInfo {
 	fn set_known_sender() -> Weight;
 	fn remove_known_sender() -> Weight;
+	fn set_base_gas_fee_usd() -> Weight;
 }
 
 /// Weights for pallet_avn_transaction_payment using the Substrate node and recommended hardware.
@@ -66,6 +67,17 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
+		/// Storage: `AvnTransactionPayment::BaseGasFeeUsd` (r:1 w:1)
+	/// Proof: `AvnTransactionPayment::BaseGasFeeUsd` (`max_values`: Some(1), `max_size`: Some(16), added: 511, mode: `MaxEncodedLen`)
+	fn set_base_gas_fee_usd() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1501`
+		// Minimum execution time: 4_772_000 picoseconds.
+		Weight::from_parts(5_088_000, 1501)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -89,6 +101,17 @@ impl WeightInfo for () {
 		//  Estimated: `3567`
 		// Minimum execution time: 15_351_000 picoseconds.
 		Weight::from_parts(15_710_000, 3567)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+		/// Storage: `AvnTransactionPayment::BaseGasFeeUsd` (r:1 w:1)
+	/// Proof: `AvnTransactionPayment::BaseGasFeeUsd` (`max_values`: Some(1), `max_size`: Some(16), added: 511, mode: `MaxEncodedLen`)
+	fn set_base_gas_fee_usd() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `149`
+		//  Estimated: `1501`
+		// Minimum execution time: 4_772_000 picoseconds.
+		Weight::from_parts(5_088_000, 1501)
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}

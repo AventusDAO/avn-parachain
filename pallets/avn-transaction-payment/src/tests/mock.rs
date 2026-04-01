@@ -1,20 +1,26 @@
 use crate::{
     self as pallet_avn_transaction_payment, system::limits, AvnGasFeeAdapter, KnownSenders,
+    NativeRateProvider,
 };
 use codec::{Decode, Encode};
 use frame_support::{
     derive_impl,
     pallet_prelude::DispatchClass,
     parameter_types,
-    traits::{ConstU8, Imbalance, OnFinalize, OnInitialize, OnUnbalanced},
+    traits::{
+        fungible::{Balanced, Credit},
+        ConstU8, Currency, ExistenceRequirement, Imbalance, OnFinalize, OnInitialize,
+    },
     weights::{Weight, WeightToFee as WeightToFeeT},
+    PalletId,
 };
 use frame_system::{self as system};
+use pallet_avn_transaction_payment::BalanceOf;
 use pallet_balances;
 use sp_core::{sr25519, Pair};
 use sp_runtime::{
-    traits::{IdentityLookup, Verify},
-    BuildStorage, Perbill, SaturatedConversion,
+    traits::{AccountIdConversion, IdentityLookup, Verify, Zero},
+    BuildStorage, FixedPointNumber, Perbill, SaturatedConversion,
 };
 
 pub type AccountId = <Signature as Verify>::Signer;
@@ -35,7 +41,8 @@ frame_support::construct_runtime!(
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Event<T>},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
-        AvnTransactionPayment: pallet_avn_transaction_payment::{Pallet, Call, Storage, Event<T>}
+        AvnTransactionPayment: pallet_avn_transaction_payment::{Pallet, Call, Storage, Event<T>},
+        Authorship: pallet_authorship::{Pallet, Storage},
     }
 );
 
@@ -69,12 +76,70 @@ impl system::Config for TestRuntime {
     type AccountData = pallet_balances::AccountData<u128>;
 }
 
+pub struct TestRateProvider;
+impl NativeRateProvider for TestRateProvider {
+    fn native_rate_usd() -> Option<u128> {
+        Some(25_000_000u128)
+    }
+}
+
+pub struct PayCollatorAndBurn;
+impl crate::FeeDistributor<TestRuntime> for PayCollatorAndBurn {
+    fn distribute_fees(
+        fee_pot: &AccountId,
+        total_fees: BalanceOf<TestRuntime>,
+        used_weight: u128,
+        max_weight: u128,
+    ) {
+        if total_fees.is_zero() {
+            return
+        }
+
+        let burn_pot: AccountId = PalletId(sp_avn_common::BURN_POT_ID).into_account_truncating();
+
+        let collator_ratio =
+            crate::Pallet::<TestRuntime>::collator_ratio_from_weights(used_weight, max_weight);
+
+        let collator_share: BalanceOf<TestRuntime> = collator_ratio.saturating_mul_int(total_fees);
+        let mut burn_share: BalanceOf<TestRuntime> = total_fees.saturating_sub(collator_share);
+
+        // Pay collator; if no author, burn everything.
+        if !collator_share.is_zero() {
+            match pallet_authorship::Pallet::<TestRuntime>::author() {
+                Some(author) => {
+                    let _ = <Balances as Currency<AccountId>>::transfer(
+                        fee_pot,
+                        &author,
+                        collator_share,
+                        ExistenceRequirement::KeepAlive,
+                    );
+                },
+                None => {
+                    burn_share = total_fees;
+                },
+            }
+        }
+
+        // Send rest to burn pot
+        if !burn_share.is_zero() {
+            let _ = <Balances as Currency<AccountId>>::transfer(
+                fee_pot,
+                &burn_pot,
+                burn_share,
+                ExistenceRequirement::AllowDeath,
+            );
+        }
+    }
+}
+
 impl pallet_avn_transaction_payment::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type KnownUserOrigin = frame_system::EnsureRoot<AccountId>;
     type WeightInfo = pallet_avn_transaction_payment::default_weights::SubstrateWeight<TestRuntime>;
+    type NativeRateProvider = TestRateProvider;
+    type FeeDistributor = PayCollatorAndBurn;
 }
 
 impl WeightToFeeT for WeightToFee {
@@ -100,36 +165,47 @@ parameter_types! {
     pub static TransactionByteFee: u128 = 1u128;
 }
 
-pub struct DealWithFees;
-impl
-    OnUnbalanced<
-        frame_support::traits::fungible::Credit<AccountId, pallet_balances::Pallet<TestRuntime>>,
-    > for DealWithFees
-{
-    fn on_unbalanceds(
-        mut fees_then_tips: impl Iterator<
-            Item = frame_support::traits::fungible::Credit<
-                AccountId,
-                pallet_balances::Pallet<TestRuntime>,
-            >,
-        >,
-    ) {
+pub struct DealWithFeesForTest;
+
+impl frame_support::traits::OnUnbalanced<Credit<AccountId, Balances>> for DealWithFeesForTest {
+    fn on_unbalanceds(mut fees_then_tips: impl Iterator<Item = Credit<AccountId, Balances>>) {
         if let Some(mut fees) = fees_then_tips.next() {
             if let Some(tips) = fees_then_tips.next() {
                 tips.merge_into(&mut fees);
             }
+
+            let fee_pot = AvnTransactionPayment::fee_pot_account();
+            let _ = <Balances as Balanced<AccountId>>::resolve(&fee_pot, fees);
         }
     }
 }
 
 impl pallet_transaction_payment::Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
-    type OnChargeTransaction = AvnGasFeeAdapter<Balances, DealWithFees>;
+    type OnChargeTransaction = AvnGasFeeAdapter<Balances, DealWithFeesForTest>;
     type LengthToFee = TransactionByteFee;
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
     type OperationalFeeMultiplier = ConstU8<5>;
     type WeightInfo = pallet_transaction_payment::weights::SubstrateWeight<TestRuntime>;
+}
+
+use frame_support::traits::FindAuthor;
+use sp_runtime::ConsensusEngineId;
+
+pub struct TestFindAuthor;
+impl FindAuthor<AccountId> for TestFindAuthor {
+    fn find_author<'a, I>(_digests: I) -> Option<AccountId>
+    where
+        I: 'a + IntoIterator<Item = (ConsensusEngineId, &'a [u8])>,
+    {
+        Some(test_collator())
+    }
+}
+
+impl pallet_authorship::Config for TestRuntime {
+    type FindAuthor = TestFindAuthor;
+    type EventHandler = ();
 }
 
 parameter_types! {
@@ -175,6 +251,11 @@ impl TestAccount {
         data.copy_from_slice(&bytes32[0..32]);
         data
     }
+}
+
+/// The global collator used in all tests.
+pub fn test_collator() -> AccountId {
+    TestAccount::new(42).account_id()
 }
 
 /// Rolls forward one block. Returns the new block number.

@@ -77,7 +77,6 @@ pub mod pallet {
     use super::*;
 
     #[pallet::event]
-    #[pallet::generate_deposit(pub(crate) fn deposit_event)]
     pub enum Event {
         AvnBridgeContractUpdated { old_contract: H160, new_contract: H160 },
     }

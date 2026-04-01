@@ -89,18 +89,4 @@ impl<T: Config> Pallet<T> {
     pub fn u128_to_token_balance(amount: u128) -> Result<T::TokenBalance, Error<T>> {
         <T::TokenBalance as TryFrom<u128>>::try_from(amount).map_err(|_| Error::<T>::AmountOverflow)
     }
-
-    /// The account ID of the AvN treasury.
-    /// This actually does computation. If you need to keep using it, then make sure you cache
-    /// the value and only call this once.
-    pub fn compute_treasury_account_id() -> T::AccountId {
-        T::AvnTreasuryPotId::get().into_account_truncating()
-    }
-
-    /// The total amount of funds stored in this pallet
-    pub fn treasury_balance() -> BalanceOf<T> {
-        // Must never be less than 0 but better be safe.
-        <T as pallet::Config>::Currency::free_balance(&Self::compute_treasury_account_id())
-            .saturating_sub(<T as pallet::Config>::Currency::minimum_balance())
-    }
 }

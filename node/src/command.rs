@@ -260,6 +260,7 @@ pub fn run() -> Result<()> {
                     registered_node_id: cli.run.registered_node_id,
                     enable_transaction_filter: cli.run.enable_transaction_filter,
                     transaction_filter_log_rejections: cli.run.transaction_filter_log_rejections,
+                    finance_api_key: cli.run.finance_api_key,
                 };
 
                 info!("Is collating: {}", if config.role.is_authority() { "yes" } else { "no" });
