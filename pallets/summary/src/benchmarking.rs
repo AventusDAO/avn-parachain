@@ -8,7 +8,7 @@
 use super::*;
 
 use crate::offence::create_offenders_identification;
-use frame_benchmarking::{account, benchmarks_instance_pallet, impl_benchmark_test_suite};
+use frame_benchmarking::{account, impl_benchmark_test_suite, v2::*};
 use frame_system::{pallet_prelude::BlockNumberFor, EventRecord, Pallet as System, RawOrigin};
 use hex_literal::hex;
 use pallet_avn::{self as avn};
@@ -235,47 +235,73 @@ fn set_recovered_account_for_tests<T: Config<I>, I: 'static>(
     mock::set_mock_recovered_account_id(account_id_as_u64);
 }
 
-benchmarks_instance_pallet! {
-    set_periods {
+// #[instance_benchmarks]
+#[instance_benchmarks(where T: Config<I>, I: 'static)]
+mod benchmarks {
+    use super::*;
+
+    #[benchmark]
+    fn set_periods() {
         let new_schedule_period: BlockNumberFor<T> = 200u32.into();
         let new_voting_period: BlockNumberFor<T> = 150u32.into();
-    }: _(RawOrigin::Root, new_schedule_period, new_voting_period)
-    verify {
+
+        #[extrinsic_call]
+        _(RawOrigin::Root, new_schedule_period, new_voting_period);
+
         assert_eq!(SchedulePeriod::<T, I>::get(), new_schedule_period);
         assert_eq!(VotingPeriod::<T, I>::get(), new_voting_period);
     }
 
-    record_summary_calculation {
-        let v in 3 .. MAX_VALIDATOR_ACCOUNTS;
-        let r in 1 .. MAX_NUMBER_OF_ROOT_DATA_PER_RANGE;
-
+    #[benchmark]
+    fn record_summary_calculation(
+        v: Linear<3, { MAX_VALIDATOR_ACCOUNTS }>,
+        r: Linear<1, { MAX_NUMBER_OF_ROOT_DATA_PER_RANGE }>,
+    ) {
         let validators = setup_validators::<T, I>(v);
         let validator = validators[validators.len() - (1 as usize)].clone();
-        let (new_block_number, root_hash, ingress_counter, signature) = setup_record_summary_calculation::<T, I>();
+        let (new_block_number, root_hash, ingress_counter, signature) =
+            setup_record_summary_calculation::<T, I>();
         setup_roots::<T, I>(r, validator.account_id.clone(), ingress_counter);
         let next_block_to_process = NextBlockToProcess::<T, I>::get();
-    }: _(RawOrigin::None, new_block_number, root_hash, ingress_counter, validator.clone(), signature)
-    verify {
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::None,
+            new_block_number,
+            root_hash,
+            ingress_counter,
+            validator.clone(),
+            signature,
+        );
+
         let range = RootRange::new(next_block_to_process, new_block_number);
         let root = Roots::<T, I>::get(range, ingress_counter);
 
         assert_eq!(<TotalIngresses<T, I>>::get(), ingress_counter);
         assert!(PendingApproval::<T, I>::contains_key(range));
-        assert_eq!(true, VotesRepository::<T, I>::contains_key(RootId::new(range, ingress_counter)));
-        assert_last_event::<T, I>(Event::<T, I>::SummaryCalculated {
-            from: next_block_to_process,
-            to: new_block_number,
-            root_hash: root_hash,
-            submitter: validator.account_id
-        }.into());
+        assert_eq!(
+            true,
+            VotesRepository::<T, I>::contains_key(RootId::new(range, ingress_counter))
+        );
+        assert_last_event::<T, I>(
+            Event::<T, I>::SummaryCalculated {
+                from: next_block_to_process,
+                to: new_block_number,
+                root_hash,
+                submitter: validator.account_id,
+            }
+            .into(),
+        );
     }
 
-    approve_root_with_end_voting {
-        let v in 3 .. MAX_VALIDATOR_ACCOUNTS;
-        let o in 1 .. MAX_OFFENDERS;
-
+    #[benchmark]
+    fn approve_root_with_end_voting(
+        v: Linear<3, { MAX_VALIDATOR_ACCOUNTS }>,
+        o: Linear<1, { MAX_OFFENDERS }>,
+    ) {
         let mut validators = setup_validators::<T, I>(v);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         validators.remove(validators.len() - (1 as usize)); // Avoid setting up sender to approve vote automatically
 
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
@@ -290,12 +316,14 @@ benchmarks_instance_pallet! {
 
         CurrentSlot::<T, I>::put::<BlockNumberFor<T>>(3u32.into());
 
-        //In test mode, we want to set the recovered account (when verifying ECDSA signature) as a validator
+        //In test mode, we want to set the recovered account (when verifying ECDSA signature) as a
+        // validator
         #[cfg(test)]
         set_recovered_account_for_tests::<T, I>(&sender.account_id);
 
-    }: approve_root(RawOrigin::None, root_id, sender.clone(),  signature)
-    verify {
+        #[extrinsic_call]
+        approve_root(RawOrigin::None, root_id, sender.clone(), signature);
+
         let vote = VotesRepository::<T, I>::get(&root_id);
         assert_eq!(true, vote.ayes.contains(&sender.account_id));
 
@@ -306,69 +334,81 @@ benchmarks_instance_pallet! {
 
         let vote = VotesRepository::<T, I>::get(&root_id);
 
-
-        assert_last_nth_event::<T, I>(Event::<T, I>::SummaryOffenceReported {
+        assert_last_nth_event::<T, I>(
+            Event::<T, I>::SummaryOffenceReported {
                 offence_type: SummaryOffenceType::RejectedValidRoot,
-                offenders: create_offenders_identification::<T, I>(&vote.nays)
-            }.into(),
-            4
+                offenders: create_offenders_identification::<T, I>(&vote.nays),
+            }
+            .into(),
+            4,
         );
         let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
         assert_last_nth_event::<T, I>(
             Event::<T, I>::SummaryRootValidated {
                 root_hash: root_data.root_hash,
                 ingress_counter: root_id.ingress_counter,
-                block_range: root_id.range
-            }.into(),
-            3
+                block_range: root_id.range,
+            }
+            .into(),
+            3,
         );
 
         assert_last_nth_event::<T, I>(
-            Event::<T, I>::VotingEnded {
-                root_id: root_id.clone(),
-                vote_approved: true
-            }.into(),
-            2
+            Event::<T, I>::VotingEnded { root_id: root_id.clone(), vote_approved: true }.into(),
+            2,
         );
 
-        assert_last_event::<T, I>(Event::<T, I>::VoteAdded {
+        assert_last_event::<T, I>(
+            Event::<T, I>::VoteAdded {
                 voter: sender.account_id.clone(),
-                root_id: root_id,
-                agree_vote: true
-            }.into()
+                root_id,
+                agree_vote: true,
+            }
+            .into(),
         );
     }
 
-    approve_root_without_end_voting {
-        let v in 4 .. MAX_VALIDATOR_ACCOUNTS;
+    #[benchmark]
+    fn approve_root_without_end_voting(v: Linear<4, { MAX_VALIDATOR_ACCOUNTS }>) {
         let validators = setup_validators::<T, I>(v);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter - 1);
 
         CurrentSlot::<T, I>::put::<BlockNumberFor<T>>(3u32.into());
-    }: approve_root(RawOrigin::None, root_id, sender.clone(), signature)
-    verify {
+
+        #[extrinsic_call]
+        approve_root(RawOrigin::None, root_id, sender.clone(), signature);
+
         let vote = VotesRepository::<T, I>::get(&root_id);
         assert_eq!(true, vote.ayes.contains(&sender.account_id));
 
-        assert_eq!(false, NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into());
+        assert_eq!(
+            false,
+            NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into()
+        );
         assert_eq!(false, Roots::<T, I>::get(root_id.range, root_id.ingress_counter).is_validated);
         assert_eq!(false, SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get());
         assert_eq!(true, PendingApproval::<T, I>::contains_key(&root_id.range));
 
-        assert_last_event::<T, I>(Event::<T, I>::VoteAdded {
-            voter: sender.account_id,
-            root_id: root_id.clone(),
-            agree_vote: true
-        }.into());
+        assert_last_event::<T, I>(
+            Event::<T, I>::VoteAdded {
+                voter: sender.account_id,
+                root_id: root_id.clone(),
+                agree_vote: true,
+            }
+            .into(),
+        );
     }
 
-    reject_root_with_end_voting {
-        let v in 7 .. MAX_VALIDATOR_ACCOUNTS;
-        let o in 1 .. MAX_OFFENDERS;
-
+    #[benchmark]
+    fn reject_root_with_end_voting(
+        v: Linear<7, { MAX_VALIDATOR_ACCOUNTS }>,
+        o: Linear<1, { MAX_OFFENDERS }>,
+    ) {
         let mut validators = setup_validators::<T, I>(v);
-        let (sender, root_id, signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         validators.remove(validators.len() - (1 as usize)); // Avoid setting up sender to reject vote automatically
 
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
@@ -380,69 +420,98 @@ benchmarks_instance_pallet! {
         let mut approve_voters = validators.clone();
         approve_voters.reverse();
         setup_approval_votes::<T, I>(&approve_voters, o, &root_id);
-    }: reject_root(RawOrigin::None, root_id.clone(), sender.clone(), signature)
-    verify {
-        assert_eq!(false, NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into());
+
+        #[extrinsic_call]
+        reject_root(RawOrigin::None, root_id.clone(), sender.clone(), signature);
+
+        assert_eq!(
+            false,
+            NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into()
+        );
         assert_eq!(false, Roots::<T, I>::get(root_id.range, root_id.ingress_counter).is_validated);
-        assert_eq!(false, SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get() + 1u32.into());
+        assert_eq!(
+            false,
+            SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get() + 1u32.into()
+        );
 
         assert_eq!(false, PendingApproval::<T, I>::contains_key(&root_id.range));
 
         let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
-        assert_event_exists::<T, I>(Event::<T, I>::SummaryOffenceReported {
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SummaryOffenceReported {
                 offence_type: SummaryOffenceType::CreatedInvalidRoot,
-                offenders: create_offenders_identification::<T, I>(&vec![root_data.added_by.unwrap()])
-            }.into()
+                offenders: create_offenders_identification::<T, I>(&vec![root_data
+                    .added_by
+                    .unwrap()]),
+            }
+            .into(),
         );
 
         let vote = VotesRepository::<T, I>::get(&root_id);
-        assert_event_exists::<T, I>(Event::<T, I>::SummaryOffenceReported {
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SummaryOffenceReported {
                 offence_type: SummaryOffenceType::ApprovedInvalidRoot,
-                offenders: create_offenders_identification::<T, I>(&vote.ayes)
-            }.into()
+                offenders: create_offenders_identification::<T, I>(&vote.ayes),
+            }
+            .into(),
         );
 
         assert_event_exists::<T, I>(
-            Event::<T, I>::VotingEnded {
-                root_id: root_id.clone(),
-                vote_approved: false
-            }.into()
+            Event::<T, I>::VotingEnded { root_id: root_id.clone(), vote_approved: false }.into(),
         );
 
-        assert_last_event::<T, I>(Event::<T, I>::VoteAdded {
-            voter: sender.account_id,
-            root_id: root_id.clone(),
-            agree_vote: false
-        }.into());
+        assert_last_event::<T, I>(
+            Event::<T, I>::VoteAdded {
+                voter: sender.account_id,
+                root_id: root_id.clone(),
+                agree_vote: false,
+            }
+            .into(),
+        );
     }
 
-    reject_root_without_end_voting {
-        let v in 4 .. MAX_VALIDATOR_ACCOUNTS;
+    #[benchmark]
+    fn reject_root_without_end_voting(v: Linear<4, { MAX_VALIDATOR_ACCOUNTS }>) {
         let mut validators = setup_validators::<T, I>(v);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         validators.remove(validators.len() - (1 as usize)); // Avoid setting up sender to reject vote automatically
 
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
-    }: reject_root(RawOrigin::None, root_id.clone(), sender.clone(), signature)
-    verify {
-        assert_eq!(false, NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into());
+
+        #[extrinsic_call]
+        reject_root(RawOrigin::None, root_id.clone(), sender.clone(), signature);
+
+        assert_eq!(
+            false,
+            NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into()
+        );
         assert_eq!(false, Roots::<T, I>::get(root_id.range, root_id.ingress_counter).is_validated);
-        assert_eq!(false, SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get() + 1u32.into());
+        assert_eq!(
+            false,
+            SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get() + 1u32.into()
+        );
 
         assert_eq!(true, PendingApproval::<T, I>::contains_key(&root_id.range));
 
-        assert_last_event::<T, I>(Event::<T, I>::VoteAdded {
-            voter: sender.account_id,
-            root_id: root_id.clone(),
-            agree_vote: false
-        }.into());
+        assert_last_event::<T, I>(
+            Event::<T, I>::VoteAdded {
+                voter: sender.account_id,
+                root_id: root_id.clone(),
+                agree_vote: false,
+            }
+            .into(),
+        );
     }
 
-    end_voting_period_with_rejected_valid_votes {
-        let v in 7 .. MAX_VALIDATOR_ACCOUNTS;
-        let o in 1 .. MAX_OFFENDERS;
+    #[benchmark]
+    fn end_voting_period_with_rejected_valid_votes(
+        v: Linear<7, { MAX_VALIDATOR_ACCOUNTS }>,
+        o: Linear<1, { MAX_OFFENDERS }>,
+    ) {
         let validators = setup_validators::<T, I>(v);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
 
         let current_slot_number: BlockNumberFor<T> = 3u32.into();
@@ -455,32 +524,37 @@ benchmarks_instance_pallet! {
         // setup offenders votes
         let (_, offenders) = validators.split_at(quorum as usize);
         setup_reject_votes::<T, I>(&offenders.to_vec(), o, &root_id);
-    }: end_voting_period(RawOrigin::None, root_id.clone(), sender.clone(), signature)
-    verify {
+
+        #[extrinsic_call]
+        end_voting_period(RawOrigin::None, root_id.clone(), sender.clone(), signature);
+
         assert_eq!(true, NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into());
         assert_eq!(true, Roots::<T, I>::get(root_id.range, root_id.ingress_counter).is_validated);
         assert_eq!(true, SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get());
         assert_eq!(false, PendingApproval::<T, I>::contains_key(&root_id.range));
 
         let vote = VotesRepository::<T, I>::get(&root_id);
-        assert_event_exists::<T, I>(Event::<T, I>::SummaryOffenceReported {
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SummaryOffenceReported {
                 offence_type: SummaryOffenceType::RejectedValidRoot,
-                offenders: create_offenders_identification::<T, I>(&vote.nays)
-            }.into()
+                offenders: create_offenders_identification::<T, I>(&vote.nays),
+            }
+            .into(),
         );
 
         assert_last_event::<T, I>(
-            Event::<T, I>::VotingEnded {
-                root_id: root_id.clone(),
-                vote_approved: true,
-            }.into());
+            Event::<T, I>::VotingEnded { root_id: root_id.clone(), vote_approved: true }.into(),
+        );
     }
 
-    end_voting_period_with_approved_invalid_votes {
-        let v in 7 .. MAX_VALIDATOR_ACCOUNTS;
-        let o in 1 .. MAX_OFFENDERS;
+    #[benchmark]
+    fn end_voting_period_with_approved_invalid_votes(
+        v: Linear<7, { MAX_VALIDATOR_ACCOUNTS }>,
+        o: Linear<1, { MAX_OFFENDERS }>,
+    ) {
         let validators = setup_validators::<T, I>(v);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
 
         let current_slot_number: BlockNumberFor<T> = 3u32.into();
@@ -493,31 +567,36 @@ benchmarks_instance_pallet! {
         // setup offenders votes
         let (_, offenders) = validators.split_at(quorum as usize);
         setup_approval_votes::<T, I>(&offenders.to_vec(), o, &root_id);
-    }: end_voting_period(RawOrigin::None, root_id.clone(), sender.clone(), signature)
-    verify {
-        assert_eq!(false, NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into());
+
+        #[extrinsic_call]
+        end_voting_period(RawOrigin::None, root_id.clone(), sender.clone(), signature);
+
+        assert_eq!(
+            false,
+            NextBlockToProcess::<T, I>::get() == root_id.range.to_block + 1u32.into()
+        );
         assert_eq!(false, Roots::<T, I>::get(root_id.range, root_id.ingress_counter).is_validated);
         assert_eq!(false, SlotOfLastPublishedSummary::<T, I>::get() == CurrentSlot::<T, I>::get());
         assert_eq!(false, PendingApproval::<T, I>::contains_key(&root_id.range));
 
         let vote = VotesRepository::<T, I>::get(&root_id);
-        assert_event_exists::<T, I>(Event::<T, I>::SummaryOffenceReported {
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SummaryOffenceReported {
                 offence_type: SummaryOffenceType::ApprovedInvalidRoot,
-                offenders: create_offenders_identification::<T, I>(&vote.ayes)
-            }.into()
+                offenders: create_offenders_identification::<T, I>(&vote.ayes),
+            }
+            .into(),
         );
 
         assert_last_event::<T, I>(
-            Event::<T, I>::VotingEnded {
-                root_id: root_id.clone(),
-                vote_approved: false
-            }.into()
+            Event::<T, I>::VotingEnded { root_id: root_id.clone(), vote_approved: false }.into(),
         );
     }
 
-    advance_slot_with_offence {
-        // There can only be 1 offender here (the validator that failed to create a summary) so skip using MAX_OFFENDERS
-        let v in 5 .. MAX_VALIDATOR_ACCOUNTS;
+    #[benchmark]
+    fn advance_slot_with_offence(v: Linear<5, { MAX_VALIDATOR_ACCOUNTS }>) {
+        // There can only be 1 offender here (the validator that failed to create a summary) so skip
+        // using MAX_OFFENDERS
         let validators = setup_validators::<T, I>(v);
         let (sender, _, signature, quorum) = setup_publish_root_voting::<T, I>(validators);
 
@@ -532,36 +611,42 @@ benchmarks_instance_pallet! {
         SlotOfLastPublishedSummary::<T, I>::put(last_summary_slot);
 
         let old_new_slot_start = NextSlotAtBlock::<T, I>::get();
-    }: advance_slot(RawOrigin::None, sender.clone(), signature)
-    verify {
+
+        #[extrinsic_call]
+        advance_slot(RawOrigin::None, sender.clone(), signature);
+
         let new_slot_number = CurrentSlot::<T, I>::get();
         let new_validator = CurrentSlotsValidator::<T, I>::get();
         let new_slot_start = NextSlotAtBlock::<T, I>::get();
 
         assert_eq!(new_slot_number, old_slot_number + 1u32.into());
         assert_eq!(false, new_validator == Some(sender.account_id.clone()));
-        assert_last_event::<T, I>(Event::<T, I>::SlotAdvanced {
-            advanced_by: sender.account_id.clone(),
-            new_slot: new_slot_number,
-            slot_validator: new_validator.unwrap(),
-            slot_end: new_slot_start
-        }.into());
+        assert_last_event::<T, I>(
+            Event::<T, I>::SlotAdvanced {
+                advanced_by: sender.account_id.clone(),
+                new_slot: new_slot_number,
+                slot_validator: new_validator.unwrap(),
+                slot_end: new_slot_start,
+            }
+            .into(),
+        );
 
         assert_event_exists::<T, I>(
             Event::<T, I>::SummaryNotPublishedOffence {
                 challengee: sender.account_id.clone(),
                 void_slot: old_slot_number,
                 last_published: last_summary_slot,
-                end_vote: old_new_slot_start
-            }.into()
+                end_vote: old_new_slot_start,
+            }
+            .into(),
         );
 
         // TODO: assert_emitted_event_for_offence_of_type(SummaryOffenceType::SlotNotAdvanced);
     }
 
-    advance_slot_without_offence {
+    #[benchmark]
+    fn advance_slot_without_offence(v: Linear<3, { MAX_VALIDATOR_ACCOUNTS }>) {
         // No offence committed, so skip using MAX_OFFENDERS
-        let v in 3 .. MAX_VALIDATOR_ACCOUNTS;
         let validators = setup_validators::<T, I>(v);
         let (sender, _, signature, _) = setup_publish_root_voting::<T, I>(validators.clone());
 
@@ -569,32 +654,40 @@ benchmarks_instance_pallet! {
         CurrentSlotsValidator::<T, I>::put(sender.account_id.clone());
 
         let old_slot_number = CurrentSlot::<T, I>::get();
-    }: advance_slot(RawOrigin::None, sender.clone(), signature)
-    verify {
+
+        #[extrinsic_call]
+        advance_slot(RawOrigin::None, sender.clone(), signature);
+
         let new_slot_number = CurrentSlot::<T, I>::get();
         let new_validator = CurrentSlotsValidator::<T, I>::get();
         let new_slot_start = NextSlotAtBlock::<T, I>::get();
 
         assert_eq!(new_slot_number, old_slot_number + 1u32.into());
         assert_eq!(false, new_validator == Some(sender.account_id.clone()));
-        assert_last_event::<T, I>(Event::<T, I>::SlotAdvanced {
-            advanced_by: sender.account_id,
-            new_slot: new_slot_number,
-            slot_validator: new_validator.unwrap(),
-            slot_end: new_slot_start
-        }.into());
+        assert_last_event::<T, I>(
+            Event::<T, I>::SlotAdvanced {
+                advanced_by: sender.account_id,
+                new_slot: new_slot_number,
+                slot_validator: new_validator.unwrap(),
+                slot_end: new_slot_start,
+            }
+            .into(),
+        );
     }
 
-    add_challenge {
-        // There can only be 1 offender here (the validator that failed to advance the slot) so skip using MAX_OFFENDERS
-        let v in 3 .. MAX_VALIDATOR_ACCOUNTS;
+    #[benchmark]
+    fn add_challenge(v: Linear<3, { MAX_VALIDATOR_ACCOUNTS }>) {
+        // There can only be 1 offender here (the validator that failed to advance the slot) so skip
+        // using MAX_OFFENDERS
         let validators = setup_validators::<T, I>(v);
-        let (sender, _,  signature, _) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, _, signature, _) = setup_publish_root_voting::<T, I>(validators.clone());
 
         let current_block_number = SchedulePeriod::<T, I>::get() + T::MinBlockAge::get();
-        let next_slot_at_block: BlockNumberFor<T> = current_block_number - T::AdvanceSlotGracePeriod::get() - 1u32.into();
+        let next_slot_at_block: BlockNumberFor<T> =
+            current_block_number - T::AdvanceSlotGracePeriod::get() - 1u32.into();
         let current_slot_number: BlockNumberFor<T> = 3u32.into();
-        let slot_number_to_challenge_as_u32: u32 = AVN::<T>::convert_block_number_to_u32(current_slot_number).expect("valid u32 value");
+        let slot_number_to_challenge_as_u32: u32 =
+            AVN::<T>::convert_block_number_to_u32(current_slot_number).expect("valid u32 value");
 
         advance_block::<T, I>(current_block_number);
         NextSlotAtBlock::<T, I>::put(next_slot_at_block);
@@ -603,52 +696,67 @@ benchmarks_instance_pallet! {
         CurrentSlotsValidator::<T, I>::put(validators[1].account_id.clone());
 
         let challenge: SummaryChallenge<T::AccountId> = SummaryChallenge {
-            challenge_reason: SummaryChallengeReason::SlotNotAdvanced(slot_number_to_challenge_as_u32),
+            challenge_reason: SummaryChallengeReason::SlotNotAdvanced(
+                slot_number_to_challenge_as_u32,
+            ),
             challenger: sender.account_id.clone(),
-            challengee: validators[1].account_id.clone()
+            challengee: validators[1].account_id.clone(),
         };
-    }: _(RawOrigin::None, challenge.clone(), sender.clone(), signature)
-    verify {
+
+        #[extrinsic_call]
+        _(RawOrigin::None, challenge.clone(), sender.clone(), signature);
+
         let new_slot_number = CurrentSlot::<T, I>::get();
         let new_validator = CurrentSlotsValidator::<T, I>::get();
         let new_slot_start = NextSlotAtBlock::<T, I>::get();
 
         assert_eq!(new_slot_number, current_slot_number + 1u32.into());
 
-        assert_event_exists::<T, I>(Event::<T, I>::SummaryOffenceReported {
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SummaryOffenceReported {
                 offence_type: SummaryOffenceType::SlotNotAdvanced,
-                offenders: create_offenders_identification::<T, I>(&vec![validators[1].account_id.clone()])
-            }.into()
+                offenders: create_offenders_identification::<T, I>(&vec![validators[1]
+                    .account_id
+                    .clone()]),
+            }
+            .into(),
         );
 
-        assert_event_exists::<T, I>(Event::<T, I>::SummaryNotPublishedOffence {
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SummaryNotPublishedOffence {
                 challengee: validators[1].account_id.clone(),
                 void_slot: current_slot_number,
                 last_published: current_slot_number - 1u32.into(),
-                end_vote: next_slot_at_block
-            }.into()
+                end_vote: next_slot_at_block,
+            }
+            .into(),
         );
 
-        assert_event_exists::<T, I>(Event::<T, I>::SlotAdvanced {
-            advanced_by: sender.account_id,
-            new_slot: new_slot_number,
-            slot_validator: new_validator.unwrap(),
-            slot_end: new_slot_start
-            }.into()
+        assert_event_exists::<T, I>(
+            Event::<T, I>::SlotAdvanced {
+                advanced_by: sender.account_id,
+                new_slot: new_slot_number,
+                slot_validator: new_validator.unwrap(),
+                slot_end: new_slot_start,
+            }
+            .into(),
         );
 
         assert_last_event::<T, I>(
             Event::<T, I>::ChallengeAdded {
                 challenge_reason: challenge.challenge_reason.clone(),
                 challenger: challenge.challenger,
-                challengee: challenge.challengee
-            }.into()
+                challengee: challenge.challengee,
+            }
+            .into(),
         );
     }
 
-    admin_resolve_challenge_accepted {
+    #[benchmark]
+    fn admin_resolve_challenge_accepted() {
         let validators = setup_validators::<T, I>(3u32);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
         let passed = true;
 
@@ -662,24 +770,27 @@ benchmarks_instance_pallet! {
         PendingAdminReviews::<T, I>::insert(root_id, external_validation_data);
         ExternalValidationStatus::<T, I>::insert(root_id, external_validation_status);
 
-    }: admin_resolve_challenge(RawOrigin::Root, root_id, passed)
-    verify {
+        #[extrinsic_call]
+        admin_resolve_challenge(RawOrigin::Root, root_id, passed);
+
         assert_eq!(false, PendingAdminReviews::<T, I>::contains_key(&root_id));
         assert_eq!(false, ExternalValidationStatus::<T, I>::contains_key(&root_id));
 
         let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
         assert_event_exists::<T, I>(
-            Event::<T, I>::RootPassedValidation {root_id, root_hash: root_data.root_hash}.into()
+            Event::<T, I>::RootPassedValidation { root_id, root_hash: root_data.root_hash }.into(),
         );
 
         assert_last_event::<T, I>(
-            Event::<T, I>::RootChallengeResolved {root_id, accepted: passed}.into()
+            Event::<T, I>::RootChallengeResolved { root_id, accepted: passed }.into(),
         );
     }
 
-    admin_resolve_challenge_rejected {
+    #[benchmark]
+    fn admin_resolve_challenge_rejected() {
         let validators = setup_validators::<T, I>(3u32);
-        let (sender, root_id,  signature, quorum) = setup_publish_root_voting::<T, I>(validators.clone());
+        let (sender, root_id, signature, quorum) =
+            setup_publish_root_voting::<T, I>(validators.clone());
         setup_roots::<T, I>(1, sender.account_id.clone(), root_id.ingress_counter);
         let passed = false;
 
@@ -693,51 +804,61 @@ benchmarks_instance_pallet! {
         PendingAdminReviews::<T, I>::insert(root_id, external_validation_data);
         ExternalValidationStatus::<T, I>::insert(root_id, external_validation_status);
 
-    }: admin_resolve_challenge(RawOrigin::Root, root_id, passed)
-    verify {
+        #[extrinsic_call]
+        admin_resolve_challenge(RawOrigin::Root, root_id, passed);
+
         assert_eq!(false, PendingAdminReviews::<T, I>::contains_key(&root_id));
         assert_eq!(false, ExternalValidationStatus::<T, I>::contains_key(&root_id));
 
         let root_data = Roots::<T, I>::get(root_id.range, root_id.ingress_counter);
         assert_event_not_emitted::<T, I>(
-            Event::<T, I>::RootPassedValidation {root_id, root_hash: root_data.root_hash}.into()
+            Event::<T, I>::RootPassedValidation { root_id, root_hash: root_data.root_hash }.into(),
         );
 
         assert_last_event::<T, I>(
-            Event::<T, I>::RootChallengeResolved {root_id, accepted: passed}.into()
+            Event::<T, I>::RootChallengeResolved { root_id, accepted: passed }.into(),
         );
     }
 
-    set_external_validation_threshold {
+    #[benchmark]
+    fn set_external_validation_threshold() {
         let new_threshold = 51u32;
         let config = AdminConfig::ExternalValidationThreshold(new_threshold);
-    }: set_admin_config(RawOrigin::Root, config)
-    verify {
+
+        #[extrinsic_call]
+        set_admin_config(RawOrigin::Root, config);
+
         assert!(<ExternalValidationThreshold<T, I>>::get() == Some(new_threshold));
     }
 
-    set_schedule_period {
+    #[benchmark]
+    fn set_schedule_period() {
         let new_period: BlockNumberFor<T> = 106u32.into();
         let config = AdminConfig::SchedulePeriod(new_period);
-    }: set_admin_config(RawOrigin::Root, config)
-    verify {
+
+        #[extrinsic_call]
+        set_admin_config(RawOrigin::Root, config);
+
         assert!(<SchedulePeriod<T, I>>::get() == new_period);
     }
 
-    set_voting_period {
+    #[benchmark]
+    fn set_voting_period() {
         let new_period: BlockNumberFor<T> = 101u32.into();
         let config = AdminConfig::VotingPeriod(new_period);
-    }: set_admin_config(RawOrigin::Root, config)
-    verify {
+
+        #[extrinsic_call]
+        set_admin_config(RawOrigin::Root, config);
+
         assert!(<VotingPeriod<T, I>>::get() == new_period);
     }
-}
 
-impl_benchmark_test_suite!(
-    Pallet,
-    crate::mock::ExtBuilder::build_default()
-        .with_validators()
-        .with_genesis_config()
-        .as_externality(),
-    crate::mock::TestRuntime,
-);
+    impl_benchmark_test_suite!(
+        Pallet,
+        crate::mock::ExtBuilder::build_default()
+            .with_validators()
+            .with_genesis_config()
+            .as_externality(),
+        crate::mock::TestRuntime,
+    );
+}
