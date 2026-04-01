@@ -1604,8 +1604,8 @@ pub mod pallet {
 
             // N periods of runway
             let runway = reward_per_period.checked_mul(&(num_periods.into())).or_else(|| {
-                log::error!(
-                    "💔 Mint overflow: reward_per_period * num_periods ({:?} * {:?})",
+                log::debug!(
+                    "Mint overflow: reward_per_period * num_periods ({:?} * {:?})",
                     reward_per_period,
                     num_periods
                 );
@@ -1614,8 +1614,8 @@ pub mod pallet {
 
             // Mint triggers when pot drops below this (N periods of buffer above obligations)
             let refill_threshold = outstanding.checked_add(&runway).or_else(|| {
-                log::error!(
-                    "💔 Mint overflow: outstanding + runway ({:?} + {:?})",
+                log::debug!(
+                    "Mint overflow: outstanding + runway ({:?} + {:?})",
                     outstanding,
                     runway
                 );
@@ -1624,8 +1624,8 @@ pub mod pallet {
 
             // After minting, pot should reach this (2N periods of buffer above obligations)
             let target = refill_threshold.checked_add(&runway).or_else(|| {
-                log::error!(
-                    "💔 Mint overflow: refill_threshold + runway ({:?} + {:?})",
+                log::debug!(
+                    "Mint overflow: refill_threshold + runway ({:?} + {:?})",
                     refill_threshold,
                     runway
                 );
@@ -1633,13 +1633,12 @@ pub mod pallet {
             })?;
 
             if current_balance >= refill_threshold {
-                // We have enough in the pot to cover obligations + runway, no need to mint yet
                 return None
             }
 
             let mint_amount = target.checked_sub(&current_balance).or_else(|| {
-                log::error!(
-                    "💔 Mint underflow: target - balance ({:?} - {:?})",
+                log::debug!(
+                    "Mint underflow: target - balance ({:?} - {:?})",
                     target,
                     current_balance
                 );
@@ -1650,11 +1649,12 @@ pub mod pallet {
             // Add a cap as a safety ceiling.
             let max_mint = runway.saturating_mul(MINT_SAFETY_CAP_MULTIPLIER.into());
             if mint_amount > max_mint {
-                log::error!(
-                    "💔💔 Mint amount {:?} exceeds safety cap {:?} ({} x N x reward). There might be bridge issues or payout has stalled.",
-                    mint_amount, max_mint, MINT_SAFETY_CAP_MULTIPLIER
-                );
-
+                log::warn!(
+            "Mint amount {:?} exceeds safety cap {:?} ({} x N x reward). There might be bridge issues or payout has stalled.",
+            mint_amount,
+            max_mint,
+            MINT_SAFETY_CAP_MULTIPLIER
+        );
                 return None
             }
 

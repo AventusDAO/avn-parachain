@@ -53,7 +53,7 @@ use pallet_avn::sr25519::AuthorityId as AvnId;
 
 pub use pallet_avn_proxy::{Event as AvnProxyEvent, ProvableProxy};
 use pallet_eth_bridge_runtime_api::InstanceId;
-use pallet_parachain_staking;
+
 use sp_avn_common::{
     constants::time::*,
     eth::EthBridgeInstance,
@@ -198,44 +198,6 @@ pub fn native_version() -> NativeVersion {
     NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
 }
 
-/// Use this filter to block users from calling extrinsics listed here.
-pub struct RestrictedEndpointFilter;
-impl Contains<RuntimeCall> for RestrictedEndpointFilter {
-    fn contains(c: &RuntimeCall) -> bool {
-        !matches!(
-            c,
-            RuntimeCall::ParachainStaking(pallet_parachain_staking::Call::join_candidates { .. }) |
-                RuntimeCall::ParachainStaking(
-                    pallet_parachain_staking::Call::schedule_leave_candidates { .. }
-                ) |
-                RuntimeCall::ParachainStaking(
-                    pallet_parachain_staking::Call::execute_leave_candidates { .. }
-                ) |
-                RuntimeCall::ParachainStaking(
-                    pallet_parachain_staking::Call::cancel_leave_candidates { .. }
-                ) /* Allow the following direct staking extrinsics: */
-                  /*
-                      Call::ParachainStaking(pallet_parachain_staking::Call::nominate {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::nominator_bond_more {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::schedule_nominator_bond_less {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::schedule_revoke_nomination {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::execute_nomination_request {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::cancel_nomination_request {..}) |
-
-                      Call::ParachainStaking(pallet_parachain_staking::Call::schedule_candidate_bond_less {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::execute_candidate_bond_less {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::cancel_candidate_bond_less {..}) |
-
-                      Call::ParachainStaking(pallet_parachain_staking::Call::schedule_leave_nominators {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::execute_leave_nominators {..}) |
-                      Call::ParachainStaking(pallet_parachain_staking::Call::cancel_leave_nominators {..}) |
-
-                      Call::ParachainStaking(pallet_parachain_staking::Call::hotfix_remove_nomination_requests_exited_candidates{..})
-                  */
-        )
-    }
-}
-
 pub type MainEthBridge = pallet_eth_bridge::Instance1;
 pub type SecondaryEthBridge = pallet_eth_bridge::Instance2;
 const MAIN_ETH_BRIDGE_ID: u8 = 1u8;
@@ -294,11 +256,6 @@ mod runtime {
     #[runtime::pallet_index(24)]
     pub type AuraExt = cumulus_pallet_aura_ext;
 
-    #[runtime::pallet_index(96)]
-    pub type ParachainStaking = pallet_parachain_staking;
-
-    // Since the ValidatorsManager integrates with the ParachainStaking pallet, we want to
-    // initialise after it.
     #[runtime::pallet_index(18)]
     pub type ValidatorsManager = pallet_validators_manager;
 

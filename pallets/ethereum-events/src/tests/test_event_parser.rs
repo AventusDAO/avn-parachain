@@ -609,27 +609,18 @@ pub fn get_value_of_works() {
     let mock_event = mock_events_response.valid_event_1.clone();
 
     assert_eq!(
-        get_value_of(String::from("data"), &valid_events_response).unwrap(),
+        get_value_of("data", &valid_events_response).unwrap(),
         &valid_events_response[INDEX_DATA].1
     );
 
     assert_eq!(
-        get_value_of(String::from("logs"), &valid_result_field).unwrap(),
+        get_value_of("logs", &valid_result_field).unwrap(),
         &valid_result_field[INDEX_RESULT_LOGS].1
     );
 
-    assert_eq!(
-        get_value_of(String::from("data"), &mock_event).unwrap(),
-        &mock_event[INDEX_EVENT_DATA].1
-    );
+    assert_eq!(get_value_of("data", &mock_event).unwrap(), &mock_event[INDEX_EVENT_DATA].1);
 
-    assert_eq!(
-        get_value_of(String::from("topics"), &mock_event).unwrap(),
-        &mock_event[INDEX_TOPICS].1
-    );
+    assert_eq!(get_value_of("topics", &mock_event).unwrap(), &mock_event[INDEX_TOPICS].1);
 
-    assert_eq!(
-        get_value_of(String::from("address"), &mock_event).unwrap(),
-        &mock_event[INDEX_EVENT_ADDRESS].1
-    );
+    assert_eq!(get_value_of("address", &mock_event).unwrap(), &mock_event[INDEX_EVENT_ADDRESS].1);
 }

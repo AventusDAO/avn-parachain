@@ -7,7 +7,6 @@ use frame_support::{
     assert_noop, assert_ok, pallet_prelude::DispatchResultWithPostInfo, traits::Currency,
 };
 use hex_literal::hex;
-use pallet_parachain_staking::Error as ParachainStakingError;
 use sp_avn_common::assert_eq_uvec;
 use sp_core::H512;
 use sp_io::crypto::{secp256k1_ecdsa_recover, secp256k1_ecdsa_recover_compressed};
@@ -18,10 +17,9 @@ fn register_validator(
     collator_eth_public_key: &ecdsa::Public,
 ) -> DispatchResultWithPostInfo {
     return ValidatorManager::add_collator(
-        RawOrigin::Root.into(),
+        RuntimeOrigin::root(),
         *collator_id,
         *collator_eth_public_key,
-        None,
     )
 }
 
@@ -255,11 +253,11 @@ mod remove_validator_public {
 
             //Remove the validator - this sends to T1 and creates ValidatorActions entry
             assert_ok!(ValidatorManager::remove_validator(
-                RawOrigin::Root.into(),
+                RuntimeOrigin::root(),
                 context.new_validator_id
             ));
 
-            // Simulate T1 callback success - this initiates staking exit
+            // Simulate T1 callback success
             let tx_id = get_tx_id_for_validator(&context.new_validator_id).unwrap();
             simulate_t1_callback_success(tx_id);
 
@@ -295,7 +293,7 @@ mod remove_validator_public {
             // which schedules the exit (takes multiple sessions)
             advance_session(); // Session 1: on_new_session triggers clean_up_collator_data
             advance_session(); // Session 2: execute_leave_candidates completes
-            advance_session(); // Session 3: ParachainStaking removes from candidate pool
+            advance_session(); // Session 3: removes from candidate pool
             advance_session(); // Session 4: Session updates validator set
 
             // Validator has been removed from the session
@@ -349,10 +347,7 @@ mod remove_validator_public {
 
             let num_events = System::events().len();
             assert_noop!(
-                ValidatorManager::remove_validator(
-                    RawOrigin::None.into(),
-                    context.new_validator_id
-                ),
+                ValidatorManager::remove_validator(RuntimeOrigin::none(), context.new_validator_id),
                 BadOrigin
             );
             assert_eq!(System::events().len(), num_events);
@@ -375,7 +370,7 @@ mod remove_validator_public {
             let num_events = System::events().len();
 
             assert_noop!(
-                ValidatorManager::remove_validator(RawOrigin::Root.into(), validator_account_id),
+                ValidatorManager::remove_validator(RuntimeOrigin::root(), validator_account_id),
                 Error::<TestRuntime>::ValidatorNotFound
             );
 
@@ -549,10 +544,9 @@ mod add_validator {
                 set_session_keys(&context.collator);
                 assert_noop!(
                     ValidatorManager::add_collator(
-                        RawOrigin::None.into(),
+                        RuntimeOrigin::none(),
                         context.collator,
-                        context.collator_eth_public_key,
-                        None
+                        context.collator_eth_public_key
                     ),
                     BadOrigin
                 );

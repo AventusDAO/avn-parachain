@@ -13,16 +13,11 @@ extern crate alloc;
 use sp_avn_common::eth::EthereumId;
 
 use frame_support::{
-    dispatch::DispatchResult,
-    ensure,
-    pallet_prelude::StorageVersion,
-    traits::{Currency, Get},
-    transactional,
+    dispatch::DispatchResult, ensure, pallet_prelude::StorageVersion, traits::Get, transactional,
 };
 use frame_system::{
     offchain::{CreateInherent, CreateTransactionBase},
     pallet_prelude::BlockNumberFor,
-    RawOrigin,
 };
 use pallet_session::{self as session, Config as SessionConfig};
 use sp_runtime::{
@@ -44,15 +39,10 @@ use sp_avn_common::{
     event_types::Validator, BridgeContractMethod, IngressCounter,
 };
 
+use pallet_avn::BridgeInterface;
 #[cfg(any(test, feature = "runtime-benchmarks"))]
 use sp_avn_common::eth_key_actions::compress_eth_public_key;
 use sp_core::{bounded::BoundedVec, ecdsa};
-
-use pallet_parachain_staking::ValidatorRegistration;
-
-pub use pallet_parachain_staking::{self as parachain_staking, BalanceOf, PositiveImbalanceOf};
-
-use pallet_avn::BridgeInterface;
 
 pub use pallet::*;
 
@@ -75,7 +65,6 @@ pub mod pallet {
         frame_system::Config
         + session::Config
         + avn::Config
-        + parachain_staking::Config
         + pallet_session::historical::Config
         + CreateTransactionBase<Call<Self>>
         + CreateInherent<Call<Self>>
@@ -220,11 +209,6 @@ pub mod pallet {
     #[pallet::getter(fn get_ingress_counter)]
     pub type TotalIngresses<T: Config> = StorageValue<_, IngressCounter, ValueQuery>;
 
-    /// Stores deposit amounts for pending registrations
-    #[pallet::storage]
-    pub type PendingRegistrationDeposits<T: Config> =
-        StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>>;
-
     #[pallet::storage]
     pub type TransactionIdToAction<T: Config> =
         StorageMap<_, Blake2_128Concat, EthereumId, (T::AccountId, IngressCounter), OptionQuery>;
@@ -273,7 +257,6 @@ pub mod pallet {
             origin: OriginFor<T>,
             collator_account_id: T::AccountId,
             collator_eth_public_key: ecdsa::Public,
-            deposit: Option<BalanceOf<T>>,
         ) -> DispatchResultWithPostInfo {
             ensure_root(origin)?;
 
@@ -282,14 +265,6 @@ pub mod pallet {
                 &collator_account_id,
                 &collator_eth_public_key,
             )?;
-
-            let bond =
-                deposit.unwrap_or_else(|| parachain_staking::Pallet::<T>::min_collator_stake());
-
-            Self::validate_staking_preconditions(&collator_account_id, bond)?;
-
-            // Store deposit for use in callback
-            PendingRegistrationDeposits::<T>::insert(&collator_account_id, bond);
 
             // Send to T1 - actual registration happens in callback
             Self::send_validator_registration_to_t1(
@@ -479,13 +454,6 @@ impl<T: Config> Pallet<T> {
             Error::<T>::MaximumValidatorsReached
         );
 
-        ensure!(
-            <T as parachain_staking::Config>::CollatorSessionRegistration::is_registered(
-                account_id
-            ),
-            Error::<T>::CandidateSessionKeysNotFound
-        );
-
         // Disallow starting a registration if any validator action is already in progress
         ensure!(!Self::has_any_active_action(), Error::<T>::ValidatorActionAlreadyInProgress);
 
@@ -522,62 +490,6 @@ impl<T: Config> Pallet<T> {
             status,
             ValidatorsActionStatus::AwaitingConfirmation | ValidatorsActionStatus::Confirmed
         )
-    }
-
-    fn validate_staking_preconditions(
-        account_id: &T::AccountId,
-        deposit: BalanceOf<T>,
-    ) -> DispatchResult {
-        // Check 1: Not already a candidate
-        ensure!(
-            parachain_staking::Pallet::<T>::candidate_info(account_id).is_none(),
-            Error::<T>::AlreadyCandidate
-        );
-
-        // Check 2: Deposit meets minimum
-        let min_stake = parachain_staking::Pallet::<T>::min_collator_stake();
-        ensure!(deposit >= min_stake, Error::<T>::DepositBelowMinimum);
-
-        // Check 3: Account has sufficient free balance
-        type CurrencyOf<T> = <T as parachain_staking::Config>::Currency;
-        let free_balance = CurrencyOf::<T>::free_balance(account_id);
-
-        ensure!(free_balance >= deposit, Error::<T>::InsufficientBalance);
-
-        Ok(())
-    }
-
-    fn exit_from_staking(action_account_id: T::AccountId) -> Result<(), ()> {
-        // Cleanup staking state for the collator we are removing
-        let staking_state = parachain_staking::Pallet::<T>::candidate_info(&action_account_id);
-        if staking_state.is_none() {
-            log::error!(
-                "Unable to find staking candidate info for collator: {:?}",
-                action_account_id
-            );
-            return Err(())
-        }
-
-        let staking_state = staking_state.expect("Checked for none already");
-
-        let result = parachain_staking::Pallet::<T>::execute_leave_candidates(
-            <T as frame_system::Config>::RuntimeOrigin::from(RawOrigin::Signed(
-                action_account_id.clone(),
-            )),
-            action_account_id.clone(),
-            staking_state.nomination_count,
-        );
-
-        if result.is_err() {
-            log::error!(
-                "Error removing staking data for collator {:?}: {:?}",
-                action_account_id,
-                result
-            );
-            return Err(())
-        }
-
-        Ok(())
     }
 
     fn confirm_action(action_account_id: T::AccountId, ingress_counter: IngressCounter) {
@@ -716,22 +628,6 @@ impl<T: Config> Pallet<T> {
         Ok(tx_id)
     }
 
-    fn add_validator_to_staking(account_id: &T::AccountId) -> DispatchResult {
-        let deposit = PendingRegistrationDeposits::<T>::take(&account_id)
-            .unwrap_or_else(|| parachain_staking::Pallet::<T>::min_collator_stake());
-
-        let candidate_count = parachain_staking::Pallet::<T>::candidate_pool().0.len() as u32;
-
-        match parachain_staking::Pallet::<T>::join_candidates(
-            <T as frame_system::Config>::RuntimeOrigin::from(RawOrigin::Signed(account_id.clone())),
-            deposit,
-            candidate_count,
-        ) {
-            Ok(_) => return Ok(()),
-            Err(e) => return Err(e.error),
-        }
-    }
-
     fn complete_validator_registration(
         account_id: &T::AccountId,
         ingress_counter: IngressCounter,
@@ -745,23 +641,8 @@ impl<T: Config> Pallet<T> {
                     &account_id,
                     ingress_counter,
                     "Failed to append validator to active validators list",
-                    false,
                 );
                 return Err(Error::<T>::MaximumValidatorsReached.into())
-            },
-        }
-
-        // Add to staking candidates
-        match Self::add_validator_to_staking(&account_id) {
-            Ok(_) => {},
-            Err(e) => {
-                Self::handle_registration_failure(
-                    &account_id,
-                    ingress_counter,
-                    "Failed to add validator to staking candidates",
-                    false,
-                );
-                return Err(e)
             },
         }
 
@@ -794,24 +675,6 @@ impl<T: Config> Pallet<T> {
         account_id: &T::AccountId,
         ingress_counter: IngressCounter,
     ) -> DispatchResult {
-        // Initiate the staking exit
-        // This will cause ParachainStaking to remove them from next session
-        let candidate_count = parachain_staking::Pallet::<T>::candidate_pool().0.len() as u32;
-        match parachain_staking::Pallet::<T>::schedule_leave_candidates(
-            <T as frame_system::Config>::RuntimeOrigin::from(RawOrigin::Signed(account_id.clone())),
-            candidate_count,
-        ) {
-            Ok(_) => {},
-            Err(e) => {
-                Self::handle_deregistration_failure(
-                    &account_id,
-                    ingress_counter,
-                    "Failed to schedule leave candidates",
-                );
-                return Err(e.error)
-            },
-        }
-
         // Immediately clean up validator manager storage
         // Remove from active validators list
         ValidatorAccountIds::<T>::mutate(|maybe_validators| {
@@ -837,20 +700,11 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    fn cleanup_registration_storage(
-        account_id: &T::AccountId,
-        ingress_counter: IngressCounter,
-        cleanup_deposit: bool,
-    ) {
+    fn cleanup_registration_storage(account_id: &T::AccountId, ingress_counter: IngressCounter) {
         // Remove the eth key mapping if it exists
         if let Some(eth_key) = <AccountIdToEthereumKeys<T>>::get(&account_id) {
             <EthereumPublicKeys<T>>::remove(eth_key);
             <AccountIdToEthereumKeys<T>>::remove(&account_id);
-        }
-
-        // Cleanup stored deposit if requested
-        if cleanup_deposit {
-            PendingRegistrationDeposits::<T>::remove(&account_id);
         }
 
         // Remove validator action entry
@@ -861,28 +715,12 @@ impl<T: Config> Pallet<T> {
         account_id: &T::AccountId,
         ingress_counter: IngressCounter,
         reason: &str,
-        cleanup_deposit: bool,
     ) {
         log::error!("Validator registration failed for {:?}: {}", account_id, reason);
 
-        Self::cleanup_registration_storage(&account_id, ingress_counter, cleanup_deposit);
+        Self::cleanup_registration_storage(&account_id, ingress_counter);
 
         Self::deposit_event(Event::<T>::ValidatorRegistrationFailed {
-            validator_id: account_id.clone(),
-            reason: reason.as_bytes().to_vec(),
-        });
-    }
-
-    fn handle_deregistration_failure(
-        account_id: &T::AccountId,
-        ingress_counter: IngressCounter,
-        reason: &str,
-    ) {
-        log::error!("Validator deregistration failed for {:?}: {}", account_id, reason);
-
-        <ValidatorActions<T>>::remove(&account_id, ingress_counter);
-
-        Self::deposit_event(Event::<T>::ValidatorDeregistrationFailed {
             validator_id: account_id.clone(),
             reason: reason.as_bytes().to_vec(),
         });
@@ -897,7 +735,7 @@ impl<T: Config> Pallet<T> {
     ) {
         // Type-specific cleanup
         if action_type.is_registration() {
-            Self::cleanup_registration_storage(&account_id, ingress_counter, true);
+            Self::cleanup_registration_storage(&account_id, ingress_counter);
         } else {
             // For non-registration actions, just remove the validator action entry
             <ValidatorActions<T>>::remove(&account_id, ingress_counter);
@@ -1000,9 +838,7 @@ impl<T: Config> NewSessionHandler<T::AuthorityId, T::AccountId> for Pallet<T> {
                             disabled_validators.iter().any(|v| *v == action_account_id);
 
                     if !is_account_part_of_session {
-                        if let Ok(()) = Self::exit_from_staking(action_account_id.clone()) {
-                            Self::confirm_action(action_account_id, ingress_counter);
-                        }
+                        Self::confirm_action(action_account_id, ingress_counter);
                     }
                 } else if validators_action_data.status == ValidatorsActionStatus::Actioned &&
                     validators_action_data.action_type.is_activation()
@@ -1037,6 +873,45 @@ impl<T: Config> NewSessionHandler<T::AuthorityId, T::AccountId> for Pallet<T> {
                 }
             }
         }
+    }
+}
+
+impl<T: Config> session::SessionManager<T::AccountId> for Pallet<T> {
+    fn new_session(new_index: u32) -> Option<Vec<T::AccountId>> {
+        // Retrieve the authors from storage
+        let authors_option = ValidatorAccountIds::<T>::get();
+
+        if let Some(authors) = authors_option {
+            if authors.is_empty() {
+                // We never want to pass an empty set of collators. This would brick the chain.
+                // Returning None keeps the old session.
+                log::warn!("keeping old session because of empty collator set");
+                None
+            } else {
+                log::debug!(
+                    "[AUTH-MGR] assembling new authors for new session {} with these authors {:#?} at #{:?}",
+                    new_index,
+                    authors,
+                    <frame_system::Pallet<T>>::block_number(),
+                );
+
+                Some(authors.into())
+            }
+        } else {
+            // Handle the case where no authors are present in storage.
+            // Returning None keeps the old session, which can be expected in tests or during
+            // incomplete setup, so avoid logging this as an error.
+            log::debug!("keeping old session because no authors found in storage");
+            None
+        }
+    }
+
+    fn end_session(_end_index: u32) {
+        // nothing to do here
+    }
+
+    fn start_session(_start_index: u32) {
+        // nothing to do here
     }
 }
 

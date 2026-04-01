@@ -36,8 +36,6 @@ libsecp256k1 = { version = "0.7.0", default-features = false, features = [
 	"hmac","static-context"
 ], optional = true }
 sha3 = { version = "0.8", default-features = false, optional = true }
-#Staking
-pallet-parachain-staking.workspace = true
 
 # Optional imports for benchmarking
 frame-benchmarking = { optional = true, workspace = true }
@@ -70,7 +68,6 @@ std = [
 	"sp-avn-common/std",
 	"sp-staking/std",
 	"pallet-avn/std",
-	"pallet-parachain-staking/std",
 	"pallet-session/std",
 	"libsecp256k1?/std",
 	"hex/std",

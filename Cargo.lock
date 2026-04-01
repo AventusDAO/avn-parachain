@@ -2012,7 +2012,6 @@ dependencies = [
  "pallet-ethereum-events",
  "pallet-nft-manager",
  "pallet-node-manager",
- "pallet-parachain-staking",
  "pallet-summary",
  "pallet-summary-watchtower",
  "pallet-token-manager",
@@ -2053,7 +2052,6 @@ dependencies = [
  "pallet-eth-bridge-runtime-api",
  "pallet-ethereum-events",
  "pallet-nft-manager",
- "pallet-parachain-staking",
  "pallet-summary",
  "pallet-token-manager",
  "pallet-validators-manager",
@@ -2780,17 +2778,6 @@ checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
  "sha2 0.10.8",
  "tinyvec",
-]
-
-[[package]]
-name = "bstr"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6798148dccfbff0fae41c7574d2fa8f1ef3492fba0face179de5d8d447d67b05"
-dependencies = [
- "memchr",
- "regex-automata 0.3.6",
- "serde",
 ]
 
 [[package]]
@@ -9304,7 +9291,6 @@ dependencies = [
 name = "pallet-avn"
 version = "9.1.2"
 dependencies = [
- "frame-benchmarking",
  "frame-support",
  "frame-system",
  "hex",
@@ -10558,42 +10544,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-parachain-staking"
-version = "9.1.2"
-dependencies = [
- "assert_matches",
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex",
- "hex-literal",
- "log",
- "pallet-authorship",
- "pallet-avn",
- "pallet-avn-proxy",
- "pallet-balances",
- "pallet-eth-bridge",
- "pallet-session",
- "pallet-timestamp",
- "pallet-transaction-payment",
- "parity-scale-codec",
- "parking_lot 0.12.3",
- "rand 0.8.5",
- "scale-info",
- "serde",
- "similar-asserts",
- "sp-application-crypto",
- "sp-avn-common",
- "sp-core",
- "sp-io",
- "sp-keystore",
- "sp-runtime",
- "sp-staking",
- "sp-std",
- "substrate-fixed",
-]
-
-[[package]]
 name = "pallet-parameters"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11203,7 +11153,6 @@ dependencies = [
  "pallet-avn",
  "pallet-balances",
  "pallet-eth-bridge",
- "pallet-parachain-staking",
  "pallet-preimage",
  "pallet-scheduler",
  "pallet-session",
@@ -11217,6 +11166,7 @@ dependencies = [
  "sp-io",
  "sp-keystore",
  "sp-runtime",
+ "sp-staking",
  "sp-state-machine",
  "sp-std",
 ]
@@ -11371,7 +11321,6 @@ dependencies = [
  "pallet-avn-proxy",
  "pallet-balances",
  "pallet-eth-bridge",
- "pallet-parachain-staking",
  "pallet-session",
  "pallet-timestamp",
  "parity-scale-codec",
@@ -14285,12 +14234,6 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fed1ceff11a1dddaee50c9dc8e4938bd106e9d89ae372f192311e7da498e3b69"
-
-[[package]]
-name = "regex-automata"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "368758f23274712b504848e9d5a6f010445cc8b87a7cdb4d7cbee666c1288da3"
@@ -16898,26 +16841,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "similar"
-version = "2.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-dependencies = [
- "bstr",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "similar-asserts"
-version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b441962c817e33508847a22bd82f03a30cff43642dc2fae8b050566121eb9a"
-dependencies = [
- "console",
- "similar",
-]
-
-[[package]]
 name = "simple-dns"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18484,18 +18407,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b285e7d183a32732fdc119f3d81b7915790191fad602b7c709ef247073c77a2e"
 
 [[package]]
-name = "substrate-fixed"
-version = "0.5.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e83ba2b4f68f12ec6b0f55bac0a23a5bcaaf2676f1109c7a5ead6121c7f0622"
-dependencies = [
- "parity-scale-codec",
- "scale-info",
- "serde",
- "substrate-typenum",
-]
-
-[[package]]
 name = "substrate-frame-rpc-system"
 version = "44.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18547,16 +18458,6 @@ dependencies = [
  "sp-state-machine",
  "sp-trie",
  "trie-db",
-]
-
-[[package]]
-name = "substrate-typenum"
-version = "1.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cd64d3efe988228b8496698197ee60cfbfcedbf226961300e559870c1a3e8e0"
-dependencies = [
- "parity-scale-codec",
- "scale-info",
 ]
 
 [[package]]

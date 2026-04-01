@@ -21,6 +21,7 @@ log.workspace = true
 sp-core.workspace = true
 sp-std.workspace = true
 sp-runtime.workspace = true
+sp-staking.workspace = true
 sp-io.workspace = true
 sp-application-crypto.workspace = true
 sp-avn-common.workspace = true
@@ -39,7 +40,6 @@ pallet-timestamp = { optional = true, workspace = true }
 pallet-balances = { workspace = true, default-features = true, features=["insecure_zero_ed"] }
 pallet-transaction-payment = { default-features = true, workspace = true }
 sp-keystore = { default-features = true, workspace = true }
-pallet-parachain-staking = { workspace = true, default-features = true }
 pallet-session = { workspace = true, default-features = true, features = ["historical"] }
 pallet-eth-bridge = { workspace = true, default-features = true }
 pallet-scheduler = { workspace = true, default-features = true }

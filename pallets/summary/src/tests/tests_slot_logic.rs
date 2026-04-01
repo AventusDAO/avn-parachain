@@ -733,7 +733,6 @@ mod cases_for_no_summary_created_offences {
     pub struct RootContext {
         pub root_id: RootId<BlockNumber>,
         pub root_hash: H256,
-        pub tx_id: u64,
     }
 
     mod when_slot_is_advanced_and {
@@ -758,7 +757,11 @@ mod cases_for_no_summary_created_offences {
             // Setup voting data
             Summary::insert_root_hash(&root_id, root_hash, validator.account_id, 0);
             Summary::insert_pending_approval(&root_id);
-            Summary::register_root_for_voting(&root_id, QUORUM, VOTING_PERIOD_END);
+            Summary::register_root_for_voting(
+                &root_id,
+                <TestRuntime as Config>::Quorum::get_quorum(),
+                VOTING_PERIOD_END,
+            );
             assert_eq!(Summary::get_vote(&root_id).ayes.is_empty(), true);
             assert_eq!(Summary::get_vote(&root_id).nays.is_empty(), true);
 
@@ -1047,7 +1050,6 @@ mod cases_for_no_summary_created_offences {
                             DEFAULT_INGRESS_COUNTER,
                         ),
                         root_hash: H256::from(ROOT_HASH_BYTES),
-                        tx_id: 1,
                     };
 
                     setup_approved_root(&context, root_context);
@@ -1082,7 +1084,6 @@ mod cases_for_no_summary_created_offences {
                             DEFAULT_INGRESS_COUNTER,
                         ),
                         root_hash: H256::from(ROOT_HASH_BYTES),
-                        tx_id: 1,
                     };
 
                     setup_approved_root(&context, root_context);
@@ -1125,7 +1126,6 @@ mod cases_for_no_summary_created_offences {
                             DEFAULT_INGRESS_COUNTER,
                         ),
                         root_hash: H256::from(ROOT_HASH_BYTES),
-                        tx_id: 1,
                     };
 
                     setup_approved_root(&context, root_context_1);
@@ -1152,7 +1152,6 @@ mod cases_for_no_summary_created_offences {
                             DEFAULT_INGRESS_COUNTER,
                         ),
                         root_hash: H256::from(ROOT_HASH_BYTES),
-                        tx_id: 2,
                     };
 
                     setup_approved_root(&context, root_context_2);
@@ -1197,7 +1196,6 @@ mod cases_for_no_summary_created_offences {
                             DEFAULT_INGRESS_COUNTER,
                         ),
                         root_hash: H256::from(ROOT_HASH_BYTES),
-                        tx_id: 1,
                     };
 
                     setup_approved_root(&context, root_context_1);
@@ -1224,7 +1222,6 @@ mod cases_for_no_summary_created_offences {
                             DEFAULT_INGRESS_COUNTER,
                         ),
                         root_hash: H256::from(ROOT_HASH_BYTES),
-                        tx_id: 2,
                     };
 
                     setup_approved_root(&context, root_context_2);

@@ -4,7 +4,7 @@ pub use crate::{self as summary, *};
 use frame_support::{derive_impl, parameter_types};
 use sp_state_machine::BasicExternalities;
 
-use frame_system::{self as system, DefaultConfig};
+use frame_system::{self as system};
 use pallet_avn::{
     self as avn, testing::U64To32BytesConverter, vote::VotingSessionData, EthereumPublicKeyChecker,
 };
@@ -381,6 +381,21 @@ parameter_types! {
     pub const AnchorInstanceId: u8 = 2u8;
 }
 
+pub struct TestQuorum;
+
+impl QuorumPolicy for TestQuorum {
+    const QUORUM_PERCENT: u32 = 67;
+    const SUPERMAJORITY_PERCENT: u32 = 75;
+
+    fn get_quorum() -> u32 {
+        2
+    }
+
+    fn get_supermajority_quorum() -> u32 {
+        3
+    }
+}
+
 impl Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type AdvanceSlotGracePeriod = AdvanceSlotGracePeriod;
@@ -393,6 +408,7 @@ impl Config for TestRuntime {
     type InstanceId = InstanceId;
     type ExternalValidator = NoopWatchtower<AccountId>;
     type ExternalValidationEnabled = ExternalValidationEnabled;
+    type Quorum = TestQuorum;
 }
 
 type AvnAnchorSummary = summary::Instance1;
@@ -408,6 +424,7 @@ impl Config<AvnAnchorSummary> for TestRuntime {
     type InstanceId = AnchorInstanceId;
     type ExternalValidator = NoopWatchtower<AccountId>;
     type ExternalValidationEnabled = ExternalValidationEnabled;
+    type Quorum = TestQuorum;
 }
 
 impl<LocalCall> frame_system::offchain::CreateTransactionBase<LocalCall> for TestRuntime
@@ -719,9 +736,7 @@ const ROOT_HASH_CAUSES_SUBMISSION_TO_T1_ERROR: [u8; 32] = [
 pub const OTHER_CONTEXT: &'static [u8] = b"other_tx_context"; // TODO: Share it in a centralised avt suport pallet for testing
 const CURRENT_BLOCK_NUMBER: u64 = 10;
 const NEXT_BLOCK_TO_PROCESS: u64 = 3;
-pub const CURRENT_SLOT: u64 = 5;
 pub const VOTING_PERIOD_END: u64 = 12;
-pub const QUORUM: u32 = 3;
 pub const FIRST_VALIDATOR_INDEX: u64 = 1;
 pub const SECOND_VALIDATOR_INDEX: u64 = 2;
 pub const THIRD_VALIDATOR_INDEX: u64 = 3;
@@ -744,7 +759,6 @@ pub struct Context {
     pub record_summary_calculation_signature: TestSignature,
     pub root_id: RootId<BlockNumber>,
     pub tx_id: EthereumId,
-    pub current_slot: BlockNumber,
     pub finalised_block_vec: Option<Vec<u8>>,
 }
 
@@ -769,7 +783,6 @@ pub fn setup_context() -> Context {
 
     Context {
         current_block_number,
-        current_slot: CURRENT_SLOT,
         next_block_to_process,
         last_block_in_range,
         url_param: get_url_param(next_block_to_process, Summary::schedule_period()),
@@ -808,7 +821,11 @@ pub fn setup_voting(
     let tx_id: EthereumId = INITIAL_TRANSACTION_ID;
     Summary::insert_root_hash(root_id, root_hash_h256, validator.account_id.clone(), tx_id);
     Summary::insert_pending_approval(root_id);
-    Summary::register_root_for_voting(root_id, QUORUM, VOTING_PERIOD_END);
+    Summary::register_root_for_voting(
+        root_id,
+        <TestRuntime as Config>::Quorum::get_quorum(),
+        VOTING_PERIOD_END,
+    );
 
     assert_eq!(Summary::get_vote(root_id).ayes.is_empty(), true);
     assert_eq!(Summary::get_vote(root_id).nays.is_empty(), true);

@@ -10,6 +10,7 @@ use sp_avn_common::{
     event_types::Validator,
     ocw_lock::{self as OcwLock},
     safe_add_block_numbers, safe_sub_block_numbers, BridgeContractMethod, IngressCounter,
+    QuorumPolicy,
 };
 use sp_runtime::{
     scale_info::TypeInfo,
@@ -145,6 +146,7 @@ pub mod pallet {
         type ExternalValidationEnabled: Get<bool>;
         /// A type that provides external validation of summary roots. Use Noop implementation to
         /// disable.
+        type Quorum: QuorumPolicy;
         #[pallet::no_default_bounds]
         type ExternalValidator: WatchtowerInterface;
     }
@@ -523,7 +525,7 @@ pub mod pallet {
             );
             ensure!(new_block_number == expected_target_block, Error::<T, I>::InvalidSummaryRange);
 
-            let quorum = AVN::<T>::quorum();
+            let quorum = T::Quorum::get_quorum();
             let voting_period_end =
                 safe_add_block_numbers(current_block_number, Self::voting_period())
                     .map_err(|_| Error::<T, I>::Overflow)?;
@@ -1034,18 +1036,19 @@ pub mod pallet {
             url_path.push_str(&"/".to_string());
             url_path.push_str(&to_block_number.to_string());
 
-            let response = AVN::<T>::get_data_from_service(url_path);
+            let response = match AVN::<T>::get_data_from_service(url_path) {
+                Ok(response) => response,
+                Err(e) => {
+                    log::warn!(
+                        "💔️ Instance({}) Error getting summary data from external service: {:?}",
+                        T::InstanceId::get(),
+                        e
+                    );
+                    return Err(Error::<T, I>::ErrorGettingSummaryDataFromService.into())
+                },
+            };
 
-            if let Err(e) = response {
-                log::error!(
-                    "💔️ Instance({}) Error getting summary data from external service: {:?}",
-                    T::InstanceId::get(),
-                    e
-                );
-                return Err(Error::<T, I>::ErrorGettingSummaryDataFromService)?
-            }
-
-            let root_hash = Self::validate_response(response.expect("checked for error"))?;
+            let root_hash = Self::validate_response(response)?;
             log::trace!(target: "avn", "🥽 Instance({}) Calculated root hash {:?} for range [{:?}, {:?}]", T::InstanceId::get(), &root_hash, &from_block_number, &to_block_number);
 
             return Ok(root_hash)
@@ -1067,16 +1070,19 @@ pub mod pallet {
             block_number: BlockNumberFor<T>,
             this_validator: &Validator<<T as avn::Config>::AuthorityId, T::AccountId>,
         ) {
-            let current_slot_validator = Self::slot_validator();
-            if current_slot_validator.is_none() {
-                log::error!(
-                    "💔 Instance({}) Current slot validator is not found. Cannot advance slot for block: {:?}",
-                    T::InstanceId::get(), block_number
-                );
-                return
-            }
+            let current_slot_validator = match Self::slot_validator() {
+                Some(validator) => validator,
+                None => {
+                    log::warn!(
+                        "💔 Instance({}) Current slot validator is not found. Cannot advance slot for block: {:?}",
+                        T::InstanceId::get(),
+                        block_number
+                    );
+                    return
+                },
+            };
 
-            if this_validator.account_id == current_slot_validator.expect("Checked for none") &&
+            if this_validator.account_id == current_slot_validator &&
                 block_number >= Self::block_number_for_next_slot()
             {
                 let advance_slot_lock_name = Self::get_advance_slot_lock_name(Self::current_slot());
@@ -1108,12 +1114,13 @@ pub mod pallet {
             block_number: BlockNumberFor<T>,
             this_validator: &Validator<<T as avn::Config>::AuthorityId, T::AccountId>,
         ) {
-            let target_block = Self::get_target_block();
-            if target_block.is_err() {
-                log::error!("💔️ Error getting target block.");
-                return
-            }
-            let last_block_in_range = target_block.expect("Valid block number");
+            let last_block_in_range = match Self::get_target_block() {
+                Ok(block) => block,
+                Err(e) => {
+                    log::debug!("💔️ Error getting target block: {:?}", e);
+                    return
+                },
+            };
 
             if Self::can_process_summary(block_number, last_block_in_range, this_validator) {
                 let root_lock_name = Self::create_root_lock_name(last_block_in_range);
@@ -1148,15 +1155,15 @@ pub mod pallet {
             reporter: &Validator<T::AuthorityId, T::AccountId>,
         ) {
             if Self::last_summary_slot() < Self::current_slot() {
-                let maybe_current_slot_validator = Self::slot_validator();
-                if maybe_current_slot_validator.is_none() {
-                    log::error!(
-                        "💔 Current slot validator is not found. Unable to register offence"
-                    );
-                    return
-                }
-                let current_slot_validator =
-                    maybe_current_slot_validator.expect("Checked for none");
+                let current_slot_validator = match Self::slot_validator() {
+                    Some(validator) => validator,
+                    None => {
+                        log::warn!(
+                            "💔 Current slot validator is not found. Unable to register offence"
+                        );
+                        return
+                    },
+                };
 
                 create_and_report_summary_offence::<T, I>(
                     &reporter.account_id,
@@ -1305,29 +1312,27 @@ pub mod pallet {
 
         fn validate_response(response: Vec<u8>) -> Result<H256, Error<T, I>> {
             if response.len() != 64 {
-                log::error!(
+                log::debug!(
                     "❌ Instance({}) Root hash is not valid: {:?}",
                     T::InstanceId::get(),
                     response
                 );
-                return Err(Error::<T, I>::InvalidRootHashLength)?
+                return Err(Error::<T, I>::InvalidRootHashLength)
             }
 
-            let root_hash = core::str::from_utf8(&response);
-            if let Err(e) = root_hash {
-                log::error!(
-                    "❌ Instance({}) Error converting root hash bytes to string: {:?}",
-                    T::InstanceId::get(),
-                    e
+            let root_hash = core::str::from_utf8(&response).map_err(|_| {
+                log::debug!(
+                    "❌ Instance({}) Error converting root hash bytes to string",
+                    T::InstanceId::get()
                 );
-                return Err(Error::<T, I>::InvalidUTF8Bytes)?
-            }
+                Error::<T, I>::InvalidUTF8Bytes
+            })?;
 
             let mut data: [u8; 32] = [0; 32];
-            hex::decode_to_slice(root_hash.expect("Checked for error"), &mut data[..])
+            hex::decode_to_slice(root_hash, &mut data[..])
                 .map_err(|_| Error::<T, I>::InvalidHexString)?;
 
-            return Ok(H256::from_slice(&data))
+            Ok(H256::from_slice(&data))
         }
 
         pub fn send_root_to_ethereum(
@@ -1581,7 +1586,7 @@ pub mod pallet {
                     let root_data = match Self::try_get_root_data(&root_id) {
                         Ok(data) => data,
                         Err(e) => {
-                            log::error!(
+                            log::warn!(
                                 "💔 Root data not found. ProposalId {:?}. External ref {:?}. Err: {:?}",
                                 proposal_id,
                                 external_ref,
@@ -1594,7 +1599,8 @@ pub mod pallet {
                     Self::set_summary_status(&root_id, ExternalValidationEnum::Accepted);
 
                     if let Err(e) = Self::process_accepted_root(&root_id, root_data.root_hash) {
-                        log::error!("💔 Processing on_voting_completed error. ProposalId {:?}. External ref {:?}. Err: {:?}",
+                        log::warn!(
+                            "💔 Processing on_voting_completed error. ProposalId {:?}. External ref {:?}. Err: {:?}",
                             proposal_id,
                             external_ref,
                             e
@@ -1651,7 +1657,7 @@ impl<T: Config<I>, I: 'static> BridgeInterfaceNotification for Pallet<T, I> {
                 // Reclaim storage space
                 <TxIdToRoot<T, I>>::remove(tx_id);
             } else {
-                log::error!("❌ Transaction with ID {} failed to publish to Ethereum.", tx_id);
+                log::warn!("❌ Transaction with ID {} failed to publish to Ethereum.", tx_id);
             }
         }
 

@@ -117,16 +117,6 @@ pub(crate) fn avn_test_runtime_genesis(
                 .zip(eth_public_keys.iter().map(|pk| pk.clone()))
                 .collect::<Vec<_>>(),
         },
-        "parachainStaking": {
-            "candidates": candidates
-                .iter()
-                .cloned()
-                .map(|(acc, _, _, _, _)| (acc, COLLATOR_DEPOSIT))
-                .collect::<Vec<_>>(),
-            "minCollatorStake": COLLATOR_DEPOSIT,
-            "minTotalNominatorStake": 10 * AVT,
-            "delay": 2,
-        },
         "summary": { "schedulePeriod": schedule_period, "votingPeriod": voting_period },
         "tokenManager": {
             "lowerAccountId": H256(hex!(

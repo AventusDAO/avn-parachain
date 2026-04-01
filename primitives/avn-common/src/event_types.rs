@@ -54,12 +54,6 @@ pub enum Error {
     NftEndBatchListingEventWrongTopicCount,
     NftEndBatchListingEventBadTopicLength,
 
-    AvtGrowthLiftedEventShouldOnlyContainTopics,
-    AvtGrowthLiftedEventWrongTopicCount,
-    AvtGrowthLiftedEventBadTopicLength,
-    AvtGrowthLiftedEventDataOverflow,
-    AvtGrowthLiftedEventPeriodConversion,
-
     AvtLowerClaimedEventMissingData,
     AvtLowerClaimedEventWrongTopicCount,
     AvtLowerClaimedEventBadTopicLength,
@@ -124,8 +118,6 @@ pub enum ValidEvents {
     NftCancelListing,
     /// End of a batch NFT listing.
     NftEndBatchListing,
-    /// AVT growth was lifted.
-    AvtGrowthLifted,
     /// A claim for lower AVT was executed.
     AvtLowerClaimed,
     /// A lift operation to the prediction market.
@@ -173,10 +165,6 @@ impl ValidEvents {
             // hex string of Keccak-256 for AvnEndBatchListing(uint256)
             ValidEvents::NftEndBatchListing =>
                 H256(hex!("20c46236a16e176bc83a795b3a64ad94e5db8bc92afc8cc6d3fd4a3864211f8f")),
-
-            // hex string of Keccak-256 for LogGrowth(uint256,uint32)
-            ValidEvents::AvtGrowthLifted =>
-                H256(hex!("3ad58a8dc1110baa37ad88a68db14181b4ef0c69192dfa7699a9588960eca7fd")),
 
             // hex string of Keccak-256 for LogLowerClaimed(uint32)
             ValidEvents::AvtLowerClaimed =>
@@ -730,75 +718,6 @@ impl NftEndBatchListingData {
 }
 
 // T1 Event definition:
-// event LogGrowth(uint256 amount, uint32 period);
-#[derive(
-    Encode,
-    Decode,
-    Default,
-    Clone,
-    PartialEq,
-    Debug,
-    Eq,
-    TypeInfo,
-    MaxEncodedLen,
-    DecodeWithMemTracking,
-)]
-pub struct AvtGrowthLiftedData {
-    pub amount: u128,
-    pub period: u32,
-}
-
-impl AvtGrowthLiftedData {
-    const TOPIC_AMOUNT: usize = 1;
-    const TOPIC_PERIOD: usize = 2;
-
-    pub fn is_valid(&self) -> bool {
-        return self.amount > 0u128
-    }
-
-    pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
-        // Structure of input bytes:
-        // data -> empty
-        // all topics are 32 bytes long
-        // topics[0] --> event signature (can be ignored)
-        // topics[1] --> amount (32 bytes)
-        // topics[2] --> period (first 28 bytes are 0 and should be ignored)
-
-        if data.is_some() {
-            return Err(Error::AvtGrowthLiftedEventShouldOnlyContainTopics)
-        }
-
-        if topics.len() != 3 {
-            return Err(Error::AvtGrowthLiftedEventWrongTopicCount)
-        }
-
-        if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH ||
-            topics[Self::TOPIC_PERIOD].len() != WORD_LENGTH
-        {
-            return Err(Error::AvtGrowthLiftedEventBadTopicLength)
-        }
-
-        if topics[Self::TOPIC_AMOUNT][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::AvtGrowthLiftedEventDataOverflow)
-        }
-
-        let amount = u128::from_be_bytes(
-            topics[Self::TOPIC_AMOUNT][HALF_WORD_LENGTH..WORD_LENGTH]
-                .try_into()
-                .expect("Slice is the correct size"),
-        );
-
-        let period = u32::from_be_bytes(
-            topics[Self::TOPIC_PERIOD][TWENTY_EIGHT_BYTES..WORD_LENGTH]
-                .try_into()
-                .map_err(|_| Error::AvtGrowthLiftedEventPeriodConversion)?,
-        );
-
-        return Ok(AvtGrowthLiftedData { amount, period })
-    }
-}
-
-// T1 Event definition:
 // event LogLowerClaimed(uint32 lowerId);
 #[derive(
     Encode,
@@ -1021,7 +940,6 @@ pub enum EventData {
     LogNftTransferTo(NftTransferToData),
     LogNftCancelListing(NftCancelListingData),
     LogNftEndBatchListing(NftEndBatchListingData),
-    LogAvtGrowthLifted(AvtGrowthLiftedData),
     LogLowerClaimed(AvtLowerClaimedData),
     LogLowerReverted(LowerRevertedData),
     LogLiftedToPredictionMarket(LiftedData),
@@ -1040,7 +958,6 @@ impl EventData {
             EventData::LogNftTransferTo(d) => d.is_valid(),
             EventData::LogNftCancelListing(d) => d.is_valid(),
             EventData::LogNftEndBatchListing(d) => d.is_valid(),
-            EventData::LogAvtGrowthLifted(d) => d.is_valid(),
             EventData::LogLiftedToPredictionMarket(d) => d.is_valid(),
             EventData::LogErc20Transfer(d) => d.is_valid(),
             EventData::LogLowerReverted(d) => d.is_valid(),
@@ -1274,10 +1191,6 @@ mod test_event_types;
 #[cfg(test)]
 #[path = "tests/nft_event_tests.rs"]
 mod nft_event_tests;
-
-#[cfg(test)]
-#[path = "tests/test_avt_growth_event_parsing.rs"]
-mod test_avt_growth_event_parsing;
 
 #[cfg(test)]
 #[path = "tests/test_lower_claim.rs"]

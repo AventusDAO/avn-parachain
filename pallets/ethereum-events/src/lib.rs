@@ -9,7 +9,7 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 #[cfg(not(feature = "std"))]
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use frame_support::{
     dispatch::DispatchResult,
     ensure,
@@ -38,8 +38,8 @@ use sp_avn_common::{
     bounds::ProcessingBatchBound,
     event_discovery::EthereumEventsFilterTrait,
     event_types::{
-        AddedValidatorData, AvtGrowthLiftedData, AvtLowerClaimedData, Challenge, ChallengeReason,
-        CheckResult, EthEventCheckResult, EthEventId, EventData, LiftedData, LowerRevertedData,
+        AddedValidatorData, AvtLowerClaimedData, Challenge, ChallengeReason, CheckResult,
+        EthEventCheckResult, EthEventId, EventData, LiftedData, LowerRevertedData,
         NftCancelListingData, NftEndBatchListingData, NftMintData, NftTransferToData,
         ProcessedEventHandler, TotalSupplyUpdatedData, ValidEvents, Validator,
     },
@@ -1107,12 +1107,6 @@ impl<T: Config> Pallet<T> {
                 Error::<T>::EventParsingFailed
             })?;
             return Ok(EventData::LogNftEndBatchListing(event_data))
-        } else if event_id.signature == ValidEvents::AvtGrowthLifted.signature() {
-            let event_data = <AvtGrowthLiftedData>::parse_bytes(data, topics).map_err(|e| {
-                log::warn!("Error parsing T1 LogGrowth Event: {:#?}", e);
-                Error::<T>::EventParsingFailed
-            })?;
-            return Ok(EventData::LogAvtGrowthLifted(event_data))
         } else if event_id.signature == ValidEvents::AvtLowerClaimed.signature() {
             let event_data = <AvtLowerClaimedData>::parse_bytes(data, topics).map_err(|e| {
                 log::warn!("Error parsing T1 LogLowerClaimed Event: {:#?}", e);
@@ -1424,57 +1418,89 @@ impl<T: Config> Pallet<T> {
             Default::default(),
         );
 
-        // check if the body has been received successfully
-        if let Err(e) = response_body {
-            log::error!("Http error fetching event: {:?}", e);
-            return EthEventCheckResult::new(
-                ready_after_block,
-                CheckResult::HttpErrorCheckingEvent,
-                event_id,
-                &EventData::EmptyEvent,
-                validator_account_id.clone(),
-                block_number,
-                Default::default(),
-            )
-        }
-
-        let (response_data_object, num_confirmations) =
-            parse_response_to_json(response_body.expect("Checked for error."))
-                .unwrap_or((vec![], 0));
-
-        if response_data_object.is_empty() {
-            log::error!("❌ Response data json is empty");
-            return invalid_result
+        let response_body = match response_body {
+            Ok(body) => body,
+            Err(e) => {
+                log::error!("Http error fetching event: {:?}", e);
+                return EthEventCheckResult::new(
+                    ready_after_block,
+                    CheckResult::HttpErrorCheckingEvent,
+                    event_id,
+                    &EventData::EmptyEvent,
+                    validator_account_id.clone(),
+                    block_number,
+                    Default::default(),
+                )
+            },
         };
 
-        // make sure the transaction has been successfully executed
-        let status = get_status(&response_data_object).unwrap_or(0);
+        let (response_data_object, num_confirmations) = match parse_response_to_json(response_body)
+        {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                log::debug!(
+                    "Invalid ethereum response while checking event {:?}: {:?}",
+                    event_id,
+                    e
+                );
+                return invalid_result
+            },
+        };
+
+        let status = match get_status(&response_data_object) {
+            Ok(status) => status,
+            Err(e) => {
+                log::debug!(
+                    "Missing or invalid ethereum transaction status for event {:?}: {:?}",
+                    event_id,
+                    e
+                );
+                return invalid_result
+            },
+        };
+
         if status != 1 {
-            log::error!("❌ Transaction was not executed successfully on Ethereum");
+            log::debug!(
+                "Ethereum transaction was not executed successfully for event {:?}, status: {:?}",
+                event_id,
+                status
+            );
             return invalid_result
         }
 
-        let event_object: Option<(_, _, _)> = find_event(&response_data_object, event_id.signature);
-        if event_object.is_none() {
-            log::error!("❌ Event missing from response or response is not valid. Response: {:?}, event topic: {:?}", response_data_object, event_id.signature);
-            return invalid_result
-        }
-        let (data, topics, contract_address) = event_object.expect("Value is not none");
+        let (data, topics, contract_address) =
+            match find_event(&response_data_object, event_id.signature) {
+                Some(event_object) => event_object,
+                None => {
+                    log::debug!(
+                        "Event missing from response or response invalid for event {:?}",
+                        event_id
+                    );
+                    return invalid_result
+                },
+            };
 
-        if Self::is_event_contract_valid(&contract_address, event_id) == false {
-            log::error!("❌ Event contract address {:?} is not recognised", contract_address);
+        if !Self::is_event_contract_valid(&contract_address, event_id) {
+            log::debug!(
+                "Event contract address {:?} is not recognised for event {:?}",
+                contract_address,
+                event_id
+            );
             return invalid_result
         }
 
-        let parsed_event = Self::parse_tier1_event(event_id.clone(), data, topics);
-        if let Err(e) = parsed_event {
-            log::error!("❌ Unable to parse tier 1 event data {:?}", e);
-            return invalid_result
-        }
+        let parsed_event = match Self::parse_tier1_event(event_id.clone(), data, topics) {
+            Ok(parsed_event) => parsed_event,
+            Err(e) => {
+                log::debug!("Unable to parse tier 1 event data for {:?}: {:?}", event_id, e);
+                return invalid_result
+            },
+        };
 
         if num_confirmations < <T as Config>::MinEthBlockConfirmation::get() {
-            log::error!(
-                "📢 There aren't enough confirmations for this event. Current confirmations: {:?}",
+            log::debug!(
+                "There aren't enough confirmations for event {:?}. Current confirmations: {:?}",
+                event_id,
                 num_confirmations
             );
             return EthEventCheckResult::new(
@@ -1488,11 +1514,11 @@ impl<T: Config> Pallet<T> {
             )
         }
 
-        return EthEventCheckResult::new(
+        EthEventCheckResult::new(
             ready_after_block,
             CheckResult::Ok,
             event_id,
-            &parsed_event.expect("Value is not an error"),
+            &parsed_event,
             validator_account_id.clone(),
             block_number,
             Default::default(),

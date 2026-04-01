@@ -5,7 +5,7 @@ use frame_support::{derive_impl, parameter_types};
 use sp_runtime::{DispatchError, DispatchResult};
 use sp_state_machine::BasicExternalities;
 
-use frame_system::{self as system, DefaultConfig};
+use frame_system as system;
 use pallet_session as session;
 use sp_runtime::{testing::UintAuthorityId, traits::ConvertInto, BuildStorage};
 use std::cell::RefCell;
@@ -141,16 +141,19 @@ impl AvnOffenceHandler {
     }
 }
 
+#[cfg(feature = "runtime-benchmarks")]
 pub struct TestExternalitiesBuilder {
     _existential_deposit: u64,
 }
 
+#[cfg(feature = "runtime-benchmarks")]
 impl Default for TestExternalitiesBuilder {
     fn default() -> Self {
         Self { _existential_deposit: 1 }
     }
 }
 
+#[cfg(feature = "runtime-benchmarks")]
 impl TestExternalitiesBuilder {
     // Build a genesis storage key/value store
     pub fn build<R>(self, execute: impl FnOnce() -> R) -> sp_io::TestExternalities {

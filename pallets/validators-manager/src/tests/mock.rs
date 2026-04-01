@@ -4,37 +4,25 @@ use crate::{self as validators_manager, *};
 use frame_support::{
     derive_impl, parameter_types,
     traits::{Currency, OnFinalize, OnInitialize},
-    PalletId,
 };
 use sp_state_machine::BasicExternalities;
 
 use hex_literal::hex;
-use pallet_parachain_staking::{self as parachain_staking};
 
+use frame_system::{self as system};
 use pallet_avn::BridgeInterfaceNotification;
+use pallet_session as session;
 use pallet_timestamp as timestamp;
 use sp_avn_common::{
     avn_tests_helpers::ethereum_converters::*,
-    event_types::{AddedValidatorData, EthEvent, EthEventId, EventData, ValidEvents},
+    event_types::{AddedValidatorData, EthEventId},
 };
-use sp_core::{
-    ecdsa::Public,
-    offchain::{
-        testing::{OffchainState, PoolState, TestOffchainExt, TestTransactionPoolExt},
-        OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
-    },
-    sr25519, ByteArray, ConstU64, Pair, H256,
-};
+use sp_core::{ecdsa::Public, sr25519, ByteArray, ConstU64, Pair, H256};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
     traits::{ConvertInto, IdentityLookup, Verify},
     BuildStorage,
 };
-
-use codec::alloc::sync::Arc;
-use frame_system::{self as system, DefaultConfig};
-use pallet_session as session;
-use parking_lot::RwLock;
 use std::cell::RefCell;
 
 pub fn validator_id_1() -> AccountId {
@@ -105,7 +93,7 @@ frame_support::construct_runtime!(
         Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
-        ParachainStaking: parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
+         Historical: pallet_session::historical::{Pallet, Storage},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
     }
@@ -241,14 +229,14 @@ parameter_types! {
 }
 
 impl session::Config for TestRuntime {
-    type SessionManager = ParachainStaking;
+    type SessionManager = ValidatorManager;
     type Keys = UintAuthorityId;
-    type ShouldEndSession = ParachainStaking;
+    type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
     type SessionHandler = (Avn,);
     type RuntimeEvent = RuntimeEvent;
     type ValidatorId = AccountId;
     type ValidatorIdOf = ConvertInto;
-    type NextSessionRotation = ParachainStaking;
+    type NextSessionRotation = session::PeriodicSessions<Period, Offset>;
     type WeightInfo = ();
     type DisablingStrategy = ();
 }
@@ -256,46 +244,6 @@ impl session::Config for TestRuntime {
 impl pallet_session::historical::Config for TestRuntime {
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
-}
-
-parameter_types! {
-    pub const MinBlocksPerEra: u32 = 2;
-    pub const DefaultBlocksPerEra: u32 = 2;
-    pub const MinSelectedCandidates: u32 = 20;
-    pub const MaxTopNominationsPerCandidate: u32 = 4;
-    pub const MaxBottomNominationsPerCandidate: u32 = 4;
-    pub const MaxNominationsPerNominator: u32 = 4;
-    pub const MinNominationPerCollator: u128 = 3;
-    pub const ErasPerGrowthPeriod: u32 = 2;
-    pub const RewardPaymentDelay: u32 = 2;
-    pub const RewardPotId: PalletId = PalletId(*b"av/vamgr");
-    pub const MaxCandidates: u32 = 256;
-    pub const GrowthEnabled: bool = true;
-}
-
-impl parachain_staking::Config for TestRuntime {
-    type RuntimeCall = RuntimeCall;
-    type RuntimeEvent = RuntimeEvent;
-    type Currency = Balances;
-    type MinBlocksPerEra = MinBlocksPerEra;
-    type RewardPaymentDelay = RewardPaymentDelay;
-    type MinSelectedCandidates = MinSelectedCandidates;
-    type MaxTopNominationsPerCandidate = MaxTopNominationsPerCandidate;
-    type MaxBottomNominationsPerCandidate = MaxBottomNominationsPerCandidate;
-    type MaxNominationsPerNominator = MaxNominationsPerNominator;
-    type MinNominationPerCollator = MinNominationPerCollator;
-    type RewardPotId = RewardPotId;
-    type ErasPerGrowthPeriod = ErasPerGrowthPeriod;
-    type Public = AccountId;
-    type Signature = Signature;
-    type CollatorSessionRegistration = Session;
-    type CollatorPayoutDustHandler = ();
-    type ProcessedEventsChecker = ();
-    type WeightInfo = ();
-    type MaxCandidates = MaxCandidates;
-    type AccountToBytesConvert = Avn;
-    type BridgeInterface = EthBridge;
-    type GrowthEnabled = GrowthEnabled;
 }
 
 pub const INITIAL_TRANSACTION_ID: EthereumId = 0;
@@ -385,25 +333,13 @@ fn initial_maximum_validators_public_keys() -> Vec<ecdsa::Public> {
 
 pub struct ExtBuilder {
     pub storage: sp_runtime::Storage,
-    offchain_state: Option<Arc<RwLock<OffchainState>>>,
-    pool_state: Option<Arc<RwLock<PoolState>>>,
-    txpool_extension: Option<TestTransactionPoolExt>,
-    offchain_extension: Option<TestOffchainExt>,
-    offchain_registered: bool,
 }
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
         let storage =
             frame_system::GenesisConfig::<TestRuntime>::default().build_storage().unwrap();
-        Self {
-            storage,
-            pool_state: None,
-            offchain_state: None,
-            txpool_extension: None,
-            offchain_extension: None,
-            offchain_registered: false,
-        }
+        Self { storage }
     }
 
     pub fn as_externality(self) -> sp_io::TestExternalities {
@@ -471,15 +407,6 @@ impl ExtBuilder {
         }
         .assimilate_storage(&mut self.storage);
 
-        let _ = parachain_staking::GenesisConfig::<TestRuntime> {
-            candidates: validator_account_ids.clone().into_iter().map(|v| (v, 1000)).collect(),
-            nominations: vec![],
-            delay: 2,
-            min_collator_stake: 10,
-            min_total_nominator_stake: 5,
-        }
-        .assimilate_storage(&mut self.storage);
-
         let _ = validators_manager::GenesisConfig::<TestRuntime> {
             validators: validator_account_ids
                 .iter()
@@ -491,80 +418,29 @@ impl ExtBuilder {
 
         self
     }
-
-    pub fn with_validator_count(self, validators: Vec<AccountId>) -> Self {
-        assert!(validators.len() <= initial_validators_public_keys().len());
-
-        VALIDATORS.with(|l| *l.borrow_mut() = Some(validators));
-
-        return self.with_validators()
-    }
-
-    pub fn for_offchain_worker(mut self) -> Self {
-        assert!(!self.offchain_registered);
-        let (offchain, offchain_state) = TestOffchainExt::new();
-        let (pool, pool_state) = TestTransactionPoolExt::new();
-        self.txpool_extension = Some(pool);
-        self.offchain_extension = Some(offchain);
-        self.pool_state = Some(pool_state);
-        self.offchain_state = Some(offchain_state);
-        self.offchain_registered = true;
-        self
-    }
-
-    pub fn as_externality_with_state(
-        self,
-    ) -> (sp_io::TestExternalities, Arc<RwLock<PoolState>>, Arc<RwLock<OffchainState>>) {
-        assert!(self.offchain_registered);
-        let mut ext = sp_io::TestExternalities::from(self.storage);
-        ext.register_extension(OffchainDbExt::new(self.offchain_extension.clone().unwrap()));
-        ext.register_extension(OffchainWorkerExt::new(self.offchain_extension.unwrap()));
-        ext.register_extension(TransactionPoolExt::new(self.txpool_extension.unwrap()));
-        assert!(self.pool_state.is_some());
-        assert!(self.offchain_state.is_some());
-        ext.execute_with(|| {
-            Timestamp::set_timestamp(1);
-            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into())
-        });
-        (ext, self.pool_state.unwrap(), self.offchain_state.unwrap())
-    }
 }
 
 pub struct MockData {
-    pub event: EthEvent,
-    pub validator_data: AddedValidatorData,
     pub new_validator_id: AccountId,
-    pub validator_eth_public_key: ecdsa::Public,
     pub collator_eth_public_key: ecdsa::Public,
 }
 
 impl MockData {
     pub fn setup_valid() -> Self {
-        let event_id = EthEventId {
-            signature: ValidEvents::AddedValidator.signature(),
-            transaction_hash: H256::random(),
-        };
         let data = Some(LogDataHelper::get_validator_data(REGISTERING_VALIDATOR_TIER1_ID));
         let topics = MockData::get_validator_token_topics();
-        let validator_data = AddedValidatorData::parse_bytes(data.clone(), topics.clone()).unwrap();
+        let validator_data = AddedValidatorData::parse_bytes(data, topics).unwrap();
+
         let collator_eth_public_key = ecdsa::Public::from_raw(hex!(
             "02407b0d9f41148bbe3b6c7d4a62585ae66cc32a707441197fa5453abfebd31d57"
         ));
+
         let new_validator_id =
-            TestAccount::from_bytes(validator_data.t2_address.clone().as_bytes()).account_id();
+            TestAccount::from_bytes(validator_data.t2_address.as_bytes()).account_id();
+
         Balances::make_free_balance_be(&new_validator_id, 100000);
-        MockData {
-            validator_data: validator_data.clone(),
-            event: EthEvent {
-                event_data: EventData::LogAddedValidator(validator_data.clone()),
-                event_id: event_id.clone(),
-            },
-            new_validator_id,
-            validator_eth_public_key: ValidatorManager::compress_eth_public_key(
-                validator_data.eth_public_key,
-            ),
-            collator_eth_public_key,
-        }
+
+        MockData { new_validator_id, collator_eth_public_key }
     }
 
     pub fn get_validator_token_topics() -> Vec<Vec<u8>> {
@@ -603,7 +479,6 @@ impl LogDataHelper {
 // assert_eq!
 pub fn advance_session() {
     let now = System::block_number().max(1);
-    <crate::parachain_staking::ForceNewEra<TestRuntime>>::put(true);
 
     Balances::on_finalize(System::block_number());
     System::on_finalize(System::block_number());
@@ -611,5 +486,5 @@ pub fn advance_session() {
     System::on_initialize(System::block_number());
     Balances::on_initialize(System::block_number());
     Session::on_initialize(System::block_number());
-    ParachainStaking::on_initialize(System::block_number());
+    Session::on_finalize(System::block_number());
 }

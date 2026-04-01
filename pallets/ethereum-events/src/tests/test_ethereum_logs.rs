@@ -12,6 +12,7 @@ use sp_avn_common::event_types::{EthEventId, ValidEvents};
 use sp_core::hash::H256;
 use sp_runtime::traits::BadOrigin;
 
+#[allow(deprecated)]
 mod test_add_ethereum_log {
     use super::*;
 

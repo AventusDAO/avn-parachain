@@ -24,10 +24,7 @@ use alloc::{
 use codec::{Decode, Encode};
 use core::convert::TryInto;
 use frame_support::{dispatch::DispatchResult, traits::OneSessionHandler};
-use frame_system::{
-    ensure_root,
-    pallet_prelude::{BlockNumberFor, OriginFor},
-};
+use frame_system::pallet_prelude::BlockNumberFor;
 pub use pallet::*;
 use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::{
@@ -54,16 +51,6 @@ use sp_std::{fmt::Debug, prelude::*};
 #[path = "tests/testing.rs"]
 pub mod testing;
 pub mod vote;
-
-#[cfg(feature = "runtime-benchmarks")]
-mod benchmarking;
-
-pub mod default_weights;
-pub use default_weights::WeightInfo;
-
-#[cfg(test)]
-#[path = "tests/test_set_bridge_contract.rs"]
-mod test_set_bridge_contract;
 
 // Definition of the crypto to use for signing
 pub mod sr25519 {
@@ -97,11 +84,9 @@ pub mod pallet {
 
     #[pallet::config(with_default)]
     pub trait Config: frame_system::Config {
-        /// Overarching event type
         #[pallet::no_default_bounds]
         type RuntimeEvent: From<Event> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
-        /// The identifier type for an authority.
         type AuthorityId: Member
             + Parameter
             + RuntimeAppPublic
@@ -110,18 +95,14 @@ pub mod pallet {
             + MaxEncodedLen;
 
         type EthereumPublicKeyChecker: EthereumPublicKeyChecker<Self::AccountId>;
-        /// A handler that will notify other pallets when a new session starts
         type NewSessionHandler: NewSessionHandler<Self::AuthorityId, Self::AccountId>;
-        /// trait that allows the system to check for disabled validators
         type DisabledValidatorChecker: DisabledValidatorChecker<Self::AccountId>;
-
-        type WeightInfo: WeightInfo;
     }
 
-    /// Default implementations of [`DefaultConfig`], which can be used to implement [`Config`].
     pub mod config_preludes {
         use super::*;
         use frame_support::derive_impl;
+
         pub struct TestDefaultConfig;
 
         #[derive_impl(frame_system::config_preludes::TestDefaultConfig, no_aggregated_types)]
@@ -135,7 +116,6 @@ pub mod pallet {
             type EthereumPublicKeyChecker = ();
             type NewSessionHandler = ();
             type DisabledValidatorChecker = ();
-            type WeightInfo = ();
         }
     }
 
@@ -156,7 +136,6 @@ pub mod pallet {
         UnexpectedStatusCode,
         InvalidResponse,
         InvalidVotingSession,
-        InvalidContractAddress,
         DuplicateVote,
         InvalidVote,
         ErrorRecoveringPublicKeyFromSignature,
@@ -171,15 +150,12 @@ pub mod pallet {
 
     #[pallet::storage]
     #[pallet::getter(fn validators)]
-    /// The current set of validators (address and key) that may issue a transaction from the
-    /// offchain worker.
     pub type Validators<T: Config> = StorageValue<
         _,
         WeakBoundedVec<Validator<T::AuthorityId, T::AccountId>, MaximumValidatorsBound>,
         ValueQuery,
     >;
 
-    #[deprecated]
     #[pallet::storage]
     #[pallet::getter(fn get_bridge_contract_address)]
     pub type AvnBridgeContractAddress<T: Config> = StorageValue<_, H160, ValueQuery>;
@@ -206,28 +182,13 @@ pub mod pallet {
             AvnBridgeContractAddress::<T>::put(self.bridge_contract_address);
         }
     }
-
-    #[pallet::call]
-    impl<T: Config> Pallet<T> {
-        #[deprecated]
-        #[pallet::call_index(0)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::set_bridge_contract())]
-        pub fn set_bridge_contract(origin: OriginFor<T>, contract_address: H160) -> DispatchResult {
-            ensure_root(origin)?;
-            ensure!(&contract_address != &H160::zero(), Error::<T>::InvalidContractAddress);
-
-            let old_contract = <AvnBridgeContractAddress<T>>::get();
-            <AvnBridgeContractAddress<T>>::put(contract_address);
-            Self::deposit_event(Event::AvnBridgeContractUpdated {
-                old_contract,
-                new_contract: contract_address,
-            });
-            Ok(())
-        }
-    }
 }
 
 impl<T: Config> Pallet<T> {
+    pub fn bridge_contract_address() -> H160 {
+        AvnBridgeContractAddress::<T>::get()
+    }
+
     pub fn pre_run_setup(
         block_number: BlockNumberFor<T>,
         caller_id: Vec<u8>,
@@ -792,16 +753,6 @@ pub trait EthereumEventsMigration {
 }
 
 impl EthereumEventsMigration for () {}
-
-pub trait OnGrowthLiftedHandler<Balance> {
-    fn on_growth_lifted(amount: Balance, growth_period: u32) -> DispatchResult;
-}
-
-impl<Balance> OnGrowthLiftedHandler<Balance> for () {
-    fn on_growth_lifted(_amount: Balance, _growth_period: u32) -> DispatchResult {
-        Ok(())
-    }
-}
 
 // Trait that handles dust amounts after paying collators for producing blocks
 pub trait CollatorPayoutDustHandler<Balance> {

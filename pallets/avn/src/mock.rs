@@ -4,7 +4,7 @@
 
 use crate::{self as pallet_avn, *};
 use frame_support::{derive_impl, parameter_types};
-use frame_system::{self as system, DefaultConfig};
+use frame_system as system;
 use hex_literal::hex;
 use pallet_session as session;
 use sp_core::offchain::testing::{OffchainState, PendingRequest};
@@ -80,20 +80,18 @@ pub struct ExtBuilder {
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
-        let storage = frame_system::GenesisConfig::<TestRuntime>::default()
+        let mut storage = frame_system::GenesisConfig::<TestRuntime>::default()
             .build_storage()
             .unwrap()
             .into();
-        Self { storage }
-    }
 
-    pub fn with_genesis_config(mut self) -> Self {
         let _ = pallet_avn::GenesisConfig::<TestRuntime> {
             _phantom: Default::default(),
-            bridge_contract_address: H160::from(CUSTOM_BRIDGE_CONTRACT),
+            bridge_contract_address: CUSTOM_BRIDGE_CONTRACT,
         }
-        .assimilate_storage(&mut self.storage);
-        self
+        .assimilate_storage(&mut storage);
+
+        Self { storage }
     }
 
     pub fn as_externality(self) -> sp_io::TestExternalities {

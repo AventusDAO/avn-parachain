@@ -17,7 +17,7 @@
 #![cfg(test)]
 
 use frame_support::{derive_impl, parameter_types};
-use frame_system::{self as system, DefaultConfig};
+use frame_system::{self as system};
 use sp_core::{sr25519, ConstU32, Pair};
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{

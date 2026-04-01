@@ -26,7 +26,7 @@ use frame_system::{EventRecord, RawOrigin};
 use hex_literal::hex;
 use pallet_avn::{self as avn};
 use sp_avn_common::benchmarking::convert_sr25519_signature;
-use sp_core::{crypto::UncheckedInto, sr25519, ByteArray, H256};
+use sp_core::{sr25519, ByteArray, H256};
 use sp_runtime::RuntimeAppPublic;
 
 #[cfg(not(feature = "std"))]

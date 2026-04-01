@@ -47,6 +47,7 @@ fn setup_authors<T: Config<I>, I: 'static>(
     return total_authors
 }
 
+#[cfg(not(test))]
 fn add_collator_to_avn<T: Config<I>, I: 'static>(
     collator: &T::AccountId,
     candidate_count: u32,

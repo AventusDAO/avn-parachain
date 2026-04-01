@@ -7,7 +7,8 @@
 
 use super::*;
 
-use crate::{Pallet as AuthorsManager, *};
+use crate::Pallet as AuthorsManager;
+use codec::{Decode, Encode};
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_support::traits::ValidatorSet as AuthorSet;
 use frame_system::{EventRecord, Pallet as System, RawOrigin};
@@ -15,13 +16,10 @@ use hex_literal::hex;
 use libsecp256k1::{PublicKey, SecretKey};
 use pallet_avn::{self as avn};
 use pallet_session::Pallet as Session;
-use sp_avn_common::eth_key_actions::{compress_eth_public_key, decompress_eth_public_key};
-use sp_core::{ecdsa::Public, ByteArray, H512};
+use rand::{RngCore, SeedableRng};
+use sp_avn_common::eth_key_actions::compress_eth_public_key;
+use sp_core::{crypto::KeyTypeId, ecdsa::Public, sr25519, ByteArray, H512};
 use sp_runtime::{RuntimeAppPublic, WeakBoundedVec};
-
-use codec::{Decode, Encode};
-use sp_core::{crypto::KeyTypeId, sr25519};
-use sp_runtime::traits::OpaqueKeys;
 
 // Resigner keys derived from [6u8; 32] private key
 const RESIGNING_AUTHOR_PUBLIC_KEY_BYTES: [u8; 32] =
@@ -101,39 +99,6 @@ fn setup_additional_authors<T: Config>(number_of_additional_authors: u32) {
     });
 }
 
-fn setup_resignation_action_data<T: Config>(sender: T::AccountId, ingress_counter: IngressCounter) {
-    let (action_account_id, _, t1_eth_public_key) =
-        generate_resigning_author_account_details::<T>();
-
-    let eth_transaction_id: EthereumId = 0;
-    let decompressed_eth_public_key = decompress_eth_public_key(t1_eth_public_key)
-        .map_err(|_| Error::<T>::InvalidPublicKey)
-        .unwrap();
-
-    AuthorActions::<T>::insert(
-        action_account_id,
-        ingress_counter,
-        AuthorsActionData::new(
-            AuthorsActionStatus::AwaitingConfirmation,
-            eth_transaction_id,
-            AuthorsActionType::Resignation,
-        ),
-    )
-}
-
-fn generate_signature<T: pallet_avn::Config>(
-) -> <<T as avn::Config>::AuthorityId as RuntimeAppPublic>::Signature {
-    let encoded_data = 0.encode();
-    let authority_id = T::AuthorityId::generate_pair(None);
-    let signature = authority_id.sign(&encoded_data).expect("able to make signature");
-    return signature
-}
-
-fn generate_mock_ecdsa_signature<T: pallet_avn::Config>(msg: u8) -> ecdsa::Signature {
-    let signature_bytes: [u8; 65] = [msg; 65];
-    return ecdsa::Signature::from_slice(&signature_bytes).unwrap().into()
-}
-
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
@@ -154,13 +119,6 @@ fn advance_session<T: Config>() {
 }
 
 fn create_benchmark_keys<T: Config>(rng: &mut rand::rngs::StdRng) -> T::Keys {
-    use rand::RngCore;
-    use sp_core::{
-        crypto::{ByteArray, KeyTypeId},
-        sr25519,
-    };
-    use sp_runtime::traits::OpaqueKeys;
-
     const KEY_TYPES: &[KeyTypeId] = &[
         KeyTypeId(*b"aura"), // Aura
         KeyTypeId(*b"gran"), // GRANDPA
@@ -181,7 +139,6 @@ fn create_benchmark_keys<T: Config>(rng: &mut rand::rngs::StdRng) -> T::Keys {
 }
 
 fn set_session_keys<T: Config>(author_id: &T::AccountId, index: u64) {
-    use rand::{RngCore, SeedableRng};
     frame_system::Pallet::<T>::inc_providers(author_id);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(index);
@@ -197,7 +154,6 @@ fn set_session_keys<T: Config>(author_id: &T::AccountId, index: u64) {
 }
 
 fn generate_author_eth_public_key_from_seed<T: Config>(seed: u64) -> Public {
-    use rand::SeedableRng;
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let secret_key = SecretKey::random(&mut rng);
     let public_key = PublicKey::from_secret_key(&secret_key);

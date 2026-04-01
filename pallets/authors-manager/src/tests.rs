@@ -104,14 +104,6 @@ mod register_author {
         );
     }
 
-    fn find_author_activation_action(data: &MockData, status: AuthorsActionStatus) -> bool {
-        return AuthorActions::<TestRuntime>::iter().any(|(account_id, _ingress, action_data)| {
-            action_data.status == status &&
-                action_data.action_type == AuthorsActionType::Activation &&
-                account_id == data.new_author_id
-        })
-    }
-
     mod succeeds {
         use super::*;
 

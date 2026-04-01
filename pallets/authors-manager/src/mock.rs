@@ -187,13 +187,9 @@ impl system::Config for TestRuntime {
     type RuntimeTask = ();
 }
 
-impl avn::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
+#[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
+impl pallet_avn::Config for TestRuntime {
     type AuthorityId = UintAuthorityId;
-    type EthereumPublicKeyChecker = Self;
-    type NewSessionHandler = AuthorsManager;
-    type DisabledValidatorChecker = ();
-    type WeightInfo = ();
 }
 
 parameter_types! {
@@ -378,10 +374,11 @@ impl ExtBuilder {
 
     pub fn as_externality(self) -> sp_io::TestExternalities {
         let mut ext = sp_io::TestExternalities::from(self.storage);
-        // Events do not get emitted on block 0, so we increment the block here
         ext.execute_with(|| {
+            System::set_block_number(1);
             Timestamp::set_timestamp(1);
-            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into())
+            System::on_initialize(1);
+            Timestamp::on_initialize(1);
         });
         ext
     }
@@ -497,16 +494,18 @@ impl LogDataHelper {
     }
 }
 
-// TODO [TYPE: test refactoring][PRI: low]: update this function to work with the mock builder
-// pattern Currently, a straightforward replacement of the test setup leads to an error on the
-// assert_eq!
 pub fn advance_session() {
-    let now = System::block_number().max(1);
+    let current = System::block_number().max(1u64);
+    let next = current + 1u64;
 
-    Balances::on_finalize(System::block_number());
-    System::on_finalize(System::block_number());
-    System::set_block_number(now + 1);
-    System::on_initialize(System::block_number());
-    Balances::on_initialize(System::block_number());
-    Session::on_initialize(System::block_number());
+    Timestamp::on_finalize(current);
+    Session::on_finalize(current);
+    System::on_finalize(current);
+
+    System::set_block_number(next);
+    Timestamp::set_timestamp(next * 12_000u64);
+
+    System::on_initialize(next);
+    Timestamp::on_initialize(next);
+    Session::on_initialize(next);
 }

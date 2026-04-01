@@ -3,7 +3,7 @@ use crate::{self as eth_bridge, request::add_new_send_request};
 use frame_support::{derive_impl, parameter_types};
 use sp_state_machine::BasicExternalities;
 
-use frame_system::{self as system, DefaultConfig};
+use frame_system::{self as system};
 use pallet_avn::{testing::U64To32BytesConverter, EthereumPublicKeyChecker};
 use pallet_session as session;
 use parking_lot::RwLock;

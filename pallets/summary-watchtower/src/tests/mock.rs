@@ -126,13 +126,9 @@ impl pallet_timestamp::Config for TestRuntime {
     type WeightInfo = ();
 }
 
+#[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
 impl pallet_avn::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type AuthorityId = UintAuthorityId;
-    type EthereumPublicKeyChecker = ();
-    type NewSessionHandler = ();
-    type DisabledValidatorChecker = ();
-    type WeightInfo = ();
 }
 
 pub fn get_default_voter() -> TestAccount {
