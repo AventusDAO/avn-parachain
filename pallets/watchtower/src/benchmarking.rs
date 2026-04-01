@@ -348,18 +348,19 @@ benchmarks! {
         // Pick internal because it has more logic
         let proposal_id = H256::repeat_byte(3);
         let _ = set_active_proposal::<T>(proposal_id, 5u32, 50u32);
+
         let now = <frame_system::Pallet<T>>::block_number();
-        let mut id = H256::zero();
-        let mut expired = false;
+        let mut result: Option<(H256, bool)> = None;
     }: {
-        let result = Pallet::<T>::active_proposal_expiry_status(now);
-        let (p_id, _p, p_expired) = result.expect("expired proposal exists");
-        id = p_id;
-        expired = p_expired;
-     }
+        let (id, _, expired) =
+            Pallet::<T>::active_proposal_expiry_status(now)
+                .expect("expired proposal exists");
+        result = Some((id, expired));
+    }
     verify {
-        assert!(expired == true);
-        assert!(id == proposal_id);
+        let (id, expired) = result.expect("result should be set in benchmark body");
+        assert!(expired);
+        assert_eq!(id, proposal_id);
     }
 
     finalise_expired_voting {

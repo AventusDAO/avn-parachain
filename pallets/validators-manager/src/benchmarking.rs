@@ -7,16 +7,14 @@
 
 use super::*;
 
-use crate::{Pallet as ValidatorManager, *};
+use crate::Pallet as ValidatorManager;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
-use frame_support::traits::ValidatorSet;
-use frame_system::{EventRecord, Pallet as System, RawOrigin};
+use frame_system::{Pallet as System, RawOrigin};
 use hex_literal::hex;
 use libsecp256k1::{PublicKey, SecretKey};
 use pallet_avn::{self as avn};
 use pallet_session::Pallet as Session;
-use sp_avn_common::eth_key_actions::decompress_eth_public_key;
-use sp_core::{ecdsa::Public, ByteArray, H512};
+use sp_core::{ecdsa::Public, H512};
 use sp_runtime::{RuntimeAppPublic, WeakBoundedVec};
 
 // Resigner keys derived from [6u8; 32] private key
@@ -96,51 +94,6 @@ fn setup_additional_validators<T: Config>(number_of_additional_validators: u32) 
     validators.iter().enumerate().for_each(|(i, (account_id, eth_public_key))| {
         force_add_collator::<T>(&account_id, i as u64, &eth_public_key)
     });
-}
-
-fn setup_resignation_action_data<T: Config>(sender: T::AccountId, ingress_counter: IngressCounter) {
-    let (action_account_id, _, t1_eth_public_key) =
-        generate_resigning_collator_account_details::<T>();
-
-    let eth_transaction_id: EthereumId = 0;
-    let decompressed_eth_public_key = decompress_eth_public_key(t1_eth_public_key)
-        .map_err(|_| Error::<T>::InvalidPublicKey)
-        .unwrap();
-
-    ValidatorActions::<T>::insert(
-        action_account_id,
-        ingress_counter,
-        ValidatorsActionData::new(
-            ValidatorsActionStatus::AwaitingConfirmation,
-            eth_transaction_id,
-            ValidatorsActionType::Resignation,
-        ),
-    )
-}
-
-fn generate_signature<T: pallet_avn::Config>(
-) -> <<T as avn::Config>::AuthorityId as RuntimeAppPublic>::Signature {
-    let encoded_data = 0.encode();
-    let authority_id = T::AuthorityId::generate_pair(None);
-    let signature = authority_id.sign(&encoded_data).expect("able to make signature");
-    return signature
-}
-
-fn generate_mock_ecdsa_signature<T: pallet_avn::Config>(msg: u8) -> ecdsa::Signature {
-    let signature_bytes: [u8; 65] = [msg; 65];
-    return ecdsa::Signature::from_slice(&signature_bytes).unwrap().into()
-}
-
-fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
-    assert_last_nth_event::<T>(generic_event, 1);
-}
-
-fn assert_last_nth_event<T: Config>(generic_event: <T as Config>::RuntimeEvent, n: u32) {
-    let events = frame_system::Pallet::<T>::events();
-    let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
-    // Compare to the last event record
-    let EventRecord { event, .. } = &events[events.len().saturating_sub(n as usize)];
-    assert_eq!(event, &system_event);
 }
 
 fn advance_session<T: Config>() {
