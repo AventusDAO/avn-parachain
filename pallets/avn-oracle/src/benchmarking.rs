@@ -9,7 +9,7 @@ use frame_support::{
     pallet_prelude::{ConstU32, Weight},
     BoundedVec,
 };
-use frame_system::{pallet_prelude::BlockNumberFor, RawOrigin};
+use frame_system::{offchain::CreateTransaction, pallet_prelude::BlockNumberFor, RawOrigin};
 use scale_info::prelude::{format, vec, vec::Vec};
 use sp_avn_common::event_types::Validator;
 use sp_runtime::{RuntimeAppPublic, WeakBoundedVec};
@@ -54,19 +54,34 @@ pub fn create_rates(rates: Vec<(Currency, u128)>) -> Rates {
 }
 
 benchmarks! {
+    where_clause {
+        where <T as CreateTransaction<Call<T>>>::Extension: core::default::Default
+    }
+
     submit_price {
         let current_authors = generate_validators::<T>(10);
+        let quorum = T::Quorum::get_quorum() as usize;
+
+        assert!(quorum > 0);
+        assert!(current_authors.len() > quorum);
 
         let currency_symbol = b"usd".to_vec();
         let currency = create_currency(currency_symbol.clone());
-        assert_ok!(AvnOracle::<T>::register_currency(RawOrigin::Root.into(), currency_symbol));
+        assert_ok!(AvnOracle::<T>::register_currency(
+            RawOrigin::Root.into(),
+            currency_symbol
+        ));
 
         let rates = create_rates(vec![(currency, 1000u128)]);
-        let context = (PRICE_SUBMISSION_CONTEXT, rates.clone(), VotingRoundId::<T>::get()).encode();
-        let quorum = AVN::<T>::quorum() as usize;
+        let round_id = VotingRoundId::<T>::get();
+        let context = (PRICE_SUBMISSION_CONTEXT, rates.clone(), round_id).encode();
 
-        for i in 0..quorum {
-            let signature = current_authors[i].key.sign(&context).expect("valid signature");
+        for i in 0..(quorum - 1) {
+            let signature = current_authors[i]
+                .key
+                .sign(&context)
+                .expect("valid signature");
+
             AvnOracle::<T>::submit_price(
                 RawOrigin::None.into(),
                 rates.clone(),
@@ -75,15 +90,19 @@ benchmarks! {
             )?;
         }
 
-        let signature = current_authors[quorum].key.sign(&context).expect("valid signature");
-    }: _(RawOrigin::None, rates.clone(), current_authors[quorum].clone(), signature)
+        let signature = current_authors[quorum - 1]
+            .key
+            .sign(&context)
+            .expect("valid signature");
+    }: _(RawOrigin::None, rates.clone(), current_authors[quorum - 1].clone(), signature)
     verify {
-        for i in 0..=quorum {
-            assert!(PriceReporters::<T>::contains_key(0, &current_authors[i].account_id));
-        }
+        assert_eq!(ReportedRates::<T>::get(round_id, rates.clone()), quorum as u32);
+        assert_eq!(VotingRoundId::<T>::get(), round_id + 1);
+        assert_eq!(ProcessedVotingRoundIds::<T>::get(), round_id);
 
-        assert_eq!(ReportedRates::<T>::get(0, rates), (quorum + 1) as u32);
-        assert_eq!(VotingRoundId::<T>::get(), 1);
+        for (symbol, value) in &rates {
+            assert_eq!(NativeTokenRateByCurrency::<T>::get(symbol), Some(*value));
+        }
     }
 
     register_currency {
@@ -164,11 +183,12 @@ benchmarks! {
     on_idle_one_full_iteration {
         let voting_round_id = 0u32;
         let current_authors = generate_validators::<T>(10);
+        let quorum = T::Quorum::get_quorum() as usize;
+
+        assert!(current_authors.len() > quorum);
 
         let currency = create_currency(b"usd".to_vec());
         let rates = create_rates(vec![(currency, 1000u128)]);
-
-        let quorum = AVN::<T>::quorum() as usize;
 
         for i in 0..=quorum {
             PriceReporters::<T>::insert(voting_round_id, &current_authors[i].account_id, ());
