@@ -106,6 +106,7 @@ pallet-cross-chain-voting-runtime-api.workspace = true
 pallet-node-manager.workspace = true
 pallet-watchtower.workspace = true
 pallet-summary-watchtower.workspace = true
+pallet-avn-oracle.workspace = true
 
 # Common Runtime
 runtime-common.workspace = true
@@ -145,6 +146,7 @@ std = [
 	"pallet-node-manager/std",
 	"pallet-watchtower/std",
 	"pallet-summary-watchtower/std",
+	"pallet-avn-oracle/std",
 	# Avn Common Runtime
 	"runtime-common/std",
 	# ORML
@@ -175,6 +177,7 @@ runtime-benchmarks = [
 	"pallet-node-manager/runtime-benchmarks",
 	"pallet-watchtower/runtime-benchmarks",
 	"pallet-summary-watchtower/runtime-benchmarks",
+	"pallet-avn-oracle/runtime-benchmarks",
 	# Avn Common Runtime
 	"runtime-common/runtime-benchmarks",
 	# Orml
@@ -203,4 +206,5 @@ try-runtime = [
 	"pallet-summary-watchtower/try-runtime",
 	"pallet-eth-bridge/try-runtime",
 	"pallet-cross-chain-voting/try-runtime",
+	"pallet-avn-oracle/try-runtime",
 ]

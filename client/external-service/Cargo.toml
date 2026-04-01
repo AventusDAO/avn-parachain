@@ -21,6 +21,7 @@ serde_json = { workspace = true, default-features = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
 hex = { workspace = true, default-features = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tower-http = { version = "0.6", features = ["limit"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
 url = "2"
