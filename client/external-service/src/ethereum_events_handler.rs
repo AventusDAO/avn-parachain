@@ -177,9 +177,24 @@ impl EventRegistry {
             ValidEvents::AvtRewardsMinted.signature(),
             EventInfo {
                 parser: |data, topics| {
-                    TotalSupplyUpdatedData::parse_bytes(data, topics)
+                    TotalSupplyUpdatedData::parse_bytes(
+                        &ValidEvents::AvtRewardsMinted,
+                        data,
+                        topics,
+                    )
+                    .map_err(|err| AppError::ParsingError(err.into()))
+                    .map(EventData::LogRewardsMinted)
+                },
+            },
+        );
+
+        m.insert(
+            ValidEvents::AvtFeesBurned.signature(),
+            EventInfo {
+                parser: |data, topics| {
+                    TotalSupplyUpdatedData::parse_bytes(&ValidEvents::AvtFeesBurned, data, topics)
                         .map_err(|err| AppError::ParsingError(err.into()))
-                        .map(EventData::LogRewardsMinted)
+                        .map(EventData::LogFeesBurned)
                 },
             },
         );

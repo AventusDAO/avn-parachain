@@ -78,6 +78,13 @@ pub enum Error {
     AvtRewardsMintedEventAmountOverflow,
     AvtRewardsMintedEventNewSupplyOverflow,
     AvtRewardsMintedEventTxIdConversion,
+
+    AvtFeesBurnedEventShouldOnlyContainTopics,
+    AvtFeesBurnedEventWrongTopicCount,
+    AvtFeesBurnedEventBadTopicLength,
+    AvtFeesBurnedEventAmountOverflow,
+    AvtFeesBurnedEventNewSupplyOverflow,
+    AvtFeesBurnedEventTxIdConversion,
 }
 
 #[derive(
@@ -128,6 +135,8 @@ pub enum ValidEvents {
     LowerReverted,
     /// AVT rewards were minted by either the validators or the T1 owner.
     AvtRewardsMinted,
+    /// AVT fees were burned on T1 by the validators.
+    AvtFeesBurned,
 }
 
 impl ValidEvents {
@@ -181,6 +190,10 @@ impl ValidEvents {
             // hex string of Keccak-256 for LogRewardsMinted(uint256,uint256,uint32)
             ValidEvents::AvtRewardsMinted =>
                 H256(hex!("8780503b6efc49186826d97ab83686b74d0c76aa1052e08a81fa36a349472545")),
+
+            // hex string of Keccak-256 for LogFeesBurned(uint256,uint256,uint32)
+            ValidEvents::AvtFeesBurned =>
+                H256(hex!("5fa9bc0d39625b4af444b4e24eac728f82be0a552b434a54568d009365db032b")),
         }
     }
 
@@ -883,28 +896,53 @@ impl TotalSupplyUpdatedData {
         self.amount > 0
     }
 
-    pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
+    pub fn parse_bytes(
+        event_type: &ValidEvents,
+        data: Option<Vec<u8>>,
+        topics: Vec<Vec<u8>>,
+    ) -> Result<Self, Error> {
         if data.is_some() {
-            return Err(Error::AvtRewardsMintedEventShouldOnlyContainTopics)
+            return Err(match event_type {
+                ValidEvents::AvtRewardsMinted =>
+                    Error::AvtRewardsMintedEventShouldOnlyContainTopics,
+                ValidEvents::AvtFeesBurned => Error::AvtFeesBurnedEventShouldOnlyContainTopics,
+                _ => unreachable!("parse_bytes only supports AvtRewardsMinted and AvtFeesBurned"),
+            })
         }
 
         if topics.len() != 4 {
-            return Err(Error::AvtRewardsMintedEventWrongTopicCount)
+            return Err(match event_type {
+                ValidEvents::AvtRewardsMinted => Error::AvtRewardsMintedEventWrongTopicCount,
+                ValidEvents::AvtFeesBurned => Error::AvtFeesBurnedEventWrongTopicCount,
+                _ => unreachable!("parse_bytes only supports AvtRewardsMinted and AvtFeesBurned"),
+            })
         }
 
         if topics[Self::TOPIC_AMOUNT].len() != WORD_LENGTH ||
             topics[Self::TOPIC_NEW_SUPPLY].len() != WORD_LENGTH ||
             topics[Self::TOPIC_T2_TX_ID].len() != WORD_LENGTH
         {
-            return Err(Error::AvtRewardsMintedEventBadTopicLength)
+            return Err(match event_type {
+                ValidEvents::AvtRewardsMinted => Error::AvtRewardsMintedEventBadTopicLength,
+                ValidEvents::AvtFeesBurned => Error::AvtFeesBurnedEventBadTopicLength,
+                _ => unreachable!("parse_bytes only supports AvtRewardsMinted and AvtFeesBurned"),
+            })
         }
 
         if topics[Self::TOPIC_AMOUNT][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::AvtRewardsMintedEventAmountOverflow)
+            return Err(match event_type {
+                ValidEvents::AvtRewardsMinted => Error::AvtRewardsMintedEventAmountOverflow,
+                ValidEvents::AvtFeesBurned => Error::AvtFeesBurnedEventAmountOverflow,
+                _ => unreachable!("parse_bytes only supports AvtRewardsMinted and AvtFeesBurned"),
+            })
         }
 
         if topics[Self::TOPIC_NEW_SUPPLY][0..HALF_WORD_LENGTH].iter().any(|byte| byte > &0) {
-            return Err(Error::AvtRewardsMintedEventNewSupplyOverflow)
+            return Err(match event_type {
+                ValidEvents::AvtRewardsMinted => Error::AvtRewardsMintedEventNewSupplyOverflow,
+                ValidEvents::AvtFeesBurned => Error::AvtFeesBurnedEventNewSupplyOverflow,
+                _ => unreachable!("parse_bytes only supports AvtRewardsMinted and AvtFeesBurned"),
+            })
         }
 
         let amount = u128::from_be_bytes(
@@ -919,11 +957,18 @@ impl TotalSupplyUpdatedData {
                 .expect("Slice is the correct size"),
         );
 
-        let t2_tx_id = u32::from_be_bytes(
-            topics[Self::TOPIC_T2_TX_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
-                .try_into()
-                .map_err(|_| Error::AvtRewardsMintedEventTxIdConversion)?,
-        );
+        let t2_tx_id =
+            u32::from_be_bytes(
+                topics[Self::TOPIC_T2_TX_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
+                    .try_into()
+                    .map_err(|_| match event_type {
+                        ValidEvents::AvtRewardsMinted => Error::AvtRewardsMintedEventTxIdConversion,
+                        ValidEvents::AvtFeesBurned => Error::AvtFeesBurnedEventTxIdConversion,
+                        _ => unreachable!(
+                            "parse_bytes only supports AvtRewardsMinted and AvtFeesBurned"
+                        ),
+                    })?,
+            );
 
         Ok(TotalSupplyUpdatedData { amount, new_supply, t2_tx_id })
     }
@@ -945,6 +990,7 @@ pub enum EventData {
     LogLiftedToPredictionMarket(LiftedData),
     LogErc20Transfer(LiftedData),
     LogRewardsMinted(TotalSupplyUpdatedData),
+    LogFeesBurned(TotalSupplyUpdatedData),
 }
 
 impl EventData {
@@ -962,6 +1008,7 @@ impl EventData {
             EventData::LogErc20Transfer(d) => d.is_valid(),
             EventData::LogLowerReverted(d) => d.is_valid(),
             EventData::LogRewardsMinted(d) => d.is_valid(),
+            EventData::LogFeesBurned(d) => d.is_valid(),
             EventData::EmptyEvent => true,
             _ => false,
         }

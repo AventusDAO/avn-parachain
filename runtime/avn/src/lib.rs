@@ -40,20 +40,18 @@ pub use frame_system::{
     limits::{BlockLength, BlockWeights},
     EnsureRoot, EnsureSigned, Event as SystemEvent, EventRecord, Phase,
 };
+use pallet_authorship;
+use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
+use pallet_session::historical::{self as pallet_session_historical};
 use polkadot_sdk::frame_support::{
     traits::{
-        fungible::{self as fungible, HoldConsideration},
-        tokens::imbalance::ResolveTo,
-        AsEnsureOriginWithArg, ConstU32, Contains, Currency, Imbalance, LinearStoragePrice,
-        OnUnbalanced, PrivilegeCmp,
+        fungible::HoldConsideration, AsEnsureOriginWithArg, ConstU32, Contains, Currency,
+        LinearStoragePrice, OnUnbalanced, PrivilegeCmp,
     },
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
 pub use polkadot_sdk::sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use proxy_config::AvnProxyConfig;
-
-use pallet_im_online::sr25519::AuthorityId as ImOnlineId;
-use pallet_session::historical::{self as pallet_session_historical};
 use sp_authority_discovery::AuthorityId as AuthorityDiscoveryId;
 
 use pallet_avn::sr25519::AuthorityId as AvnId;
@@ -76,7 +74,7 @@ pub use sp_avn_common::{
     primitives::{AccountId, Signature},
 };
 
-use runtime_common::{weights, Address, Header, TransactionByteFee, WeightToFee};
+use runtime_common::{weights, Address, Header, TransactionByteFee};
 
 pub type NegativeImbalance<T> = <pallet_balances::Pallet<T> as Currency<
     <T as frame_system::Config>::AccountId,
@@ -210,6 +208,10 @@ pub use block_times::*;
 
 /// The existential deposit. Set to 1/10 of the Connected Relay Chain.
 pub const EXISTENTIAL_DEPOSIT: Balance = 0;
+
+// If something happens to with the fee calculation
+pub const FALLBACK_MIN_FEE: u128 = 100_000_000_000u128;
+
 pub const FOREIGN_ASSET_DEFAULT_ED: Balance = 1;
 
 /// We assume that ~5% of the block weight is consumed by `on_initialize` handlers. This is
@@ -416,6 +418,9 @@ mod runtime {
 
     #[runtime::pallet_index(103)]
     pub type CrossChainVoting = pallet_cross_chain_voting;
+
+    #[runtime::pallet_index(104)]
+    pub type AvnOracle = pallet_avn_oracle;
 
     // ORML pallets
     #[runtime::pallet_index(110)]

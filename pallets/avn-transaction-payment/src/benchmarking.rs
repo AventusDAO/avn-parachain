@@ -60,6 +60,21 @@ benchmarks! {
             Event::<T>::KnownSenderRemoved{ known_sender }.into()
         );
     }
+
+        set_base_gas_fee_usd {
+        let base_fee: u128 = 25_000_000u128;
+    }: {
+        AvnTransactionPayment::<T>::set_base_gas_fee_usd(
+            RawOrigin::Root.into(),
+            base_fee
+        )?;
+    }
+    verify {
+        assert_eq!(BaseGasFeeUsd::<T>::get(), base_fee);
+        assert_last_event::<T>(
+            Event::<T>::BaseGasFeeUsdSet { new_base_gas_fee: base_fee }.into()
+        );
+    }
 }
 
 impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::TestRuntime,);

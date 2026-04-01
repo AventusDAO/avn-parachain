@@ -1,7 +1,11 @@
 // Copyright 2026 Aventus DAO Ltd
 
 use crate::{
-    chain::ChainClient, keystore_utils::*, signing::SignerProvider, timer::OperationTimer,
+    chain::ChainClient,
+    finance_provider_utils::{CoinGeckoFinance, FinanceProvider},
+    keystore_utils::*,
+    signing::SignerProvider,
+    timer::OperationTimer,
 };
 use anyhow::Result;
 use axum::{
@@ -31,6 +35,7 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     pub keystore: Arc<LocalKeystore>,
     pub keystore_path: std::path::PathBuf,
     pub avn_port: Option<String>,
+    pub finance_api_key: String,
     pub chain: Option<Arc<dyn ChainClient>>,
     pub signer_provider: Option<Arc<dyn SignerProvider>>,
     pub client: Arc<ClientT>,
@@ -129,6 +134,10 @@ where
         .route("/eth/send", post(send::<Block, ClientT>))
         .route("/eth/view", post(view::<Block, ClientT>))
         .route("/eth/query", post(query::<Block, ClientT>))
+        .route(
+            "/get_token_rates/{tokens}/{currencies}/{from}/{to}",
+            get(get_token_rates::<Block, ClientT>),
+        )
         .route("/roothash/{from_block}/{to_block}", get(roothash::<Block, ClientT>))
         .route("/latest_finalised_block", get(latest_finalised_block::<Block, ClientT>))
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
@@ -401,4 +410,88 @@ where
         .sign_digest(digest)
         .await
         .map_err(|e| server_error(format!("{e:?}")))
+}
+
+async fn get_token_rates<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+    Path((tokens, currencies, from, to)): Path<(String, String, u64, u64)>,
+) -> Result<String, (StatusCode, String)>
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    let tokens: Vec<String> = tokens
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+
+    if tokens.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Missing or invalid tokens parameter".into()))
+    }
+
+    let currencies: Vec<String> = currencies
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+
+    if currencies.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Missing or invalid currencies parameter".into()))
+    }
+
+    let provider = CoinGeckoFinance::new(state.finance_api_key.clone())
+        .map_err(|e| server_error(format!("Failed to initialise finance provider: {e}")))?;
+
+    let mut results = serde_json::Map::new();
+
+    for symbol in &tokens {
+        let mut currency_results = serde_json::Map::new();
+
+        for currency in &currencies {
+            let build_err = |msg: &str| {
+                (
+                    StatusCode::BAD_GATEWAY,
+                    format!("Error retrieving rate for {symbol}/{currency}: {msg}"),
+                )
+            };
+
+            match provider.retrieve_symbol_data(symbol, currency, from, to).await {
+                Ok(price) => {
+                    log::info!(
+                        "💰 Retrieved price for {} / {} from {} to {}: {}",
+                        symbol,
+                        currency,
+                        from,
+                        to,
+                        price
+                    );
+
+                    let num = serde_json::Number::from_f64(price).ok_or_else(|| {
+                        build_err(&format!("Invalid (non-finite) price value: {price}"))
+                    })?;
+
+                    currency_results.insert(currency.clone(), serde_json::Value::Number(num));
+                },
+                Err(err) => {
+                    log::error!(
+                        "❌ Failed to retrieve price for {} / {} from {} to {}: {}",
+                        symbol,
+                        currency,
+                        from,
+                        to,
+                        err
+                    );
+
+                    return Err(build_err(&err))
+                },
+            }
+        }
+
+        results.insert(symbol.clone(), serde_json::Value::Object(currency_results));
+    }
+
+    serde_json::to_string(&serde_json::Value::Object(results))
+        .map_err(|e| server_error(format!("Serialization error: {e}")))
 }

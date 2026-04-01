@@ -162,6 +162,10 @@ impl pallet_avn::Config for TestRuntime {
 
 parameter_types! {
     pub const AvnTreasuryPotId: PalletId = PalletId(*b"Treasury");
+    pub const MinBurnPeriod: u32 = 7200;
+    pub const BurnEnabled: bool = false;
+    pub const TreasuryBurnThreshold: Perbill = Perbill::from_percent(15);
+    pub const TreasuryBurnCap: u128 = 10 * ONE_AVT;
 }
 
 impl pallet_token_manager::Config for TestRuntime {
@@ -184,6 +188,10 @@ impl pallet_token_manager::Config for TestRuntime {
     type TimeProvider = Timestamp;
     type AssetRegistry = AssetRegistry;
     type AssetManager = AssetManager;
+    type MinBurnPeriod = MinBurnPeriod;
+    type BurnEnabled = BurnEnabled;
+    type TreasuryBurnThreshold = TreasuryBurnThreshold;
+    type TreasuryBurnCap = TreasuryBurnCap;
 }
 
 parameter_types! {
@@ -412,6 +420,7 @@ impl ExtBuilder {
                 get_default_signer_account_id(),
                 100 * ONE_AVT,
             )],
+            treasury_burn_threshold: Perbill::from_percent(15),
         }
         .assimilate_storage(&mut storage);
 
