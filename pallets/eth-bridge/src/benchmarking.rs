@@ -252,7 +252,7 @@ fn setup_incoming_events<T: Config<I>, I: 'static>(
     let mut partition: BoundedBTreeSet<DiscoveredEvent, IncomingEventsBatchLimit> =
         BoundedBTreeSet::new();
 
-    for i in 0..event_count {
+    for i in 1..=event_count {
         let eth_event_id = EthEventId {
             signature: ValidEvents::Lifted.signature(),
             transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
@@ -337,7 +337,7 @@ benchmarks_instance_pallet! {
 
         let active_tx = ActiveRequest::<T, I>::get().expect("is active");
 
-        let new_confirmation: ecdsa::Signature = ecdsa::Signature::from_slice(&hex!("53ea27badd00d7b5e4d7e7eb2542ea3abfcd2d8014d2153719f3f00d4058c4027eac360877d5d191cbfdfe8cd72dfe82abc9192fc6c8dce21f3c6f23c43e053f1c")).unwrap().into();
+        let new_confirmation: ecdsa::Signature = ecdsa::Signature::from_slice(&hex!("e11d54aa9603bc853639d4a7df0f9629dc07e1cb8db1e51c4d28b9c07c10c7932e7fca04485700f27ddc4bcec4568b3911637ebf016e69839717ffe8c49dba061c")).unwrap().into();
         let proof = (Instance::<T, I>::get(), crate::ADD_CONFIRMATION_CONTEXT, tx_id, new_confirmation.clone(), author.account_id.clone()).encode();
 
         let signature = author.key.sign(&proof).expect("Error signing proof");
