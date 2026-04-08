@@ -55,6 +55,7 @@ polkadot-sdk = { workspace = true, default-features = false, features = [
 	"pallet-conviction-voting",
 	"pallet-im-online",
 	"pallet-message-queue",
+	"pallet-migrations",
 	"pallet-offences",
 	"pallet-preimage",
 	"pallet-referenda",
