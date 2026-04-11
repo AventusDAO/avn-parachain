@@ -161,6 +161,7 @@ mod bonus_node_registration {
 
             assert!(<OwnedNodes<TestRuntime>>::get(&context.owner, &context.node_id).is_some());
             assert_eq!(<TotalRegisteredNodes<TestRuntime>>::get(), 1);
+            assert_eq!(<TotalRegisteredBonusNodes<TestRuntime>>::get(), 1);
 
             let node_info = <NodeRegistry<TestRuntime>>::get(&context.node_id).unwrap();
             assert_eq!(node_info.owner, context.owner);

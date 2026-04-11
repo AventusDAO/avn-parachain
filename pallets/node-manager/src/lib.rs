@@ -317,6 +317,10 @@ pub mod pallet {
     pub type GenesisBonus25<T: Config> =
         StorageValue<_, BonusRange, ValueQuery, DefaultGenesisBonus25>;
 
+    /// Total registered bonus nodes
+    #[pallet::storage]
+    pub type TotalRegisteredBonusNodes<T: Config> = StorageValue<_, u32, ValueQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -1490,6 +1494,10 @@ pub mod pallet {
                 <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
 
+                if Self::is_bonus_node(&info) {
+                    <TotalRegisteredBonusNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
+                }
+
                 // Unreserve stake for this node if there is any
                 if !info.stake.amount.is_zero() {
                     Self::update_reserves(owner, info.stake.amount, StakeOperation::Remove)?;
@@ -1542,6 +1550,12 @@ pub mod pallet {
                 *n = n.saturating_add(1);
             });
 
+            if is_bonus {
+                <TotalRegisteredBonusNodes<T>>::mutate(|n| {
+                    *n = n.saturating_add(1);
+                });
+            }
+
             Self::insert_signing_key_index(&node, &signing_key)?;
 
             let node_serial_number = Self::calculate_node_serial(is_bonus);
@@ -1582,6 +1596,10 @@ pub mod pallet {
                     current
                 })
             }
+        }
+
+        pub fn is_bonus_node(node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>) -> bool {
+            node_info.serial_number >= T::BonusNodeSerialStart::get()
         }
 
         pub fn offchain_signature_is_valid<D: Encode>(
