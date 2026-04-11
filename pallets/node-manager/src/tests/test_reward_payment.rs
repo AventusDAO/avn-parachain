@@ -754,7 +754,9 @@ mod reward {
             let new_owner = TestAccount::new([111u8; 32]).account_id();
 
             // Ensure 50% genesis bonus
-            NextNodeSerialNumber::<TestRuntime>::put(2001);
+            NextNodeSerialNumber::<TestRuntime>::put(
+                <GenesisBonus50<TestRuntime>>::get().start + 1u32,
+            );
             let new_node = register_node_and_send_heartbeat(
                 context.registrar.clone(),
                 new_owner,

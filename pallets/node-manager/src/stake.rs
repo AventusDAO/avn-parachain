@@ -3,12 +3,6 @@
 use crate::*;
 use frame_support::storage::{with_transaction, TransactionOutcome};
 use sp_runtime::{traits::UniqueSaturatedInto, FixedPointNumber, FixedU128};
-use sp_std::ops::RangeInclusive;
-
-// 50% bonus for serial number nodes starting from 2001 to 5000
-const FIFTY_PERCENT_GENESIS_BONUS: RangeInclusive<u32> = 2001..=5000;
-// 25% bonus for serial number nodes starting from 5001 to 10000
-const TWENTY_FIVE_PERCENT_GENESIS_BONUS: RangeInclusive<u32> = 5001..=10000;
 
 impl<T: Config> Pallet<T> {
     fn calculate_genesis_bonus(
@@ -20,9 +14,9 @@ impl<T: Config> Pallet<T> {
         }
 
         // Node is currently auto-staking, apply bonus if eligible
-        if FIFTY_PERCENT_GENESIS_BONUS.contains(&node_info.serial_number) {
+        if GenesisBonus50::<T>::get().contains(&node_info.serial_number) {
             FixedU128::saturating_from_rational(3u128, 2u128) // 1.5x
-        } else if TWENTY_FIVE_PERCENT_GENESIS_BONUS.contains(&node_info.serial_number) {
+        } else if GenesisBonus25::<T>::get().contains(&node_info.serial_number) {
             FixedU128::saturating_from_rational(5u128, 4u128) // 1.25x
         } else {
             FixedU128::one() // no bonus

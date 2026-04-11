@@ -279,6 +279,22 @@ benchmarks! {
         assert!(<NumPeriodsToMint<T>>::get() == new_periods);
     }
 
+    set_admin_config_genesis_bonus_50 {
+        let new_range = BonusRange::new(100, 500);
+        let config = AdminConfig::GenesisBonus50(new_range);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<GenesisBonus50<T>>::get() == new_range);
+    }
+
+    set_admin_config_genesis_bonus_25 {
+        let new_range = BonusRange::new(501, 1000);
+        let config = AdminConfig::GenesisBonus25(new_range);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<GenesisBonus25<T>>::get() == new_range);
+    }
+
     on_initialise_with_new_reward_period {
         let reward_period = <RewardPeriod<T>>::get();
         let block_number: BlockNumberFor<T> = reward_period.first + BlockNumberFor::<T>::from(reward_period.length) + 1u32.into();

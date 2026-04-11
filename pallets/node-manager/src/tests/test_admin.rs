@@ -356,6 +356,56 @@ mod reward_enabled {
     }
 }
 
+mod genesis_bonus_50 {
+    use super::*;
+
+    #[test]
+    fn can_be_set() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            let new_range = BonusRange::new(100, 500);
+
+            let config = AdminConfig::GenesisBonus50(new_range);
+            assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config));
+            assert_eq!(GenesisBonus50::<TestRuntime>::get(), new_range);
+            System::assert_last_event(Event::GenesisBonus50Set { range: new_range }.into());
+        });
+    }
+
+    #[test]
+    fn returns_default_when_not_set() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            assert_eq!(GenesisBonus50::<TestRuntime>::get(), BonusRange::new(3001, 6000));
+        });
+    }
+}
+
+mod genesis_bonus_25 {
+    use super::*;
+
+    #[test]
+    fn can_be_set() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            let new_range = BonusRange::new(501, 1000);
+
+            let config = AdminConfig::GenesisBonus25(new_range);
+            assert_ok!(NodeManager::set_admin_config(RawOrigin::Root.into(), config));
+            assert_eq!(GenesisBonus25::<TestRuntime>::get(), new_range);
+            System::assert_last_event(Event::GenesisBonus25Set { range: new_range }.into());
+        });
+    }
+
+    #[test]
+    fn returns_default_when_not_set() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            assert_eq!(GenesisBonus25::<TestRuntime>::get(), BonusRange::new(6001, 11000));
+        });
+    }
+}
+
 mod min_uptime_threshold {
     use super::*;
 

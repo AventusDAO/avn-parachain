@@ -303,6 +303,16 @@ pub mod pallet {
     pub type TotalStake<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, OptionQuery>;
 
+    /// 50% genesis bonus serial nodes
+    #[pallet::storage]
+    pub type GenesisBonus50<T: Config> =
+        StorageValue<_, BonusRange, ValueQuery, DefaultGenesisBonus50>;
+
+    /// 25% genesis bonus serial nodes
+    #[pallet::storage]
+    pub type GenesisBonus25<T: Config> =
+        StorageValue<_, BonusRange, ValueQuery, DefaultGenesisBonus25>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -459,6 +469,10 @@ pub mod pallet {
         RestrictedUnstakeDurationSet { duration_sec: Duration },
         /// Reward fee percentage set
         RewardFeePercentageSet { percentage: Perbill },
+        /// Genesis bonus 50% range set
+        GenesisBonus50Set { range: BonusRange },
+        /// Genesis bonus 25% range set
+        GenesisBonus25Set { range: BonusRange },
         /// Auto-stake preference updated
         AutoStakePreferenceUpdated {
             owner: T::AccountId,
@@ -659,6 +673,8 @@ pub mod pallet {
             .max(<T as Config>::WeightInfo::set_admin_config_unstake_period())
             .max(<T as Config>::WeightInfo::set_admin_config_restricted_unstake_duration())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_fee_percentage())
+            .max(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_50())
+            .max(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_25())
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
@@ -770,6 +786,16 @@ pub mod pallet {
                     Self::deposit_event(Event::RewardFeePercentageSet { percentage });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_fee_percentage())
                         .into())
+                },
+                AdminConfig::GenesisBonus50(range) => {
+                    <GenesisBonus50<T>>::put(range.clone());
+                    Self::deposit_event(Event::GenesisBonus50Set { range });
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_50()).into())
+                },
+                AdminConfig::GenesisBonus25(range) => {
+                    <GenesisBonus25<T>>::put(range.clone());
+                    Self::deposit_event(Event::GenesisBonus25Set { range });
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_25()).into())
                 },
             }
         }

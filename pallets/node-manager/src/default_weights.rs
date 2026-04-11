@@ -50,6 +50,8 @@ pub trait WeightInfo {
 	fn set_admin_config_restricted_unstake_duration() -> Weight;
 	fn set_admin_config_reward_fee_percentage() -> Weight;
 	fn set_admin_config_num_periods_to_mint() -> Weight;
+	fn set_admin_config_genesis_bonus_50() -> Weight;
+	fn set_admin_config_genesis_bonus_25() -> Weight;
 	fn on_initialise_with_new_reward_period() -> Weight;
 	fn on_initialise_no_reward_period() -> Weight;
 	fn offchain_submit_heartbeat() -> Weight;
@@ -233,6 +235,26 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Estimated: `0`
 		// Minimum execution time: 10_350_000 picoseconds.
 		Weight::from_parts(10_760_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// Storage: `NodeManager::GenesisBonus50` (r:0 w:1)
+	/// Proof: `NodeManager::GenesisBonus50` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	fn set_admin_config_genesis_bonus_50() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 10_330_000 picoseconds.
+		Weight::from_parts(10_681_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// Storage: `NodeManager::GenesisBonus25` (r:0 w:1)
+	/// Proof: `NodeManager::GenesisBonus25` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	fn set_admin_config_genesis_bonus_25() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 10_330_000 picoseconds.
+		Weight::from_parts(10_681_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:0)
@@ -717,6 +739,26 @@ impl WeightInfo for () {
 		//  Estimated: `0`
 		// Minimum execution time: 10_350_000 picoseconds.
 		Weight::from_parts(10_760_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: `NodeManager::GenesisBonus50` (r:0 w:1)
+	/// Proof: `NodeManager::GenesisBonus50` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	fn set_admin_config_genesis_bonus_50() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 10_330_000 picoseconds.
+		Weight::from_parts(10_681_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// Storage: `NodeManager::GenesisBonus25` (r:0 w:1)
+	/// Proof: `NodeManager::GenesisBonus25` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	fn set_admin_config_genesis_bonus_25() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 10_330_000 picoseconds.
+		Weight::from_parts(10_681_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::RewardEnabled` (r:1 w:0)
