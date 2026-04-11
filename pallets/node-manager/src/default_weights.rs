@@ -37,6 +37,7 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_node_manager.
 pub trait WeightInfo {
 	fn register_node() -> Weight;
+	fn register_bonus_node() -> Weight;
 	fn set_admin_config_registrar() -> Weight;
 	fn set_admin_config_reward_period() -> Weight;
 	fn set_admin_config_reward_batch_size() -> Weight;
@@ -93,6 +94,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Measured:  `433`
 		//  Estimated: `3656`
 		// Minimum execution time: 78_052_000 picoseconds.
+		Weight::from_parts(80_652_000, 3656)
+			.saturating_add(T::DbWeight::get().reads(8_u64))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+	}
+	fn register_bonus_node() -> Weight {
+		// Same proof structure as register_node but reads NextBonusNodeSerialNumber instead.
 		Weight::from_parts(80_652_000, 3656)
 			.saturating_add(T::DbWeight::get().reads(8_u64))
 			.saturating_add(T::DbWeight::get().writes(6_u64))
@@ -597,6 +604,12 @@ impl WeightInfo for () {
 		//  Measured:  `433`
 		//  Estimated: `3656`
 		// Minimum execution time: 78_052_000 picoseconds.
+		Weight::from_parts(80_652_000, 3656)
+			.saturating_add(RocksDbWeight::get().reads(8_u64))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+	}
+	fn register_bonus_node() -> Weight {
+		// Same proof structure as register_node but reads NextBonusNodeSerialNumber instead.
 		Weight::from_parts(80_652_000, 3656)
 			.saturating_add(RocksDbWeight::get().reads(8_u64))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))

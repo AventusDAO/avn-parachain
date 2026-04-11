@@ -290,6 +290,10 @@ pub mod pallet {
     #[pallet::storage]
     pub type NextNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Next bonus node serial number (starts at T::BonusNodeSerialStart)
+    #[pallet::storage]
+    pub type NextBonusNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
+
     /// Restricted unstake duration in seconds
     #[pallet::storage]
     pub type RestrictedUnstakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
@@ -364,6 +368,7 @@ pub mod pallet {
             UnstakePeriodSec::<T>::set(self.unstake_period_sec);
             RestrictedUnstakeDurationSec::<T>::set(self.restricted_unstake_duration_sec);
             RewardFeePercentage::<T>::set(self.reward_fee_percentage);
+            NextBonusNodeSerialNumber::<T>::set(T::BonusNodeSerialStart::get());
 
             let uptime_threshold =
                 Pallet::<T>::calculate_uptime_threshold(self.reward_period, self.heartbeat_period);
@@ -575,6 +580,8 @@ pub mod pallet {
         NoTier1MintEventFound,
         /// Mint request already in progress
         MintRequestInProgress,
+        /// Regular node serial limit reached; no more non-bonus nodes can be registered
+        NodeSerialLimitReached,
     }
 
     #[pallet::config]
@@ -634,6 +641,8 @@ pub mod pallet {
         type ProcessedEventsChecker: ProcessedEventsChecker;
         /// Interface to interact with app chains
         type AppChainInterface: AppChainInterface<AccountId = Self::AccountId>;
+        #[pallet::constant]
+        type BonusNodeSerialStart: Get<u32>;
     }
 
     #[pallet::call]
@@ -652,7 +661,7 @@ pub mod pallet {
             ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
 
             // Default to auto_stake true
-            Self::do_register_node(node, owner, signing_key, true)?;
+            Self::do_register_node(node, owner, signing_key, true, false)?;
             Ok(())
         }
 
@@ -996,7 +1005,7 @@ pub mod pallet {
             );
 
             // Perform the actual registration. Default to auto_stake_rewards = true
-            Self::do_register_node(node, owner, signing_key, true)?;
+            Self::do_register_node(node, owner, signing_key, true, false)?;
 
             Ok(())
         }
@@ -1206,6 +1215,24 @@ pub mod pallet {
 
             Self::deposit_event(Event::MintRequestSubmitted { amount, tx_id });
 
+            Ok(())
+        }
+
+        /// Register a bonus node
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::register_bonus_node())]
+        pub fn register_bonus_node(
+            origin: OriginFor<T>,
+            node: NodeId<T>,
+            owner: T::AccountId,
+            signing_key: T::SignerId,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
+
+            // Default to auto_stake true; bonus nodes use the bonus serial counter
+            Self::do_register_node(node, owner, signing_key, true, true)?;
             Ok(())
         }
     }
@@ -1491,12 +1518,20 @@ pub mod pallet {
             owner: T::AccountId,
             signing_key: T::SignerId,
             auto_stake_rewards: bool,
+            is_bonus: bool,
         ) -> DispatchResult {
             ensure!(!<NodeRegistry<T>>::contains_key(&node), Error::<T>::DuplicateNode);
             ensure!(
                 !SigningKeyToNodeId::<T>::contains_key(&signing_key),
                 Error::<T>::SigningKeyAlreadyInUse
             );
+
+            if !is_bonus {
+                ensure!(
+                    NextNodeSerialNumber::<T>::get() < T::BonusNodeSerialStart::get(),
+                    Error::<T>::NodeSerialLimitReached
+                );
+            }
 
             let auto_stake_expiry = Self::calculate_auto_stake_expiry();
 
@@ -1509,11 +1544,7 @@ pub mod pallet {
 
             Self::insert_signing_key_index(&node, &signing_key)?;
 
-            let node_serial_number = <NextNodeSerialNumber<T>>::mutate(|n| {
-                let current = *n;
-                *n = n.saturating_add(1);
-                current
-            });
+            let node_serial_number = Self::calculate_node_serial(is_bonus);
 
             <NodeRegistry<T>>::insert(
                 &node,
@@ -1535,6 +1566,22 @@ pub mod pallet {
             Self::deposit_event(Event::NodeRegistered { owner, node });
 
             Ok(())
+        }
+
+        pub fn calculate_node_serial(is_bonus: bool) -> u32 {
+            if is_bonus {
+                <NextBonusNodeSerialNumber<T>>::mutate(|n| {
+                    let current = *n;
+                    *n = n.saturating_add(1);
+                    current
+                })
+            } else {
+                <NextNodeSerialNumber<T>>::mutate(|n| {
+                    let current = *n;
+                    *n = n.saturating_add(1);
+                    current
+                })
+            }
         }
 
         pub fn offchain_signature_is_valid<D: Encode>(
