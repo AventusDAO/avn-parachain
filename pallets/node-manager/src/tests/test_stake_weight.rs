@@ -47,7 +47,7 @@ mod stake_and_reward_weight_tests {
         ext.execute_with(|| {
             let owner = get_owner(1);
             let signing_key = get_signing_key(1);
-            // Serial in 2001..=5000 => 1.5x
+            // Serial within the configured 50% genesis-bonus range =>
             let node_serial = <GenesisBonus50<TestRuntime>>::get().start + 1u32;
             let stake_info = StakeInfo::new(0, 0, None, UnstakeRestriction::Locked);
 

@@ -292,7 +292,8 @@ pub mod pallet {
 
     /// Next bonus node serial number (starts at T::BonusNodeSerialStart)
     #[pallet::storage]
-    pub type NextBonusNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
+    pub type NextBonusNodeSerialNumber<T: Config> =
+        StorageValue<_, u32, ValueQuery, T::BonusNodeSerialStart>;
 
     /// Restricted unstake duration in seconds
     #[pallet::storage]
@@ -372,7 +373,6 @@ pub mod pallet {
             UnstakePeriodSec::<T>::set(self.unstake_period_sec);
             RestrictedUnstakeDurationSec::<T>::set(self.restricted_unstake_duration_sec);
             RewardFeePercentage::<T>::set(self.reward_fee_percentage);
-            NextBonusNodeSerialNumber::<T>::set(T::BonusNodeSerialStart::get());
 
             let uptime_threshold =
                 Pallet::<T>::calculate_uptime_threshold(self.reward_period, self.heartbeat_period);
@@ -586,6 +586,8 @@ pub mod pallet {
         MintRequestInProgress,
         /// Regular node serial limit reached; no more non-bonus nodes can be registered
         NodeSerialLimitReached,
+        /// The range provided is invalid (e.g. start >= end)
+        InvalidBonusRange,
     }
 
     #[pallet::config]
@@ -801,11 +803,13 @@ pub mod pallet {
                         .into())
                 },
                 AdminConfig::GenesisBonus50(range) => {
+                    ensure!(range.start < range.end, Error::<T>::InvalidBonusRange);
                     <GenesisBonus50<T>>::put(range.clone());
                     Self::deposit_event(Event::GenesisBonus50Set { range });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_50()).into())
                 },
                 AdminConfig::GenesisBonus25(range) => {
+                    ensure!(range.start < range.end, Error::<T>::InvalidBonusRange);
                     <GenesisBonus25<T>>::put(range.clone());
                     Self::deposit_event(Event::GenesisBonus25Set { range });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_25()).into())
