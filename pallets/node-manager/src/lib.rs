@@ -1598,7 +1598,9 @@ pub mod pallet {
             }
         }
 
-        pub fn is_bonus_node(node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>) -> bool {
+        pub fn is_bonus_node(
+            node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
+        ) -> bool {
             node_info.serial_number >= T::BonusNodeSerialStart::get()
         }
 
