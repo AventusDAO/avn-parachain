@@ -593,6 +593,7 @@ impl pallet_cross_chain_voting::Config for Runtime {
 parameter_types! {
     pub const NodeManagerPalletId: PalletId = NODE_MANAGER_PALLET_ID;
     pub const VirtualNodeStake: Balance = 10000 * AVT;
+    pub const BonusNodeSerialStart: u32 = 1_000_000;
 }
 
 impl pallet_node_manager::Config for Runtime {
@@ -612,6 +613,7 @@ impl pallet_node_manager::Config for Runtime {
     type BridgeInterface = EthBridge;
     type ProcessedEventsChecker = EthBridge;
     type AppChainInterface = NoopAppChainInterface<AccountId>;
+    type BonusNodeSerialStart = BonusNodeSerialStart;
 }
 
 // Other pallets
