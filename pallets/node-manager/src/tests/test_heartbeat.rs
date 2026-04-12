@@ -439,8 +439,10 @@ mod given_a_reward_period {
                 <NodeUptime<TestRuntime>>::get(reward_period, &context.node_id).unwrap();
 
             let expected_weight = match serial_num {
-                2001..=5000 => HEARTBEAT_BASE_WEIGHT + (HEARTBEAT_BASE_WEIGHT / 2),
-                5001..=10000 => HEARTBEAT_BASE_WEIGHT + (HEARTBEAT_BASE_WEIGHT / 4),
+                _ if <GenesisBonus50<TestRuntime>>::get().contains(&serial_num) =>
+                    HEARTBEAT_BASE_WEIGHT + (HEARTBEAT_BASE_WEIGHT / 2),
+                _ if <GenesisBonus25<TestRuntime>>::get().contains(&serial_num) =>
+                    HEARTBEAT_BASE_WEIGHT + (HEARTBEAT_BASE_WEIGHT / 4),
                 _ => HEARTBEAT_BASE_WEIGHT,
             };
 

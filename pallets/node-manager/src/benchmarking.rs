@@ -150,8 +150,24 @@ benchmarks! {
         let signing_key: T::SignerId = account("signing_key", 3, 3);
     }: register_node(RawOrigin::Signed(registrar.clone()), node.clone(), owner.clone(), signing_key.clone())
     verify {
+        let node_info = <NodeRegistry<T>>::get(&node).expect("Node must be registered");
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), node.clone()));
-        assert!(<NodeRegistry<T>>::contains_key(node.clone()));
+        assert!(node_info.serial_number < T::BonusNodeSerialStart::get());
+        assert_last_event::<T>(Event::NodeRegistered {owner, node}.into());
+    }
+
+    register_bonus_node {
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+
+        let owner: T::AccountId = account("owner", 1, 1);
+        let node: NodeId<T> = account("node", 2, 2);
+        let signing_key: T::SignerId = account("signing_key", 3, 3);
+    }: register_bonus_node(RawOrigin::Signed(registrar.clone()), node.clone(), owner.clone(), signing_key.clone())
+    verify {
+        let node_info = <NodeRegistry<T>>::get(&node).expect("Node must be registered");
+        assert!(<OwnedNodes<T>>::contains_key(owner.clone(), node.clone()));
+        assert!(node_info.serial_number >= T::BonusNodeSerialStart::get());
         assert_last_event::<T>(Event::NodeRegistered {owner, node}.into());
     }
 
@@ -277,6 +293,22 @@ benchmarks! {
     }: set_admin_config(RawOrigin::Root, config.clone())
     verify {
         assert!(<NumPeriodsToMint<T>>::get() == new_periods);
+    }
+
+    set_admin_config_genesis_bonus_50 {
+        let new_range = BonusRange::new(100, 500);
+        let config = AdminConfig::GenesisBonus50(new_range);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<GenesisBonus50<T>>::get() == new_range);
+    }
+
+    set_admin_config_genesis_bonus_25 {
+        let new_range = BonusRange::new(501, 1000);
+        let config = AdminConfig::GenesisBonus25(new_range);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(<GenesisBonus25<T>>::get() == new_range);
     }
 
     on_initialise_with_new_reward_period {

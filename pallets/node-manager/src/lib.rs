@@ -290,6 +290,11 @@ pub mod pallet {
     #[pallet::storage]
     pub type NextNodeSerialNumber<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Next bonus node serial number (starts at T::BonusNodeSerialStart)
+    #[pallet::storage]
+    pub type NextBonusNodeSerialNumber<T: Config> =
+        StorageValue<_, u32, ValueQuery, T::BonusNodeSerialStart>;
+
     /// Restricted unstake duration in seconds
     #[pallet::storage]
     pub type RestrictedUnstakeDurationSec<T: Config> = StorageValue<_, Duration, ValueQuery>;
@@ -302,6 +307,20 @@ pub mod pallet {
     #[pallet::storage]
     pub type TotalStake<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, BalanceOf<T>, OptionQuery>;
+
+    /// 50% genesis bonus serial nodes
+    #[pallet::storage]
+    pub type GenesisBonus50<T: Config> =
+        StorageValue<_, BonusRange, ValueQuery, DefaultGenesisBonus50>;
+
+    /// 25% genesis bonus serial nodes
+    #[pallet::storage]
+    pub type GenesisBonus25<T: Config> =
+        StorageValue<_, BonusRange, ValueQuery, DefaultGenesisBonus25>;
+
+    /// Total registered bonus nodes
+    #[pallet::storage]
+    pub type TotalRegisteredBonusNodes<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
@@ -459,6 +478,10 @@ pub mod pallet {
         RestrictedUnstakeDurationSet { duration_sec: Duration },
         /// Reward fee percentage set
         RewardFeePercentageSet { percentage: Perbill },
+        /// Genesis bonus 50% range set
+        GenesisBonus50Set { range: BonusRange },
+        /// Genesis bonus 25% range set
+        GenesisBonus25Set { range: BonusRange },
         /// Auto-stake preference updated
         AutoStakePreferenceUpdated {
             owner: T::AccountId,
@@ -561,6 +584,10 @@ pub mod pallet {
         NoTier1MintEventFound,
         /// Mint request already in progress
         MintRequestInProgress,
+        /// Regular node serial limit reached; no more non-bonus nodes can be registered
+        NodeSerialLimitReached,
+        /// The range provided is invalid (e.g. start >= end)
+        InvalidBonusRange,
     }
 
     #[pallet::config]
@@ -620,6 +647,8 @@ pub mod pallet {
         type ProcessedEventsChecker: ProcessedEventsChecker;
         /// Interface to interact with app chains
         type AppChainInterface: AppChainInterface<AccountId = Self::AccountId>;
+        #[pallet::constant]
+        type BonusNodeSerialStart: Get<u32>;
     }
 
     #[pallet::call]
@@ -638,7 +667,7 @@ pub mod pallet {
             ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
 
             // Default to auto_stake true
-            Self::do_register_node(node, owner, signing_key, true)?;
+            Self::do_register_node(node, owner, signing_key, true, false)?;
             Ok(())
         }
 
@@ -659,6 +688,8 @@ pub mod pallet {
             .max(<T as Config>::WeightInfo::set_admin_config_unstake_period())
             .max(<T as Config>::WeightInfo::set_admin_config_restricted_unstake_duration())
             .max(<T as Config>::WeightInfo::set_admin_config_reward_fee_percentage())
+            .max(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_50())
+            .max(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_25())
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
@@ -770,6 +801,18 @@ pub mod pallet {
                     Self::deposit_event(Event::RewardFeePercentageSet { percentage });
                     Ok(Some(<T as Config>::WeightInfo::set_admin_config_reward_fee_percentage())
                         .into())
+                },
+                AdminConfig::GenesisBonus50(range) => {
+                    ensure!(range.start < range.end, Error::<T>::InvalidBonusRange);
+                    <GenesisBonus50<T>>::put(range.clone());
+                    Self::deposit_event(Event::GenesisBonus50Set { range });
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_50()).into())
+                },
+                AdminConfig::GenesisBonus25(range) => {
+                    ensure!(range.start < range.end, Error::<T>::InvalidBonusRange);
+                    <GenesisBonus25<T>>::put(range.clone());
+                    Self::deposit_event(Event::GenesisBonus25Set { range });
+                    Ok(Some(<T as Config>::WeightInfo::set_admin_config_genesis_bonus_25()).into())
                 },
             }
         }
@@ -970,7 +1013,7 @@ pub mod pallet {
             );
 
             // Perform the actual registration. Default to auto_stake_rewards = true
-            Self::do_register_node(node, owner, signing_key, true)?;
+            Self::do_register_node(node, owner, signing_key, true, false)?;
 
             Ok(())
         }
@@ -1180,6 +1223,24 @@ pub mod pallet {
 
             Self::deposit_event(Event::MintRequestSubmitted { amount, tx_id });
 
+            Ok(())
+        }
+
+        /// Register a bonus node
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::register_bonus_node())]
+        pub fn register_bonus_node(
+            origin: OriginFor<T>,
+            node: NodeId<T>,
+            owner: T::AccountId,
+            signing_key: T::SignerId,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
+
+            // Default to auto_stake true; bonus nodes use the bonus serial counter
+            Self::do_register_node(node, owner, signing_key, true, true)?;
             Ok(())
         }
     }
@@ -1437,6 +1498,10 @@ pub mod pallet {
                 <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
 
+                if Self::is_bonus_node(&info) {
+                    <TotalRegisteredBonusNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
+                }
+
                 // Unreserve stake for this node if there is any
                 if !info.stake.amount.is_zero() {
                     Self::update_reserves(owner, info.stake.amount, StakeOperation::Remove)?;
@@ -1465,12 +1530,20 @@ pub mod pallet {
             owner: T::AccountId,
             signing_key: T::SignerId,
             auto_stake_rewards: bool,
+            is_bonus: bool,
         ) -> DispatchResult {
             ensure!(!<NodeRegistry<T>>::contains_key(&node), Error::<T>::DuplicateNode);
             ensure!(
                 !SigningKeyToNodeId::<T>::contains_key(&signing_key),
                 Error::<T>::SigningKeyAlreadyInUse
             );
+
+            if !is_bonus {
+                ensure!(
+                    NextNodeSerialNumber::<T>::get() < T::BonusNodeSerialStart::get(),
+                    Error::<T>::NodeSerialLimitReached
+                );
+            }
 
             let auto_stake_expiry = Self::calculate_auto_stake_expiry();
 
@@ -1481,13 +1554,15 @@ pub mod pallet {
                 *n = n.saturating_add(1);
             });
 
+            if is_bonus {
+                <TotalRegisteredBonusNodes<T>>::mutate(|n| {
+                    *n = n.saturating_add(1);
+                });
+            }
+
             Self::insert_signing_key_index(&node, &signing_key)?;
 
-            let node_serial_number = <NextNodeSerialNumber<T>>::mutate(|n| {
-                let current = *n;
-                *n = n.saturating_add(1);
-                current
-            });
+            let node_serial_number = Self::calculate_node_serial(is_bonus);
 
             <NodeRegistry<T>>::insert(
                 &node,
@@ -1509,6 +1584,28 @@ pub mod pallet {
             Self::deposit_event(Event::NodeRegistered { owner, node });
 
             Ok(())
+        }
+
+        pub fn calculate_node_serial(is_bonus: bool) -> u32 {
+            if is_bonus {
+                <NextBonusNodeSerialNumber<T>>::mutate(|n| {
+                    let current = *n;
+                    *n = n.saturating_add(1);
+                    current
+                })
+            } else {
+                <NextNodeSerialNumber<T>>::mutate(|n| {
+                    let current = *n;
+                    *n = n.saturating_add(1);
+                    current
+                })
+            }
+        }
+
+        pub fn is_bonus_node(
+            node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
+        ) -> bool {
+            node_info.serial_number >= T::BonusNodeSerialStart::get()
         }
 
         pub fn offchain_signature_is_valid<D: Encode>(

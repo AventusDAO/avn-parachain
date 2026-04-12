@@ -1,6 +1,7 @@
 // Copyright 2026 Aventus DAO Ltd
 
 use crate::*;
+use frame_support::traits::Get;
 use sp_runtime::{
     traits::{AtLeast32BitUnsigned, Zero},
     ArithmeticError, FixedPointNumber, FixedU128, Saturating,
@@ -385,6 +386,8 @@ pub enum AdminConfig<AccountId, Balance> {
     UnstakePeriod(Duration),
     RestrictedUnstakeDuration(Duration),
     RewardFee(Perbill),
+    GenesisBonus50(BonusRange),
+    GenesisBonus25(BonusRange),
 }
 
 #[derive(
@@ -438,4 +441,45 @@ pub struct PendingMintRequest<Balance> {
     pub amount: Balance,
     pub bridge_confirmed: bool,
     pub credit_received: bool,
+}
+
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub struct BonusRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl BonusRange {
+    pub fn new(start: u32, end: u32) -> Self {
+        BonusRange { start, end }
+    }
+
+    pub fn contains(&self, n: &u32) -> bool {
+        *n >= self.start && *n <= self.end
+    }
+}
+
+pub struct DefaultGenesisBonus50;
+impl Get<BonusRange> for DefaultGenesisBonus50 {
+    fn get() -> BonusRange {
+        BonusRange::new(3001, 6000)
+    }
+}
+
+pub struct DefaultGenesisBonus25;
+impl Get<BonusRange> for DefaultGenesisBonus25 {
+    fn get() -> BonusRange {
+        BonusRange::new(6001, 11000)
+    }
 }

@@ -51,6 +51,7 @@ frame_support::construct_runtime!(
 parameter_types! {
     pub const RewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
     pub const VirtualNodeStake: u128 = 2000 * AVT;
+    pub const BonusNodeSerialStart: u32 = 20_000;
 }
 
 pub struct TestBridgeInterface;
@@ -113,6 +114,7 @@ impl Config for TestRuntime {
     type BridgeInterface = TestBridgeInterface;
     type ProcessedEventsChecker = TestProcessedEventsChecker;
     type AppChainInterface = Self;
+    type BonusNodeSerialStart = BonusNodeSerialStart;
 }
 
 parameter_types! {

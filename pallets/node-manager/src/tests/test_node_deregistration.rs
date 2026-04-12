@@ -184,6 +184,38 @@ fn deregistration_succeeds() {
 }
 
 #[test]
+fn bonus_node_deregistration_decrements_total_registered_bonus_nodes() {
+    let (mut ext, _, _) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let registrar_key_pair = TestAccount::new([1u8; 32]);
+        let registrar = registrar_key_pair.account_id();
+        let owner = TestAccount::new([209u8; 32]).account_id();
+        <NodeRegistrar<TestRuntime>>::set(Some(registrar.clone()));
+
+        let bonus_node = TestAccount::new([50u8; 32]).account_id();
+        let signing_key = UintAuthorityId(50u64);
+        assert_ok!(NodeManager::register_bonus_node(
+            RuntimeOrigin::signed(registrar.clone()),
+            bonus_node,
+            owner.clone(),
+            signing_key,
+        ));
+        assert_eq!(<TotalRegisteredBonusNodes<TestRuntime>>::get(), 1);
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(registrar),
+            owner,
+            BoundedVec::truncate_from(vec![bonus_node]),
+        ));
+
+        assert_eq!(<TotalRegisteredBonusNodes<TestRuntime>>::get(), 0);
+    });
+}
+
+#[test]
 fn signed_deregistration_succeeds() {
     let (mut ext, _, _) = ExtBuilder::build_default()
         .with_genesis_config()
