@@ -490,7 +490,7 @@ benchmarks! {
     }
 
     deregister_nodes {
-        let b in 1 .. MAX_NODES_TO_DEREGISTER;
+        let b in 1 .. MAX_NODES;
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
 
@@ -522,7 +522,7 @@ benchmarks! {
     }
 
     signed_deregister_nodes {
-        let b in 1 .. MAX_NODES_TO_DEREGISTER;
+        let b in 1 .. MAX_NODES;
         let registrar_key = crate::sr25519::app_sr25519::Public::generate_pair(None);
         let registrar: T::AccountId =
             T::AccountId::decode(&mut Encode::encode(&registrar_key).as_slice()).expect("valid account id");
@@ -670,18 +670,24 @@ benchmarks! {
     }
 
     set_genesis_override {
+        let b in 1..MAX_NODES;
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
 
-        let node_id: NodeId<T> = account("node", 0, 0);
-        register_new_node::<T>(node_id.clone(), registrar.clone());
+        let mut node_ids: BoundedVec<NodeId<T>, MaxNodes> = BoundedVec::new();
+        for i in 0..b {
+            let node_id: NodeId<T> = account("node", i, i);
+            register_new_node::<T>(node_id.clone(), registrar.clone());
+            node_ids.try_push(node_id).expect("within bound");
+        }
         let genesis_override: Option<GenesisBonus> = Some(GenesisBonus::Genesis50);
-    }: set_genesis_override(RawOrigin::Signed(registrar.clone()), node_id.clone(), genesis_override)
+    }: set_genesis_override(RawOrigin::Signed(registrar.clone()), node_ids.clone(), genesis_override)
     verify {
-        let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
-        let genesis_bonus = Pallet::<T>::get_genesis_bonus(&node_info.serial_number);
-        assert!(!GenesisBonus50::<T>::get().contains(&node_info.serial_number));
-        assert_eq!(genesis_bonus, genesis_override);
+        for node_id in &node_ids {
+            let node_info = <NodeRegistry<T>>::get(node_id).expect("Node must be registered");
+            let genesis_bonus = Pallet::<T>::get_genesis_bonus(&node_info.serial_number);
+            assert_eq!(genesis_bonus, genesis_override);
+        }
     }
 }
 

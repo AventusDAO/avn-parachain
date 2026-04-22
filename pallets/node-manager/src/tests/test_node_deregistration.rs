@@ -124,7 +124,7 @@ fn create_signed_deregister_proof(
     registrar_key_pair: &TestAccount,
     relayer: &AccountId,
     owner: &AccountId,
-    nodes_to_deregister: &BoundedVec<NodeId<TestRuntime>, MaxNodesToDeregister>,
+    nodes_to_deregister: &BoundedVec<NodeId<TestRuntime>, MaxNodes>,
     number_of_nodes_to_deregister: &u32,
     block_number: &BlockNumberFor<TestRuntime>,
 ) -> Proof<SignatureTest, AccountId> {

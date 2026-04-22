@@ -44,7 +44,7 @@ use sp_runtime::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, Perbill, Perquintill, RuntimeDebug, Saturating,
+    DispatchError, Perbill, Perquintill, RuntimeDebug, Saturating
 };
 
 pub mod offchain;
@@ -104,7 +104,7 @@ const MINT_SAFETY_CAP_MULTIPLIER: u32 = 4;
 pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
-pub const MAX_NODES_TO_DEREGISTER: u32 = 64;
+pub const MAX_NODES: u32 = 64;
 pub const MAX_STAKE_CHANGES_PER_PERIOD: u32 = 256;
 
 const PALLET_ID: &'static [u8; 12] = b"node-manager";
@@ -136,7 +136,7 @@ pub(crate) type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
 /// Node account ID
 pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 /// Max nodes per deregistration call
-pub type MaxNodesToDeregister = ConstU32<MAX_NODES_TO_DEREGISTER>;
+pub type MaxNodes = ConstU32<MAX_NODES>;
 /// Max stake changes per period
 pub type MaxStakeChangesPerPeriod = ConstU32<MAX_STAKE_CHANGES_PER_PERIOD>;
 
@@ -1033,7 +1033,7 @@ pub mod pallet {
         pub fn deregister_nodes(
             origin: OriginFor<T>,
             owner: T::AccountId,
-            nodes_to_deregister: BoundedVec<NodeId<T>, MaxNodesToDeregister>,
+            nodes_to_deregister: BoundedVec<NodeId<T>, MaxNodes>,
         ) -> DispatchResult {
             let sender = ensure_signed(origin)?;
 
@@ -1051,7 +1051,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             proof: Proof<T::Signature, T::AccountId>,
             owner: T::AccountId,
-            nodes_to_deregister: BoundedVec<NodeId<T>, MaxNodesToDeregister>,
+            nodes_to_deregister: BoundedVec<NodeId<T>, MaxNodes>,
             block_number: BlockNumberFor<T>,
         ) -> DispatchResult {
             let sender = ensure_signed(origin)?;
@@ -1255,35 +1255,40 @@ pub mod pallet {
         }
 
         #[pallet::call_index(13)]
-        #[pallet::weight(<T as Config>::WeightInfo::set_genesis_override())]
+        #[pallet::weight(<T as Config>::WeightInfo::set_genesis_override(node_ids.len() as u32))]
         pub fn set_genesis_override(
             origin: OriginFor<T>,
-            node_id: NodeId<T>,
+            node_ids: BoundedVec<NodeId<T>, MaxNodes>,
             genesis_override: Option<GenesisBonus>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
             ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
 
-            let node_info =
-                NodeRegistry::<T>::get(&node_id).ok_or(Error::<T>::NodeNotRegistered)?;
-            let node_serial = node_info.serial_number;
+            for node_id in &node_ids {
+                let node_info =
+                    NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotRegistered)?;
+                let node_serial = node_info.serial_number;
 
-            ensure!(node_serial < T::BonusNodeSerialStart::get(), Error::<T>::BonusNode);
+                ensure!(node_serial < T::BonusNodeSerialStart::get(), Error::<T>::BonusNode);
 
-            match genesis_override {
-                Some(genesis_bonus) => {
-                    GenesisOverrides::<T>::insert(node_serial, genesis_bonus);
-                    Self::deposit_event(Event::GenesisOverrideSet {
-                        node_id,
-                        node_serial,
-                        genesis_bonus,
-                    });
-                },
-                None => {
-                    GenesisOverrides::<T>::remove(node_serial);
-                    Self::deposit_event(Event::GenesisOverrideCleared { node_id, node_serial });
-                },
+                match genesis_override {
+                    Some(genesis_bonus) => {
+                        GenesisOverrides::<T>::insert(node_serial, genesis_bonus);
+                        Self::deposit_event(Event::GenesisOverrideSet {
+                            node_id: node_id.clone(),
+                            node_serial,
+                            genesis_bonus,
+                        });
+                    },
+                    None => {
+                        GenesisOverrides::<T>::remove(node_serial);
+                        Self::deposit_event(Event::GenesisOverrideCleared {
+                            node_id: node_id.clone(),
+                            node_serial,
+                        });
+                    },
+                }
             }
 
             Ok(())
@@ -1528,7 +1533,7 @@ pub mod pallet {
 
         fn do_deregister_nodes(
             owner: &T::AccountId,
-            nodes: &BoundedVec<NodeId<T>, MaxNodesToDeregister>,
+            nodes: &BoundedVec<NodeId<T>, MaxNodes>,
         ) -> DispatchResult {
             for node in nodes {
                 ensure!(
@@ -1986,7 +1991,7 @@ pub fn encode_signed_register_node_params<T: Config>(
 pub fn encode_signed_deregister_node_params<T: Config>(
     relayer: &T::AccountId,
     owner: &T::AccountId,
-    nodes_to_deregister: &BoundedVec<NodeId<T>, MaxNodesToDeregister>,
+    nodes_to_deregister: &BoundedVec<NodeId<T>, MaxNodes>,
     number_of_nodes_to_deregister: &u32,
     block_number: &BlockNumberFor<T>,
 ) -> Vec<u8> {

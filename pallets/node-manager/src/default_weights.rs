@@ -66,7 +66,7 @@ pub trait WeightInfo {
 	fn remove_stake() -> Weight;
 	fn update_auto_stake_preference() -> Weight;
 	fn offchain_mint_rewards() -> Weight;
-	fn set_genesis_override() -> Weight;
+	fn set_genesis_override(b: u32, ) -> Weight;
 }
 
 /// Weights for pallet_node_manager using the Substrate node and recommended hardware.
@@ -571,18 +571,23 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	}
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
-	/// Storage: `NodeManager::NodeRegistry` (r:1 w:0)
+	/// Storage: `NodeManager::NodeRegistry` (r:64 w:0)
 	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:1)
 	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
-	fn set_genesis_override() -> Weight {
+	/// The range of component `b` is `[1, 64]`.
+	fn set_genesis_override(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `577`
-		//  Estimated: `3656`
-		// Minimum execution time: 16_718_000 picoseconds.
-		Weight::from_parts(21_315_000, 3656)
-			.saturating_add(T::DbWeight::get().reads(2_u64))
+		//  Measured:  `411 + b * (168 ±0)`
+		//  Estimated: `1517 + b * (2666 ±0)`
+		// Minimum execution time: 20_229_000 picoseconds.
+		Weight::from_parts(22_153_987, 1517)
+			// Standard Error: 57_916
+			.saturating_add(Weight::from_parts(9_248_894, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(b.into())))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
 
 	/// Storage: `NodeManager::OldestUnpaidRewardPeriodIndex` (r:1 w:0)
@@ -1117,21 +1122,25 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(8_u64))
 			.saturating_add(RocksDbWeight::get().writes(4_u64))
 	}
-
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
-	/// Storage: `NodeManager::NodeRegistry` (r:1 w:0)
+	/// Storage: `NodeManager::NodeRegistry` (r:64 w:0)
 	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:1)
 	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
-	fn set_genesis_override() -> Weight {
+	/// The range of component `b` is `[1, 64]`.
+	fn set_genesis_override(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `577`
-		//  Estimated: `3656`
-		// Minimum execution time: 16_718_000 picoseconds.
-		Weight::from_parts(21_315_000, 3656)
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
+		//  Measured:  `411 + b * (168 ±0)`
+		//  Estimated: `1517 + b * (2666 ±0)`
+		// Minimum execution time: 20_229_000 picoseconds.
+		Weight::from_parts(22_153_987, 1517)
+			// Standard Error: 57_916
+			.saturating_add(Weight::from_parts(9_248_894, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(b.into())))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
 
 	/// Storage: `NodeManager::OldestUnpaidRewardPeriodIndex` (r:1 w:0)

@@ -810,6 +810,382 @@ mod stake_and_reward_weight_tests {
         }
     }
 
+    mod genesis_override_tests {
+        use super::*;
+
+        fn single_node(node: AccountId) -> BoundedVec<AccountId, MaxNodes> {
+            BoundedVec::try_from(vec![node]).unwrap()
+        }
+
+        fn make_node_info_for_weight(
+            serial: u32,
+            now_sec: u64,
+        ) -> NodeInfo<UintAuthorityId, AccountId, u128> {
+            NodeInfo::new(
+                get_owner(1),
+                get_signing_key(1),
+                serial,
+                now_sec + 1, // inside auto-stake window
+                true,
+                StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
+            )
+        }
+
+        mod origin_tests {
+            use super::*;
+
+            fn setup() -> (AccountId, AccountId) {
+                let registrar = TestAccount::new([1u8; 32]).account_id();
+                let node = get_node(1);
+                setup_registrar(&registrar);
+                register_node(&registrar, &node, &get_owner(1), get_signing_key(50));
+                (registrar, node)
+            }
+
+            #[test]
+            fn non_registrar_is_rejected() {
+                ExtBuilder::build_default().with_genesis_config().as_externality().execute_with(
+                    || {
+                        let (_, node) = setup();
+                        let non_registrar = get_owner(2);
+                        assert_noop!(
+                            NodeManager::set_genesis_override(
+                                RuntimeOrigin::signed(non_registrar),
+                                single_node(node),
+                                Some(GenesisBonus::Genesis50),
+                            ),
+                            Error::<TestRuntime>::OriginNotRegistrar
+                        );
+                    },
+                );
+            }
+
+            #[test]
+            fn unsigned_origin_is_rejected() {
+                ExtBuilder::build_default().with_genesis_config().as_externality().execute_with(
+                    || {
+                        let (_, node) = setup();
+                        assert_noop!(
+                            NodeManager::set_genesis_override(
+                                RuntimeOrigin::none(),
+                                single_node(node),
+                                Some(GenesisBonus::Genesis50),
+                            ),
+                            DispatchError::BadOrigin
+                        );
+                    },
+                );
+            }
+
+            #[test]
+            fn root_origin_is_rejected() {
+                ExtBuilder::build_default().with_genesis_config().as_externality().execute_with(
+                    || {
+                        let (_, node) = setup();
+                        assert_noop!(
+                            NodeManager::set_genesis_override(
+                                RuntimeOrigin::root(),
+                                single_node(node),
+                                Some(GenesisBonus::Genesis50),
+                            ),
+                            DispatchError::BadOrigin
+                        );
+                    },
+                );
+            }
+
+            #[test]
+            fn registrar_can_set_override() {
+                ExtBuilder::build_default().with_genesis_config().as_externality().execute_with(
+                    || {
+                        let (registrar, node) = setup();
+                        assert_ok!(NodeManager::set_genesis_override(
+                            RuntimeOrigin::signed(registrar),
+                            single_node(node),
+                            Some(GenesisBonus::Genesis50),
+                        ));
+                    },
+                );
+            }
+        }
+
+        #[test]
+        fn set_genesis50_override_stores_value_and_emits_event() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    let node = get_node(1);
+                    setup_registrar(&registrar);
+                    register_node(&registrar, &node, &get_owner(1), get_signing_key(50));
+                    let node_serial =
+                        NodeRegistry::<TestRuntime>::get(&node).unwrap().serial_number;
+
+                    assert_ok!(NodeManager::set_genesis_override(
+                        RuntimeOrigin::signed(registrar),
+                        single_node(node.clone()),
+                        Some(GenesisBonus::Genesis50),
+                    ));
+
+                    assert_eq!(
+                        GenesisOverrides::<TestRuntime>::get(node_serial),
+                        Some(GenesisBonus::Genesis50)
+                    );
+                    System::assert_last_event(
+                        Event::GenesisOverrideSet {
+                            node_id: node,
+                            node_serial,
+                            genesis_bonus: GenesisBonus::Genesis50,
+                        }
+                        .into(),
+                    );
+                });
+        }
+
+        #[test]
+        fn set_genesis25_override_stores_value_and_emits_event() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    let node = get_node(1);
+                    setup_registrar(&registrar);
+                    register_node(&registrar, &node, &get_owner(1), get_signing_key(50));
+                    let node_serial =
+                        NodeRegistry::<TestRuntime>::get(&node).unwrap().serial_number;
+
+                    assert_ok!(NodeManager::set_genesis_override(
+                        RuntimeOrigin::signed(registrar),
+                        single_node(node.clone()),
+                        Some(GenesisBonus::Genesis25),
+                    ));
+
+                    assert_eq!(
+                        GenesisOverrides::<TestRuntime>::get(node_serial),
+                        Some(GenesisBonus::Genesis25)
+                    );
+                    System::assert_last_event(
+                        Event::GenesisOverrideSet {
+                            node_id: node,
+                            node_serial,
+                            genesis_bonus: GenesisBonus::Genesis25,
+                        }
+                        .into(),
+                    );
+                });
+        }
+
+        #[test]
+        fn set_excluded_override_stores_value_and_emits_event() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    let node = get_node(1);
+                    setup_registrar(&registrar);
+                    register_node(&registrar, &node, &get_owner(1), get_signing_key(50));
+                    let node_serial =
+                        NodeRegistry::<TestRuntime>::get(&node).unwrap().serial_number;
+
+                    assert_ok!(NodeManager::set_genesis_override(
+                        RuntimeOrigin::signed(registrar),
+                        single_node(node.clone()),
+                        Some(GenesisBonus::Excluded),
+                    ));
+
+                    assert_eq!(
+                        GenesisOverrides::<TestRuntime>::get(node_serial),
+                        Some(GenesisBonus::Excluded)
+                    );
+                    System::assert_last_event(
+                        Event::GenesisOverrideSet {
+                            node_id: node,
+                            node_serial,
+                            genesis_bonus: GenesisBonus::Excluded,
+                        }
+                        .into(),
+                    );
+                });
+        }
+
+        #[test]
+        fn clearing_override_removes_entry_and_emits_cleared_event() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    let node = get_node(1);
+                    setup_registrar(&registrar);
+                    register_node(&registrar, &node, &get_owner(1), get_signing_key(50));
+                    let node_serial =
+                        NodeRegistry::<TestRuntime>::get(&node).unwrap().serial_number;
+
+                    assert_ok!(NodeManager::set_genesis_override(
+                        RuntimeOrigin::signed(registrar.clone()),
+                        single_node(node.clone()),
+                        Some(GenesisBonus::Genesis50),
+                    ));
+                    assert_ok!(NodeManager::set_genesis_override(
+                        RuntimeOrigin::signed(registrar),
+                        single_node(node.clone()),
+                        None,
+                    ));
+
+                    assert_eq!(GenesisOverrides::<TestRuntime>::get(node_serial), None);
+                    System::assert_last_event(
+                        Event::GenesisOverrideCleared { node_id: node, node_serial }.into(),
+                    );
+                });
+        }
+
+        #[test]
+        fn unregistered_node_is_rejected() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+                    assert_noop!(
+                        NodeManager::set_genesis_override(
+                            RuntimeOrigin::signed(registrar),
+                            single_node(get_node(19)),
+                            Some(GenesisBonus::Genesis50),
+                        ),
+                        Error::<TestRuntime>::NodeNotRegistered
+                    );
+                });
+        }
+
+        #[test]
+        fn bonus_node_serial_is_rejected() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let registrar = TestAccount::new([1u8; 32]).account_id();
+                    setup_registrar(&registrar);
+                    let bonus_node = get_node(2);
+                    let bonus_serial = <TestRuntime as pallet::Config>::BonusNodeSerialStart::get();
+                    NodeRegistry::<TestRuntime>::insert(
+                        &bonus_node,
+                        NodeInfo::new(
+                            get_owner(2),
+                            get_signing_key(60),
+                            bonus_serial,
+                            0u64,
+                            false,
+                            StakeInfo::new(0, 0, None, UnstakeRestriction::Locked),
+                        ),
+                    );
+                    assert_noop!(
+                        NodeManager::set_genesis_override(
+                            RuntimeOrigin::signed(registrar),
+                            single_node(bonus_node),
+                            Some(GenesisBonus::Genesis50),
+                        ),
+                        Error::<TestRuntime>::BonusNode
+                    );
+                });
+        }
+
+        #[test]
+        fn genesis50_override_on_non_range_node_applies_1_5x_bonus() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let serial = 500u32; // below Genesis50 range start (3001)
+                    let now_sec = 100u64;
+                    GenesisOverrides::<TestRuntime>::insert(serial, GenesisBonus::Genesis50);
+                    let node_info = make_node_info_for_weight(serial, now_sec);
+                    assert_eq!(
+                        NodeManager::effective_heartbeat_weight(&node_info, now_sec),
+                        150_000_000u128
+                    );
+                });
+        }
+
+        #[test]
+        fn genesis25_override_on_non_range_node_applies_1_25x_bonus() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let serial = 500u32;
+                    let now_sec = 100u64;
+                    GenesisOverrides::<TestRuntime>::insert(serial, GenesisBonus::Genesis25);
+                    let node_info = make_node_info_for_weight(serial, now_sec);
+                    assert_eq!(
+                        NodeManager::effective_heartbeat_weight(&node_info, now_sec),
+                        125_000_000u128
+                    );
+                });
+        }
+
+        #[test]
+        fn excluded_override_suppresses_bonus_for_genesis50_range_node() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let serial = <GenesisBonus50<TestRuntime>>::get().start + 1;
+                    let now_sec = 100u64;
+                    GenesisOverrides::<TestRuntime>::insert(serial, GenesisBonus::Excluded);
+                    let node_info = make_node_info_for_weight(serial, now_sec);
+                    assert_eq!(
+                        NodeManager::effective_heartbeat_weight(&node_info, now_sec),
+                        100_000_000u128
+                    );
+                });
+        }
+
+        #[test]
+        fn genesis25_override_takes_precedence_over_genesis50_range() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let serial = <GenesisBonus50<TestRuntime>>::get().start + 1;
+                    let now_sec = 100u64;
+                    GenesisOverrides::<TestRuntime>::insert(serial, GenesisBonus::Genesis25);
+                    let node_info = make_node_info_for_weight(serial, now_sec);
+                    assert_eq!(
+                        NodeManager::effective_heartbeat_weight(&node_info, now_sec),
+                        125_000_000u128
+                    );
+                });
+        }
+
+        #[test]
+        fn cleared_override_reverts_to_range_based_bonus() {
+            ExtBuilder::build_default()
+                .with_genesis_config()
+                .as_externality()
+                .execute_with(|| {
+                    let serial = <GenesisBonus50<TestRuntime>>::get().start + 1;
+                    let now_sec = 100u64;
+                    let node_info = make_node_info_for_weight(serial, now_sec);
+
+                    GenesisOverrides::<TestRuntime>::insert(serial, GenesisBonus::Excluded);
+                    assert_eq!(
+                        NodeManager::effective_heartbeat_weight(&node_info, now_sec),
+                        100_000_000u128
+                    );
+
+                    GenesisOverrides::<TestRuntime>::remove(serial);
+                    assert_eq!(
+                        NodeManager::effective_heartbeat_weight(&node_info, now_sec),
+                        150_000_000u128
+                    );
+                });
+        }
+    }
+
     mod fails_when {
         use super::*;
 
