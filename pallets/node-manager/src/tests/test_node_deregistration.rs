@@ -481,7 +481,10 @@ fn deregistration_removes_genesis_override_if_present() {
             BoundedVec::truncate_from(vec![node]),
             Some(GenesisBonus::Genesis50),
         ));
-        assert_eq!(GenesisOverrides::<TestRuntime>::get(node_serial), Some(GenesisBonus::Genesis50));
+        assert_eq!(
+            GenesisOverrides::<TestRuntime>::get(node_serial),
+            Some(GenesisBonus::Genesis50)
+        );
 
         assert_ok!(NodeManager::deregister_nodes(
             RuntimeOrigin::signed(context.registrar),
