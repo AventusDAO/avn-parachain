@@ -40,7 +40,11 @@ fn set_registrar<T: Config>(registrar: T::AccountId) {
     <NodeRegistrar<T>>::set(Some(registrar.clone()));
 }
 
-fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::SignerId {
+fn register_new_node<T: Config>(
+    node: NodeId<T>,
+    owner: T::AccountId,
+    serial_number: u32,
+) -> T::SignerId {
     let key = T::SignerId::generate_pair(None);
     let stake_info = StakeInfo::<BalanceOf<T>>::new(
         Zero::zero(),
@@ -50,7 +54,7 @@ fn register_new_node<T: Config>(node: NodeId<T>, owner: T::AccountId) -> T::Sign
     );
     <NodeRegistry<T>>::insert(
         node.clone(),
-        NodeInfo::new(owner.clone(), key.clone(), 0u32, 0u64, false, stake_info),
+        NodeInfo::new(owner.clone(), key.clone(), serial_number, 0u64, false, stake_info),
     );
     <OwnedNodes<T>>::insert(owner.clone(), node, ());
     <OwnedNodesCount<T>>::mutate(owner, |count| *count += 1);
@@ -105,7 +109,7 @@ fn create_nodes_and_heartbeat<T: Config>(
     let mut registered_nodes = vec![];
     for i in 1..=node_to_create {
         let node: NodeId<T> = account("node", i, i);
-        let _ = register_new_node::<T>(node.clone(), owner.clone());
+        let _ = register_new_node::<T>(node.clone(), owner.clone(), i);
         create_heartbeat::<T>(node.clone(), reward_period_index);
         registered_nodes.push(node);
     }
@@ -349,7 +353,7 @@ benchmarks! {
         let reward_period_index = reward_period.current;
         let node: NodeId<T> = account("node", 0, 0);
         let owner: T::AccountId = account("owner", 0, 0);
-        let signing_key: T::SignerId = register_new_node::<T>(node.clone(), owner.clone());
+        let signing_key: T::SignerId = register_new_node::<T>(node.clone(), owner.clone(), 0u32);
         create_heartbeat::<T>(node.clone(), reward_period_index);
 
         // Move forward to the next heartbeat period
@@ -573,7 +577,7 @@ benchmarks! {
 
         let owner: T::AccountId = account("owner", 1, 1);
         let node: NodeId<T> = account("node", 2, 2);
-        let current_signing_key: T::SignerId = register_new_node::<T>(node.clone(), owner.clone());
+        let current_signing_key: T::SignerId = register_new_node::<T>(node.clone(), owner.clone(), 0u32);
         let new_signing_key: T::SignerId = account("new_signing_key", 3, 3);
     }: update_signing_key(RawOrigin::Signed(owner.clone()), node.clone(), new_signing_key.clone())
     verify {
@@ -641,7 +645,7 @@ benchmarks! {
 
         let owner: T::AccountId = account("owner", 1, 1);
         let node_id: NodeId<T> = account("node", 2, 2);
-        register_new_node::<T>(node_id.clone(), owner.clone());
+        register_new_node::<T>(node_id.clone(), owner.clone(), 0u32);
         let preference = NodeRegistry::<T>::get(&node_id).unwrap().auto_stake_rewards;
     }: update_auto_stake_preference(RawOrigin::Signed(owner.clone()), node_id.clone(), !preference)
     verify {
@@ -677,7 +681,7 @@ benchmarks! {
         let mut node_ids: BoundedVec<NodeId<T>, MaxNodes> = BoundedVec::new();
         for i in 0..b {
             let node_id: NodeId<T> = account("node", i, i);
-            register_new_node::<T>(node_id.clone(), registrar.clone());
+            register_new_node::<T>(node_id.clone(), registrar.clone(), i);
             node_ids.try_push(node_id).expect("within bound");
         }
         let genesis_override: Option<GenesisBonus> = Some(GenesisBonus::Genesis50);
