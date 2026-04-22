@@ -14,12 +14,11 @@ impl<T: Config> Pallet<T> {
         }
 
         // Node is currently auto-staking, apply bonus if eligible
-        if GenesisBonus50::<T>::get().contains(&node_info.serial_number) {
-            FixedU128::saturating_from_rational(3u128, 2u128) // 1.5x
-        } else if GenesisBonus25::<T>::get().contains(&node_info.serial_number) {
-            FixedU128::saturating_from_rational(5u128, 4u128) // 1.25x
-        } else {
-            FixedU128::one() // no bonus
+        let genesis_bonus = Self::get_genesis_bonus(&node_info.serial_number);
+        match genesis_bonus {
+            Some(GenesisBonus::Genesis50) => FixedU128::saturating_from_rational(3u128, 2u128), /* 1.5x */
+            Some(GenesisBonus::Genesis25) => FixedU128::saturating_from_rational(5u128, 4u128), /* 1.25x */
+            Some(GenesisBonus::Excluded) | None => FixedU128::one(), // no bonus
         }
     }
 
@@ -190,6 +189,21 @@ impl<T: Config> Pallet<T> {
                 ensure!(leftover.is_zero(), Error::<T>::InsufficientStakedBalance);
                 Ok(())
             },
+        }
+    }
+
+    pub(crate) fn get_genesis_bonus(node_serial_number: &u32) -> Option<GenesisBonus> {
+        if let Some(override_level) = GenesisOverrides::<T>::get(node_serial_number) {
+            return Some(override_level)
+        }
+
+        // fallback to the usual range-based values.
+        if GenesisBonus50::<T>::get().contains(node_serial_number) {
+            Some(GenesisBonus::Genesis50)
+        } else if GenesisBonus25::<T>::get().contains(node_serial_number) {
+            Some(GenesisBonus::Genesis25)
+        } else {
+            None
         }
     }
 }

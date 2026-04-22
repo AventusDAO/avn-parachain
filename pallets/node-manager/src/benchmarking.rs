@@ -668,6 +668,21 @@ benchmarks! {
         assert_eq!(pending.amount, amount);
         assert_last_event::<T>(Event::MintRequestSubmitted { amount, tx_id: pending.tx_id }.into());
     }
+
+    set_genesis_override {
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+
+        let node_id: NodeId<T> = account("node", 0, 0);
+        register_new_node::<T>(node_id.clone(), registrar.clone());
+        let genesis_override: Option<GenesisBonus> = Some(GenesisBonus::Genesis50);
+    }: set_genesis_override(RawOrigin::Signed(registrar.clone()), node_id.clone(), genesis_override)
+    verify {
+        let node_info = <NodeRegistry<T>>::get(&node_id).expect("Node must be registered");
+        let genesis_bonus = Pallet::<T>::get_genesis_bonus(&node_info.serial_number);
+        assert!(!GenesisBonus50::<T>::get().contains(&node_info.serial_number));
+        assert_eq!(genesis_bonus, genesis_override);
+    }
 }
 
 impl_benchmark_test_suite!(

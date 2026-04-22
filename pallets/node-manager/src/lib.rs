@@ -322,6 +322,10 @@ pub mod pallet {
     #[pallet::storage]
     pub type TotalRegisteredBonusNodes<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    #[pallet::storage]
+    pub type GenesisOverrides<T: Config> =
+        StorageMap<_, Blake2_128Concat, u32, GenesisBonus, OptionQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
         pub _phantom: sp_std::marker::PhantomData<T>,
@@ -492,6 +496,10 @@ pub mod pallet {
         MintRequestSubmitted { amount: BalanceOf<T>, tx_id: EthereumId },
         /// Mint request resolved
         MintRequestResolved { tx_id: EthereumId, succeeded: bool },
+        /// Genesis bonus override set
+        GenesisOverrideSet { node_id: NodeId<T>, node_serial: u32, genesis_bonus: GenesisBonus },
+        /// Genesis bonus override cleared
+        GenesisOverrideCleared { node_id: NodeId<T>, node_serial: u32 },
     }
 
     #[pallet::error]
@@ -588,6 +596,8 @@ pub mod pallet {
         NodeSerialLimitReached,
         /// The range provided is invalid (e.g. start >= end)
         InvalidBonusRange,
+        /// Bonus node cannot have any genesis bonus override
+        BonusNode,
     }
 
     #[pallet::config]
@@ -1241,6 +1251,41 @@ pub mod pallet {
 
             // Default to auto_stake true; bonus nodes use the bonus serial counter
             Self::do_register_node(node, owner, signing_key, true, true)?;
+            Ok(())
+        }
+
+        #[pallet::call_index(13)]
+        #[pallet::weight(<T as Config>::WeightInfo::set_genesis_override())]
+        pub fn set_genesis_override(
+            origin: OriginFor<T>,
+            node_id: NodeId<T>,
+            genesis_override: Option<GenesisBonus>,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin)?;
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(who == registrar, Error::<T>::OriginNotRegistrar);
+
+            let node_info =
+                NodeRegistry::<T>::get(&node_id).ok_or(Error::<T>::NodeNotRegistered)?;
+            let node_serial = node_info.serial_number;
+
+            ensure!(node_serial < T::BonusNodeSerialStart::get(), Error::<T>::BonusNode);
+
+            match genesis_override {
+                Some(genesis_bonus) => {
+                    GenesisOverrides::<T>::insert(node_serial, genesis_bonus);
+                    Self::deposit_event(Event::GenesisOverrideSet {
+                        node_id,
+                        node_serial,
+                        genesis_bonus,
+                    });
+                },
+                None => {
+                    GenesisOverrides::<T>::remove(node_serial);
+                    Self::deposit_event(Event::GenesisOverrideCleared { node_id, node_serial });
+                },
+            }
+
             Ok(())
         }
     }

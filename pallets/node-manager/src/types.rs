@@ -483,3 +483,24 @@ impl Get<BonusRange> for DefaultGenesisBonus25 {
         BonusRange::new(6001, 11000)
     }
 }
+
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    RuntimeDebug,
+    TypeInfo,
+    MaxEncodedLen,
+)]
+pub enum GenesisBonus {
+    /// Genesis overriden to be eligible for 50% bonus
+    Genesis50,
+    /// Genesis overriden to be eligible for 25% bonus
+    Genesis25,
+    /// Genesis bonus has been excluded from this node
+    Excluded,
+}

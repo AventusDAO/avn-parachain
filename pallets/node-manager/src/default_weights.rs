@@ -66,6 +66,7 @@ pub trait WeightInfo {
 	fn remove_stake() -> Weight;
 	fn update_auto_stake_preference() -> Weight;
 	fn offchain_mint_rewards() -> Weight;
+	fn set_genesis_override() -> Weight;
 }
 
 /// Weights for pallet_node_manager using the Substrate node and recommended hardware.
@@ -567,6 +568,21 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(168_583_000, 22431)
 			.saturating_add(T::DbWeight::get().reads(8_u64))
 			.saturating_add(T::DbWeight::get().writes(4_u64))
+	}
+	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
+	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:1 w:0)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:1)
+	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
+	fn set_genesis_override() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `577`
+		//  Estimated: `3656`
+		// Minimum execution time: 16_718_000 picoseconds.
+		Weight::from_parts(21_315_000, 3656)
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 
 	/// Storage: `NodeManager::OldestUnpaidRewardPeriodIndex` (r:1 w:0)
@@ -1100,6 +1116,22 @@ impl WeightInfo for () {
 		Weight::from_parts(168_583_000, 22431)
 			.saturating_add(RocksDbWeight::get().reads(8_u64))
 			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+
+	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
+	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:1 w:0)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:1)
+	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
+	fn set_genesis_override() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `577`
+		//  Estimated: `3656`
+		// Minimum execution time: 16_718_000 picoseconds.
+		Weight::from_parts(21_315_000, 3656)
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 
 	/// Storage: `NodeManager::OldestUnpaidRewardPeriodIndex` (r:1 w:0)
