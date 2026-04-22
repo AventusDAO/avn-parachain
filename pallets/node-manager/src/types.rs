@@ -497,9 +497,9 @@ impl Get<BonusRange> for DefaultGenesisBonus25 {
     MaxEncodedLen,
 )]
 pub enum GenesisBonus {
-    /// Genesis overriden to be eligible for 50% bonus
+    /// Genesis overridden to be eligible for 50% bonus
     Genesis50,
-    /// Genesis overriden to be eligible for 25% bonus
+    /// Genesis overridden to be eligible for 25% bonus
     Genesis25,
     /// Genesis bonus has been excluded from this node
     Excluded,

@@ -44,7 +44,7 @@ use sp_runtime::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, Perbill, Perquintill, RuntimeDebug, Saturating
+    DispatchError, Perbill, Perquintill, RuntimeDebug, Saturating,
 };
 
 pub mod offchain;
@@ -1545,6 +1545,8 @@ pub mod pallet {
                 Self::remove_signing_key_index(node, &info.signing_key)?;
 
                 <OwnedNodes<T>>::remove(owner, node);
+                // Remove the override in case it exists
+                <GenesisOverrides<T>>::remove(info.serial_number);
                 <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
 

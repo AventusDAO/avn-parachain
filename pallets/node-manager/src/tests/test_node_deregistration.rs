@@ -465,6 +465,59 @@ fn deregistration_returns_reserved_stake() {
 }
 
 #[test]
+fn deregistration_removes_genesis_override_if_present() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(1u8);
+        let node = context.registered_nodes[0];
+        let node_serial = NodeRegistry::<TestRuntime>::get(&node).unwrap().serial_number;
+
+        assert_ok!(NodeManager::set_genesis_override(
+            RuntimeOrigin::signed(context.registrar),
+            BoundedVec::truncate_from(vec![node]),
+            Some(GenesisBonus::Genesis50),
+        ));
+        assert_eq!(GenesisOverrides::<TestRuntime>::get(node_serial), Some(GenesisBonus::Genesis50));
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node]),
+        ));
+
+        assert_eq!(GenesisOverrides::<TestRuntime>::get(node_serial), None);
+    });
+}
+
+#[test]
+fn deregistration_succeeds_when_no_genesis_override_is_present() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(1u8);
+        let node = context.registered_nodes[0];
+        let node_serial = NodeRegistry::<TestRuntime>::get(&node).unwrap().serial_number;
+
+        assert_eq!(GenesisOverrides::<TestRuntime>::get(node_serial), None);
+
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node]),
+        ));
+
+        assert_eq!(GenesisOverrides::<TestRuntime>::get(node_serial), None);
+    });
+}
+
+#[test]
 fn deregistration_cleans_up_signing_key_index() {
     let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
         .with_genesis_config()
