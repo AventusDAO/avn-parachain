@@ -1,5 +1,5 @@
 use clap::Parser;
-use commands::key;
+use cli_commands::key;
 use std::path::PathBuf;
 
 /// Sub-commands supported by the collator.

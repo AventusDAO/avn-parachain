@@ -1,5 +1,5 @@
 [package]
-name = "commands"
+name = "cli-commands"
 version.workspace = true
 authors.workspace = true
 homepage.workspace = true
