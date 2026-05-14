@@ -14,7 +14,8 @@ use frame_support::{
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
     traits::{
-        Currency, ExistenceRequirement, IsSubType, ReservableCurrency, StorageVersion, UnixTime,
+        tokens::BalanceStatus, Currency, ExistenceRequirement, IsSubType, ReservableCurrency,
+        StorageVersion, UnixTime,
     },
     PalletId,
 };
@@ -70,6 +71,9 @@ mod test_auto_stake_preference;
 #[cfg(test)]
 #[path = "tests/test_heartbeat.rs"]
 mod test_heartbeat;
+#[cfg(test)]
+#[path = "tests/test_move_nodes.rs"]
+mod test_move_nodes;
 #[cfg(test)]
 #[path = "tests/test_node_deregistration.rs"]
 mod test_node_deregistration;
@@ -500,6 +504,8 @@ pub mod pallet {
         GenesisOverrideSet { node_id: NodeId<T>, node_serial: u32, genesis_bonus: GenesisBonus },
         /// Genesis bonus override cleared
         GenesisOverrideCleared { node_id: NodeId<T>, node_serial: u32 },
+        /// Node moved to a new owner
+        NodeMoved { old_owner: T::AccountId, new_owner: T::AccountId, node: NodeId<T> },
     }
 
     #[pallet::error]
@@ -598,6 +604,8 @@ pub mod pallet {
         InvalidBonusRange,
         /// Bonus node cannot have any genesis bonus override
         BonusNode,
+        /// current_owner and new_owner must be different accounts
+        NodeOwnersMustBeDifferent,
     }
 
     #[pallet::config]
@@ -1293,6 +1301,23 @@ pub mod pallet {
 
             Ok(())
         }
+
+        #[pallet::call_index(14)]
+        #[pallet::weight(<T as Config>::WeightInfo::move_nodes(nodes.len() as u32))]
+        pub fn move_nodes(
+            origin: OriginFor<T>,
+            current_owner: T::AccountId,
+            new_owner: T::AccountId,
+            nodes: BoundedVec<NodeId<T>, MaxNodes>,
+        ) -> DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(registrar == sender, Error::<T>::OriginNotRegistrar);
+            ensure!(current_owner != new_owner, Error::<T>::NodeOwnersMustBeDifferent);
+
+            Self::do_move_nodes(&current_owner, &new_owner, &nodes)
+        }
     }
 
     #[pallet::hooks]
@@ -1564,6 +1589,77 @@ pub mod pallet {
                     node: node.clone(),
                 });
             }
+            Ok(())
+        }
+
+        fn do_move_nodes(
+            current_owner: &T::AccountId,
+            new_owner: &T::AccountId,
+            nodes: &BoundedVec<NodeId<T>, MaxNodes>,
+        ) -> DispatchResult {
+            let mut total_stake_moved = BalanceOf::<T>::zero();
+
+            for node_id in nodes {
+                ensure!(
+                    <OwnedNodes<T>>::contains_key(current_owner, node_id),
+                    Error::<T>::NodeNotOwnedByOwner
+                );
+
+                let mut node_info =
+                    NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotRegistered)?;
+
+                let stake = node_info.stake.amount;
+                if !stake.is_zero() {
+                    T::Currency::repatriate_reserved(
+                        current_owner,
+                        new_owner,
+                        stake,
+                        BalanceStatus::Reserved,
+                    )
+                    .map_err(|_| Error::<T>::InsufficientStakedBalance)?;
+
+                    total_stake_moved =
+                        total_stake_moved.checked_add(&stake).ok_or(Error::<T>::BalanceOverflow)?;
+                }
+
+                node_info.owner = new_owner.clone();
+                <NodeRegistry<T>>::insert(node_id, node_info);
+
+                <OwnedNodes<T>>::remove(current_owner, node_id);
+                <OwnedNodes<T>>::insert(new_owner, node_id, ());
+
+                Self::deposit_event(Event::NodeMoved {
+                    old_owner: current_owner.clone(),
+                    new_owner: new_owner.clone(),
+                    node: node_id.clone(),
+                });
+            }
+
+            let n = nodes.len() as u32;
+            <OwnedNodesCount<T>>::mutate(current_owner, |c| *c = c.saturating_sub(n));
+            <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n));
+
+            if !total_stake_moved.is_zero() {
+                <TotalStake<T>>::try_mutate(current_owner, |total| -> Result<_, DispatchError> {
+                    *total = Some(
+                        total
+                            .unwrap_or_else(Zero::zero)
+                            .checked_sub(&total_stake_moved)
+                            .ok_or(Error::<T>::BalanceUnderflow)?,
+                    );
+                    Ok(())
+                })?;
+                <TotalStake<T>>::try_mutate(new_owner, |total| -> Result<_, DispatchError> {
+                    *total = Some(
+                        total
+                            .unwrap_or_else(Zero::zero)
+                            .checked_add(&total_stake_moved)
+                            .ok_or(Error::<T>::BalanceOverflow)?,
+                    );
+                    Ok(())
+                })?;
+            }
+
             Ok(())
         }
 

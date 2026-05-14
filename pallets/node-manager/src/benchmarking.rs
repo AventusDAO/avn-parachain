@@ -693,6 +693,49 @@ benchmarks! {
             assert_eq!(genesis_bonus, genesis_override);
         }
     }
+
+    move_nodes {
+        let b in 1 .. MAX_NODES;
+
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+        enable_rewards::<T>();
+
+        let owner: T::AccountId = account("owner", 0, 0);
+        let new_owner: T::AccountId = account("new_owner", 1, 1);
+        let stake_per_node: BalanceOf<T> = 1_000u32.into();
+
+        // Fund owner to cover stake across all b nodes; fund new_owner so the account exists
+        T::Currency::make_free_balance_be(&owner, 1_000_000u32.into());
+        T::Currency::make_free_balance_be(&new_owner, 1_000_000u32.into());
+
+        let mut nodes: Vec<NodeId<T>> = vec![];
+        for i in 1..=b {
+            let node: NodeId<T> = account("node", i, i);
+            register_new_node::<T>(node.clone(), owner.clone(), i);
+            Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
+            nodes.push(node);
+        }
+
+        assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes[0].clone()));
+
+    }: move_nodes(
+        RawOrigin::Signed(registrar.clone()),
+        owner.clone(),
+        new_owner.clone(),
+        BoundedVec::truncate_from(nodes.clone()))
+    verify {
+        for node in &nodes {
+            assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
+            assert!(<OwnedNodes<T>>::contains_key(new_owner.clone(), node));
+            assert_eq!(<NodeRegistry<T>>::get(node).unwrap().owner, new_owner);
+        }
+        assert_last_event::<T>(Event::NodeMoved {
+            old_owner: owner,
+            new_owner,
+            node: nodes[nodes.len() - 1].clone(),
+        }.into());
+    }
 }
 
 impl_benchmark_test_suite!(

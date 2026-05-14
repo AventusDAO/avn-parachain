@@ -67,6 +67,7 @@ pub trait WeightInfo {
 	fn update_auto_stake_preference() -> Weight;
 	fn offchain_mint_rewards() -> Weight;
 	fn set_genesis_override(b: u32, ) -> Weight;
+	fn move_nodes(b: u32, ) -> Weight;
 }
 
 /// Weights for pallet_node_manager using the Substrate node and recommended hardware.
@@ -591,6 +592,33 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(1_u64))
 			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(b.into())))
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(b.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
+	}
+	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
+	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::OwnedNodes` (r:64 w:128)
+	/// Proof: `NodeManager::OwnedNodes` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:64 w:64)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:2 w:2)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::OwnedNodesCount` (r:2 w:2)
+	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::TotalStake` (r:2 w:2)
+	/// Proof: `NodeManager::TotalStake` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	/// The range of component `b` is `[1, 64]`.
+	fn move_nodes(b: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `967 + b * (222 ±0)`
+		//  Estimated: `6196 + b * (2666 ±0)`
+		// Minimum execution time: 81_875_000 picoseconds.
+		Weight::from_parts(39_256_204, 6196)
+			// Standard Error: 302_570
+			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(7_u64))
+			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(b.into())))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
 
@@ -1148,6 +1176,33 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(1_u64))
 			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(b.into())))
 			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(b.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
+	}
+	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
+	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::OwnedNodes` (r:64 w:128)
+	/// Proof: `NodeManager::OwnedNodes` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::NodeRegistry` (r:64 w:64)
+	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:2 w:2)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::OwnedNodesCount` (r:2 w:2)
+	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::TotalStake` (r:2 w:2)
+	/// Proof: `NodeManager::TotalStake` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	/// The range of component `b` is `[1, 64]`.
+	fn move_nodes(b: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `967 + b * (222 ±0)`
+		//  Estimated: `6196 + b * (2666 ±0)`
+		// Minimum execution time: 81_875_000 picoseconds.
+		Weight::from_parts(39_256_204, 6196)
+			// Standard Error: 302_570
+			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(7_u64))
+			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(b.into())))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
 
