@@ -1914,6 +1914,7 @@ dependencies = [
  "avn-runtime-common",
  "cfg-if 0.1.10",
  "clap",
+ "commands",
  "cumulus-client-cli",
  "cumulus-client-collator",
  "cumulus-client-consensus-aura",
@@ -3201,6 +3202,19 @@ checksum = "4a65ebfec4fb190b6f90e944a817d60499ee0744e582530e2c9900a22e591d9a"
 dependencies = [
  "unicode-segmentation",
  "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "commands"
+version = "9.3.0"
+dependencies = [
+ "clap",
+ "external-service",
+ "sc-cli",
+ "sc-keystore",
+ "sc-service",
+ "sp-core",
+ "sp-keystore",
 ]
 
 [[package]]

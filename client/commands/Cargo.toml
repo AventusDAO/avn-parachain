@@ -1,0 +1,17 @@
+[package]
+name = "commands"
+version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+clap.workspace = true
+external-service.workspace = true
+sc-cli = { default-features = true, workspace = true }
+sc-keystore = { default-features = true, workspace = true }
+sc-service = { default-features = true, workspace = true }
+sp-core = { default-features = true, workspace = true }
+sp-keystore = { default-features = true, workspace = true }
