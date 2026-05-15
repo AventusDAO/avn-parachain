@@ -1,8 +1,6 @@
 use clap::Parser;
+use cli_commands::key;
 use std::path::PathBuf;
-
-#[path = "key/mod.rs"]
-mod key;
 
 /// Sub-commands supported by the collator.
 #[derive(Debug, clap::Subcommand)]
