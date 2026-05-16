@@ -6,6 +6,7 @@
 extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::string::ToString;
+use sp_std::collections::btree_set::BTreeSet;
 
 use codec::{Decode, DecodeWithMemTracking, Encode, FullCodec};
 use core::convert::TryFrom;
@@ -612,6 +613,10 @@ pub mod pallet {
         StakeMismatch,
         /// Source and destination nodes must be different
         SourceAndDestinationNodeMustBeDifferent,
+        /// Node list must not be empty
+        EmptyNodeList,
+        /// Source node appears more than once in the list
+        DuplicateSourceNode,
     }
 
     #[pallet::config]
@@ -1342,7 +1347,7 @@ pub mod pallet {
 
         /// Move nodes to a new owner, distributing `stake_amount` equally across them
         /// (dust goes to the last node). Errors if the nodes' current total stake does not
-        /// match `stake_amount` — use `move_stake_between_nodes` to pre-balance first.
+        /// match `stake_amount` — use `move_stake` to pre-balance first.
         #[pallet::call_index(16)]
         #[pallet::weight(<T as Config>::WeightInfo::move_nodes_with_stake(nodes.len() as u32))]
         pub fn move_nodes_with_stake(
@@ -1717,9 +1722,11 @@ pub mod pallet {
             ensure!(to_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
 
             let mut total_amount = BalanceOf::<T>::zero();
+            let mut seen = BTreeSet::new();
 
             for (from_node, maybe_amount) in sources {
                 ensure!(from_node != to_node, Error::<T>::SourceAndDestinationNodeMustBeDifferent);
+                ensure!(seen.insert(from_node), Error::<T>::DuplicateSourceNode);
 
                 let mut from_info =
                     NodeRegistry::<T>::get(from_node).ok_or(Error::<T>::NodeNotRegistered)?;
@@ -1736,6 +1743,10 @@ pub mod pallet {
                     },
                     None => from_info.stake.amount,
                 };
+
+                if amount.is_zero() {
+                    continue;
+                }
 
                 from_info.stake.amount = from_info
                     .stake
@@ -1772,13 +1783,16 @@ pub mod pallet {
             nodes: &BoundedVec<NodeId<T>, MaxNodes>,
             stake_amount: BalanceOf<T>,
         ) -> DispatchResult {
+            ensure!(!nodes.is_empty(), Error::<T>::EmptyNodeList);
+
             let n = nodes.len();
             let n_balance = BalanceOf::<T>::from(n as u32);
             let per_node = stake_amount / n_balance;
             let dust = stake_amount % n_balance;
 
-            // Validate all nodes and compute current total stake.
+            // Validate all nodes, compute current total stake, and cache infos for the update pass.
             let mut nodes_current_total = BalanceOf::<T>::zero();
+            let mut node_infos = Vec::with_capacity(n);
             for node_id in nodes.iter() {
                 ensure!(
                     <OwnedNodes<T>>::contains_key(current_owner, node_id),
@@ -1789,20 +1803,19 @@ pub mod pallet {
                 nodes_current_total = nodes_current_total
                     .checked_add(&node_info.stake.amount)
                     .ok_or(Error::<T>::BalanceOverflow)?;
+                node_infos.push(node_info);
             }
 
             ensure!(nodes_current_total == stake_amount, Error::<T>::StakeMismatch);
 
             let last_idx = n.saturating_sub(1);
-            for (i, node_id) in nodes.iter().enumerate() {
+            for (i, (node_id, mut node_info)) in nodes.iter().zip(node_infos).enumerate() {
                 let target = if i == last_idx {
                     per_node.checked_add(&dust).ok_or(Error::<T>::BalanceOverflow)?
                 } else {
                     per_node
                 };
 
-                let mut node_info =
-                    NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotRegistered)?;
                 node_info.stake.amount = target;
                 node_info.owner = new_owner.clone();
                 NodeRegistry::<T>::insert(node_id, node_info);

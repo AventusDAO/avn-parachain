@@ -405,6 +405,28 @@ fn move_stake_fails_when_caller_does_not_own_source_node() {
     });
 }
 
+#[test]
+fn move_stake_fails_when_source_node_is_duplicated() {
+    ext().execute_with(|| {
+        let ctx = Context::new(2);
+        let stake: BalanceOf<TestRuntime> = 1_000;
+
+        add_stake_to_node(&ctx.owner, &ctx.nodes[0], stake);
+
+        assert_noop!(
+            NodeManager::move_stake(
+                RuntimeOrigin::signed(ctx.owner.clone()),
+                BoundedVec::truncate_from(vec![
+                    (ctx.nodes[0].clone(), Some(1)),
+                    (ctx.nodes[0].clone(), None),
+                ]),
+                ctx.nodes[1].clone(),
+            ),
+            Error::<TestRuntime>::DuplicateSourceNode
+        );
+    });
+}
+
 // ===== move_nodes_with_stake tests =====
 
 #[test]
@@ -533,6 +555,24 @@ fn move_nodes_with_stake_fails_when_same_owner() {
                 stake,
             ),
             Error::<TestRuntime>::NodeOwnersMustBeDifferent
+        );
+    });
+}
+
+#[test]
+fn move_nodes_with_stake_fails_when_nodes_list_is_empty() {
+    ext().execute_with(|| {
+        let ctx = Context::new(1);
+
+        assert_noop!(
+            NodeManager::move_nodes_with_stake(
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                ctx.owner.clone(),
+                ctx.new_owner.clone(),
+                BoundedVec::truncate_from(vec![]),
+                0,
+            ),
+            Error::<TestRuntime>::EmptyNodeList
         );
     });
 }
