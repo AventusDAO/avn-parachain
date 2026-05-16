@@ -231,7 +231,7 @@ fn move_nodes_fails_when_node_does_not_exist() {
 // ===== move_stake tests =====
 
 fn ext() -> sp_io::TestExternalities {
-    let (mut e, _, _) = ExtBuilder::build_default()
+    let (e, _, _) = ExtBuilder::build_default()
         .with_genesis_config()
         .for_offchain_worker()
         .as_externality_with_state();
@@ -406,6 +406,26 @@ fn move_stake_fails_when_caller_does_not_own_source_node() {
 }
 
 #[test]
+fn move_stake_all_zero_sources_is_noop_no_write_no_event() {
+    ext().execute_with(|| {
+        let ctx = Context::new(2);
+        // nodes[0] has no stake; passing None should short-circuit entirely.
+
+        let events_before = System::events().len();
+
+        assert_ok!(NodeManager::move_stake(
+            RuntimeOrigin::signed(ctx.owner.clone()),
+            BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), None)]),
+            ctx.nodes[1].clone(),
+        ));
+
+        // No event emitted, to_node registry entry unchanged.
+        assert_eq!(System::events().len(), events_before);
+        assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[1]).unwrap().stake.amount, 0);
+    });
+}
+
+#[test]
 fn move_stake_fails_when_source_node_is_duplicated() {
     ext().execute_with(|| {
         let ctx = Context::new(2);
@@ -573,6 +593,24 @@ fn move_nodes_with_stake_fails_when_nodes_list_is_empty() {
                 0,
             ),
             Error::<TestRuntime>::EmptyNodeList
+        );
+    });
+}
+
+#[test]
+fn move_nodes_with_stake_fails_when_nodes_list_has_duplicates() {
+    ext().execute_with(|| {
+        let ctx = Context::new(1);
+
+        assert_noop!(
+            NodeManager::move_nodes_with_stake(
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                ctx.owner.clone(),
+                ctx.new_owner.clone(),
+                BoundedVec::truncate_from(vec![ctx.nodes[0].clone(), ctx.nodes[0].clone()]),
+                0,
+            ),
+            Error::<TestRuntime>::DuplicateSourceNode
         );
     });
 }

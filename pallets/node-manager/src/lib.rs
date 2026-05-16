@@ -1759,6 +1759,10 @@ pub mod pallet {
                     total_amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
             }
 
+            if total_amount.is_zero() {
+                return Ok(());
+            }
+
             to_info.stake.amount = to_info
                 .stake
                 .amount
@@ -1793,7 +1797,9 @@ pub mod pallet {
             // Validate all nodes, compute current total stake, and cache infos for the update pass.
             let mut nodes_current_total = BalanceOf::<T>::zero();
             let mut node_infos = Vec::with_capacity(n);
+            let mut seen = BTreeSet::new();
             for node_id in nodes.iter() {
+                ensure!(seen.insert(node_id), Error::<T>::DuplicateSourceNode);
                 ensure!(
                     <OwnedNodes<T>>::contains_key(current_owner, node_id),
                     Error::<T>::NodeNotOwnedByOwner
