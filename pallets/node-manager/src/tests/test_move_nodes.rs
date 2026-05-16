@@ -262,12 +262,7 @@ fn move_stake_single_source_full_amount_succeeds() {
         assert_eq!(Balances::reserved_balance(&ctx.owner), stake);
 
         System::assert_last_event(
-            Event::StakeMoved {
-                owner: ctx.owner,
-                to_node,
-                total_amount: stake,
-            }
-            .into(),
+            Event::StakeMoved { owner: ctx.owner, to_node, total_amount: stake }.into(),
         );
     });
 }
@@ -315,7 +310,10 @@ fn move_stake_partial_amount_leaves_remainder_on_source() {
             to_node.clone(),
         ));
 
-        assert_eq!(<NodeRegistry<TestRuntime>>::get(&from_node).unwrap().stake.amount, stake - partial);
+        assert_eq!(
+            <NodeRegistry<TestRuntime>>::get(&from_node).unwrap().stake.amount,
+            stake - partial
+        );
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&to_node).unwrap().stake.amount, partial);
         assert_eq!(<TotalStake<TestRuntime>>::get(&ctx.owner), Some(stake));
     });
@@ -468,7 +466,10 @@ fn move_nodes_with_stake_dust_goes_to_last_node() {
 
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[0]).unwrap().stake.amount, per_node);
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[1]).unwrap().stake.amount, per_node);
-        assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[2]).unwrap().stake.amount, per_node + 1);
+        assert_eq!(
+            <NodeRegistry<TestRuntime>>::get(&ctx.nodes[2]).unwrap().stake.amount,
+            per_node + 1
+        );
     });
 }
 
@@ -574,7 +575,10 @@ fn move_stake_then_move_nodes_with_stake_integration() {
         let dust = (stake * 2) % 3;
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[0]).unwrap().stake.amount, per_node);
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[1]).unwrap().stake.amount, per_node);
-        assert_eq!(<NodeRegistry<TestRuntime>>::get(&ctx.nodes[2]).unwrap().stake.amount, per_node + dust);
+        assert_eq!(
+            <NodeRegistry<TestRuntime>>::get(&ctx.nodes[2]).unwrap().stake.amount,
+            per_node + dust
+        );
 
         assert_eq!(Balances::reserved_balance(&ctx.owner), 0);
         assert_eq!(Balances::reserved_balance(&ctx.new_owner), stake * 2);

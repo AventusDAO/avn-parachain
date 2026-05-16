@@ -507,11 +507,7 @@ pub mod pallet {
         /// Node moved to a new owner
         NodeMoved { old_owner: T::AccountId, new_owner: T::AccountId, node: NodeId<T> },
         /// Stake moved from multiple source nodes into a single destination node
-        StakeMoved {
-            owner: T::AccountId,
-            to_node: NodeId<T>,
-            total_amount: BalanceOf<T>,
-        },
+        StakeMoved { owner: T::AccountId, to_node: NodeId<T>, total_amount: BalanceOf<T> },
     }
 
     #[pallet::error]
@@ -1752,8 +1748,11 @@ pub mod pallet {
                     total_amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
             }
 
-            to_info.stake.amount =
-                to_info.stake.amount.checked_add(&total_amount).ok_or(Error::<T>::BalanceOverflow)?;
+            to_info.stake.amount = to_info
+                .stake
+                .amount
+                .checked_add(&total_amount)
+                .ok_or(Error::<T>::BalanceOverflow)?;
             NodeRegistry::<T>::insert(to_node, to_info);
 
             // TotalStake is unchanged — same owner, same total reserved balance.
