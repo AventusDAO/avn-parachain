@@ -1745,7 +1745,7 @@ pub mod pallet {
                 };
 
                 if amount.is_zero() {
-                    continue;
+                    continue
                 }
 
                 from_info.stake.amount = from_info
@@ -1760,7 +1760,7 @@ pub mod pallet {
             }
 
             if total_amount.is_zero() {
-                return Ok(());
+                return Ok(())
             }
 
             to_info.stake.amount = to_info
