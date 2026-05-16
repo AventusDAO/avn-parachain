@@ -68,6 +68,8 @@ pub trait WeightInfo {
 	fn offchain_mint_rewards() -> Weight;
 	fn set_genesis_override(b: u32, ) -> Weight;
 	fn move_nodes(b: u32, ) -> Weight;
+	fn move_stake(b: u32, ) -> Weight;
+	fn move_nodes_with_stake(b: u32, ) -> Weight;
 }
 
 /// Weights for pallet_node_manager using the Substrate node and recommended hardware.
@@ -617,6 +619,26 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
 			.saturating_add(T::DbWeight::get().reads(7_u64))
 			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(b.into())))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(b.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
+	}
+	/// The range of component `b` is `[1, 64]`.
+	fn move_stake(b: u32, ) -> Weight {
+		Weight::from_parts(39_256_204, 2666)
+			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(b.into())))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(b.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
+	}
+	/// The range of component `b` is `[1, 64]`.
+	fn move_nodes_with_stake(b: u32, ) -> Weight {
+		Weight::from_parts(39_256_204, 6196)
+			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(7_u64))
+			.saturating_add(T::DbWeight::get().reads((3_u64).saturating_mul(b.into())))
 			.saturating_add(T::DbWeight::get().writes(6_u64))
 			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
@@ -1201,6 +1223,26 @@ impl WeightInfo for () {
 			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
 			.saturating_add(RocksDbWeight::get().reads(7_u64))
 			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(b.into())))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(b.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
+	}
+	/// The range of component `b` is `[1, 64]`.
+	fn move_stake(b: u32, ) -> Weight {
+		Weight::from_parts(39_256_204, 2666)
+			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(b.into())))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(b.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
+	}
+	/// The range of component `b` is `[1, 64]`.
+	fn move_nodes_with_stake(b: u32, ) -> Weight {
+		Weight::from_parts(39_256_204, 6196)
+			.saturating_add(Weight::from_parts(47_936_506, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(7_u64))
+			.saturating_add(RocksDbWeight::get().reads((3_u64).saturating_mul(b.into())))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
 			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
