@@ -1715,7 +1715,7 @@ pub mod pallet {
             sources: &BoundedVec<(NodeId<T>, Option<BalanceOf<T>>), MaxNodes>,
             to_node: &NodeId<T>,
         ) -> DispatchResult {
-            ensure!(!sources.is_empty(), Error::<T>::ZeroAmount);
+            ensure!(!sources.is_empty(), Error::<T>::EmptyNodeList);
 
             let mut to_info =
                 NodeRegistry::<T>::get(to_node).ok_or(Error::<T>::NodeNotRegistered)?;
