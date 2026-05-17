@@ -73,13 +73,14 @@ use crate::{
     AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block, BlockNumber, ConsensusHook,
     Contains, CurrencyId, EnsureSigned, EthBridge, EthSecondBridge, Hash, Historical,
     HoldConsideration, ImOnlineId, LinearStoragePrice, MainEthBridge, MessageQueue, Moment,
-    NftManager, Nonce, Offences, Ordering, OriginCaller, OrmlTokens, PalletInfo, ParachainStaking,
-    ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime, RuntimeCall,
-    RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler,
-    SecondaryEthBridge, Session, SessionKeys, Signature, Summary, System, Timestamp, TokenManager,
-    TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, WeightToFee, XcmpQueue,
-    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    MultiBlockMigrations, NftManager, Nonce, Offences, Ordering, OriginCaller, OrmlTokens,
+    PalletInfo, ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp,
+    RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason,
+    RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, SecondaryEthBridge, Session,
+    SessionKeys, Signature, Summary, System, Timestamp, TokenManager, TransactionByteFee,
+    UncheckedExtrinsic, ValidatorsManager, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
+    EXISTENTIAL_DEPOSIT, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
+    VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -145,7 +146,10 @@ impl frame_system::Config for Runtime {
     type SS58Prefix = SS58Prefix;
     /// The action to take on a Runtime Upgrade
     type OnSetCode = cumulus_pallet_parachain_system::ParachainSetCode<Self>;
+    /// The maximum number of consumers allowed on a single account.
     type MaxConsumers = frame_support::traits::ConstU32<16>;
+    /// The migrator that is used to run Multi-Block-Migrations.
+    type MultiBlockMigrator = MultiBlockMigrations;
 }
 
 /// Configure the palelt weight reclaim tx.
@@ -769,6 +773,37 @@ impl pallet_preimage::Config for Runtime {
         PreimageHoldReason,
         LinearStoragePrice<PreimageBaseDeposit, PreimageByteDeposit, Balance>,
     >;
+}
+
+parameter_types! {
+    pub MbmServiceWeight: Weight = Perbill::from_percent(80) * RuntimeBlockWeights::get().max_block;
+}
+
+impl pallet_migrations::Config for Runtime {
+    type RuntimeEvent = RuntimeEvent;
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type Migrations = (
+        pallet_summary::migrations::v1::LazyVotingDataMigrationV1<
+            Runtime,
+            EthSummary,
+            pallet_summary::migrations::v1::weights::SubstrateWeight<Runtime>,
+        >,
+        pallet_summary::migrations::v1::LazyVotingDataMigrationV1<
+            Runtime,
+            AvnAnchorSummary,
+            pallet_summary::migrations::v1::weights::SubstrateWeight<Runtime>,
+        >,
+    );
+
+    // Benchmarks need mocked migrations to guarantee that they succeed.
+    #[cfg(feature = "runtime-benchmarks")]
+    type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
+    type CursorMaxLen = ConstU32<65_536>;
+    type IdentifierMaxLen = ConstU32<256>;
+    type MigrationStatusHandler = ();
+    type FailedMigrationHandler = frame_support::migrations::FreezeChainOnFailedMigration;
+    type MaxServiceWeight = MbmServiceWeight;
+    type WeightInfo = pallet_migrations::weights::SubstrateWeight<Runtime>;
 }
 
 // Accounts protected from being deleted due to a too low amount of funds.

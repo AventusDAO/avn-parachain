@@ -25,7 +25,7 @@ use sp_core::{
 use sp_runtime::{
     testing::{TestSignature, TestXt, UintAuthorityId},
     traits::ConvertInto,
-    BuildStorage,
+    BuildStorage, Weight,
 };
 use sp_staking::{
     offence::{OffenceError, ReportOffence},
@@ -343,6 +343,7 @@ frame_support::construct_runtime!(
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
         AnchorSummary: summary::<Instance1>::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Migrator: pallet_migrations,
     }
 );
 
@@ -431,6 +432,7 @@ where
 impl system::Config for TestRuntime {
     type Nonce = u64;
     type Block = Block;
+    type MultiBlockMigrator = Migrator;
 }
 
 #[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
@@ -469,6 +471,25 @@ impl BridgeInterfaceNotification for TestRuntime {
     ) -> sp_runtime::DispatchResult {
         Ok(())
     }
+}
+
+parameter_types! {
+    pub storage MigratorServiceWeight: Weight = Weight::from_parts(100, 100); // do not use in prod, only tests
+}
+
+#[derive_impl(pallet_migrations::config_preludes::TestDefaultConfig)]
+impl pallet_migrations::Config for TestRuntime {
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type Migrations = (
+        crate::migrations::v1::LazyVotingDataMigrationV1<
+            TestRuntime,
+            (),
+            crate::migrations::v1::weights::SubstrateWeight<TestRuntime>,
+        >,
+    );
+    #[cfg(feature = "runtime-benchmarks")]
+    type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
+    type MaxServiceWeight = MigratorServiceWeight;
 }
 
 parameter_types! {

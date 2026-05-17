@@ -8,7 +8,7 @@
 use super::*;
 
 use crate::offence::create_offenders_identification;
-use frame_benchmarking::{account, impl_benchmark_test_suite, v2::*};
+use frame_benchmarking::{account, v2::*};
 use frame_system::{pallet_prelude::BlockNumberFor, EventRecord, Pallet as System, RawOrigin};
 use hex_literal::hex;
 use pallet_avn::{self as avn};
@@ -851,6 +851,40 @@ mod benchmarks {
         set_admin_config(RawOrigin::Root, config);
 
         assert!(<VotingPeriod<T, I>>::get() == new_period);
+    }
+
+    /// Benchmark a single step of the `v1::LazyVotingDataMigrationV1` migration.
+    #[benchmark]
+    fn mbm_migration_step() {
+        use crate::migrations::{v1, v1::v0};
+        use frame_support::{migrations::SteppedMigration, weights::WeightMeter};
+        use v1::weights::WeightInfo as _;
+
+        let root_id = RootId::<BlockNumberFor<T>>::new(
+            RootRange::<BlockNumberFor<T>>::new(0u32.into(), 100u32.into()),
+            1,
+        );
+        let old_data = v0::VotingSessionDataV0 {
+            voting_session_id: WeakBoundedVec::force_from(vec![1, 64], None),
+            ..Default::default()
+        };
+
+        v0::VotesRepository::<T, I>::insert(root_id, old_data.clone());
+
+        let mut meter = WeightMeter::new();
+
+        #[block]
+        {
+            v1::LazyVotingDataMigrationV1::<T, I, v1::weights::SubstrateWeight<T>>::step(
+                None, &mut meter,
+            )
+            .unwrap();
+        }
+
+        // Check that the new storage is decodable:
+        assert_eq!(crate::VotesRepository::<T, I>::get(root_id), old_data.into());
+        // uses twice the weight once for migration and then for checking if there is another key.
+        assert_eq!(meter.consumed(), v1::weights::SubstrateWeight::<T>::step() * 2);
     }
 
     impl_benchmark_test_suite!(
