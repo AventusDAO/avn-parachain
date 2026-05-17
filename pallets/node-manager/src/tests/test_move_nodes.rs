@@ -73,7 +73,8 @@ fn move_single_node_without_stake_succeeds() {
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&node).unwrap().owner, ctx.new_owner);
 
         System::assert_last_event(
-            Event::NodeMoved { old_owner: ctx.owner, new_owner: ctx.new_owner, node }.into(),
+            Event::NodeMoved { old_owner: ctx.owner, new_owner: ctx.new_owner, node, stake: 0 }
+                .into(),
         );
     });
 }
@@ -249,7 +250,8 @@ fn move_stake_single_source_full_amount_succeeds() {
         add_stake_to_node(&ctx.owner, &from_node, stake);
 
         assert_ok!(NodeManager::move_stake(
-            RuntimeOrigin::signed(ctx.owner.clone()),
+            RuntimeOrigin::signed(ctx.registrar.clone()),
+            ctx.owner.clone(),
             BoundedVec::truncate_from(vec![(from_node.clone(), None)]),
             to_node.clone(),
         ));
@@ -278,7 +280,8 @@ fn move_stake_multiple_sources_accumulate_into_to_node() {
         add_stake_to_node(&ctx.owner, &ctx.nodes[1], stake);
 
         assert_ok!(NodeManager::move_stake(
-            RuntimeOrigin::signed(ctx.owner.clone()),
+            RuntimeOrigin::signed(ctx.registrar.clone()),
+            ctx.owner.clone(),
             BoundedVec::truncate_from(vec![
                 (ctx.nodes[0].clone(), None),
                 (ctx.nodes[1].clone(), None),
@@ -305,7 +308,8 @@ fn move_stake_partial_amount_leaves_remainder_on_source() {
         add_stake_to_node(&ctx.owner, &from_node, stake);
 
         assert_ok!(NodeManager::move_stake(
-            RuntimeOrigin::signed(ctx.owner.clone()),
+            RuntimeOrigin::signed(ctx.registrar.clone()),
+            ctx.owner.clone(),
             BoundedVec::truncate_from(vec![(from_node.clone(), Some(partial))]),
             to_node.clone(),
         ));
@@ -329,7 +333,8 @@ fn move_stake_fails_when_amount_exceeds_source_stake() {
 
         assert_noop!(
             NodeManager::move_stake(
-                RuntimeOrigin::signed(ctx.owner.clone()),
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                ctx.owner.clone(),
                 BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), Some(stake + 1))]),
                 ctx.nodes[1].clone(),
             ),
@@ -348,7 +353,8 @@ fn move_stake_fails_when_some_amount_is_zero() {
 
         assert_noop!(
             NodeManager::move_stake(
-                RuntimeOrigin::signed(ctx.owner.clone()),
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                ctx.owner.clone(),
                 BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), Some(0))]),
                 ctx.nodes[1].clone(),
             ),
@@ -367,7 +373,8 @@ fn move_stake_fails_when_source_equals_destination() {
 
         assert_noop!(
             NodeManager::move_stake(
-                RuntimeOrigin::signed(ctx.owner.clone()),
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                ctx.owner.clone(),
                 BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), None)]),
                 ctx.nodes[0].clone(),
             ),
@@ -377,7 +384,7 @@ fn move_stake_fails_when_source_equals_destination() {
 }
 
 #[test]
-fn move_stake_fails_when_caller_does_not_own_source_node() {
+fn move_stake_fails_when_owner_does_not_own_source_node() {
     ext().execute_with(|| {
         let ctx = Context::new(1);
         let stake: BalanceOf<TestRuntime> = 1_000;
@@ -394,9 +401,11 @@ fn move_stake_fails_when_caller_does_not_own_source_node() {
             UintAuthorityId(200u64),
         ));
 
+        // Registrar is caller but other_owner doesn't own ctx.nodes[0].
         assert_noop!(
             NodeManager::move_stake(
-                RuntimeOrigin::signed(other_owner),
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                other_owner,
                 BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), None)]),
                 other_node,
             ),
@@ -414,7 +423,8 @@ fn move_stake_all_zero_sources_is_noop_no_write_no_event() {
         let events_before = System::events().len();
 
         assert_ok!(NodeManager::move_stake(
-            RuntimeOrigin::signed(ctx.owner.clone()),
+            RuntimeOrigin::signed(ctx.registrar.clone()),
+            ctx.owner.clone(),
             BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), None)]),
             ctx.nodes[1].clone(),
         ));
@@ -435,7 +445,8 @@ fn move_stake_fails_when_source_node_is_duplicated() {
 
         assert_noop!(
             NodeManager::move_stake(
-                RuntimeOrigin::signed(ctx.owner.clone()),
+                RuntimeOrigin::signed(ctx.registrar.clone()),
+                ctx.owner.clone(),
                 BoundedVec::truncate_from(vec![
                     (ctx.nodes[0].clone(), Some(1)),
                     (ctx.nodes[0].clone(), None),
@@ -443,6 +454,25 @@ fn move_stake_fails_when_source_node_is_duplicated() {
                 ctx.nodes[1].clone(),
             ),
             Error::<TestRuntime>::DuplicateSourceNode
+        );
+    });
+}
+
+#[test]
+fn move_stake_fails_when_not_registrar() {
+    ext().execute_with(|| {
+        let ctx = Context::new(2);
+        let stake: BalanceOf<TestRuntime> = 1_000;
+        add_stake_to_node(&ctx.owner, &ctx.nodes[0], stake);
+
+        assert_noop!(
+            NodeManager::move_stake(
+                RuntimeOrigin::signed(ctx.owner.clone()),
+                ctx.owner.clone(),
+                BoundedVec::truncate_from(vec![(ctx.nodes[0].clone(), None)]),
+                ctx.nodes[1].clone(),
+            ),
+            Error::<TestRuntime>::OriginNotRegistrar
         );
     });
 }
@@ -628,7 +658,8 @@ fn move_stake_then_move_nodes_with_stake_integration() {
 
         // Consolidate stake from nodes[0] and nodes[1] into nodes[2]
         assert_ok!(NodeManager::move_stake(
-            RuntimeOrigin::signed(ctx.owner.clone()),
+            RuntimeOrigin::signed(ctx.registrar.clone()),
+            ctx.owner.clone(),
             BoundedVec::truncate_from(vec![
                 (ctx.nodes[0].clone(), None),
                 (ctx.nodes[1].clone(), None),
