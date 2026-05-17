@@ -6,6 +6,7 @@
 extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::string::ToString;
+use sp_std::collections::btree_set::BTreeSet;
 
 use codec::{Decode, DecodeWithMemTracking, Encode, FullCodec};
 use core::convert::TryFrom;
@@ -505,7 +506,14 @@ pub mod pallet {
         /// Genesis bonus override cleared
         GenesisOverrideCleared { node_id: NodeId<T>, node_serial: u32 },
         /// Node moved to a new owner
-        NodeMoved { old_owner: T::AccountId, new_owner: T::AccountId, node: NodeId<T> },
+        NodeMoved {
+            old_owner: T::AccountId,
+            new_owner: T::AccountId,
+            node: NodeId<T>,
+            stake: BalanceOf<T>,
+        },
+        /// Stake moved from multiple source nodes into a single destination node
+        StakeMoved { owner: T::AccountId, to_node: NodeId<T>, total_amount: BalanceOf<T> },
     }
 
     #[pallet::error]
@@ -606,6 +614,16 @@ pub mod pallet {
         BonusNode,
         /// current_owner and new_owner must be different accounts
         NodeOwnersMustBeDifferent,
+        /// Nodes' current total stake does not match the requested stake_amount
+        StakeMismatch,
+        /// Source and destination nodes must be different
+        SourceAndDestinationNodeMustBeDifferent,
+        /// Node list must not be empty
+        EmptyNodeList,
+        /// Source node appears more than once in the list
+        DuplicateSourceNode,
+        /// Auto-stake window has expired for this node
+        AutoStakeExpired,
     }
 
     #[pallet::config]
@@ -1318,6 +1336,45 @@ pub mod pallet {
 
             Self::do_move_nodes(&current_owner, &new_owner, &nodes)
         }
+
+        /// Move stake from multiple source nodes into a single destination node.
+        /// For each source, an optional amount may be provided — if `None`, the full stake of
+        /// that node is moved. All nodes must be owned by `owner`. the owner's reserved balance
+        /// pool is unchanged.
+        #[pallet::call_index(15)]
+        #[pallet::weight(<T as Config>::WeightInfo::move_stake(source_nodes.len() as u32))]
+        pub fn move_stake(
+            origin: OriginFor<T>,
+            owner: T::AccountId,
+            source_nodes: BoundedVec<(NodeId<T>, Option<BalanceOf<T>>), MaxNodes>,
+            to_node: NodeId<T>,
+        ) -> DispatchResult {
+            let sender = ensure_signed(origin)?;
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(registrar == sender, Error::<T>::OriginNotRegistrar);
+            Self::do_move_stake(&owner, &source_nodes, &to_node)
+        }
+
+        /// Move nodes to a new owner, distributing `stake_amount` equally across them
+        /// (dust goes to the last node). Errors if the nodes' current total stake does not
+        /// match `stake_amount`. Use `move_stake` to pre-balance first.
+        #[pallet::call_index(16)]
+        #[pallet::weight(<T as Config>::WeightInfo::move_nodes_with_stake(nodes.len() as u32))]
+        pub fn move_nodes_with_stake(
+            origin: OriginFor<T>,
+            current_owner: T::AccountId,
+            new_owner: T::AccountId,
+            nodes: BoundedVec<NodeId<T>, MaxNodes>,
+            total_stake_to_move: BalanceOf<T>,
+        ) -> DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(registrar == sender, Error::<T>::OriginNotRegistrar);
+            ensure!(current_owner != new_owner, Error::<T>::NodeOwnersMustBeDifferent);
+
+            Self::do_move_nodes_with_stake(&current_owner, &new_owner, &nodes, total_stake_to_move)
+        }
     }
 
     #[pallet::hooks]
@@ -1610,14 +1667,6 @@ pub mod pallet {
 
                 let stake = node_info.stake.amount;
                 if !stake.is_zero() {
-                    T::Currency::repatriate_reserved(
-                        current_owner,
-                        new_owner,
-                        stake,
-                        BalanceStatus::Reserved,
-                    )
-                    .map_err(|_| Error::<T>::InsufficientStakedBalance)?;
-
                     total_stake_moved =
                         total_stake_moved.checked_add(&stake).ok_or(Error::<T>::BalanceOverflow)?;
                 }
@@ -1632,6 +1681,7 @@ pub mod pallet {
                     old_owner: current_owner.clone(),
                     new_owner: new_owner.clone(),
                     node: node_id.clone(),
+                    stake,
                 });
             }
 
@@ -1640,6 +1690,14 @@ pub mod pallet {
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n));
 
             if !total_stake_moved.is_zero() {
+                T::Currency::repatriate_reserved(
+                    current_owner,
+                    new_owner,
+                    total_stake_moved,
+                    BalanceStatus::Reserved,
+                )
+                .map_err(|_| Error::<T>::InsufficientStakedBalance)?;
+
                 <TotalStake<T>>::try_mutate(current_owner, |total| -> Result<_, DispatchError> {
                     *total = Some(
                         total
@@ -1654,6 +1712,178 @@ pub mod pallet {
                         total
                             .unwrap_or_else(Zero::zero)
                             .checked_add(&total_stake_moved)
+                            .ok_or(Error::<T>::BalanceOverflow)?,
+                    );
+                    Ok(())
+                })?;
+            }
+
+            Ok(())
+        }
+
+        fn do_move_stake(
+            owner: &T::AccountId,
+            source_nodes: &BoundedVec<(NodeId<T>, Option<BalanceOf<T>>), MaxNodes>,
+            to_node: &NodeId<T>,
+        ) -> DispatchResult {
+            ensure!(!source_nodes.is_empty(), Error::<T>::EmptyNodeList);
+
+            let now = Self::time_now_sec();
+            let mut to_info =
+                NodeRegistry::<T>::get(to_node).ok_or(Error::<T>::NodeNotRegistered)?;
+            ensure!(to_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
+            // Only allow moving if within the auto stake window. This is imporant because
+            // the unlock logic depends on the total stake of the node.
+            ensure!(now < to_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+
+            let mut total_amount = BalanceOf::<T>::zero();
+            let mut seen = BTreeSet::new();
+
+            for (from_node, maybe_amount) in source_nodes {
+                ensure!(from_node != to_node, Error::<T>::SourceAndDestinationNodeMustBeDifferent);
+                ensure!(seen.insert(from_node), Error::<T>::DuplicateSourceNode);
+
+                let mut from_info =
+                    NodeRegistry::<T>::get(from_node).ok_or(Error::<T>::NodeNotRegistered)?;
+                ensure!(from_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
+                ensure!(now < from_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+
+                let amount = match maybe_amount {
+                    Some(amt) => {
+                        ensure!(*amt > BalanceOf::<T>::zero(), Error::<T>::ZeroAmount);
+                        ensure!(
+                            from_info.stake.amount >= *amt,
+                            Error::<T>::InsufficientStakedBalance
+                        );
+                        *amt
+                    },
+                    None => from_info.stake.amount,
+                };
+
+                if amount.is_zero() {
+                    continue
+                }
+
+                from_info.stake.amount = from_info
+                    .stake
+                    .amount
+                    .checked_sub(&amount)
+                    .ok_or(Error::<T>::BalanceUnderflow)?;
+                NodeRegistry::<T>::insert(from_node, from_info);
+
+                total_amount =
+                    total_amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
+            }
+
+            if total_amount.is_zero() {
+                return Ok(())
+            }
+
+            to_info.stake.amount = to_info
+                .stake
+                .amount
+                .checked_add(&total_amount)
+                .ok_or(Error::<T>::BalanceOverflow)?;
+            NodeRegistry::<T>::insert(to_node, to_info);
+
+            // TotalStake is unchanged — same owner, same total reserved balance.
+
+            Self::deposit_event(Event::StakeMoved {
+                owner: owner.clone(),
+                to_node: to_node.clone(),
+                total_amount,
+            });
+
+            Ok(())
+        }
+
+        fn do_move_nodes_with_stake(
+            current_owner: &T::AccountId,
+            new_owner: &T::AccountId,
+            nodes: &BoundedVec<NodeId<T>, MaxNodes>,
+            stake_amount: BalanceOf<T>,
+        ) -> DispatchResult {
+            ensure!(!nodes.is_empty(), Error::<T>::EmptyNodeList);
+
+            let n = nodes.len();
+            let n_balance = BalanceOf::<T>::from(n as u32);
+            let per_node = stake_amount / n_balance;
+            let dust = stake_amount % n_balance;
+
+            // Validate all nodes, compute current total stake, and cache infos for the update pass.
+            let mut nodes_current_total = BalanceOf::<T>::zero();
+            let mut node_infos = Vec::with_capacity(n);
+            let mut seen = BTreeSet::new();
+            for node_id in nodes.iter() {
+                ensure!(seen.insert(node_id), Error::<T>::DuplicateSourceNode);
+                ensure!(
+                    <OwnedNodes<T>>::contains_key(current_owner, node_id),
+                    Error::<T>::NodeNotOwnedByOwner
+                );
+                let node_info =
+                    NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotRegistered)?;
+                ensure!(
+                    Self::time_now_sec() < node_info.auto_stake_expiry,
+                    Error::<T>::AutoStakeExpired
+                );
+                nodes_current_total = nodes_current_total
+                    .checked_add(&node_info.stake.amount)
+                    .ok_or(Error::<T>::BalanceOverflow)?;
+                node_infos.push(node_info);
+            }
+
+            ensure!(nodes_current_total == stake_amount, Error::<T>::StakeMismatch);
+
+            let last_idx = n.saturating_sub(1);
+            for (i, (node_id, mut node_info)) in nodes.iter().zip(node_infos).enumerate() {
+                let target = if i == last_idx {
+                    per_node.checked_add(&dust).ok_or(Error::<T>::BalanceOverflow)?
+                } else {
+                    per_node
+                };
+
+                node_info.stake.amount = target;
+                node_info.owner = new_owner.clone();
+                NodeRegistry::<T>::insert(node_id, node_info);
+
+                <OwnedNodes<T>>::remove(current_owner, node_id);
+                <OwnedNodes<T>>::insert(new_owner, node_id, ());
+
+                Self::deposit_event(Event::NodeMoved {
+                    old_owner: current_owner.clone(),
+                    new_owner: new_owner.clone(),
+                    node: node_id.clone(),
+                    stake: target,
+                });
+            }
+
+            let n_u32 = n as u32;
+            <OwnedNodesCount<T>>::mutate(current_owner, |c| *c = c.saturating_sub(n_u32));
+            <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n_u32));
+
+            if !stake_amount.is_zero() {
+                T::Currency::repatriate_reserved(
+                    current_owner,
+                    new_owner,
+                    stake_amount,
+                    BalanceStatus::Reserved,
+                )
+                .map_err(|_| Error::<T>::InsufficientStakedBalance)?;
+
+                <TotalStake<T>>::try_mutate(current_owner, |total| -> Result<_, DispatchError> {
+                    *total = Some(
+                        total
+                            .unwrap_or_else(Zero::zero)
+                            .checked_sub(&stake_amount)
+                            .ok_or(Error::<T>::BalanceUnderflow)?,
+                    );
+                    Ok(())
+                })?;
+                <TotalStake<T>>::try_mutate(new_owner, |total| -> Result<_, DispatchError> {
+                    *total = Some(
+                        total
+                            .unwrap_or_else(Zero::zero)
+                            .checked_add(&stake_amount)
                             .ok_or(Error::<T>::BalanceOverflow)?,
                     );
                     Ok(())

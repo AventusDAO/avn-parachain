@@ -31,9 +31,17 @@ macro_rules! assert_approx {
 fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
-    // compare to the last event record
     let EventRecord { event, .. } = &events[events.len().saturating_sub(1 as usize)];
     assert_eq!(event, &system_event);
+}
+
+fn assert_has_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
+    let events = frame_system::Pallet::<T>::events();
+    let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
+    assert!(
+        events.iter().any(|EventRecord { event, .. }| event == &system_event),
+        "expected event not found in event list"
+    );
 }
 
 fn set_registrar<T: Config>(registrar: T::AccountId) {
@@ -730,10 +738,107 @@ benchmarks! {
             assert!(<OwnedNodes<T>>::contains_key(new_owner.clone(), node));
             assert_eq!(<NodeRegistry<T>>::get(node).unwrap().owner, new_owner);
         }
-        assert_last_event::<T>(Event::NodeMoved {
+        assert_has_event::<T>(Event::NodeMoved {
             old_owner: owner,
             new_owner,
             node: nodes[nodes.len() - 1].clone(),
+            stake: stake_per_node,
+        }.into());
+    }
+
+    move_stake {
+        let b in 1 .. MAX_NODES;
+
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+        let owner: T::AccountId = account("owner", 0, 0);
+        let stake_per_node: BalanceOf<T> = 1_000u32.into();
+
+        T::Currency::make_free_balance_be(&owner, 1_000_000u32.into());
+
+        // Register b source nodes and a destination node; stake each source.
+        let to_node: NodeId<T> = account("to_node", 0, 0);
+        register_new_node::<T>(to_node.clone(), owner.clone(), 0);
+        <NodeRegistry<T>>::mutate(&to_node, |i| {
+            if let Some(i) = i.as_mut() { i.auto_stake_expiry = u64::MAX; }
+        });
+
+        let mut sources: Vec<(NodeId<T>, Option<BalanceOf<T>>)> = vec![];
+        for i in 1..=b {
+            let node: NodeId<T> = account("node", i, i);
+            register_new_node::<T>(node.clone(), owner.clone(), i);
+            <NodeRegistry<T>>::mutate(&node, |info| {
+                if let Some(info) = info.as_mut() { info.auto_stake_expiry = u64::MAX; }
+            });
+            Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
+            sources.push((node, None));
+        }
+
+    }: move_stake(
+        RawOrigin::Signed(registrar.clone()),
+        owner.clone(),
+        BoundedVec::truncate_from(sources.clone()),
+        to_node.clone())
+    verify {
+        let expected_total: BalanceOf<T> =
+            stake_per_node.saturating_mul((b as u32).into());
+        assert_eq!(
+            <NodeRegistry<T>>::get(&to_node).unwrap().stake.amount,
+            expected_total
+        );
+        assert_last_event::<T>(Event::StakeMoved {
+            owner,
+            to_node,
+            total_amount: expected_total,
+        }.into());
+    }
+
+    move_nodes_with_stake {
+        let b in 1 .. MAX_NODES;
+
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+        enable_rewards::<T>();
+
+        let owner: T::AccountId = account("owner", 0, 0);
+        let new_owner: T::AccountId = account("new_owner", 1, 1);
+        let stake_per_node: BalanceOf<T> = 1_000u32.into();
+
+        T::Currency::make_free_balance_be(&owner, 1_000_000u32.into());
+        T::Currency::make_free_balance_be(&new_owner, 1_000_000u32.into());
+
+        let mut nodes: Vec<NodeId<T>> = vec![];
+        for i in 1..=b {
+            let node: NodeId<T> = account("node", i, i);
+            register_new_node::<T>(node.clone(), owner.clone(), i);
+            <NodeRegistry<T>>::mutate(&node, |info| {
+                if let Some(info) = info.as_mut() { info.auto_stake_expiry = u64::MAX; }
+            });
+            Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
+            nodes.push(node);
+        }
+
+        let total_stake: BalanceOf<T> = stake_per_node.saturating_mul((b as u32).into());
+
+        assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes[0].clone()));
+
+    }: move_nodes_with_stake(
+        RawOrigin::Signed(registrar.clone()),
+        owner.clone(),
+        new_owner.clone(),
+        BoundedVec::truncate_from(nodes.clone()),
+        total_stake)
+    verify {
+        for node in &nodes {
+            assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
+            assert!(<OwnedNodes<T>>::contains_key(new_owner.clone(), node));
+            assert_eq!(<NodeRegistry<T>>::get(node).unwrap().owner, new_owner);
+        }
+        assert_has_event::<T>(Event::NodeMoved {
+            old_owner: owner,
+            new_owner,
+            node: nodes[nodes.len() - 1].clone(),
+            stake: stake_per_node,
         }.into());
     }
 }
