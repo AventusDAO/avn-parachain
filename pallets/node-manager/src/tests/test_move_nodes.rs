@@ -517,15 +517,13 @@ fn move_nodes_with_stake_equal_split_no_dust_succeeds() {
 fn move_nodes_with_stake_dust_goes_to_last_node() {
     ext().execute_with(|| {
         let ctx = Context::new(3);
-        // 3 nodes, stake_amount = 10 => per_node = 3, dust = 1, last node gets 4
+        // 3 nodes, stake_amount = 10 => expected per_node = 3, dust = 1, last node gets 4
         let per_node: BalanceOf<TestRuntime> = 3;
         let total_stake: BalanceOf<TestRuntime> = 10;
 
-        // Pre-set node stakes to exactly match total (3+3+4)
-        for (i, node) in ctx.nodes.iter().enumerate() {
-            let amount = if i == 2 { per_node + 1 } else { per_node };
-            add_stake_to_node(&ctx.owner, node, amount);
-        }
+        // Add all the stake to the first node. The code should recalculate the distribution.
+        add_stake_to_node(&ctx.owner, &ctx.nodes[0], total_stake);
+
         Balances::make_free_balance_be(&ctx.new_owner, 1);
 
         assert_ok!(NodeManager::move_nodes_with_stake(
