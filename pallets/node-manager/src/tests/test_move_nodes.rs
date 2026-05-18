@@ -453,7 +453,7 @@ fn move_stake_fails_when_source_node_is_duplicated() {
                 ]),
                 ctx.nodes[1].clone(),
             ),
-            Error::<TestRuntime>::DuplicateSourceNode
+            Error::<TestRuntime>::DuplicateNodeInList
         );
     });
 }
@@ -640,7 +640,7 @@ fn move_nodes_with_stake_fails_when_nodes_list_has_duplicates() {
                 BoundedVec::truncate_from(vec![ctx.nodes[0].clone(), ctx.nodes[0].clone()]),
                 0,
             ),
-            Error::<TestRuntime>::DuplicateSourceNode
+            Error::<TestRuntime>::DuplicateNodeInList
         );
     });
 }

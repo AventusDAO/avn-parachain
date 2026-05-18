@@ -620,8 +620,8 @@ pub mod pallet {
         SourceAndDestinationNodeMustBeDifferent,
         /// Node list must not be empty
         EmptyNodeList,
-        /// Source node appears more than once in the list
-        DuplicateSourceNode,
+        /// Node appears more than once in the list
+        DuplicateNodeInList,
         /// Auto-stake window has expired for this node
         AutoStakeExpired,
     }
@@ -1338,9 +1338,8 @@ pub mod pallet {
         }
 
         /// Move stake from multiple source nodes into a single destination node.
-        /// For each source, an optional amount may be provided — if `None`, the full stake of
-        /// that node is moved. All nodes must be owned by `owner`. the owner's reserved balance
-        /// pool is unchanged.
+        /// For each source, an optional amount may be provided. If `None`, the full stake of
+        /// that node is moved. Nodes must be within the auto-expiry window.
         #[pallet::call_index(15)]
         #[pallet::weight(<T as Config>::WeightInfo::move_stake(source_nodes.len() as u32))]
         pub fn move_stake(
@@ -1732,7 +1731,7 @@ pub mod pallet {
             let mut to_info =
                 NodeRegistry::<T>::get(to_node).ok_or(Error::<T>::NodeNotRegistered)?;
             ensure!(to_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
-            // Only allow moving if within the auto stake window. This is imporant because
+            // Only allow moving if within the auto stake window. This is important because
             // the unlock logic depends on the total stake of the node.
             ensure!(now < to_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
 
@@ -1741,7 +1740,7 @@ pub mod pallet {
 
             for (from_node, maybe_amount) in source_nodes {
                 ensure!(from_node != to_node, Error::<T>::SourceAndDestinationNodeMustBeDifferent);
-                ensure!(seen.insert(from_node), Error::<T>::DuplicateSourceNode);
+                ensure!(seen.insert(from_node), Error::<T>::DuplicateNodeInList);
 
                 let mut from_info =
                     NodeRegistry::<T>::get(from_node).ok_or(Error::<T>::NodeNotRegistered)?;
@@ -1809,23 +1808,21 @@ pub mod pallet {
             let n_balance = BalanceOf::<T>::from(n as u32);
             let per_node = stake_amount / n_balance;
             let dust = stake_amount % n_balance;
+            let now = Self::time_now_sec();
 
             // Validate all nodes, compute current total stake, and cache infos for the update pass.
             let mut nodes_current_total = BalanceOf::<T>::zero();
             let mut node_infos = Vec::with_capacity(n);
             let mut seen = BTreeSet::new();
             for node_id in nodes.iter() {
-                ensure!(seen.insert(node_id), Error::<T>::DuplicateSourceNode);
+                ensure!(seen.insert(node_id), Error::<T>::DuplicateNodeInList);
                 ensure!(
                     <OwnedNodes<T>>::contains_key(current_owner, node_id),
                     Error::<T>::NodeNotOwnedByOwner
                 );
                 let node_info =
                     NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotRegistered)?;
-                ensure!(
-                    Self::time_now_sec() < node_info.auto_stake_expiry,
-                    Error::<T>::AutoStakeExpired
-                );
+                ensure!(now < node_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
                 nodes_current_total = nodes_current_total
                     .checked_add(&node_info.stake.amount)
                     .ok_or(Error::<T>::BalanceOverflow)?;
