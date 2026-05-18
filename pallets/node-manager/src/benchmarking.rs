@@ -749,6 +749,7 @@ benchmarks! {
     move_stake {
         let b in 1 .. MAX_NODES;
 
+        enable_rewards::<T>();
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
         let owner: T::AccountId = account("owner", 0, 0);
