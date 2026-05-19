@@ -512,8 +512,10 @@ benchmarks! {
         let reward_period = <RewardPeriod<T>>::get();
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
+        T::Currency::make_free_balance_be(&owner.clone(), 1_000u32.into());
 
         let nodes_to_deregister = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, b);
+        Pallet::<T>::do_add_stake(&owner, &nodes_to_deregister[0], 100u32.into()).unwrap();
 
         // Show that the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -546,8 +548,10 @@ benchmarks! {
         let reward_period = <RewardPeriod<T>>::get();
         let reward_period_index = reward_period.current;
         let owner: T::AccountId = account("owner", 0, 0);
+        T::Currency::make_free_balance_be(&owner.clone(), 1_000u32.into());
 
         let nodes_to_deregister = create_nodes_and_heartbeat::<T>(owner.clone(), reward_period_index, b);
+        Pallet::<T>::do_add_stake(&owner, &nodes_to_deregister[0], 100u32.into()).unwrap();
 
         // Show that at least some of the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));

@@ -425,20 +425,24 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:1)
 	/// Proof: `NodeManager::TotalRegisteredNodes` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::TotalStake` (r:1 w:1)
+	/// Proof: `NodeManager::TotalStake` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:64)
 	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 64]`.
 	fn deregister_nodes(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `576 + b * (222 ±0)`
-		//  Estimated: `3517 + b * (2666 ±0)`
-		// Minimum execution time: 36_518_000 picoseconds.
-		Weight::from_parts(59_886_771, 3517)
-			// Standard Error: 192_008
-			.saturating_add(Weight::from_parts(23_470_804, 0).saturating_mul(b.into()))
-			.saturating_add(T::DbWeight::get().reads(3_u64))
+		//  Measured:  `860 + b * (222 ±0)`
+		//  Estimated: `3593 + b * (2666 ±0)`
+		// Minimum execution time: 74_699_000 picoseconds.
+		Weight::from_parts(69_226_090, 3593)
+			// Standard Error: 129_922
+			.saturating_add(Weight::from_parts(23_499_248, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().reads((3_u64).saturating_mul(b.into())))
-			.saturating_add(T::DbWeight::get().writes(2_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
 			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
@@ -454,20 +458,24 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:1)
 	/// Proof: `NodeManager::TotalRegisteredNodes` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::TotalStake` (r:1 w:1)
+	/// Proof: `NodeManager::TotalStake` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:64)
 	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 64]`.
 	fn signed_deregister_nodes(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `576 + b * (222 ±0)`
-		//  Estimated: `3517 + b * (2666 ±0)`
-		// Minimum execution time: 149_861_000 picoseconds.
-		Weight::from_parts(165_589_806, 3517)
-			// Standard Error: 175_238
-			.saturating_add(Weight::from_parts(24_727_575, 0).saturating_mul(b.into()))
-			.saturating_add(T::DbWeight::get().reads(3_u64))
+		//  Measured:  `860 + b * (222 ±0)`
+		//  Estimated: `3593 + b * (2666 ±0)`
+		// Minimum execution time: 155_975_000 picoseconds.
+		Weight::from_parts(192_489_537, 3593)
+			// Standard Error: 189_679
+			.saturating_add(Weight::from_parts(25_220_325, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().reads((3_u64).saturating_mul(b.into())))
-			.saturating_add(T::DbWeight::get().writes(2_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
 			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
@@ -1058,20 +1066,24 @@ impl WeightInfo for () {
 	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:1)
 	/// Proof: `NodeManager::TotalRegisteredNodes` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::TotalStake` (r:1 w:1)
+	/// Proof: `NodeManager::TotalStake` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:64)
 	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 64]`.
 	fn deregister_nodes(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `576 + b * (222 ±0)`
-		//  Estimated: `3517 + b * (2666 ±0)`
-		// Minimum execution time: 36_518_000 picoseconds.
-		Weight::from_parts(59_886_771, 3517)
-			// Standard Error: 192_008
-			.saturating_add(Weight::from_parts(23_470_804, 0).saturating_mul(b.into()))
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
+		//  Measured:  `860 + b * (222 ±0)`
+		//  Estimated: `3593 + b * (2666 ±0)`
+		// Minimum execution time: 74_699_000 picoseconds.
+		Weight::from_parts(69_226_090, 3593)
+			// Standard Error: 129_922
+			.saturating_add(Weight::from_parts(23_499_248, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().reads((3_u64).saturating_mul(b.into())))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
 			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
@@ -1087,20 +1099,24 @@ impl WeightInfo for () {
 	/// Proof: `NodeManager::OwnedNodesCount` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:1)
 	/// Proof: `NodeManager::TotalRegisteredNodes` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::TotalStake` (r:1 w:1)
+	/// Proof: `NodeManager::TotalStake` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::GenesisOverrides` (r:0 w:64)
 	/// Proof: `NodeManager::GenesisOverrides` (`max_values`: None, `max_size`: Some(21), added: 2496, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 64]`.
 	fn signed_deregister_nodes(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `576 + b * (222 ±0)`
-		//  Estimated: `3517 + b * (2666 ±0)`
-		// Minimum execution time: 149_861_000 picoseconds.
-		Weight::from_parts(165_589_806, 3517)
-			// Standard Error: 175_238
-			.saturating_add(Weight::from_parts(24_727_575, 0).saturating_mul(b.into()))
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
+		//  Measured:  `860 + b * (222 ±0)`
+		//  Estimated: `3593 + b * (2666 ±0)`
+		// Minimum execution time: 155_975_000 picoseconds.
+		Weight::from_parts(192_489_537, 3593)
+			// Standard Error: 189_679
+			.saturating_add(Weight::from_parts(25_220_325, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().reads((3_u64).saturating_mul(b.into())))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
 			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(b.into())))
 			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(b.into()))
 	}
