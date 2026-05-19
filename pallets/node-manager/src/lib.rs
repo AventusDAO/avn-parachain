@@ -1638,6 +1638,15 @@ pub mod pallet {
                 // Unreserve stake for this node if there is any
                 if !info.stake.amount.is_zero() {
                     Self::update_reserves(owner, info.stake.amount, StakeOperation::Remove)?;
+                    <TotalStake<T>>::try_mutate(owner, |total| -> Result<_, DispatchError> {
+                        *total = Some(
+                            total
+                                .unwrap_or_else(Zero::zero)
+                                .checked_sub(&info.stake.amount)
+                                .ok_or(Error::<T>::BalanceUnderflow)?,
+                        );
+                        Ok(())
+                    })?;
                 }
 
                 Self::deposit_event(Event::NodeDeregistered {

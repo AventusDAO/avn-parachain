@@ -450,6 +450,7 @@ fn deregistration_returns_reserved_stake() {
             stake_amount
         ));
         assert_eq!(Balances::reserved_balance(&context.owner), stake_amount);
+        assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(stake_amount));
 
         // Deregister
         assert_ok!(NodeManager::deregister_nodes(
@@ -461,6 +462,91 @@ fn deregistration_returns_reserved_stake() {
         // Reserved balance must be returned to free balance
         assert_eq!(Balances::reserved_balance(&context.owner), 0);
         assert_eq!(Balances::free_balance(&context.owner), stake_amount * 2);
+        // TotalStake must also be cleared
+        assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(0));
+    });
+}
+
+#[test]
+fn deregistration_clears_total_stake_for_multiple_nodes() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(3u8);
+        let stake_per_node = 5_000u128;
+        let total_funded = stake_per_node * context.registered_nodes.len() as u128 * 2;
+
+        Balances::make_free_balance_be(&context.owner, total_funded);
+
+        // Stake each node individually
+        for &node in &context.registered_nodes {
+            assert_ok!(NodeManager::add_stake(
+                RuntimeOrigin::signed(context.owner.clone()),
+                node,
+                stake_per_node,
+            ));
+        }
+
+        let expected_total = stake_per_node * context.registered_nodes.len() as u128;
+        assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(expected_total));
+        assert_eq!(Balances::reserved_balance(&context.owner), expected_total);
+
+        // Deregister all nodes in one call
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(context.registered_nodes.clone()),
+        ));
+
+        // Reserved balance fully returned
+        assert_eq!(Balances::reserved_balance(&context.owner), 0);
+        assert_eq!(Balances::free_balance(&context.owner), total_funded);
+        // TotalStake must reflect zero stake remaining
+        assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(0));
+    });
+}
+
+#[test]
+fn partial_deregistration_decrements_total_stake_correctly() {
+    let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_authors()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let context = Context::new(2u8);
+        let stake_per_node = 7_000u128;
+        let total_funded = stake_per_node * 4;
+
+        Balances::make_free_balance_be(&context.owner, total_funded);
+
+        for &node in &context.registered_nodes {
+            assert_ok!(NodeManager::add_stake(
+                RuntimeOrigin::signed(context.owner.clone()),
+                node,
+                stake_per_node,
+            ));
+        }
+
+        assert_eq!(
+            <TotalStake<TestRuntime>>::get(&context.owner),
+            Some(stake_per_node * 2)
+        );
+
+        // Deregister only the first node
+        let node_to_deregister = context.registered_nodes[0];
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(context.registrar),
+            context.owner,
+            BoundedVec::truncate_from(vec![node_to_deregister]),
+        ));
+
+        // TotalStake must only reflect the remaining staked node
+        assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(stake_per_node));
+        assert_eq!(Balances::reserved_balance(&context.owner), stake_per_node);
     });
 }
 
