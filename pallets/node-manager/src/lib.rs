@@ -15,7 +15,7 @@ use frame_support::{
     pallet_prelude::*,
     storage::{generator::StorageDoubleMap as StorageDoubleMapTrait, PrefixIterator},
     traits::{
-        tokens::BalanceStatus, Currency, ExistenceRequirement, IsSubType, ReservableCurrency,
+        Currency, ExistenceRequirement, IsSubType, ReservableCurrency,
         StorageVersion, UnixTime,
     },
     PalletId,
@@ -1657,6 +1657,23 @@ pub mod pallet {
             Ok(())
         }
 
+        // Moves `amount` of reserved balance from `from` to `to`, keeping it reserved on arrival.
+        // Unlike `repatriate_reserved`, this works even when `to` has no prior on-chain existence:
+        // unreserve makes the funds temporarily free, transfer creates the account if needed, then
+        // reserve locks them again on the destination side.
+        fn move_reserved_balance(
+            from: &T::AccountId,
+            to: &T::AccountId,
+            amount: BalanceOf<T>,
+        ) -> DispatchResult {
+            let leftover = T::Currency::unreserve(from, amount);
+            ensure!(leftover.is_zero(), Error::<T>::InsufficientStakedBalance);
+            T::Currency::transfer(from, to, amount, ExistenceRequirement::AllowDeath)
+                .map_err(|_| Error::<T>::InsufficientFreeBalance)?;
+            T::Currency::reserve(to, amount).map_err(|_| Error::<T>::ReserveFailed)?;
+            Ok(())
+        }
+
         fn do_move_nodes(
             current_owner: &T::AccountId,
             new_owner: &T::AccountId,
@@ -1698,13 +1715,7 @@ pub mod pallet {
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n));
 
             if !total_stake_moved.is_zero() {
-                T::Currency::repatriate_reserved(
-                    current_owner,
-                    new_owner,
-                    total_stake_moved,
-                    BalanceStatus::Reserved,
-                )
-                .map_err(|_| Error::<T>::InsufficientStakedBalance)?;
+                Self::move_reserved_balance(current_owner, new_owner, total_stake_moved)?;
 
                 <TotalStake<T>>::try_mutate(current_owner, |total| -> Result<_, DispatchError> {
                     *total = Some(
@@ -1868,13 +1879,7 @@ pub mod pallet {
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n_u32));
 
             if !stake_amount.is_zero() {
-                T::Currency::repatriate_reserved(
-                    current_owner,
-                    new_owner,
-                    stake_amount,
-                    BalanceStatus::Reserved,
-                )
-                .map_err(|_| Error::<T>::InsufficientStakedBalance)?;
+                Self::move_reserved_balance(current_owner, new_owner, stake_amount)?;
 
                 <TotalStake<T>>::try_mutate(current_owner, |total| -> Result<_, DispatchError> {
                     *total = Some(

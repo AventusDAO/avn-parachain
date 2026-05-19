@@ -91,7 +91,6 @@ fn move_single_node_with_stake_transfers_funds_and_updates_total_stake() {
         let stake: BalanceOf<TestRuntime> = 1_000_000;
 
         add_stake_to_node(&ctx.owner, &node, stake);
-        Balances::make_free_balance_be(&ctx.new_owner, 1);
 
         assert_ok!(NodeManager::move_nodes(
             RuntimeOrigin::signed(ctx.registrar),
@@ -226,6 +225,68 @@ fn move_nodes_fails_when_node_does_not_exist() {
             ),
             Error::<TestRuntime>::NodeNotRegistered
         );
+    });
+}
+
+#[test]
+fn move_single_node_with_stake_to_brand_new_account_succeeds() {
+    let (mut ext, _, _) = ExtBuilder::build_default()
+        .with_genesis_config()
+        .for_offchain_worker()
+        .as_externality_with_state();
+    ext.execute_with(|| {
+        let ctx = Context::new(1);
+        let node = ctx.nodes[0].clone();
+        let stake: BalanceOf<TestRuntime> = 1_000_000;
+        let brand_new_owner = TestAccount::new([255u8; 32]).account_id();
+
+        add_stake_to_node(&ctx.owner, &node, stake);
+        assert_eq!(Balances::total_balance(&brand_new_owner), 0);
+
+        assert_ok!(NodeManager::move_nodes(
+            RuntimeOrigin::signed(ctx.registrar),
+            ctx.owner.clone(),
+            brand_new_owner.clone(),
+            BoundedVec::truncate_from(vec![node.clone()]),
+        ));
+
+        assert_eq!(Balances::reserved_balance(&ctx.owner), 0);
+        assert_eq!(Balances::reserved_balance(&brand_new_owner), stake);
+        assert_eq!(<TotalStake<TestRuntime>>::get(&ctx.owner), Some(0));
+        assert_eq!(<TotalStake<TestRuntime>>::get(&brand_new_owner), Some(stake));
+        assert_eq!(<NodeRegistry<TestRuntime>>::get(&node).unwrap().owner, brand_new_owner);
+    });
+}
+
+#[test]
+fn move_nodes_with_stake_to_brand_new_account_succeeds() {
+    ext().execute_with(|| {
+        let ctx = Context::new(2);
+        let stake: BalanceOf<TestRuntime> = 500_000;
+        let brand_new_owner = TestAccount::new([255u8; 32]).account_id();
+
+        for node in &ctx.nodes {
+            add_stake_to_node(&ctx.owner, node, stake);
+        }
+        let total_stake = stake * ctx.nodes.len() as u128;
+
+        assert_eq!(Balances::total_balance(&brand_new_owner), 0);
+
+        assert_ok!(NodeManager::move_nodes_with_stake(
+            RuntimeOrigin::signed(ctx.registrar.clone()),
+            ctx.owner.clone(),
+            brand_new_owner.clone(),
+            BoundedVec::truncate_from(ctx.nodes.clone()),
+            total_stake,
+        ));
+
+        assert_eq!(Balances::reserved_balance(&ctx.owner), 0);
+        assert_eq!(Balances::reserved_balance(&brand_new_owner), total_stake);
+        assert_eq!(<TotalStake<TestRuntime>>::get(&ctx.owner), Some(0));
+        assert_eq!(<TotalStake<TestRuntime>>::get(&brand_new_owner), Some(total_stake));
+        for node in &ctx.nodes {
+            assert_eq!(<NodeRegistry<TestRuntime>>::get(node).unwrap().owner, brand_new_owner);
+        }
     });
 }
 
@@ -489,7 +550,6 @@ fn move_nodes_with_stake_equal_split_no_dust_succeeds() {
         for node in &ctx.nodes {
             add_stake_to_node(&ctx.owner, node, stake_per_node);
         }
-        Balances::make_free_balance_be(&ctx.new_owner, 1);
 
         assert_ok!(NodeManager::move_nodes_with_stake(
             RuntimeOrigin::signed(ctx.registrar.clone()),
@@ -523,8 +583,6 @@ fn move_nodes_with_stake_dust_goes_to_last_node() {
 
         // Add all the stake to the first node. The code should recalculate the distribution.
         add_stake_to_node(&ctx.owner, &ctx.nodes[0], total_stake);
-
-        Balances::make_free_balance_be(&ctx.new_owner, 1);
 
         assert_ok!(NodeManager::move_nodes_with_stake(
             RuntimeOrigin::signed(ctx.registrar.clone()),
@@ -664,9 +722,6 @@ fn move_stake_then_move_nodes_with_stake_integration() {
             ]),
             ctx.nodes[2].clone(),
         ));
-
-        // Ensure new_owner's account exists before repatriation.
-        Balances::make_free_balance_be(&ctx.new_owner, 1);
 
         // nodes[2] now has 2_000, others have 0 — total matches stake * 2
         assert_ok!(NodeManager::move_nodes_with_stake(
