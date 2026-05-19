@@ -531,10 +531,7 @@ fn partial_deregistration_decrements_total_stake_correctly() {
             ));
         }
 
-        assert_eq!(
-            <TotalStake<TestRuntime>>::get(&context.owner),
-            Some(stake_per_node * 2)
-        );
+        assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(stake_per_node * 2));
 
         // Deregister only the first node
         let node_to_deregister = context.registered_nodes[0];
