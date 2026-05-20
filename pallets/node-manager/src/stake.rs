@@ -206,4 +206,75 @@ impl<T: Config> Pallet<T> {
             None
         }
     }
+
+    pub fn do_move_stake(
+        owner: &T::AccountId,
+        source_nodes: &BoundedVec<(NodeId<T>, Option<BalanceOf<T>>), MaxNodes>,
+        to_node: &NodeId<T>,
+    ) -> DispatchResult {
+        ensure!(!source_nodes.is_empty(), Error::<T>::EmptyNodeList);
+
+        let now = Self::time_now_sec();
+        let mut to_info = NodeRegistry::<T>::get(to_node).ok_or(Error::<T>::NodeNotRegistered)?;
+        ensure!(to_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
+        // Only allow moving if within the auto stake window. This is important because
+        // the unlock logic depends on the total stake of the node.
+        ensure!(now < to_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+
+        let mut total_amount = BalanceOf::<T>::zero();
+        let mut seen = BTreeSet::new();
+
+        for (from_node, maybe_amount) in source_nodes {
+            ensure!(from_node != to_node, Error::<T>::SourceAndDestinationNodeMustBeDifferent);
+            ensure!(seen.insert(from_node), Error::<T>::DuplicateNodeInList);
+
+            let mut from_info =
+                NodeRegistry::<T>::get(from_node).ok_or(Error::<T>::NodeNotRegistered)?;
+            ensure!(from_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
+            ensure!(now < from_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+
+            let amount = match maybe_amount {
+                Some(amt) => {
+                    ensure!(*amt > BalanceOf::<T>::zero(), Error::<T>::ZeroAmount);
+                    ensure!(from_info.stake.amount >= *amt, Error::<T>::InsufficientStakedBalance);
+                    *amt
+                },
+                None => from_info.stake.amount,
+            };
+
+            if amount.is_zero() {
+                continue
+            }
+
+            from_info.stake.amount = from_info
+                .stake
+                .amount
+                .checked_sub(&amount)
+                .ok_or(Error::<T>::BalanceUnderflow)?;
+            NodeRegistry::<T>::insert(from_node, from_info);
+
+            total_amount = total_amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
+        }
+
+        if total_amount.is_zero() {
+            return Ok(())
+        }
+
+        to_info.stake.amount = to_info
+            .stake
+            .amount
+            .checked_add(&total_amount)
+            .ok_or(Error::<T>::BalanceOverflow)?;
+        NodeRegistry::<T>::insert(to_node, to_info);
+
+        // TotalStake is unchanged — same owner, same total reserved balance.
+
+        Self::deposit_event(Event::StakeMoved {
+            owner: owner.clone(),
+            to_node: to_node.clone(),
+            total_amount,
+        });
+
+        Ok(())
+    }
 }
