@@ -350,7 +350,7 @@ pub mod pallet {
             Self {
                 _phantom: Default::default(),
                 max_batch_size: 1,
-                reward_period: 2,
+                reward_period: 4,
                 heartbeat_period: 1,
                 reward_amount_per_period: Default::default(),
                 num_periods_to_mint: 1,
@@ -368,6 +368,7 @@ pub mod pallet {
         fn build(&self) {
             assert!(self.reward_period > self.heartbeat_period);
             assert!(self.unstake_period_sec > 0);
+            assert!(self.heartbeat_period > 0);
             let default_threshold = Pallet::<T>::get_default_threshold();
 
             NextRewardPeriodLength::<T>::set(self.reward_period);
@@ -1248,6 +1249,13 @@ pub mod pallet {
             ensure!(amount > BalanceOf::<T>::zero(), Error::<T>::ZeroAmount);
             ensure!(!PendingMintRequestState::<T>::exists(), Error::<T>::MintRequestInProgress);
 
+            // Check cap here for security reasons.
+            let runway = NextRewardAmountPerPeriod::<T>::get()
+                .checked_mul(&NumPeriodsToMint::<T>::get().into())
+                .ok_or(Error::<T>::MintAmountOverflow)?;
+            let max_mint_cap = runway.saturating_mul(MINT_SAFETY_CAP_MULTIPLIER.into());
+            ensure!(amount <= max_mint_cap, Error::<T>::MintAmountOverflow);
+
             let tx_id = Self::send_mint_to_ethereum(amount)?;
             PendingMintRequestState::<T>::put(PendingMintRequest {
                 tx_id,
@@ -1450,8 +1458,13 @@ pub mod pallet {
                 return
             }
 
-            let maybe_author = Self::try_get_node_author(n);
-            if let Some(author) = maybe_author {
+            let result = Self::try_get_node_author(n);
+            if let Some((author, is_primary)) = result {
+                if !is_primary {
+                    log::debug!("🛠️  OCW - author not primary, skipping");
+                    return;
+                }
+
                 Self::trigger_mint_if_required(author.clone());
 
                 let oldest_unpaid_period = OldestUnpaidRewardPeriodIndex::<T>::get();
