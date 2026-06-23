@@ -64,7 +64,8 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         <T as Config>::WeightInfo::on_reward_paid()
     }
 
-    /// Worst-case `on_reward_paid` weight (the recording path): the emptiness probe plus two writes.
+    /// Worst-case `on_reward_paid` weight (the recording path): the emptiness probe plus two
+    /// writes.
     fn reward_paid_weight() -> Weight {
         <T as Config>::WeightInfo::on_reward_paid()
     }
@@ -98,10 +99,7 @@ impl<T: Config> Pallet<T> {
     /// is underfunded) the whole payout rolls back and the record is left intact for retry — no
     /// chain is paid twice. The pot balance check is implicit: `pay_recipient` fails on a short
     /// balance, which aborts the layer.
-    pub fn try_pay_node_period(
-        period: RewardPeriodIndex,
-        node: &T::AccountId,
-    ) -> DispatchResult {
+    pub fn try_pay_node_period(period: RewardPeriodIndex, node: &T::AccountId) -> DispatchResult {
         with_storage_layer(|| {
             let record =
                 UnpaidByPeriod::<T>::get(period, node).ok_or(Error::<T>::NoUnpaidRewards)?;
@@ -146,9 +144,12 @@ impl<T: Config> Pallet<T> {
     /// Pay every outstanding period for a single node, up to `max` periods. Returns the number of
     /// `(period, node)` payouts attempted (successful or failed-and-retained).
     pub fn claim_node(node: &T::AccountId, max: u32) -> u32 {
-        // Collect first: `try_pay_node_period` mutates `UnpaidByNode` while we would be iterating it.
-        let periods: Vec<RewardPeriodIndex> =
-            UnpaidByNode::<T>::iter_prefix(node).map(|(p, _)| p).take(max as usize).collect();
+        // Collect first: `try_pay_node_period` mutates `UnpaidByNode` while we would be iterating
+        // it.
+        let periods: Vec<RewardPeriodIndex> = UnpaidByNode::<T>::iter_prefix(node)
+            .map(|(p, _)| p)
+            .take(max as usize)
+            .collect();
 
         let mut processed = 0u32;
         for period in periods {
@@ -201,8 +202,9 @@ impl<T: Config> Pallet<T> {
             }
         }
 
-        // Advance the cursor by position (independent of payout success). On exhaustion, wrap to the
-        // start so the next pass retries any failures and picks up newly recorded rewards.
+        // Advance the cursor by position (independent of payout success). On exhaustion, wrap to
+        // the start so the next pass retries any failures and picks up newly recorded
+        // rewards.
         if exhausted {
             SweepCursor::<T>::kill();
         } else if let Some(l) = last {

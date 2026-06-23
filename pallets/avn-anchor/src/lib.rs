@@ -55,14 +55,13 @@ pub mod pallet {
         dispatch::GetDispatchInfo, pallet_prelude::*, traits::IsSubType, weights::WeightMeter,
     };
     use frame_system::pallet_prelude::*;
-    use sp_runtime::traits::Zero;
     use orml_traits::asset_registry::{
         AssetMetadata as RegistryAssetMetadata, AvnAssetLocation, AvnAssetMetadata,
         Inspect as AssetRegistryInspect, Mutate as AssetRegistryMutate,
     };
     use sp_avn_common::{verify_signature, InnerCallValidator, PaymentHandler, Proof};
     use sp_core::H160;
-    use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify};
+    use sp_runtime::traits::{Dispatchable, IdentifyAccount, Verify, Zero};
 
     pub type ChainId = u32;
     pub type CheckpointId = u64;
@@ -371,7 +370,8 @@ pub mod pallet {
     /// resumes strictly after it, so a retained (failed) payout is stepped over by position rather
     /// than blocking the records behind it. `None` restarts the pass from the beginning.
     #[pallet::storage]
-    pub type SweepCursor<T: Config> = StorageValue<_, (RewardPeriodIndex, T::AccountId), OptionQuery>;
+    pub type SweepCursor<T: Config> =
+        StorageValue<_, (RewardPeriodIndex, T::AccountId), OptionQuery>;
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
@@ -596,8 +596,8 @@ pub mod pallet {
             let sender = ensure_signed(origin)?;
             ensure!(amount > Zero::zero(), Error::<T>::ZeroRewardAmount);
 
-            let chain_id =
-                AssetIdToChainId::<T>::get(asset_id).ok_or(Error::<T>::AppChainAssetNotRegistered)?;
+            let chain_id = AssetIdToChainId::<T>::get(asset_id)
+                .ok_or(Error::<T>::AppChainAssetNotRegistered)?;
             ensure!(
                 ChainHandlers::<T>::get(&sender) == Some(chain_id),
                 Error::<T>::NotAppChainHandler
@@ -624,8 +624,9 @@ pub mod pallet {
         }
 
         /// Permissionless sweep that pays outstanding app-chain rewards round-robin (resuming from
-        /// `SweepCursor`), up to `MaxRewardPayoutBatch` `(period, node)` payouts. Guarantees progress
-        /// independent of `on_idle` leftover weight, and a failed payout cannot starve the rest.
+        /// `SweepCursor`), up to `MaxRewardPayoutBatch` `(period, node)` payouts. Guarantees
+        /// progress independent of `on_idle` leftover weight, and a failed payout cannot
+        /// starve the rest.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::process_outstanding_rewards(T::MaxRewardPayoutBatch::get()))]
         #[pallet::call_index(10)]
         pub fn process_outstanding_rewards(origin: OriginFor<T>) -> DispatchResult {

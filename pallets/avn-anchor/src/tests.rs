@@ -1168,9 +1168,13 @@ mod app_chain_rewards {
         });
     }
 
-    fn accrue(period: u64, handler: AccountId, asset_id: CurrencyId, seed: u8, rate: Balance)
-        -> H160
-    {
+    fn accrue(
+        period: u64,
+        handler: AccountId,
+        asset_id: CurrencyId,
+        seed: u8,
+        rate: Balance,
+    ) -> H160 {
         let token = register_rewardable_chain(handler, seed, asset_id);
         assert_ok!(Anchor::set_appchain_period_reward(
             RuntimeOrigin::signed(handler),
@@ -1364,7 +1368,8 @@ mod app_chain_rewards {
             UnpaidByNode::<TestRuntime>::insert(node_ok, 2, ());
             fund_pot(asset_b, 1_000_000);
 
-            // One payout per call: a front-positioned failure would starve node_ok without a cursor.
+            // One payout per call: a front-positioned failure would starve node_ok without a
+            // cursor.
             let mut meter = WeightMeter::with_limit(Weight::MAX);
             Anchor::sweep(&mut meter, 1);
             let mut meter = WeightMeter::with_limit(Weight::MAX);

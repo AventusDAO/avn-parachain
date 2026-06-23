@@ -90,7 +90,8 @@ impl<T: Config> Pallet<T> {
             amount: net_reward,
         });
 
-        // Notify app chains that a reward has been paid and return the weight of any work done by the hook.
+        // Notify app chains that a reward has been paid and return the weight of any work done by
+        // the hook.
         let hook_weight =
             T::AppChainInterface::on_reward_paid(period, &node_owner, &node_id, reward_percentage);
 

@@ -1472,7 +1472,7 @@ pub mod pallet {
             if let Some((author, is_primary)) = result {
                 if !is_primary {
                     log::debug!("🛠️  OCW - author not primary, skipping");
-                    return;
+                    return
                 }
 
                 Self::trigger_mint_if_required(author.clone());

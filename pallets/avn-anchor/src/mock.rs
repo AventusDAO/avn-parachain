@@ -355,11 +355,8 @@ pub fn reward_pot_account() -> AccountId {
 impl crate::benchmarking::BenchmarkHelper<TestRuntime> for TestRuntime {
     fn fund_reward_pot(asset_id: CurrencyId, amount: Balance) {
         use orml_traits::MultiCurrency;
-        let _ = <Tokens as MultiCurrency<AccountId>>::deposit(
-            asset_id,
-            &reward_pot_account(),
-            amount,
-        );
+        let _ =
+            <Tokens as MultiCurrency<AccountId>>::deposit(asset_id, &reward_pot_account(), amount);
     }
 }
 

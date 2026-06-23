@@ -1111,7 +1111,7 @@ mod end_2_end {
     fn complete_reward_period_and_pay(
         pool_state: Arc<RwLock<PoolState>>,
         offchain_state: Arc<RwLock<OffchainState>>,
-        primary_author_index: u64
+        primary_author_index: u64,
     ) {
         let reward_period = <RewardPeriod<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
