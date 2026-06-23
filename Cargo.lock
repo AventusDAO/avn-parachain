@@ -1914,6 +1914,7 @@ dependencies = [
  "avn-runtime-common",
  "cfg-if 0.1.10",
  "clap",
+ "cli-commands",
  "cumulus-client-cli",
  "cumulus-client-collator",
  "cumulus-client-consensus-aura",
@@ -1983,7 +1984,6 @@ dependencies = [
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
  "substrate-prometheus-endpoint",
- "tempfile",
 ]
 
 [[package]]
@@ -3114,6 +3114,20 @@ name = "clap_lex"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
+
+[[package]]
+name = "cli-commands"
+version = "9.6.1"
+dependencies = [
+ "clap",
+ "external-service",
+ "sc-cli",
+ "sc-keystore",
+ "sc-service",
+ "sp-core",
+ "sp-keystore",
+ "tempfile",
+]
 
 [[package]]
 name = "client-extrinsic-utils"

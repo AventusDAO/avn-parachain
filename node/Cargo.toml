@@ -95,6 +95,7 @@ cumulus-relay-chain-interface = { default-features = true, workspace = true }
 
 # AvN
 external-service.workspace = true
+cli-commands.workspace = true
 pallet-eth-bridge = { default-features = true, workspace = true }
 pallet-eth-bridge-runtime-api = { default-features = true, workspace = true }
 pallet-cross-chain-voting-runtime-api = { default-features = true, workspace = true }
@@ -134,5 +135,4 @@ try-runtime = [
 ]
 
 [dev-dependencies]
-tempfile = "3.1.0"
 sp-version = { default-features = true, workspace = true }
