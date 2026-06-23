@@ -7,7 +7,7 @@ use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_support::{traits::Currency, BoundedVec};
 use frame_system::RawOrigin;
 use sp_application_crypto::KeyTypeId;
-use sp_avn_common::{benchmarking::convert_sr25519_signature, Asset, Proof};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, AppChainInterface, Asset, Proof};
 use sp_core::H256;
 use sp_runtime::{RuntimeAppPublic, Saturating};
 
@@ -79,7 +79,41 @@ fn setup_chain<T: Config>(handler: &T::AccountId) -> Result<ChainId, &'static st
     Ok(chain_id)
 }
 
+/// Fully register an app chain (handler + asset-registry entry) so it can accrue rewards.
+/// `seed` must be unique per chain to avoid duplicate handler/token-location errors.
+fn register_appchain_for_bench<T: Config>(
+    handler: &T::AccountId,
+    seed: u8,
+) -> Result<T::AppChainAssetId, &'static str> {
+    let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(b"Chain".to_vec()).unwrap();
+    let symbol: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(b"TKN".to_vec()).unwrap();
+    let token = T::Token::from(sp_core::H160::from([seed; 20]));
+    let asset_id: T::AppChainAssetId =
+        T::AppChainAssetId::decode(&mut &Asset::ForeignAsset(seed as u32).encode()[..])
+            .unwrap_or_default();
+    Pallet::<T>::register_appchain(
+        RawOrigin::Root.into(),
+        handler.clone(),
+        name,
+        symbol,
+        token,
+        asset_id,
+        18u32,
+    )
+    .map_err(|_| "register_appchain failed")?;
+    Ok(asset_id)
+}
+
+/// Benchmark-only capability: credit the reward pot with an app-chain token so a payout can be
+/// measured. Implemented by the mock and the runtime (where the multi-currency pallet lives), and
+/// required via the `benchmarks!` `where_clause`.
+pub trait BenchmarkHelper<T: Config> {
+    fn fund_reward_pot(asset_id: T::AppChainAssetId, amount: BalanceOf<T>);
+}
+
 benchmarks! {
+    where_clause { where T: BenchmarkHelper<T> }
+
     register_chain_handler {
         let caller: T::AccountId = create_account_id::<T>(0);
         let name: BoundedVec<u8, ConstU32<32>> = BoundedVec::try_from(vec![0u8; 32]).unwrap();
@@ -250,6 +284,150 @@ benchmarks! {
     }: _(RawOrigin::Root, chain_id, new_fee)
     verify {
         assert_eq!(CheckpointFee::<T>::get(chain_id), new_fee);
+    }
+
+    set_appchain_period_reward {
+        let handler: T::AccountId = create_account_id::<T>(0);
+        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
+        let amount = BalanceOf::<T>::from(1_000u32);
+    }: _(RawOrigin::Signed(handler.clone()), asset_id, amount)
+    verify {
+        assert_eq!(NextRewardAmountPerPeriod::<T>::get(asset_id).map(|(_, a)| a), Some(amount));
+    }
+
+    // `n` = number of app chains snapshotted at the period boundary.
+    on_new_reward_period {
+        let n in 1 .. T::MaxRegisteredAppChains::get();
+        for i in 0 .. n {
+            let handler: T::AccountId = create_account_id::<T>(i);
+            let asset_id = register_appchain_for_bench::<T>(&handler, (i + 1) as u8)?;
+            Pallet::<T>::set_appchain_period_reward(
+                RawOrigin::Signed(handler).into(),
+                asset_id,
+                BalanceOf::<T>::from(1_000u32),
+            )?;
+        }
+        let period: sp_avn_common::RewardPeriodIndex = 1;
+    }: {
+        <Pallet<T> as AppChainInterface>::on_new_reward_period(&period);
+    }
+    verify {
+        assert_eq!(PeriodChainReward::<T>::iter_prefix(period).count(), n as usize);
+    }
+
+    // `n` = number of app chains paid for a single (period, node).
+    pay_node_period {
+        let n in 1 .. T::MaxRegisteredAppChains::get();
+        let owner: T::AccountId = create_account_id::<T>(0);
+        let node: T::AccountId = create_account_id::<T>(1);
+        let period: sp_avn_common::RewardPeriodIndex = 1;
+        let amount = BalanceOf::<T>::from(1_000u32);
+
+        for i in 0 .. n {
+            let handler: T::AccountId = create_account_id::<T>(100 + i);
+            let asset_id = register_appchain_for_bench::<T>(&handler, (i + 1) as u8)?;
+            let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
+            PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
+            T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000u32));
+        }
+        UnpaidByPeriod::<T>::insert(
+            period,
+            &node,
+            RewardRecord { owner: owner.clone(), share: sp_runtime::Perquintill::from_percent(100) },
+        );
+        UnpaidByNode::<T>::insert(&node, period, ());
+    }: {
+        Pallet::<T>::try_pay_node_period(period, &node)?;
+    }
+    verify {
+        assert!(UnpaidByPeriod::<T>::get(period, &node).is_none());
+    }
+
+    // `n` = number of unpaid periods claimed for one node.
+    claim {
+        let n in 1 .. T::MaxRewardPayoutBatch::get();
+        let handler: T::AccountId = create_account_id::<T>(50);
+        let owner: T::AccountId = create_account_id::<T>(0);
+        let node: T::AccountId = create_account_id::<T>(1);
+        let amount = BalanceOf::<T>::from(1_000u32);
+
+        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
+        let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
+        // Fund well above total payouts so the pot stays above its existential deposit.
+        T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
+
+        for p in 0 .. n {
+            let period = p as sp_avn_common::RewardPeriodIndex;
+            PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
+            UnpaidByPeriod::<T>::insert(
+                period,
+                &node,
+                RewardRecord { owner: owner.clone(), share: sp_runtime::Perquintill::from_percent(100) },
+            );
+            UnpaidByNode::<T>::insert(&node, period, ());
+        }
+    }: _(RawOrigin::Signed(owner.clone()), node.clone())
+    verify {
+        assert!(UnpaidByNode::<T>::iter_prefix(&node).next().is_none());
+    }
+
+    // `n` = number of (period, node) payouts swept in one call.
+    process_outstanding_rewards {
+        let n in 1 .. T::MaxRewardPayoutBatch::get();
+        let handler: T::AccountId = create_account_id::<T>(50);
+        let owner: T::AccountId = create_account_id::<T>(0);
+        let caller: T::AccountId = create_account_id::<T>(2);
+        let period: sp_avn_common::RewardPeriodIndex = 1;
+        let amount = BalanceOf::<T>::from(1_000u32);
+
+        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
+        let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
+        PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
+        // Fund well above total payouts so the pot stays above its existential deposit.
+        T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
+
+        for i in 0 .. n {
+            let node: T::AccountId = create_account_id::<T>(1_000 + i);
+            UnpaidByPeriod::<T>::insert(
+                period,
+                &node,
+                RewardRecord {
+                    owner: owner.clone(),
+                    share: sp_runtime::Perquintill::from_rational(1u64, n.max(1) as u64),
+                },
+            );
+            UnpaidByNode::<T>::insert(&node, period, ());
+        }
+    }: _(RawOrigin::Signed(caller))
+    verify {
+        assert!(UnpaidByPeriod::<T>::iter_prefix(period).next().is_none());
+    }
+
+    // Worst case for the `on_reward_paid` hook: a pool exists, so it takes the recording path.
+    on_reward_paid {
+        let handler: T::AccountId = create_account_id::<T>(0);
+        let owner: T::AccountId = create_account_id::<T>(1);
+        let node: T::AccountId = create_account_id::<T>(2);
+        let period: sp_avn_common::RewardPeriodIndex = 1;
+
+        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
+        Pallet::<T>::set_appchain_period_reward(
+            RawOrigin::Signed(handler).into(),
+            asset_id,
+            BalanceOf::<T>::from(1_000u32),
+        )?;
+        // Snapshot the pool for the period so the hook records rather than short-circuiting.
+        <Pallet<T> as AppChainInterface>::on_new_reward_period(&period);
+    }: {
+        <Pallet<T> as AppChainInterface>::on_reward_paid(
+            &period,
+            &owner,
+            &node,
+            sp_runtime::Perquintill::from_percent(50),
+        );
+    }
+    verify {
+        assert!(UnpaidByPeriod::<T>::get(period, &node).is_some());
     }
 }
 

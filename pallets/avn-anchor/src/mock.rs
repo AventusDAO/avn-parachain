@@ -325,6 +325,10 @@ impl pallet_session::historical::SessionManager<AccountId, AccountId> for TestSe
     fn start_session(_: SessionIndex) {}
 }
 
+parameter_types! {
+    pub RewardPotAccount: AccountId = TestAccount::new([42u8; 32]).account_id();
+}
+
 impl Config for TestRuntime {
     type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
@@ -339,6 +343,24 @@ impl Config for TestRuntime {
     type AppChainAssetId = CurrencyId;
     type AssetRegistryStringLimit = ConstU32<1024>;
     type AssetRegistry = AssetRegistry;
+    type RewardPot = RewardPotAccount;
+    type MaxRewardPayoutBatch = ConstU32<100>;
+}
+
+pub fn reward_pot_account() -> AccountId {
+    RewardPotAccount::get()
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+impl crate::benchmarking::BenchmarkHelper<TestRuntime> for TestRuntime {
+    fn fund_reward_pot(asset_id: CurrencyId, amount: Balance) {
+        use orml_traits::MultiCurrency;
+        let _ = <Tokens as MultiCurrency<AccountId>>::deposit(
+            asset_id,
+            &reward_pot_account(),
+            amount,
+        );
+    }
 }
 
 type AssetMetadata = orml_traits::asset_registry::AssetMetadata<

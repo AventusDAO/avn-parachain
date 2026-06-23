@@ -1,0 +1,224 @@
+// Copyright 2026 Aventus DAO Ltd
+
+//! App-chain reward accounting and payout.
+//!
+//! `pallet-node-manager` notifies this pallet through [`AppChainInterface`] as it pays native
+//! rewards. We snapshot each app chain's per-period reward pool, record every node's share, and
+//! later pay each owner `share * pool` in the app chain's own token via the `PaymentHandler`.
+//! Payouts are driven opportunistically by `on_idle` and deterministically by the permissionless
+//! `process_outstanding_rewards` / `claim` extrinsics.
+
+use crate::*;
+use frame_support::{
+    storage::with_storage_layer,
+    traits::Get,
+    weights::{Weight, WeightMeter},
+};
+use orml_traits::asset_registry::{AvnAssetLocation, Inspect as AssetRegistryInspect};
+use sp_avn_common::{AppChainInterface, PaymentHandler, RewardPeriodIndex};
+use sp_runtime::{traits::Zero, DispatchError, Perquintill, SaturatedConversion};
+
+impl<T: Config> AppChainInterface for Pallet<T> {
+    type AccountId = T::AccountId;
+
+    /// Snapshot every app chain's current per-period reward (token + rate) for the new period.
+    /// This is called from on_init so it must be light and non-failing.
+    fn on_new_reward_period(period_index: &RewardPeriodIndex) -> Weight {
+        let mut chains: u32 = 0;
+        for (asset_id, (token, amount)) in NextRewardAmountPerPeriod::<T>::iter() {
+            if amount.is_zero() {
+                continue
+            }
+            PeriodChainReward::<T>::insert(*period_index, asset_id, (token, amount));
+            chains = chains.saturating_add(1);
+        }
+        <T as Config>::WeightInfo::on_new_reward_period(chains)
+    }
+
+    /// Record a node's share for the period so it can be paid later. Kept to the two writes the
+    /// `claim`/sweep paths key off; zero shares are skipped to avoid storing no-op records.
+    /// Returns the weight actually consumed so node-manager can fold it into its payout weight.
+    fn on_reward_paid(
+        period_index: &RewardPeriodIndex,
+        node_owner: &Self::AccountId,
+        node_id: &Self::AccountId,
+        reward_percentage: Perquintill,
+    ) -> Weight {
+        if reward_percentage.is_zero() {
+            return Weight::zero()
+        }
+        // No app chain funded a reward pool for this period, so there is nothing to pay out.
+        // Skip recording: this hook runs once per node inside node-manager's payout, and a record
+        // here would only be swept later to pay zero. The snapshot is taken at the start of the
+        // period (in `on_new_reward_period`), so it is already complete by the time we are paid.
+        if PeriodChainReward::<T>::iter_prefix(*period_index).next().is_none() {
+            // One storage read for the emptiness probe.
+            return T::DbWeight::get().reads(1)
+        }
+        UnpaidByPeriod::<T>::insert(
+            *period_index,
+            node_id,
+            RewardRecord { owner: node_owner.clone(), share: reward_percentage },
+        );
+        UnpaidByNode::<T>::insert(node_id, *period_index, ());
+        <T as Config>::WeightInfo::on_reward_paid()
+    }
+
+    /// Worst-case `on_reward_paid` weight (the recording path): the emptiness probe plus two writes.
+    fn reward_paid_weight() -> Weight {
+        <T as Config>::WeightInfo::on_reward_paid()
+    }
+
+    fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {
+        // No action needed: snapshots are taken at the start of each period and records are drained
+        // by the sweep / claim paths.
+    }
+}
+
+impl<T: Config> Pallet<T> {
+    /// Resolve the token an app chain pays rewards in from its asset-registry location.
+    pub(crate) fn resolve_payout_token(
+        asset_id: &T::AppChainAssetId,
+    ) -> Result<T::Token, DispatchError> {
+        match T::AssetRegistry::location(asset_id)? {
+            Some(AvnAssetLocation::Ethereum(address)) => Ok(address.into()),
+            _ => Err(Error::<T>::AppChainTokenNotResolvable.into()),
+        }
+    }
+
+    /// `share * total`, computed in u128 to satisfy `Perquintill` (mirrors node-manager).
+    pub(crate) fn share_of(share: Perquintill, total: BalanceOf<T>) -> BalanceOf<T> {
+        let total_u128: u128 = total.saturated_into();
+        share.mul_floor(total_u128).saturated_into()
+    }
+
+    /// Pay all app-chain rewards owed to a single `(period, node)` and clear the record.
+    ///
+    /// Wrapped in a transactional layer so that if any chain's transfer fails (e.g. the reward pot
+    /// is underfunded) the whole payout rolls back and the record is left intact for retry — no
+    /// chain is paid twice. The pot balance check is implicit: `pay_recipient` fails on a short
+    /// balance, which aborts the layer.
+    pub fn try_pay_node_period(
+        period: RewardPeriodIndex,
+        node: &T::AccountId,
+    ) -> DispatchResult {
+        with_storage_layer(|| {
+            let record =
+                UnpaidByPeriod::<T>::get(period, node).ok_or(Error::<T>::NoUnpaidRewards)?;
+            let pot = T::RewardPot::get();
+
+            for (asset_id, (token, total)) in PeriodChainReward::<T>::iter_prefix(period) {
+                let amount = Self::share_of(record.share, total);
+                if amount.is_zero() {
+                    continue
+                }
+                T::PaymentHandler::pay_recipient(&token, &amount, &pot, &record.owner)?;
+                Self::deposit_event(Event::AppChainRewardPaid {
+                    reward_period: period,
+                    node: node.clone(),
+                    owner: record.owner.clone(),
+                    asset_id,
+                    amount,
+                });
+            }
+
+            UnpaidByPeriod::<T>::remove(period, node);
+            UnpaidByNode::<T>::remove(node, period);
+            Self::deposit_event(Event::AppChainRewardSettledForNode {
+                reward_period: period,
+                node: node.clone(),
+            });
+
+            // Reclaim the period snapshot once its last record is settled.
+            if UnpaidByPeriod::<T>::iter_prefix(period).next().is_none() {
+                let _ = PeriodChainReward::<T>::clear_prefix(
+                    period,
+                    T::MaxRegisteredAppChains::get(),
+                    None,
+                );
+                Self::deposit_event(Event::AppChainRewardPayoutCompleted { reward_period: period });
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Pay every outstanding period for a single node, up to `max` periods. Returns the number of
+    /// `(period, node)` payouts attempted (successful or failed-and-retained).
+    pub fn claim_node(node: &T::AccountId, max: u32) -> u32 {
+        // Collect first: `try_pay_node_period` mutates `UnpaidByNode` while we would be iterating it.
+        let periods: Vec<RewardPeriodIndex> =
+            UnpaidByNode::<T>::iter_prefix(node).map(|(p, _)| p).take(max as usize).collect();
+
+        let mut processed = 0u32;
+        for period in periods {
+            if let Err(e) = Self::try_pay_node_period(period, node) {
+                Self::deposit_event(Event::AppChainRewardPayoutFailed {
+                    reward_period: period,
+                    node: node.clone(),
+                    error: e,
+                });
+            }
+            processed = processed.saturating_add(1);
+        }
+        processed
+    }
+
+    /// Pay outstanding `(period, node)` rewards, bounded by `max` payouts and `meter`. Returns the
+    /// number attempted. Failed payouts (e.g. underfunded pot) are left in place for a later retry.
+    ///
+    /// Resumes from [`SweepCursor`] so the pass walks the whole map across successive calls and a
+    /// retained failure is skipped by position rather than re-collected from the front every call,
+    /// which would otherwise let one underfunded chain starve every record behind it.
+    pub fn sweep(meter: &mut WeightMeter, max: u32) -> u32 {
+        let unit = <T as Config>::WeightInfo::pay_node_period(T::MaxRegisteredAppChains::get());
+
+        // Resume strictly after the last examined key, or start a fresh pass.
+        let mut iter = match SweepCursor::<T>::get() {
+            Some((period, node)) =>
+                UnpaidByPeriod::<T>::iter_from(UnpaidByPeriod::<T>::hashed_key_for(period, node)),
+            None => UnpaidByPeriod::<T>::iter(),
+        };
+
+        // Collect a bounded batch up front so we don't mutate `UnpaidByPeriod` while iterating it.
+        let mut batch: Vec<(RewardPeriodIndex, T::AccountId)> = Vec::new();
+        let mut last: Option<(RewardPeriodIndex, T::AccountId)> = None;
+        let mut exhausted = false;
+        loop {
+            if batch.len() as u32 >= max || !meter.can_consume(unit) {
+                break
+            }
+            match iter.next() {
+                Some((period, node, _record)) => {
+                    meter.consume(unit);
+                    last = Some((period, node.clone()));
+                    batch.push((period, node));
+                },
+                None => {
+                    exhausted = true;
+                    break
+                },
+            }
+        }
+
+        // Advance the cursor by position (independent of payout success). On exhaustion, wrap to the
+        // start so the next pass retries any failures and picks up newly recorded rewards.
+        if exhausted {
+            SweepCursor::<T>::kill();
+        } else if let Some(l) = last {
+            SweepCursor::<T>::put(l);
+        }
+
+        let processed = batch.len() as u32;
+        for (period, node) in batch {
+            if let Err(e) = Self::try_pay_node_period(period, &node) {
+                Self::deposit_event(Event::AppChainRewardPayoutFailed {
+                    reward_period: period,
+                    node: node.clone(),
+                    error: e,
+                });
+            }
+        }
+        processed
+    }
+}

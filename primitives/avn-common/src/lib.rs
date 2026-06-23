@@ -477,13 +477,17 @@ pub trait AppChainInterface {
     /// Called when a new reward period has started. Returns the weight consumed.
     fn on_new_reward_period(period_index: &RewardPeriodIndex) -> Weight;
 
-    /// Called when a node receives a reward.
+    /// Called when a node receives a reward. Returns the weight actually consumed.
     fn on_reward_paid(
         period_index: &RewardPeriodIndex,
         node_owner: &Self::AccountId,
         node_id: &Self::AccountId,
         reward_percentage: sp_runtime::Perquintill,
-    );
+    ) -> Weight;
+
+    /// Worst-case weight a single `on_reward_paid` call can consume. Pure (no storage access) so
+    /// callers can include it in their pre-dispatch (`#[pallet::weight]`) bound.
+    fn reward_paid_weight() -> Weight;
 
     /// Called when all rewards for `period_index` have been paid out.
     fn on_reward_period_completed(period_index: &RewardPeriodIndex);
@@ -503,7 +507,12 @@ impl<AccountId> AppChainInterface for NoopAppChainInterface<AccountId> {
         _node_owner: &AccountId,
         _node_id: &AccountId,
         _reward_percentage: sp_runtime::Perquintill,
-    ) {
+    ) -> Weight {
+        Weight::zero()
+    }
+
+    fn reward_paid_weight() -> Weight {
+        Weight::zero()
     }
 
     fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {}
@@ -521,7 +530,12 @@ impl AppChainInterface for () {
         _node_owner: &(),
         _node_id: &(),
         _reward_percentage: sp_runtime::Perquintill,
-    ) {
+    ) -> Weight {
+        Weight::zero()
+    }
+
+    fn reward_paid_weight() -> Weight {
+        Weight::zero()
     }
 
     fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {}

@@ -52,7 +52,7 @@ fn register_nodes(
     }
 
     let this_node = TestAccount::new([0 as u8; 32]).account_id();
-    let this_node_signing_key = 0;
+    let this_node_signing_key = 1;
 
     set_ocw_node_id(this_node);
     UintAuthorityId::set_all_keys(vec![UintAuthorityId(this_node_signing_key)]);

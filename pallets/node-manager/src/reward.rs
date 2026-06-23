@@ -56,7 +56,7 @@ impl<T: Config> Pallet<T> {
         node_info: &NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>,
         amount: BalanceOf<T>,
         reward_percentage: Perquintill,
-    ) -> DispatchResult {
+    ) -> Result<Weight, DispatchError> {
         let node_owner = node_info.owner.clone();
 
         if amount.is_zero() {
@@ -68,7 +68,7 @@ impl<T: Config> Pallet<T> {
                 amount,
             });
 
-            return Ok(())
+            return Ok(Weight::zero())
         }
 
         let reward_pot_account_id = Self::compute_reward_account_id();
@@ -90,8 +90,9 @@ impl<T: Config> Pallet<T> {
             amount: net_reward,
         });
 
-        // Notify app chains that a reward has been paid
-        T::AppChainInterface::on_reward_paid(period, &node_owner, &node_id, reward_percentage);
+        // Notify app chains that a reward has been paid and return the weight of any work done by the hook.
+        let hook_weight =
+            T::AppChainInterface::on_reward_paid(period, &node_owner, &node_id, reward_percentage);
 
         if reward_fee > Zero::zero() {
             // Pay the fee to the treasury
@@ -101,7 +102,7 @@ impl<T: Config> Pallet<T> {
         }
 
         if net_reward <= Zero::zero() {
-            return Ok(())
+            return Ok(hook_weight)
         }
 
         if Self::time_now_sec() < node_info.auto_stake_expiry || node_info.auto_stake_rewards {
@@ -122,7 +123,7 @@ impl<T: Config> Pallet<T> {
             }
         }
 
-        Ok(())
+        Ok(hook_weight)
     }
 
     pub fn remove_paid_nodes(

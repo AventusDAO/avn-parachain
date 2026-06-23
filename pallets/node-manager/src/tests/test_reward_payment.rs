@@ -40,7 +40,7 @@ fn register_nodes(registrar: AccountId, owner: AccountId, num_of_nodes: u8) -> A
     }
 
     let this_node = TestAccount::new([0 as u8; 32]).account_id();
-    let this_node_signing_key = 0;
+    let this_node_signing_key = 1;
 
     set_ocw_node_id(this_node);
     UintAuthorityId::set_all_keys(vec![UintAuthorityId(this_node_signing_key)]);
@@ -531,6 +531,9 @@ mod reward {
                 &mut offchain_state.write(),
                 &Some(hex::encode(1u32.encode()).into()),
             );
+            // Make sure author is primary
+            UintAuthorityId::set_all_keys(vec![UintAuthorityId(0)]);
+
             NodeManager::offchain_worker(System::block_number());
             let tx = pop_payment_tx_from_mempool(pool_state);
             assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
@@ -1108,6 +1111,7 @@ mod end_2_end {
     fn complete_reward_period_and_pay(
         pool_state: Arc<RwLock<PoolState>>,
         offchain_state: Arc<RwLock<OffchainState>>,
+        primary_author_index: u64
     ) {
         let reward_period = <RewardPeriod<TestRuntime>>::get();
         let reward_period_length = reward_period.length as u64;
@@ -1120,6 +1124,10 @@ mod end_2_end {
             &mut offchain_state.write(),
             &Some(hex::encode(1u32.encode()).into()),
         );
+
+        // Make sure author is primary
+        UintAuthorityId::set_all_keys(vec![UintAuthorityId(primary_author_index)]);
+
         NodeManager::offchain_worker(System::block_number());
         let tx = pop_payment_tx_from_mempool(pool_state.clone());
         assert_ok!(tx.function.clone().dispatch(frame_system::RawOrigin::None.into()));
@@ -1198,7 +1206,7 @@ mod end_2_end {
             assert_eq!(new_node_uptime.weight, 100_000_000u128 * expected_uptime as u128);
 
             // Pay out
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 0);
 
             let context_node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let new_node_info = NodeRegistry::<TestRuntime>::get(&new_node).unwrap();
@@ -1230,7 +1238,7 @@ mod end_2_end {
             incr_heartbeats(reward_period, vec![new_node], (expected_uptime / 2) as u64);
 
             // Pay out
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 1);
 
             let context_node_stake =
                 NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap().stake.amount;
@@ -1411,7 +1419,7 @@ mod end_2_end {
             let new_owner_balance_before = Balances::free_balance(&new_owner);
 
             // Pay out
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 0);
 
             // No auto staking because auto_stake_rewards has been explicitly disabled
             assert!(!System::events().iter().any(|e| matches!(e.event,
@@ -1516,7 +1524,7 @@ mod end_2_end {
             incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
 
             // First payout - within the auto-stake period
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 0);
 
             let node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             assert!(node_info.auto_stake_rewards, "auto_stake_rewards should be true by default");
@@ -1533,7 +1541,7 @@ mod end_2_end {
             incr_heartbeats(second_period, vec![context.ocw_node], expected_uptime as u64);
 
             // Second payout - PAST the auto_stake_expiry, but auto_stake_rewards is still true
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 1);
 
             let node_info_after = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let stake_after_second_payout = node_info_after.stake.amount;
@@ -1589,7 +1597,7 @@ mod end_2_end {
             incr_heartbeats(first_period, vec![context.ocw_node], expected_uptime as u64 - 1);
 
             // First payout - within the auto-stake period
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 0);
 
             let node_info = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
             let auto_stake_expiry = node_info.auto_stake_expiry;
@@ -1615,7 +1623,7 @@ mod end_2_end {
             let owner_balance_before = Balances::free_balance(&context.owner);
 
             // Second payout - PAST the auto_stake_expiry, with auto_stake_rewards = false
-            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone());
+            complete_reward_period_and_pay(pool_state.clone(), offchain_state.clone(), 1);
 
             let node_info_after = NodeRegistry::<TestRuntime>::get(&context.ocw_node).unwrap();
 

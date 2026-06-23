@@ -369,18 +369,20 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::RewardFeePercentage` (r:1 w:0)
 	/// Proof: `NodeManager::RewardFeePercentage` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `AvnAnchor::PeriodChainReward` (r:1 w:0)
+	/// Proof: `AvnAnchor::PeriodChainReward` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 1000]`.
 	fn offchain_pay_nodes(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `2680 + b * (248 ±0)`
+		//  Measured:  `2684 + b * (248 ±0)`
 		//  Estimated: `6196 + b * (2666 ±0)`
-		// Minimum execution time: 195_354_000 picoseconds.
-		Weight::from_parts(69_322_158, 6196)
-			// Standard Error: 11_525
-			.saturating_add(Weight::from_parts(69_640_027, 0).saturating_mul(b.into()))
-			.saturating_add(T::DbWeight::get().reads(12_u64))
+		// Minimum execution time: 198_818_000 picoseconds.
+		Weight::from_parts(5_039_523_739, 6196)
+			// Standard Error: 458_138
+			.saturating_add(Weight::from_parts(45_243_575, 0).saturating_mul(b.into()))
+			.saturating_add(T::DbWeight::get().reads(13_u64))
 			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(b.into())))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(b.into())))
@@ -1010,18 +1012,20 @@ impl WeightInfo for () {
 	/// Proof: `NodeManager::NodeRegistry` (`max_values`: None, `max_size`: Some(191), added: 2666, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::RewardFeePercentage` (r:1 w:0)
 	/// Proof: `NodeManager::RewardFeePercentage` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `AvnAnchor::PeriodChainReward` (r:1 w:0)
+	/// Proof: `AvnAnchor::PeriodChainReward` (`max_values`: None, `max_size`: Some(81), added: 2556, mode: `MaxEncodedLen`)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	/// The range of component `b` is `[1, 1000]`.
 	fn offchain_pay_nodes(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `2680 + b * (248 ±0)`
+		//  Measured:  `2684 + b * (248 ±0)`
 		//  Estimated: `6196 + b * (2666 ±0)`
-		// Minimum execution time: 195_354_000 picoseconds.
-		Weight::from_parts(69_322_158, 6196)
-			// Standard Error: 11_525
-			.saturating_add(Weight::from_parts(69_640_027, 0).saturating_mul(b.into()))
-			.saturating_add(RocksDbWeight::get().reads(12_u64))
+		// Minimum execution time: 198_818_000 picoseconds.
+		Weight::from_parts(5_039_523_739, 6196)
+			// Standard Error: 458_138
+			.saturating_add(Weight::from_parts(45_243_575, 0).saturating_mul(b.into()))
+			.saturating_add(RocksDbWeight::get().reads(13_u64))
 			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(b.into())))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(b.into())))

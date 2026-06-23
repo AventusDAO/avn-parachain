@@ -1011,3 +1011,406 @@ fn register_appchain_does_not_update_storage_on_failure() {
         assert!(RegisteredAppchains::<TestRuntime>::get().is_empty());
     });
 }
+
+// ---------------------------------------------------------------------------
+// App-chain rewards
+// ---------------------------------------------------------------------------
+mod app_chain_rewards {
+    use super::*;
+    use crate::{
+        NextRewardAmountPerPeriod, PeriodChainReward, RewardRecord, SweepCursor, UnpaidByNode,
+        UnpaidByPeriod,
+    };
+    use frame_support::weights::{Weight, WeightMeter};
+    use orml_traits::MultiCurrency;
+    use sp_avn_common::{primitives::Balance, AppChainInterface};
+    use sp_core::H160;
+    use sp_runtime::Perquintill;
+
+    type Anchor = AvnAnchor;
+
+    fn register_rewardable_chain(handler: AccountId, seed: u8, asset_id: CurrencyId) -> H160 {
+        let token = make_token(seed);
+        assert_ok!(register_appchain_call(handler, b"Chain", b"TKN", token, asset_id));
+        token
+    }
+
+    fn fund_pot(asset_id: CurrencyId, amount: Balance) {
+        assert_ok!(<Tokens as MultiCurrency<AccountId>>::deposit(
+            asset_id,
+            &reward_pot_account(),
+            amount
+        ));
+    }
+
+    fn token_balance(asset_id: CurrencyId, who: &AccountId) -> Balance {
+        <Tokens as MultiCurrency<AccountId>>::free_balance(asset_id, who)
+    }
+
+    #[test]
+    fn set_appchain_period_reward_works() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            let token = register_rewardable_chain(handler, 1, asset_id);
+
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+
+            assert_eq!(
+                NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id),
+                Some((token, 1_000))
+            );
+            System::assert_last_event(
+                Event::AppChainRewardAmountPerPeriodUpdated { asset_id, amount: 1_000 }.into(),
+            );
+        });
+    }
+
+    #[test]
+    fn set_appchain_period_reward_rejects_zero_and_bad_callers() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let stranger = create_account_id(9);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+
+            assert_noop!(
+                Anchor::set_appchain_period_reward(RuntimeOrigin::signed(handler), asset_id, 0),
+                Error::<TestRuntime>::ZeroRewardAmount
+            );
+            assert_noop!(
+                Anchor::set_appchain_period_reward(
+                    RuntimeOrigin::signed(handler),
+                    Asset::ForeignAsset(99),
+                    10
+                ),
+                Error::<TestRuntime>::AppChainAssetNotRegistered
+            );
+            assert_noop!(
+                Anchor::set_appchain_period_reward(RuntimeOrigin::signed(stranger), asset_id, 10),
+                Error::<TestRuntime>::NotAppChainHandler
+            );
+        });
+    }
+
+    #[test]
+    fn on_new_reward_period_snapshots_rate_and_token() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            let token = register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                5_000
+            ));
+
+            <Anchor as AppChainInterface>::on_new_reward_period(&7);
+
+            assert_eq!(PeriodChainReward::<TestRuntime>::get(7, asset_id), Some((token, 5_000)));
+        });
+    }
+
+    #[test]
+    fn on_reward_paid_records_share_and_skips_zero() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(9);
+            let owner = create_account_id(1);
+            let node = create_account_id(2);
+            let zero_node = create_account_id(3);
+
+            // A pool must exist for the period, otherwise recording is skipped (see other test).
+            accrue(7, handler, Asset::ForeignAsset(1), 1, 1_000);
+
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &7,
+                &owner,
+                &node,
+                Perquintill::from_percent(25),
+            );
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &7,
+                &owner,
+                &zero_node,
+                Perquintill::zero(),
+            );
+
+            assert_eq!(
+                UnpaidByPeriod::<TestRuntime>::get(7, node),
+                Some(RewardRecord { owner, share: Perquintill::from_percent(25) })
+            );
+            assert!(UnpaidByNode::<TestRuntime>::contains_key(node, 7));
+            // Zero share is not recorded.
+            assert!(UnpaidByPeriod::<TestRuntime>::get(7, zero_node).is_none());
+        });
+    }
+
+    #[test]
+    fn on_reward_paid_skips_when_no_pool_for_period() {
+        new_test_ext().execute_with(|| {
+            let owner = create_account_id(1);
+            let node = create_account_id(2);
+
+            // No app chain funded a pool for period 7 (no `on_new_reward_period` snapshot).
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &7,
+                &owner,
+                &node,
+                Perquintill::from_percent(25),
+            );
+
+            assert!(UnpaidByPeriod::<TestRuntime>::get(7, node).is_none());
+            assert!(!UnpaidByNode::<TestRuntime>::contains_key(node, 7));
+        });
+    }
+
+    fn accrue(period: u64, handler: AccountId, asset_id: CurrencyId, seed: u8, rate: Balance)
+        -> H160
+    {
+        let token = register_rewardable_chain(handler, seed, asset_id);
+        assert_ok!(Anchor::set_appchain_period_reward(
+            RuntimeOrigin::signed(handler),
+            asset_id,
+            rate
+        ));
+        <Anchor as AppChainInterface>::on_new_reward_period(&period);
+        token
+    }
+
+    #[test]
+    fn claim_pays_owner_and_clears_records() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let node = create_account_id(3);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 4u64;
+
+            accrue(period, handler, asset_id, 1, 1_000);
+            fund_pot(asset_id, 10_000);
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node,
+                Perquintill::from_percent(30),
+            );
+
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node));
+
+            // 30% of 1_000 = 300 paid to owner in the chain's token.
+            assert_eq!(token_balance(asset_id, &owner), 300);
+            assert!(UnpaidByPeriod::<TestRuntime>::get(period, node).is_none());
+            assert!(!UnpaidByNode::<TestRuntime>::contains_key(node, period));
+            // Snapshot reclaimed once the last record for the period is gone.
+            assert!(PeriodChainReward::<TestRuntime>::get(period, asset_id).is_none());
+            System::assert_has_event(
+                Event::AppChainRewardPayoutCompleted { reward_period: period }.into(),
+            );
+        });
+    }
+
+    #[test]
+    fn claim_without_rewards_fails() {
+        new_test_ext().execute_with(|| {
+            let caller = create_account_id(1);
+            let node = create_account_id(2);
+            assert_noop!(
+                Anchor::claim(RuntimeOrigin::signed(caller), node),
+                Error::<TestRuntime>::NoUnpaidRewards
+            );
+        });
+    }
+
+    #[test]
+    fn double_claim_is_a_noop() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let node = create_account_id(3);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 4u64;
+
+            accrue(period, handler, asset_id, 1, 1_000);
+            fund_pot(asset_id, 10_000);
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node,
+                Perquintill::from_percent(30),
+            );
+
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node));
+            assert_eq!(token_balance(asset_id, &owner), 300);
+            // Nothing left to claim.
+            assert_noop!(
+                Anchor::claim(RuntimeOrigin::signed(owner), node),
+                Error::<TestRuntime>::NoUnpaidRewards
+            );
+            assert_eq!(token_balance(asset_id, &owner), 300);
+        });
+    }
+
+    #[test]
+    fn underfunded_pot_leaves_record_for_retry() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let node = create_account_id(3);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 4u64;
+
+            accrue(period, handler, asset_id, 1, 1_000);
+            // Pot NOT funded.
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node,
+                Perquintill::from_percent(30),
+            );
+
+            // claim_node attempts the payout; it fails internally and emits the failure event.
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node));
+            assert_eq!(token_balance(asset_id, &owner), 0);
+            // Record retained for a later retry, snapshot intact.
+            assert!(UnpaidByPeriod::<TestRuntime>::get(period, node).is_some());
+            assert!(PeriodChainReward::<TestRuntime>::get(period, asset_id).is_some());
+
+            // Once funded, a retry pays out.
+            fund_pot(asset_id, 10_000);
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node));
+            assert_eq!(token_balance(asset_id, &owner), 300);
+        });
+    }
+
+    #[test]
+    fn process_outstanding_rewards_sweeps_all_nodes() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let node_a = create_account_id(3);
+            let node_b = create_account_id(4);
+            let caller = create_account_id(5);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 4u64;
+
+            accrue(period, handler, asset_id, 1, 1_000);
+            fund_pot(asset_id, 10_000);
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node_a,
+                Perquintill::from_percent(10),
+            );
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node_b,
+                Perquintill::from_percent(20),
+            );
+
+            assert_ok!(Anchor::process_outstanding_rewards(RuntimeOrigin::signed(caller)));
+
+            // 10% + 20% of 1_000 = 300 total to the shared owner.
+            assert_eq!(token_balance(asset_id, &owner), 300);
+            assert!(UnpaidByPeriod::<TestRuntime>::iter_prefix(period).next().is_none());
+            assert!(PeriodChainReward::<TestRuntime>::get(period, asset_id).is_none());
+
+            assert_noop!(
+                Anchor::process_outstanding_rewards(RuntimeOrigin::signed(caller)),
+                Error::<TestRuntime>::NoUnpaidRewards
+            );
+        });
+    }
+
+    // A record whose payout always fails (underfunded asset) must not block records behind it.
+    // With one payout per call, the cursor steps past the failure so the funded record is still
+    // paid within a single pass, regardless of hash-iteration order.
+    #[test]
+    fn sweep_cursor_does_not_starve_funded_records() {
+        new_test_ext().execute_with(|| {
+            let handler_a = create_account_id(10);
+            let handler_b = create_account_id(11);
+            let owner_fail = create_account_id(1);
+            let owner_ok = create_account_id(2);
+            let node_fail = create_account_id(3);
+            let node_ok = create_account_id(4);
+            let asset_a = Asset::ForeignAsset(1);
+            let asset_b = Asset::ForeignAsset(2);
+
+            // Register both chains so payouts route through the asset registry.
+            let token_a = register_rewardable_chain(handler_a, 1, asset_a);
+            let token_b = register_rewardable_chain(handler_b, 2, asset_b);
+
+            // Period 1 pays asset A, but the pot is never funded for A -> always fails.
+            PeriodChainReward::<TestRuntime>::insert(1, asset_a, (token_a, 1_000));
+            UnpaidByPeriod::<TestRuntime>::insert(
+                1,
+                node_fail,
+                RewardRecord { owner: owner_fail, share: Perquintill::from_percent(100) },
+            );
+            UnpaidByNode::<TestRuntime>::insert(node_fail, 1, ());
+
+            // Period 2 pays asset B and the pot is funded -> succeeds.
+            PeriodChainReward::<TestRuntime>::insert(2, asset_b, (token_b, 1_000));
+            UnpaidByPeriod::<TestRuntime>::insert(
+                2,
+                node_ok,
+                RewardRecord { owner: owner_ok, share: Perquintill::from_percent(100) },
+            );
+            UnpaidByNode::<TestRuntime>::insert(node_ok, 2, ());
+            fund_pot(asset_b, 1_000_000);
+
+            // One payout per call: a front-positioned failure would starve node_ok without a cursor.
+            let mut meter = WeightMeter::with_limit(Weight::MAX);
+            Anchor::sweep(&mut meter, 1);
+            let mut meter = WeightMeter::with_limit(Weight::MAX);
+            Anchor::sweep(&mut meter, 1);
+
+            // Funded record is paid within one pass; failed record is retained for retry.
+            assert_eq!(token_balance(asset_b, &owner_ok), 1_000);
+            assert!(UnpaidByPeriod::<TestRuntime>::get(2, node_ok).is_none());
+            assert!(UnpaidByPeriod::<TestRuntime>::get(1, node_fail).is_some());
+        });
+    }
+
+    // The cursor advances one record per call and wraps to `None` once the pass is exhausted.
+    #[test]
+    fn sweep_cursor_advances_then_wraps() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let n1 = create_account_id(3);
+            let n2 = create_account_id(4);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 5u64;
+
+            accrue(period, handler, asset_id, 1, 1_000);
+            fund_pot(asset_id, 1_000_000);
+            for node in [n1, n2] {
+                UnpaidByPeriod::<TestRuntime>::insert(
+                    period,
+                    node,
+                    RewardRecord { owner, share: Perquintill::from_percent(10) },
+                );
+                UnpaidByNode::<TestRuntime>::insert(node, period, ());
+            }
+
+            // First two calls pay one record each and leave a resume cursor.
+            let mut meter = WeightMeter::with_limit(Weight::MAX);
+            assert_eq!(Anchor::sweep(&mut meter, 1), 1);
+            assert!(SweepCursor::<TestRuntime>::get().is_some());
+            let mut meter = WeightMeter::with_limit(Weight::MAX);
+            assert_eq!(Anchor::sweep(&mut meter, 1), 1);
+
+            // Third call finds nothing after the cursor, so it wraps to None.
+            let mut meter = WeightMeter::with_limit(Weight::MAX);
+            assert_eq!(Anchor::sweep(&mut meter, 1), 0);
+            assert!(SweepCursor::<TestRuntime>::get().is_none());
+            assert!(UnpaidByPeriod::<TestRuntime>::iter_prefix(period).next().is_none());
+        });
+    }
+}

@@ -55,7 +55,7 @@ use sp_version::RuntimeVersion;
 use sp_avn_common::{
     constants::{currency::*, time::*},
     event_discovery::filters::{AllEventsFilter, NoEventsFilter},
-    Asset,
+    Asset, NODE_MANAGER_PALLET_ID
 };
 use sp_core::{ConstU128, H160};
 use sp_watchtower::NoopWatchtower;
@@ -499,6 +499,9 @@ impl pallet_summary::Config<AvnAnchorSummary> for Runtime {
 
 parameter_types! {
     pub const MaxRegisteredAppChains: u32 = 100;
+    pub const AvnAnchorRewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
+    pub AvnAnchorRewardPot: AccountId = AvnAnchorRewardPotId::get().into_account_truncating();
+    pub const MaxRewardPayoutBatch: u32 = 100;
 }
 
 impl pallet_avn_anchor::Config for Runtime {
@@ -515,6 +518,20 @@ impl pallet_avn_anchor::Config for Runtime {
     type MaxRegisteredAppChains = MaxRegisteredAppChains;
     type AssetRegistryStringLimit = AssetRegistryStringLimit;
     type AssetRegistry = AssetRegistry;
+    type RewardPot = AvnAnchorRewardPot;
+    type MaxRewardPayoutBatch = MaxRewardPayoutBatch;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_avn_anchor::benchmarking::BenchmarkHelper<Runtime> for Runtime {
+    fn fund_reward_pot(asset_id: CurrencyId, amount: Balance) {
+        use orml_traits::MultiCurrency;
+        let _ = <OrmlTokens as MultiCurrency<AccountId>>::deposit(
+            asset_id,
+            &AvnAnchorRewardPot::get(),
+            amount,
+        );
+    }
 }
 
 pub type EthAddress = H160;

@@ -396,7 +396,12 @@ impl sp_avn_common::AppChainInterface for TestRuntime {
         _node_owner: &AccountId,
         _node_id: &AccountId,
         _reward_percentage: sp_runtime::Perquintill,
-    ) {
+    ) -> frame_support::weights::Weight {
+        frame_support::weights::Weight::zero()
+    }
+
+    fn reward_paid_weight() -> frame_support::weights::Weight {
+        frame_support::weights::Weight::zero()
     }
 
     fn on_reward_period_completed(_period_index: &u64) {}
