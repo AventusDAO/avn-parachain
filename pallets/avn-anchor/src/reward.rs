@@ -61,13 +61,14 @@ impl<T: Config> AppChainInterface for Pallet<T> {
             RewardRecord { owner: node_owner.clone(), share: reward_percentage },
         );
         UnpaidByNode::<T>::insert(node_id, *period_index, ());
-        <T as Config>::WeightInfo::on_reward_paid()
+        // Cost of recording a single node (base trie path + one record).
+        <T as Config>::WeightInfo::on_reward_paid(1)
     }
 
-    /// Worst-case `on_reward_paid` weight (the recording path): the emptiness probe plus two
-    /// writes.
-    fn reward_paid_weight() -> Weight {
-        <T as Config>::WeightInfo::on_reward_paid()
+    /// Weight to record rewards for `num_nodes` nodes settled in a single period — what
+    /// node-manager folds into its batched `offchain_pay_nodes` pre-dispatch bound.
+    fn reward_paid_weight(num_nodes: u32) -> Weight {
+        <T as Config>::WeightInfo::on_reward_paid(num_nodes)
     }
 
     fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {

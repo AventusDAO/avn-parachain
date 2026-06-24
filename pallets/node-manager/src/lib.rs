@@ -857,10 +857,7 @@ pub mod pallet {
         #[pallet::call_index(2)]
         #[pallet::weight(
             <T as Config>::WeightInfo::offchain_pay_nodes(MAX_BATCH_SIZE)
-                .saturating_add(
-                    T::AppChainInterface::reward_paid_weight()
-                        .saturating_mul(MAX_BATCH_SIZE as u64)
-                )
+                .saturating_add(T::AppChainInterface::reward_paid_weight(MAX_BATCH_SIZE))
         )]
         pub fn offchain_pay_nodes(
             origin: OriginFor<T>,
@@ -941,16 +938,13 @@ pub mod pallet {
                 )
             };
 
-            // Calculate the actual AppChainInterface hook weight.
-            let mut hook_weight = Weight::zero();
             for (node, uptime) in iter.by_ref().take(MaxBatchSize::<T>::get() as usize) {
-                match pay(&node, uptime) {
-                    Ok(w) => hook_weight = hook_weight.saturating_add(w),
-                    Err(e) => Self::deposit_event(Event::ErrorPayingReward {
+                if let Err(e) = pay(&node, uptime) {
+                    Self::deposit_event(Event::ErrorPayingReward {
                         reward_period: oldest_period,
                         node: node.clone(),
                         error: e,
-                    }),
+                    });
                 }
                 // We always move on even if payment fails. Failed payments will be handled
                 // offchain.
@@ -965,9 +959,12 @@ pub mod pallet {
             } else {
                 Self::complete_reward_payout(oldest_period);
             }
+
             return Ok(Some(
                 <T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32)
-                    .saturating_add(hook_weight),
+                    .saturating_add(T::AppChainInterface::reward_paid_weight(
+                        paid_nodes.len() as u32
+                    )),
             )
             .into())
         }

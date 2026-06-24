@@ -485,9 +485,8 @@ pub trait AppChainInterface {
         reward_percentage: sp_runtime::Perquintill,
     ) -> Weight;
 
-    /// Worst-case weight a single `on_reward_paid` call can consume. Pure (no storage access) so
-    /// callers can include it in their pre-dispatch (`#[pallet::weight]`) bound.
-    fn reward_paid_weight() -> Weight;
+    /// Worst-case weight to record rewards for `num_nodes` nodes settled in a single reward period.
+    fn reward_paid_weight(num_nodes: u32) -> Weight;
 
     /// Called when all rewards for `period_index` have been paid out.
     fn on_reward_period_completed(period_index: &RewardPeriodIndex);
@@ -511,7 +510,7 @@ impl<AccountId> AppChainInterface for NoopAppChainInterface<AccountId> {
         Weight::zero()
     }
 
-    fn reward_paid_weight() -> Weight {
+    fn reward_paid_weight(_num_nodes: u32) -> Weight {
         Weight::zero()
     }
 
@@ -534,7 +533,7 @@ impl AppChainInterface for () {
         Weight::zero()
     }
 
-    fn reward_paid_weight() -> Weight {
+    fn reward_paid_weight(_num_nodes: u32) -> Weight {
         Weight::zero()
     }
 

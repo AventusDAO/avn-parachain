@@ -400,7 +400,7 @@ impl sp_avn_common::AppChainInterface for TestRuntime {
         frame_support::weights::Weight::zero()
     }
 
-    fn reward_paid_weight() -> frame_support::weights::Weight {
+    fn reward_paid_weight(_num_nodes: u32) -> frame_support::weights::Weight {
         frame_support::weights::Weight::zero()
     }
 

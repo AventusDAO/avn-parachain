@@ -498,10 +498,10 @@ impl pallet_summary::Config<AvnAnchorSummary> for Runtime {
 }
 
 parameter_types! {
-    pub const MaxRegisteredAppChains: u32 = 100;
+    pub const MaxRegisteredAppChains: u32 = 25;
     pub const AvnAnchorRewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
     pub AvnAnchorRewardPot: AccountId = AvnAnchorRewardPotId::get().into_account_truncating();
-    pub const MaxRewardPayoutBatch: u32 = 100;
+    pub const MaxRewardPayoutBatch: u32 = 10;
 }
 
 impl pallet_avn_anchor::Config for Runtime {

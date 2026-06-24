@@ -343,22 +343,32 @@ benchmarks! {
         assert!(UnpaidByPeriod::<T>::get(period, &node).is_none());
     }
 
-    // `n` = number of unpaid periods claimed for one node.
+    // `p` = number of unpaid periods claimed for one node.
+    // `c` = number of registered app chains funded in each of those periods. Each period's payout
+    // iterates every funded chain, so the worst case scales with both dimensions (`p * c` payouts).
     claim {
-        let n in 1 .. T::MaxRewardPayoutBatch::get();
-        let handler: T::AccountId = create_account_id::<T>(50);
+        let p in 1 .. T::MaxRewardPayoutBatch::get();
+        let c in 1 .. T::MaxRegisteredAppChains::get();
         let owner: T::AccountId = create_account_id::<T>(0);
         let node: T::AccountId = create_account_id::<T>(1);
         let amount = BalanceOf::<T>::from(1_000u32);
 
-        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
-        let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
-        // Fund well above total payouts so the pot stays above its existential deposit.
-        T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
+        // Register `c` app chains and fund the pot for each so every payout succeeds.
+        let mut chains: Vec<(T::AppChainAssetId, T::Token)> = Vec::new();
+        for i in 0 .. c {
+            let handler: T::AccountId = create_account_id::<T>(100 + i);
+            let asset_id = register_appchain_for_bench::<T>(&handler, (i + 1) as u8)?;
+            let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
+            // Fund well above total payouts so the pot stays above its existential deposit.
+            T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
+            chains.push((asset_id, token));
+        }
 
-        for p in 0 .. n {
-            let period = p as sp_avn_common::RewardPeriodIndex;
-            PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
+        for pi in 0 .. p {
+            let period = pi as sp_avn_common::RewardPeriodIndex;
+            for (asset_id, token) in chains.iter() {
+                PeriodChainReward::<T>::insert(period, *asset_id, (*token, amount));
+            }
             UnpaidByPeriod::<T>::insert(
                 period,
                 &node,
@@ -372,19 +382,25 @@ benchmarks! {
     }
 
     // `n` = number of (period, node) payouts swept in one call.
+    // `c` = number of registered app chains funded in the period; each payout pays every funded
+    // chain, so the worst case scales with both dimensions (`n * c` payments).
     process_outstanding_rewards {
         let n in 1 .. T::MaxRewardPayoutBatch::get();
-        let handler: T::AccountId = create_account_id::<T>(50);
+        let c in 1 .. T::MaxRegisteredAppChains::get();
         let owner: T::AccountId = create_account_id::<T>(0);
         let caller: T::AccountId = create_account_id::<T>(2);
         let period: sp_avn_common::RewardPeriodIndex = 1;
         let amount = BalanceOf::<T>::from(1_000u32);
 
-        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
-        let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
-        PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
-        // Fund well above total payouts so the pot stays above its existential deposit.
-        T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
+        // Register `c` app chains, snapshot each for the period, and fund the pot for each.
+        for i in 0 .. c {
+            let handler: T::AccountId = create_account_id::<T>(100 + i);
+            let asset_id = register_appchain_for_bench::<T>(&handler, (i + 1) as u8)?;
+            let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
+            PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
+            // Fund well above total payouts so the pot stays above its existential deposit.
+            T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
+        }
 
         for i in 0 .. n {
             let node: T::AccountId = create_account_id::<T>(1_000 + i);
@@ -403,11 +419,12 @@ benchmarks! {
         assert!(UnpaidByPeriod::<T>::iter_prefix(period).next().is_none());
     }
 
-    // Worst case for the `on_reward_paid` hook: a pool exists, so it takes the recording path.
+    // `b` = number of nodes recorded for one period (the recording path; a pool exists).
+    // The range matches node-manager's `MAX_BATCH_SIZE`.
     on_reward_paid {
+        let b in 1 .. 1_000;
         let handler: T::AccountId = create_account_id::<T>(0);
         let owner: T::AccountId = create_account_id::<T>(1);
-        let node: T::AccountId = create_account_id::<T>(2);
         let period: sp_avn_common::RewardPeriodIndex = 1;
 
         let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
@@ -419,15 +436,19 @@ benchmarks! {
         // Snapshot the pool for the period so the hook records rather than short-circuiting.
         <Pallet<T> as AppChainInterface>::on_new_reward_period(&period);
     }: {
-        <Pallet<T> as AppChainInterface>::on_reward_paid(
-            &period,
-            &owner,
-            &node,
-            sp_runtime::Perquintill::from_percent(50),
-        );
+        for i in 0 .. b {
+            let node: T::AccountId = create_account_id::<T>(1_000 + i);
+            <Pallet<T> as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node,
+                sp_runtime::Perquintill::from_percent(50),
+            );
+        }
     }
     verify {
-        assert!(UnpaidByPeriod::<T>::get(period, &node).is_some());
+        let last: T::AccountId = create_account_id::<T>(1_000 + b - 1);
+        assert!(UnpaidByPeriod::<T>::get(period, &last).is_some());
     }
 }
 
