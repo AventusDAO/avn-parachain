@@ -700,7 +700,8 @@ pub mod pallet {
             Ok(())
         }
 
-        /// Disable an app chain and prevent it from paying out rewards. Already accrued rewards are unaffected.
+        /// Disable an app chain and prevent it from paying out rewards. Already accrued rewards are
+        /// unaffected.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::disable_appchain())]
         #[pallet::call_index(11)]
         pub fn disable_appchain(

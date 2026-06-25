@@ -1394,11 +1394,7 @@ mod app_chain_rewards {
             );
 
             // Root: allowed.
-            assert_ok!(Anchor::set_appchain_period_reward(
-                RuntimeOrigin::root(),
-                asset_id,
-                2_000
-            ));
+            assert_ok!(Anchor::set_appchain_period_reward(RuntimeOrigin::root(), asset_id, 2_000));
             assert_eq!(
                 NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id),
                 Some((token, 2_000))
