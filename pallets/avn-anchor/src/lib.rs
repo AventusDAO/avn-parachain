@@ -653,13 +653,13 @@ pub mod pallet {
             amount: BalanceOf<T>,
         ) -> DispatchResult {
             ensure!(amount > Zero::zero(), Error::<T>::ZeroRewardAmount);
+            let was_active = Self::appchain_is_active(asset_id);
+
             // Authorised inside `do_set_appchain_period_reward` (root or the registered handler).
             Self::do_set_appchain_period_reward(origin, asset_id, amount)?;
-
             Self::deposit_event(Event::AppChainRewardAmountPerPeriodUpdated { asset_id, amount });
 
-            let active_appchain = Self::appchain_is_active(asset_id);
-            if !active_appchain {
+            if !was_active {
                 Self::deposit_event(Event::AppChainEnabled { asset_id });
             }
 
