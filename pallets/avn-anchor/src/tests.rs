@@ -1104,11 +1104,11 @@ mod app_chain_rewards {
     }
 
     #[test]
-    fn disable_appchain_zeroes_rate_and_emits_event() {
+    fn disable_appchain_removes_entry_and_emits_event() {
         new_test_ext().execute_with(|| {
             let handler = create_account_id(1);
             let asset_id = Asset::ForeignAsset(1);
-            let token = register_rewardable_chain(handler, 1, asset_id);
+            register_rewardable_chain(handler, 1, asset_id);
             assert_ok!(Anchor::set_appchain_period_reward(
                 RuntimeOrigin::signed(handler),
                 asset_id,
@@ -1117,24 +1117,25 @@ mod app_chain_rewards {
 
             assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
 
-            // Rate zeroed (token preserved) so the chain is inactive, and the event fires.
-            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id), Some((token, 0)));
+            // Disabling removes the entry entirely so the chain is inactive, and the event fires.
+            assert!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id).is_none());
             System::assert_last_event(Event::AppChainDisabled { asset_id }.into());
         });
     }
 
     #[test]
-    fn disable_appchain_works_without_a_prior_rate() {
+    fn disable_appchain_rejects_inactive_chain() {
         new_test_ext().execute_with(|| {
             let handler = create_account_id(1);
             let asset_id = Asset::ForeignAsset(1);
-            let token = register_rewardable_chain(handler, 1, asset_id);
-            // Registered but no rate ever set.
+            register_rewardable_chain(handler, 1, asset_id);
+            // Registered but no rate ever set, so it is already inactive.
             assert!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id).is_none());
 
-            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
-
-            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id), Some((token, 0)));
+            assert_noop!(
+                Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id),
+                Error::<TestRuntime>::AppChainNotActive
+            );
         });
     }
 
@@ -1173,7 +1174,7 @@ mod app_chain_rewards {
 
             assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
 
-            // A disabled (zero-rate) chain must not be snapshotted when a new period starts.
+            // A disabled chain (entry removed) must not be snapshotted when a new period starts.
             <Anchor as AppChainInterface>::on_new_reward_period(&7);
             assert!(PeriodChainReward::<TestRuntime>::get(7, asset_id).is_none());
         });
@@ -1218,7 +1219,12 @@ mod app_chain_rewards {
             register_rewardable_chain(handler, 1, asset_id);
             let chain_id =
                 Anchor::asset_chain_id(asset_id).expect("registered chain has a chain id");
-            // Must be disabled first.
+            // Must be disabled first (set a rate so it is active, then disable).
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
             assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
 
             assert_ok!(Anchor::deregister_appchain(RuntimeOrigin::root(), handler, asset_id));
@@ -1264,6 +1270,11 @@ mod app_chain_rewards {
             let stranger = create_account_id(9);
             let asset_id = Asset::ForeignAsset(1);
             register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
             assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
 
             // Unknown asset id.
@@ -1289,6 +1300,11 @@ mod app_chain_rewards {
             let handler = create_account_id(1);
             let asset_id = Asset::ForeignAsset(1);
             register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
             assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
 
             assert_noop!(
@@ -1352,14 +1368,14 @@ mod app_chain_rewards {
                 Some((token, 1_000))
             );
 
-            // ...and disable it.
+            // ...and disable it, which removes the entry.
             assert_ok!(Anchor::disable_appchain(RuntimeOrigin::root(), asset_id));
-            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id), Some((token, 0)));
+            assert!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id).is_none());
         });
     }
 
     #[test]
-    fn do_set_appchain_period_reward_authorizes_root_and_handler_only() {
+    fn set_appchain_period_reward_authorizes_root_and_handler_only() {
         new_test_ext().execute_with(|| {
             let handler = create_account_id(1);
             let stranger = create_account_id(9);
@@ -1367,7 +1383,7 @@ mod app_chain_rewards {
             let token = register_rewardable_chain(handler, 1, asset_id);
 
             // Registered handler: allowed.
-            assert_ok!(Anchor::do_set_appchain_period_reward(
+            assert_ok!(Anchor::set_appchain_period_reward(
                 RuntimeOrigin::signed(handler),
                 asset_id,
                 1_000
@@ -1378,7 +1394,7 @@ mod app_chain_rewards {
             );
 
             // Root: allowed.
-            assert_ok!(Anchor::do_set_appchain_period_reward(
+            assert_ok!(Anchor::set_appchain_period_reward(
                 RuntimeOrigin::root(),
                 asset_id,
                 2_000
@@ -1390,7 +1406,7 @@ mod app_chain_rewards {
 
             // Any other signed account: rejected.
             assert_noop!(
-                Anchor::do_set_appchain_period_reward(
+                Anchor::set_appchain_period_reward(
                     RuntimeOrigin::signed(stranger),
                     asset_id,
                     3_000
@@ -1400,7 +1416,7 @@ mod app_chain_rewards {
 
             // Unsigned origin: rejected.
             assert_noop!(
-                Anchor::do_set_appchain_period_reward(RuntimeOrigin::none(), asset_id, 3_000),
+                Anchor::set_appchain_period_reward(RuntimeOrigin::none(), asset_id, 3_000),
                 sp_runtime::DispatchError::BadOrigin
             );
         });

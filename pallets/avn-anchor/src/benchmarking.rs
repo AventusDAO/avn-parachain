@@ -9,7 +9,7 @@ use frame_system::RawOrigin;
 use sp_application_crypto::KeyTypeId;
 use sp_avn_common::{benchmarking::convert_sr25519_signature, AppChainInterface, Asset, Proof};
 use sp_core::H256;
-use sp_runtime::{traits::Zero, RuntimeAppPublic, Saturating};
+use sp_runtime::{RuntimeAppPublic, Saturating};
 
 pub const BENCH_KEY_TYPE_ID: KeyTypeId = KeyTypeId(*b"test");
 
@@ -462,19 +462,19 @@ benchmarks! {
     disable_appchain {
         let handler: T::AccountId = create_account_id::<T>(0);
         let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
-        Pallet::<T>::do_set_appchain_period_reward(RawOrigin::Signed(handler.clone()).into(), asset_id, BalanceOf::<T>::from(1_000u32))?;
+        Pallet::<T>::set_appchain_period_reward(RawOrigin::Signed(handler.clone()).into(), asset_id, BalanceOf::<T>::from(1_000u32))?;
     }: _(RawOrigin::Signed(handler.clone()), asset_id)
     verify {
-        let r = NextRewardAmountPerPeriod::<T>::get(asset_id);
-        assert!(r.is_some(), "Reward amount should exist after setting");
-        assert!(r.unwrap().1 == Zero::zero(), "Reward amount should be zero after disabling");
+        // Disabling removes the entry entirely.
+        assert!(NextRewardAmountPerPeriod::<T>::get(asset_id).is_none(), "Entry should be removed after disabling");
     }
 
     deregister_appchain {
         let handler: T::AccountId = create_account_id::<T>(0);
         let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
-        // Disable (zero rate) so the deregister precondition is satisfied.
-        Pallet::<T>::do_set_appchain_period_reward(RawOrigin::Signed(handler.clone()).into(), asset_id, Zero::zero())?;
+        // Set a rate then disable so the deregister precondition (inactive) is satisfied.
+        Pallet::<T>::set_appchain_period_reward(RawOrigin::Signed(handler.clone()).into(), asset_id, BalanceOf::<T>::from(1_000u32))?;
+        Pallet::<T>::disable_appchain(RawOrigin::Signed(handler.clone()).into(), asset_id)?;
     }: _(RawOrigin::Root, handler.clone(), asset_id)
     verify {
         assert!(AssetIdToChainId::<T>::get(asset_id).is_none());

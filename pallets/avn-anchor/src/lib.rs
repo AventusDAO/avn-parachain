@@ -312,6 +312,8 @@ pub mod pallet {
         NoUnpaidRewards,
         /// The app chain must be disabled before it can be deregistered.
         AppChainNotDisabled,
+        /// The app chain is already disabled or deregistered.
+        AppChainNotActive,
     }
 
     #[pallet::storage]
@@ -652,11 +654,17 @@ pub mod pallet {
             asset_id: T::AppChainAssetId,
             amount: BalanceOf<T>,
         ) -> DispatchResult {
+            Self::ensure_reward_manager(origin, asset_id)?;
+
             ensure!(amount > Zero::zero(), Error::<T>::ZeroRewardAmount);
             let was_active = Self::appchain_is_active(asset_id);
 
-            // Authorised inside `do_set_appchain_period_reward` (root or the registered handler).
-            Self::do_set_appchain_period_reward(origin, asset_id, amount)?;
+            // Resolve the payout token now so it is captured alongside the rate. This makes the
+            // per-period snapshot infallible and guarantees a chain with a rate is always paid out.
+            let token = Self::resolve_payout_token(&asset_id)?;
+
+            NextRewardAmountPerPeriod::<T>::insert(asset_id, (token, amount));
+
             Self::deposit_event(Event::AppChainRewardAmountPerPeriodUpdated { asset_id, amount });
 
             if !was_active {
@@ -692,26 +700,24 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Disable an app chain and prevent it from paying out rewards. Already accrued rewards are unaffected.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::disable_appchain())]
         #[pallet::call_index(11)]
         pub fn disable_appchain(
             origin: OriginFor<T>,
             asset_id: T::AppChainAssetId,
         ) -> DispatchResult {
-            Self::do_set_appchain_period_reward(origin, asset_id, Zero::zero())?;
+            Self::ensure_reward_manager(origin, asset_id)?;
+            ensure!(Self::appchain_is_active(asset_id), Error::<T>::AppChainNotActive);
+
+            NextRewardAmountPerPeriod::<T>::remove(asset_id);
+
             Self::deposit_event(Event::AppChainDisabled { asset_id });
             Ok(())
         }
 
-        /// Fully deregister an app chain: mark its asset non-native, drop it from the reward system
-        /// and remove its routing state. The chain must already be disabled.
-        ///
-        /// Already-accrued rewards are unaffected: outstanding `PeriodChainReward` snapshots
-        /// capture the payout token and are settled via the asset's registry *location*
-        /// (which is left in place), so claims keep working after deregistration.
-        ///
-        /// The asset-registry entry cannot be removed (the registry has no unregister), so its
-        /// `appchain_native` flag is cleared instead. As a result the same `asset_id` / token
+        /// Fully deregister an app chain. The chain must already be disabled.
+        /// Already-accrued rewards are unaffected but the same `asset_id` / token
         /// address can never be registered again.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::deregister_appchain())]
         #[pallet::call_index(12)]
@@ -924,29 +930,20 @@ pub mod pallet {
             r.map_or(false, |(_, amt)| amt > Zero::zero())
         }
 
-        pub fn do_set_appchain_period_reward(
+        /// Ensure `origin` can manage `asset_id`'s reward rate.
+        fn ensure_reward_manager(
             origin: OriginFor<T>,
             asset_id: T::AppChainAssetId,
-            amount: BalanceOf<T>,
         ) -> DispatchResult {
             let chain_id = AssetIdToChainId::<T>::get(asset_id)
                 .ok_or(Error::<T>::AppChainAssetNotRegistered)?;
 
-            // Either root (governance) or the chain's registered handler may set the rate.
-            // `ensure_signed_or_root` yields `None` for root and `Some(account)` for a signed
-            // origin.
             if let Some(sender) = ensure_signed_or_root(origin)? {
                 ensure!(
                     ChainHandlers::<T>::get(&sender) == Some(chain_id),
                     Error::<T>::NotAppChainHandler
                 );
             }
-
-            // Resolve the payout token now so it is captured alongside the rate. This makes the
-            // per-period snapshot infallible and guarantees a chain with a rate is always paid out.
-            let token = Self::resolve_payout_token(&asset_id)?;
-
-            NextRewardAmountPerPeriod::<T>::insert(asset_id, (token, amount));
             Ok(())
         }
     }
