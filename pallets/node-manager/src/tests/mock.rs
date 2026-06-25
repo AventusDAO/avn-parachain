@@ -395,6 +395,7 @@ impl sp_avn_common::AppChainInterface for TestRuntime {
         _period_index: &u64,
         _node_owner: &AccountId,
         _node_id: &AccountId,
+        _auto_stake_expiry: Moment,
         _reward_percentage: sp_runtime::Perquintill,
     ) -> frame_support::weights::Weight {
         frame_support::weights::Weight::zero()

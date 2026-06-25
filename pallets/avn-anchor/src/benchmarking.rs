@@ -9,7 +9,7 @@ use frame_system::RawOrigin;
 use sp_application_crypto::KeyTypeId;
 use sp_avn_common::{benchmarking::convert_sr25519_signature, AppChainInterface, Asset, Proof};
 use sp_core::H256;
-use sp_runtime::{RuntimeAppPublic, Saturating};
+use sp_runtime::{traits::Zero, RuntimeAppPublic, Saturating};
 
 pub const BENCH_KEY_TYPE_ID: KeyTypeId = KeyTypeId(*b"test");
 
@@ -333,9 +333,11 @@ benchmarks! {
         UnpaidByPeriod::<T>::insert(
             period,
             &node,
-            RewardRecord { owner: owner.clone(), share: sp_runtime::Perquintill::from_percent(100) },
+            RewardRecord { owner: owner.clone(), share: sp_runtime::Perquintill::from_percent(100), auto_stake_expiry: 0u64 },
         );
         UnpaidByNode::<T>::insert(&node, period, ());
+        // Mark the period completed so settling the last node reclaims the snapshot (worst case).
+        PeriodPayoutCompleted::<T>::insert(period, ());
     }: {
         Pallet::<T>::try_pay_node_period(period, &node)?;
     }
@@ -347,7 +349,7 @@ benchmarks! {
     // `c` = number of registered app chains funded in each of those periods. Each period's payout
     // iterates every funded chain, so the worst case scales with both dimensions (`p * c` payouts).
     claim {
-        let p in 1 .. T::MaxRewardPayoutBatch::get();
+        let p in 1 .. T::MaxPeriodsPerPayout::get();
         let c in 1 .. T::MaxRegisteredAppChains::get();
         let owner: T::AccountId = create_account_id::<T>(0);
         let node: T::AccountId = create_account_id::<T>(1);
@@ -372,9 +374,11 @@ benchmarks! {
             UnpaidByPeriod::<T>::insert(
                 period,
                 &node,
-                RewardRecord { owner: owner.clone(), share: sp_runtime::Perquintill::from_percent(100) },
+                RewardRecord { owner: owner.clone(), share: sp_runtime::Perquintill::from_percent(100), auto_stake_expiry: 0u64 },
             );
             UnpaidByNode::<T>::insert(&node, period, ());
+            // Mark completed so each period's snapshot is reclaimed on its final settle (worst case).
+            PeriodPayoutCompleted::<T>::insert(period, ());
         }
     }: _(RawOrigin::Signed(owner.clone()), node.clone())
     verify {
@@ -385,7 +389,7 @@ benchmarks! {
     // `c` = number of registered app chains funded in the period; each payout pays every funded
     // chain, so the worst case scales with both dimensions (`n * c` payments).
     process_outstanding_rewards {
-        let n in 1 .. T::MaxRewardPayoutBatch::get();
+        let n in 1 .. T::MaxPeriodsPerPayout::get();
         let c in 1 .. T::MaxRegisteredAppChains::get();
         let owner: T::AccountId = create_account_id::<T>(0);
         let caller: T::AccountId = create_account_id::<T>(2);
@@ -401,6 +405,8 @@ benchmarks! {
             // Fund well above total payouts so the pot stays above its existential deposit.
             T::fund_reward_pot(asset_id, BalanceOf::<T>::from(1_000_000_000u32));
         }
+        // Mark completed so the snapshot is reclaimed once the last node is swept (worst case).
+        PeriodPayoutCompleted::<T>::insert(period, ());
 
         for i in 0 .. n {
             let node: T::AccountId = create_account_id::<T>(1_000 + i);
@@ -410,6 +416,7 @@ benchmarks! {
                 RewardRecord {
                     owner: owner.clone(),
                     share: sp_runtime::Perquintill::from_rational(1u64, n.max(1) as u64),
+                    auto_stake_expiry: 0u64,
                 },
             );
             UnpaidByNode::<T>::insert(&node, period, ());
@@ -442,6 +449,7 @@ benchmarks! {
                 &period,
                 &owner,
                 &node,
+                0u64,
                 sp_runtime::Perquintill::from_percent(50),
             );
         }
@@ -449,6 +457,49 @@ benchmarks! {
     verify {
         let last: T::AccountId = create_account_id::<T>(1_000 + b - 1);
         assert!(UnpaidByPeriod::<T>::get(period, &last).is_some());
+    }
+
+    disable_appchain {
+        let handler: T::AccountId = create_account_id::<T>(0);
+        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
+        Pallet::<T>::do_set_appchain_period_reward(RawOrigin::Signed(handler.clone()).into(), asset_id, BalanceOf::<T>::from(1_000u32))?;
+    }: _(RawOrigin::Signed(handler.clone()), asset_id)
+    verify {
+        let r = NextRewardAmountPerPeriod::<T>::get(asset_id);
+        assert!(r.is_some(), "Reward amount should exist after setting");
+        assert!(r.unwrap().1 == Zero::zero(), "Reward amount should be zero after disabling");
+    }
+
+    deregister_appchain {
+        let handler: T::AccountId = create_account_id::<T>(0);
+        let asset_id = register_appchain_for_bench::<T>(&handler, 1)?;
+        // Disable (zero rate) so the deregister precondition is satisfied.
+        Pallet::<T>::do_set_appchain_period_reward(RawOrigin::Signed(handler.clone()).into(), asset_id, Zero::zero())?;
+    }: _(RawOrigin::Root, handler.clone(), asset_id)
+    verify {
+        assert!(AssetIdToChainId::<T>::get(asset_id).is_none());
+        assert!(!ChainHandlers::<T>::contains_key(&handler));
+        assert!(NextRewardAmountPerPeriod::<T>::get(asset_id).is_none());
+        assert!(!RegisteredAppchains::<T>::get().contains(&asset_id));
+    }
+
+    // Worst case: completing a period that was snapshotted across `MaxRegisteredAppChains` chains but
+    // had no accruals (`UnpaidByPeriod` empty), so the hook reclaims the entire snapshot.
+    on_reward_period_completed {
+        let period: sp_avn_common::RewardPeriodIndex = 1;
+        let amount = BalanceOf::<T>::from(1_000u32);
+        let n = T::MaxRegisteredAppChains::get();
+        for i in 0 .. n {
+            let handler: T::AccountId = create_account_id::<T>(100 + i);
+            let asset_id = register_appchain_for_bench::<T>(&handler, (i + 1) as u8)?;
+            let token = Pallet::<T>::resolve_payout_token(&asset_id).map_err(|_| "token")?;
+            PeriodChainReward::<T>::insert(period, asset_id, (token, amount));
+        }
+    }: {
+        <Pallet<T> as AppChainInterface>::on_reward_period_completed(&period);
+    }
+    verify {
+        assert!(PeriodChainReward::<T>::iter_prefix(period).next().is_none());
     }
 }
 

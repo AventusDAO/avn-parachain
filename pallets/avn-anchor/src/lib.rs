@@ -16,7 +16,7 @@ pub use default_weights::WeightInfo;
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
-use sp_avn_common::{CallDecoder, RewardPeriodIndex};
+pub use sp_avn_common::{node::Moment, CallDecoder, RewardPeriodIndex};
 use sp_core::{ConstU32, Get, H256};
 use sp_runtime::{BoundedVec, Perquintill};
 use sp_std::prelude::*;
@@ -31,8 +31,6 @@ pub mod benchmarking;
 pub mod migration;
 mod reward;
 
-/// Node account ID
-pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 pub type MaximumHandlersBound = ConstU32<256>;
 
 pub type ChainNameLimit = ConstU32<32>;
@@ -46,9 +44,40 @@ pub use self::pallet::*;
 pub type ChainId = u32;
 pub type CheckpointId = u64;
 pub type OriginId = u64;
+/// Node account ID
+pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 
 pub(crate) type BalanceOf<T> =
     <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
+
+/// Decides whether a node may receive a specific app chain's reward for a period.
+///
+/// Implemented by the runtime so eligibility can depend on the app chain (`asset_id`), the node,
+/// the reward `period`, and the node's `auto_stake_expiry` (a UNIX timestamp in seconds, captured
+/// when the reward accrued). It is checked per `(app chain, node)` at payout time: returning
+/// `false` skips that chain's payout for the node (its reward is forfeited; other chains and other
+/// nodes are unaffected).
+pub trait AppChainRewardEligibility<AssetId, AccountId> {
+    fn is_eligible(
+        asset_id: AssetId,
+        node_id: &AccountId,
+        period: RewardPeriodIndex,
+        auto_stake_expiry: Moment,
+    ) -> bool;
+}
+
+/// Default implementation: every node is eligible for every app chain (preserves the behaviour
+/// from before eligibility checks existed).
+impl<AssetId, AccountId> AppChainRewardEligibility<AssetId, AccountId> for () {
+    fn is_eligible(
+        _asset_id: AssetId,
+        _node_id: &AccountId,
+        _period: RewardPeriodIndex,
+        _auto_stake_expiry: Moment,
+    ) -> bool {
+        true
+    }
+}
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -82,6 +111,8 @@ pub mod pallet {
         pub owner: AccountId,
         /// The node's share of the period reward pool (chain-independent).
         pub share: Perquintill,
+        /// The auto-stake expiry of the node as a UNIX timestamp in seconds.
+        pub auto_stake_expiry: Moment,
     }
 
     #[pallet::config]
@@ -149,7 +180,15 @@ pub mod pallet {
         /// The maximum number of `(period, node)` payouts processed in a single `claim` or
         /// `process_outstanding_rewards` call (also bounds the on_idle sweep batch).
         #[pallet::constant]
-        type MaxRewardPayoutBatch: Get<u32>;
+        type MaxPeriodsPerPayout: Get<u32>;
+
+        /// Per-`(app chain, node)` eligibility check applied at payout time. A node only receives
+        /// an app chain's reward for a period when this returns `true`. Use `()` to make
+        /// every node eligible.
+        type AppChainRewardEligibility: AppChainRewardEligibility<
+            Self::AppChainAssetId,
+            Self::AccountId,
+        >;
     }
 
     #[pallet::pallet]
@@ -165,7 +204,7 @@ pub mod pallet {
         /// Pays outstanding app-chain rewards with leftover block weight.
         fn on_idle(_n: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
             let mut meter = WeightMeter::with_limit(remaining_weight);
-            Self::sweep(&mut meter, T::MaxRewardPayoutBatch::get());
+            Self::sweep(&mut meter, T::MaxPeriodsPerPayout::get());
             meter.consumed()
         }
     }
@@ -216,6 +255,15 @@ pub mod pallet {
             node: T::AccountId,
             error: DispatchError,
         },
+
+        /// An app chain was disabled by its handler (reward rate set to zero).
+        AppChainDisabled { asset_id: T::AppChainAssetId },
+
+        /// An app chain was enabled by its handler (reward rate set to non-zero).
+        AppChainEnabled { asset_id: T::AppChainAssetId },
+
+        /// An app chain was fully deregistered (routing state removed, asset marked non-native).
+        AppChainDeregistered { chain_id: ChainId, asset_id: T::AppChainAssetId },
     }
 
     #[pallet::error]
@@ -257,8 +305,13 @@ pub mod pallet {
         NotAppChainHandler,
         /// The app chain asset has no payout token resolvable from the asset registry.
         AppChainTokenNotResolvable,
+        /// The asset resolves to a token but is not flagged `appchain_native` in the asset
+        /// registry.
+        AssetNotAppChainNative,
         /// There are no unpaid rewards to process.
         NoUnpaidRewards,
+        /// The app chain must be disabled before it can be deregistered.
+        AppChainNotDisabled,
     }
 
     #[pallet::storage]
@@ -320,15 +373,14 @@ pub mod pallet {
     pub type RegisteredAppchains<T: Config> =
         StorageValue<_, BoundedVec<T::AppChainAssetId, T::MaxRegisteredAppChains>, ValueQuery>;
 
-    /// The total amount of rewards that will get snapshoted at the begining of the next reward
-    /// period This allows changing to total without affecting unpaid reward periods.
+    /// The total reward amount to be snapshotted at the beginning of the next reward
+    /// period. Stored separately so changing it does not affect unpaid reward periods.
     #[pallet::storage]
     #[pallet::getter(fn appchain_period_reward)]
     pub type NextRewardAmountPerPeriod<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AppChainAssetId, (T::Token, BalanceOf<T>), OptionQuery>;
 
-    /// A snapshoted value that reflects the total amount of rewards that will get distributed to
-    /// nodes.
+    /// A snapshotted value reflecting the total reward amount distributed to nodes for a period.
     #[pallet::storage]
     pub type PeriodChainReward<T: Config> = StorageDoubleMap<
         _,
@@ -369,6 +421,16 @@ pub mod pallet {
     /// than blocking the records behind it. `None` restarts the pass from the beginning.
     #[pallet::storage]
     pub type SweepCursor<T: Config> = StorageValue<_, (RewardPeriodIndex, NodeId<T>), OptionQuery>;
+
+    /// Periods for which node-manager has finished paying out (and therefore finished recording app
+    /// chain shares via `on_reward_paid`). Presence marks a period as safe to reclaim: the
+    /// `PeriodChainReward` snapshot is only cleared once the period is marked here AND all its
+    /// `UnpaidByPeriod` records have been settled. Without this gate, a sweep/claim that
+    /// transiently empties `UnpaidByPeriod` between node-manager's batched payouts would clear
+    /// the snapshot mid-payout, causing later `on_reward_paid` calls to drop their records.
+    #[pallet::storage]
+    pub type PeriodPayoutCompleted<T: Config> =
+        StorageMap<_, Blake2_128Concat, RewardPeriodIndex, (), OptionQuery>;
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
@@ -590,48 +652,113 @@ pub mod pallet {
             asset_id: T::AppChainAssetId,
             amount: BalanceOf<T>,
         ) -> DispatchResult {
-            let sender = ensure_signed(origin)?;
             ensure!(amount > Zero::zero(), Error::<T>::ZeroRewardAmount);
+            // Authorised inside `do_set_appchain_period_reward` (root or the registered handler).
+            Self::do_set_appchain_period_reward(origin, asset_id, amount)?;
 
-            let chain_id = AssetIdToChainId::<T>::get(asset_id)
-                .ok_or(Error::<T>::AppChainAssetNotRegistered)?;
-            ensure!(
-                ChainHandlers::<T>::get(&sender) == Some(chain_id),
-                Error::<T>::NotAppChainHandler
-            );
-
-            // Resolve the payout token now so it is captured alongside the rate. This makes the
-            // per-period snapshot infallible and guarantees a chain with a rate is always paid out.
-            let token = Self::resolve_payout_token(&asset_id)?;
-
-            NextRewardAmountPerPeriod::<T>::insert(asset_id, (token, amount));
             Self::deposit_event(Event::AppChainRewardAmountPerPeriodUpdated { asset_id, amount });
+
+            let active_appchain = Self::appchain_is_active(asset_id);
+            if !active_appchain {
+                Self::deposit_event(Event::AppChainEnabled { asset_id });
+            }
+
             Ok(())
         }
 
         /// Claim all outstanding app-chain rewards for a single node, across every unpaid period.
         /// Permissionless: rewards always go to the snapshotted owner regardless of caller.
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::claim(T::MaxRewardPayoutBatch::get(), T::MaxRegisteredAppChains::get()))]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::claim(T::MaxPeriodsPerPayout::get(), T::MaxRegisteredAppChains::get()))]
         #[pallet::call_index(9)]
         pub fn claim(origin: OriginFor<T>, node: T::AccountId) -> DispatchResult {
             ensure_signed(origin)?;
-            let processed = Self::claim_node(&node, T::MaxRewardPayoutBatch::get());
+            let processed = Self::claim_node(&node, T::MaxPeriodsPerPayout::get());
             ensure!(processed > 0, Error::<T>::NoUnpaidRewards);
             Ok(())
         }
 
         /// Permissionless sweep that pays outstanding app-chain rewards round-robin (resuming from
-        /// `SweepCursor`), up to `MaxRewardPayoutBatch` `(period, node)` payouts. Guarantees
+        /// `SweepCursor`), up to `MaxPeriodsPerPayout` `(period, node)` payouts. Guarantees
         /// progress independent of `on_idle` leftover weight, and a failed payout cannot
         /// starve the rest.
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::process_outstanding_rewards(T::MaxRewardPayoutBatch::get(), T::MaxRegisteredAppChains::get()))]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::process_outstanding_rewards(T::MaxPeriodsPerPayout::get(), T::MaxRegisteredAppChains::get()))]
         #[pallet::call_index(10)]
         pub fn process_outstanding_rewards(origin: OriginFor<T>) -> DispatchResult {
             ensure_signed(origin)?;
             // Count-bounded (not weight-bounded): the declared extrinsic weight covers the batch.
             let mut meter = WeightMeter::with_limit(Weight::MAX);
-            let processed = Self::sweep(&mut meter, T::MaxRewardPayoutBatch::get());
+            let processed = Self::sweep(&mut meter, T::MaxPeriodsPerPayout::get());
             ensure!(processed > 0, Error::<T>::NoUnpaidRewards);
+            Ok(())
+        }
+
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::disable_appchain())]
+        #[pallet::call_index(11)]
+        pub fn disable_appchain(
+            origin: OriginFor<T>,
+            asset_id: T::AppChainAssetId,
+        ) -> DispatchResult {
+            Self::do_set_appchain_period_reward(origin, asset_id, Zero::zero())?;
+            Self::deposit_event(Event::AppChainDisabled { asset_id });
+            Ok(())
+        }
+
+        /// Fully deregister an app chain: mark its asset non-native, drop it from the reward system
+        /// and remove its routing state. The chain must already be disabled.
+        ///
+        /// Already-accrued rewards are unaffected: outstanding `PeriodChainReward` snapshots
+        /// capture the payout token and are settled via the asset's registry *location*
+        /// (which is left in place), so claims keep working after deregistration.
+        ///
+        /// The asset-registry entry cannot be removed (the registry has no unregister), so its
+        /// `appchain_native` flag is cleared instead. As a result the same `asset_id` / token
+        /// address can never be registered again.
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::deregister_appchain())]
+        #[pallet::call_index(12)]
+        pub fn deregister_appchain(
+            origin: OriginFor<T>,
+            handler: T::AccountId,
+            asset_id: T::AppChainAssetId,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+
+            let chain_id = AssetIdToChainId::<T>::get(asset_id)
+                .ok_or(Error::<T>::AppChainAssetNotRegistered)?;
+            ensure!(
+                ChainHandlers::<T>::get(&handler) == Some(chain_id),
+                Error::<T>::NotAppChainHandler
+            );
+            ensure!(!Self::appchain_is_active(asset_id), Error::<T>::AppChainNotDisabled);
+
+            // Mark the asset non-native; the registry entry (and its Ethereum location) is
+            // retained.
+            T::AssetRegistry::update_asset(
+                asset_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(AvnAssetMetadata { appchain_native: false }),
+            )?;
+
+            RegisteredAppchains::<T>::mutate(|ids| ids.retain(|id| id != &asset_id));
+            NextRewardAmountPerPeriod::<T>::remove(asset_id);
+            AssetIdToChainId::<T>::remove(asset_id);
+            ChainHandlers::<T>::remove(&handler);
+
+            Self::deposit_event(Event::AppChainDeregistered { chain_id, asset_id });
+            Ok(())
+        }
+
+        /// Root-only recovery: re-attempt reclaiming a completed period's `PeriodChainReward`
+        /// snapshot. This is a no-op unless the period is marked completed and all its rewards are
+        /// settled;
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::on_reward_period_completed())]
+        #[pallet::call_index(13)]
+        pub fn reclaim_period(origin: OriginFor<T>, period: RewardPeriodIndex) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::try_reclaim_period(period);
             Ok(())
         }
     }
@@ -790,6 +917,37 @@ pub mod pallet {
                 },
                 _ => None,
             }
+        }
+
+        fn appchain_is_active(asset_id: T::AppChainAssetId) -> bool {
+            let r = NextRewardAmountPerPeriod::<T>::get(asset_id);
+            r.map_or(false, |(_, amt)| amt > Zero::zero())
+        }
+
+        pub fn do_set_appchain_period_reward(
+            origin: OriginFor<T>,
+            asset_id: T::AppChainAssetId,
+            amount: BalanceOf<T>,
+        ) -> DispatchResult {
+            let chain_id = AssetIdToChainId::<T>::get(asset_id)
+                .ok_or(Error::<T>::AppChainAssetNotRegistered)?;
+
+            // Either root (governance) or the chain's registered handler may set the rate.
+            // `ensure_signed_or_root` yields `None` for root and `Some(account)` for a signed
+            // origin.
+            if let Some(sender) = ensure_signed_or_root(origin)? {
+                ensure!(
+                    ChainHandlers::<T>::get(&sender) == Some(chain_id),
+                    Error::<T>::NotAppChainHandler
+                );
+            }
+
+            // Resolve the payout token now so it is captured alongside the rate. This makes the
+            // per-period snapshot infallible and guarantees a chain with a rate is always paid out.
+            let token = Self::resolve_payout_token(&asset_id)?;
+
+            NextRewardAmountPerPeriod::<T>::insert(asset_id, (token, amount));
+            Ok(())
         }
     }
 

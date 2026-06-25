@@ -1047,6 +1047,10 @@ mod app_chain_rewards {
         <Tokens as MultiCurrency<AccountId>>::free_balance(asset_id, who)
     }
 
+    pub fn event_emitted(event: &RuntimeEvent) -> bool {
+        return System::events().iter().any(|a| a.event == *event)
+    }
+
     #[test]
     fn set_appchain_period_reward_works() {
         new_test_ext().execute_with(|| {
@@ -1064,8 +1068,12 @@ mod app_chain_rewards {
                 NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id),
                 Some((token, 1_000))
             );
+            assert!(event_emitted(
+                &Event::AppChainRewardAmountPerPeriodUpdated { asset_id, amount: 1_000 }.into()
+            ));
+
             System::assert_last_event(
-                Event::AppChainRewardAmountPerPeriodUpdated { asset_id, amount: 1_000 }.into(),
+                Event::AppChainEnabled { asset_id }.into(),
             );
         });
     }
@@ -1094,6 +1102,235 @@ mod app_chain_rewards {
                 Anchor::set_appchain_period_reward(RuntimeOrigin::signed(stranger), asset_id, 10),
                 Error::<TestRuntime>::NotAppChainHandler
             );
+        });
+    }
+
+    #[test]
+    fn disable_appchain_zeroes_rate_and_emits_event() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            let token = register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            // Rate zeroed (token preserved) so the chain is inactive, and the event fires.
+            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id), Some((token, 0)));
+            System::assert_last_event(Event::AppChainDisabled { asset_id }.into());
+        });
+    }
+
+    #[test]
+    fn disable_appchain_works_without_a_prior_rate() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            let token = register_rewardable_chain(handler, 1, asset_id);
+            // Registered but no rate ever set.
+            assert!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id).is_none());
+
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id), Some((token, 0)));
+        });
+    }
+
+    #[test]
+    fn disable_appchain_rejects_unregistered_and_non_handler() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let stranger = create_account_id(9);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+
+            // Unknown asset id.
+            assert_noop!(
+                Anchor::disable_appchain(RuntimeOrigin::signed(handler), Asset::ForeignAsset(99)),
+                Error::<TestRuntime>::AppChainAssetNotRegistered
+            );
+            // Caller is not the registered handler.
+            assert_noop!(
+                Anchor::disable_appchain(RuntimeOrigin::signed(stranger), asset_id),
+                Error::<TestRuntime>::NotAppChainHandler
+            );
+        });
+    }
+
+    #[test]
+    fn disabled_appchain_is_not_snapshotted_for_new_period() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            // A disabled (zero-rate) chain must not be snapshotted when a new period starts.
+            <Anchor as AppChainInterface>::on_new_reward_period(&7);
+            assert!(PeriodChainReward::<TestRuntime>::get(7, asset_id).is_none());
+        });
+    }
+
+    #[test]
+    fn disabled_appchain_can_be_reenabled() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            let token = register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            // Re-enabling is just setting a non-zero rate again; it emits `AppChainEnabled`.
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                2_000
+            ));
+            assert_eq!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id), Some((token, 2_000)));
+            System::assert_last_event(Event::AppChainEnabled { asset_id }.into());
+
+            // And it is snapshotted again on the next period.
+            <Anchor as AppChainInterface>::on_new_reward_period(&8);
+            assert_eq!(PeriodChainReward::<TestRuntime>::get(8, asset_id), Some((token, 2_000)));
+        });
+    }
+
+    #[test]
+    fn deregister_appchain_full_unregister_works() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+            let chain_id =
+                Anchor::asset_chain_id(asset_id).expect("registered chain has a chain id");
+            // Must be disabled first.
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            assert_ok!(Anchor::deregister_appchain(RuntimeOrigin::root(), handler, asset_id));
+
+            // Routing + reward state removed.
+            assert!(Anchor::asset_chain_id(asset_id).is_none());
+            assert!(Anchor::chain_handlers(handler).is_none());
+            assert!(NextRewardAmountPerPeriod::<TestRuntime>::get(asset_id).is_none());
+            assert!(!RegisteredAppchains::<TestRuntime>::get().contains(&asset_id));
+            // Asset marked non-native: it is no longer resolvable as an app-chain payout token.
+            assert_noop!(
+                Anchor::resolve_payout_token(&asset_id),
+                Error::<TestRuntime>::AssetNotAppChainNative
+            );
+            System::assert_last_event(
+                Event::AppChainDeregistered { chain_id, asset_id }.into(),
+            );
+        });
+    }
+
+    #[test]
+    fn deregister_appchain_rejects_active_chain() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+            // Active (non-zero rate), not disabled.
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+
+            assert_noop!(
+                Anchor::deregister_appchain(RuntimeOrigin::root(), handler, asset_id),
+                Error::<TestRuntime>::AppChainNotDisabled
+            );
+        });
+    }
+
+    #[test]
+    fn deregister_appchain_rejects_unregistered_and_wrong_handler() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let stranger = create_account_id(9);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            // Unknown asset id.
+            assert_noop!(
+                Anchor::deregister_appchain(RuntimeOrigin::root(), handler, Asset::ForeignAsset(99)),
+                Error::<TestRuntime>::AppChainAssetNotRegistered
+            );
+            // Handler does not match this chain.
+            assert_noop!(
+                Anchor::deregister_appchain(RuntimeOrigin::root(), stranger, asset_id),
+                Error::<TestRuntime>::NotAppChainHandler
+            );
+        });
+    }
+
+    #[test]
+    fn deregister_appchain_requires_root() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+
+            assert_noop!(
+                Anchor::deregister_appchain(RuntimeOrigin::signed(handler), handler, asset_id),
+                sp_runtime::DispatchError::BadOrigin
+            );
+        });
+    }
+
+    // Deregistering does NOT strand already-accrued rewards: the snapshot captured the token and the
+    // asset's registry location is retained, so a claim still pays out after deregistration.
+    #[test]
+    fn claim_still_pays_after_deregister() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let node = create_account_id(3);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 4u64;
+
+            register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+            // Snapshot the period and record an unpaid reward for the node.
+            <Anchor as AppChainInterface>::on_new_reward_period(&period);
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node,
+                0,
+                Perquintill::from_percent(30),
+            );
+            fund_pot(asset_id, 10_000);
+
+            // Disable then fully deregister while the snapshot + unpaid record are still live.
+            assert_ok!(Anchor::disable_appchain(RuntimeOrigin::signed(handler), asset_id));
+            assert_ok!(Anchor::deregister_appchain(RuntimeOrigin::root(), handler, asset_id));
+
+            // The claim still settles: 30% of 1_000 = 300 paid in the (deregistered) chain's token.
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node));
+            assert_eq!(token_balance(asset_id, &owner), 300);
+            assert!(UnpaidByPeriod::<TestRuntime>::get(period, node).is_none());
         });
     }
 
@@ -1130,18 +1367,20 @@ mod app_chain_rewards {
                 &7,
                 &owner,
                 &node,
+                0,
                 Perquintill::from_percent(25),
             );
             <Anchor as AppChainInterface>::on_reward_paid(
                 &7,
                 &owner,
                 &zero_node,
+                0,
                 Perquintill::zero(),
             );
 
             assert_eq!(
                 UnpaidByPeriod::<TestRuntime>::get(7, node),
-                Some(RewardRecord { owner, share: Perquintill::from_percent(25) })
+                Some(RewardRecord { owner, share: Perquintill::from_percent(25), auto_stake_expiry: 0 })
             );
             assert!(UnpaidByNode::<TestRuntime>::contains_key(node, 7));
             // Zero share is not recorded.
@@ -1160,6 +1399,7 @@ mod app_chain_rewards {
                 &7,
                 &owner,
                 &node,
+                0,
                 Perquintill::from_percent(25),
             );
 
@@ -1200,8 +1440,11 @@ mod app_chain_rewards {
                 &period,
                 &owner,
                 &node,
+                0,
                 Perquintill::from_percent(30),
             );
+            // node-manager finished recording this period, so the snapshot may be reclaimed.
+            <Anchor as AppChainInterface>::on_reward_period_completed(&period);
 
             assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node));
 
@@ -1209,11 +1452,92 @@ mod app_chain_rewards {
             assert_eq!(token_balance(asset_id, &owner), 300);
             assert!(UnpaidByPeriod::<TestRuntime>::get(period, node).is_none());
             assert!(!UnpaidByNode::<TestRuntime>::contains_key(node, period));
-            // Snapshot reclaimed once the last record for the period is gone.
+            // Snapshot reclaimed once the last record for the (completed) period is gone.
             assert!(PeriodChainReward::<TestRuntime>::get(period, asset_id).is_none());
             System::assert_has_event(
                 Event::AppChainRewardPayoutCompleted { reward_period: period }.into(),
             );
+        });
+    }
+
+    // Regression: node-manager records nodes across batched payouts. A claim that drains
+    // `UnpaidByPeriod` between batches must NOT clear the snapshot, or a later `on_reward_paid`
+    // would hit the "no pool" short-circuit and silently drop that node's reward.
+    #[test]
+    fn snapshot_not_cleared_mid_payout_until_period_completed() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let owner = create_account_id(2);
+            let node_a = create_account_id(3);
+            let node_b = create_account_id(4);
+            let asset_id = Asset::ForeignAsset(1);
+            let period = 4u64;
+
+            accrue(period, handler, asset_id, 1, 1_000);
+            fund_pot(asset_id, 10_000);
+
+            // node-manager's first batch records node A.
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node_a,
+                0,
+                Perquintill::from_percent(10),
+            );
+
+            // A claim drains node A — transiently emptying UnpaidByPeriod — but the period is NOT
+            // yet completed, so the snapshot must survive.
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node_a));
+            assert!(UnpaidByPeriod::<TestRuntime>::iter_prefix(period).next().is_none());
+            assert_eq!(
+                PeriodChainReward::<TestRuntime>::get(period, asset_id),
+                Some((make_token(1), 1_000)),
+                "snapshot must not be cleared mid-payout"
+            );
+
+            // node-manager's second batch records node B — must still be recorded (not skipped).
+            <Anchor as AppChainInterface>::on_reward_paid(
+                &period,
+                &owner,
+                &node_b,
+                0,
+                Perquintill::from_percent(20),
+            );
+            assert!(UnpaidByPeriod::<TestRuntime>::get(period, node_b).is_some());
+
+            // node-manager finishes the period; the final claim now reclaims the snapshot.
+            <Anchor as AppChainInterface>::on_reward_period_completed(&period);
+            assert_ok!(Anchor::claim(RuntimeOrigin::signed(owner), node_b));
+
+            // Both nodes paid (10% + 20% of 1_000) and the snapshot is finally cleared.
+            assert_eq!(token_balance(asset_id, &owner), 300);
+            assert!(PeriodChainReward::<TestRuntime>::get(period, asset_id).is_none());
+            System::assert_has_event(
+                Event::AppChainRewardPayoutCompleted { reward_period: period }.into(),
+            );
+        });
+    }
+
+    // A period that completes with no recorded rewards (e.g. every share was zero) must still have
+    // its snapshot reclaimed by `on_reward_period_completed`.
+    #[test]
+    fn empty_period_snapshot_reclaimed_on_completion() {
+        new_test_ext().execute_with(|| {
+            let handler = create_account_id(1);
+            let asset_id = Asset::ForeignAsset(1);
+            let token = register_rewardable_chain(handler, 1, asset_id);
+            assert_ok!(Anchor::set_appchain_period_reward(
+                RuntimeOrigin::signed(handler),
+                asset_id,
+                1_000
+            ));
+            let period = 4u64;
+            <Anchor as AppChainInterface>::on_new_reward_period(&period);
+            assert_eq!(PeriodChainReward::<TestRuntime>::get(period, asset_id), Some((token, 1_000)));
+
+            // No nodes recorded; completing the period reclaims the snapshot immediately.
+            <Anchor as AppChainInterface>::on_reward_period_completed(&period);
+            assert!(PeriodChainReward::<TestRuntime>::get(period, asset_id).is_none());
         });
     }
 
@@ -1244,6 +1568,7 @@ mod app_chain_rewards {
                 &period,
                 &owner,
                 &node,
+                0,
                 Perquintill::from_percent(30),
             );
 
@@ -1273,6 +1598,7 @@ mod app_chain_rewards {
                 &period,
                 &owner,
                 &node,
+                0,
                 Perquintill::from_percent(30),
             );
 
@@ -1307,14 +1633,18 @@ mod app_chain_rewards {
                 &period,
                 &owner,
                 &node_a,
+                0,
                 Perquintill::from_percent(10),
             );
             <Anchor as AppChainInterface>::on_reward_paid(
                 &period,
                 &owner,
                 &node_b,
+                0,
                 Perquintill::from_percent(20),
             );
+            // node-manager finished recording this period, so the snapshot may be reclaimed.
+            <Anchor as AppChainInterface>::on_reward_period_completed(&period);
 
             assert_ok!(Anchor::process_outstanding_rewards(RuntimeOrigin::signed(caller)));
 
@@ -1354,7 +1684,7 @@ mod app_chain_rewards {
             UnpaidByPeriod::<TestRuntime>::insert(
                 1,
                 node_fail,
-                RewardRecord { owner: owner_fail, share: Perquintill::from_percent(100) },
+                RewardRecord { owner: owner_fail, share: Perquintill::from_percent(100), auto_stake_expiry: 0 },
             );
             UnpaidByNode::<TestRuntime>::insert(node_fail, 1, ());
 
@@ -1363,7 +1693,7 @@ mod app_chain_rewards {
             UnpaidByPeriod::<TestRuntime>::insert(
                 2,
                 node_ok,
-                RewardRecord { owner: owner_ok, share: Perquintill::from_percent(100) },
+                RewardRecord { owner: owner_ok, share: Perquintill::from_percent(100), auto_stake_expiry: 0 },
             );
             UnpaidByNode::<TestRuntime>::insert(node_ok, 2, ());
             fund_pot(asset_b, 1_000_000);
@@ -1399,7 +1729,7 @@ mod app_chain_rewards {
                 UnpaidByPeriod::<TestRuntime>::insert(
                     period,
                     node,
-                    RewardRecord { owner, share: Perquintill::from_percent(10) },
+                    RewardRecord { owner, share: Perquintill::from_percent(10), auto_stake_expiry: 0 },
                 );
                 UnpaidByNode::<TestRuntime>::insert(node, period, ());
             }

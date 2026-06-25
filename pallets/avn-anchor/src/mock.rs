@@ -344,7 +344,8 @@ impl Config for TestRuntime {
     type AssetRegistryStringLimit = ConstU32<1024>;
     type AssetRegistry = AssetRegistry;
     type RewardPot = RewardPotAccount;
-    type MaxRewardPayoutBatch = ConstU32<100>;
+    type MaxPeriodsPerPayout = ConstU32<100>;
+    type AppChainRewardEligibility = ();
 }
 
 pub fn reward_pot_account() -> AccountId {

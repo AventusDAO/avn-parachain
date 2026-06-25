@@ -27,6 +27,7 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         let mut chains: u32 = 0;
         for (asset_id, (token, amount)) in NextRewardAmountPerPeriod::<T>::iter() {
             if amount.is_zero() {
+                // App chain is not active so skip it.
                 continue
             }
             PeriodChainReward::<T>::insert(*period_index, asset_id, (token, amount));
@@ -35,22 +36,19 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         <T as Config>::WeightInfo::on_new_reward_period(chains)
     }
 
-    /// Record a node's share for the period so it can be paid later. Kept to the two writes the
-    /// `claim`/sweep paths key off; zero shares are skipped to avoid storing no-op records.
+    /// Record a node's share for the period so it can be paid later.
     /// Returns the weight actually consumed so node-manager can fold it into its payout weight.
     fn on_reward_paid(
         period_index: &RewardPeriodIndex,
         node_owner: &Self::AccountId,
         node_id: &Self::AccountId,
+        auto_stake_expiry: Moment,
         reward_percentage: Perquintill,
     ) -> Weight {
         if reward_percentage.is_zero() {
             return Weight::zero()
         }
         // No app chain funded a reward pool for this period, so there is nothing to pay out.
-        // Skip recording: this hook runs once per node inside node-manager's payout, and a record
-        // here would only be swept later to pay zero. The snapshot is taken at the start of the
-        // period (in `on_new_reward_period`), so it is already complete by the time we are paid.
         if PeriodChainReward::<T>::iter_prefix(*period_index).next().is_none() {
             // One storage read for the emptiness probe.
             return T::DbWeight::get().reads(1)
@@ -58,10 +56,10 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         UnpaidByPeriod::<T>::insert(
             *period_index,
             node_id,
-            RewardRecord { owner: node_owner.clone(), share: reward_percentage },
+            RewardRecord { owner: node_owner.clone(), share: reward_percentage, auto_stake_expiry },
         );
         UnpaidByNode::<T>::insert(node_id, *period_index, ());
-        // Cost of recording a single node (base trie path + one record).
+        // Cost of recording a single node.
         <T as Config>::WeightInfo::on_reward_paid(1)
     }
 
@@ -71,20 +69,58 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         <T as Config>::WeightInfo::on_reward_paid(num_nodes)
     }
 
-    fn on_reward_period_completed(_period_index: &RewardPeriodIndex) {
-        // No action needed: snapshots are taken at the start of each period and records are drained
-        // by the sweep / claim paths.
+    fn on_reward_period_completed(period_index: &RewardPeriodIndex) -> Weight {
+        // node-manager has finished paying — and therefore recording (`on_reward_paid`) — every
+        // node for this period. Mark it so the snapshot may be reclaimed, then reclaim immediately
+        // if all app-chain rewards are already settled (e.g. nobody accrued, or all drained early).
+        PeriodPayoutCompleted::<T>::insert(*period_index, ());
+        Self::try_reclaim_period(*period_index);
+        // Charge the worst case (a full snapshot reclaim); cheaper when no clear happened.
+        <T as Config>::WeightInfo::on_reward_period_completed()
+    }
+
+    fn on_reward_period_completed_weight() -> Weight {
+        <T as Config>::WeightInfo::on_reward_period_completed()
     }
 }
 
 impl<T: Config> Pallet<T> {
-    /// Resolve the token an app chain pays rewards in from its asset-registry location.
+    /// Resolve the appchain native token from the asset-registry entry.
     pub(crate) fn resolve_payout_token(
         asset_id: &T::AppChainAssetId,
     ) -> Result<T::Token, DispatchError> {
-        match T::AssetRegistry::location(asset_id)? {
+        let metadata =
+            T::AssetRegistry::metadata(asset_id).ok_or(Error::<T>::AppChainTokenNotResolvable)?;
+
+        ensure!(metadata.additional.appchain_native, Error::<T>::AssetNotAppChainNative);
+
+        match metadata.location {
             Some(AvnAssetLocation::Ethereum(address)) => Ok(address.into()),
             _ => Err(Error::<T>::AppChainTokenNotResolvable.into()),
+        }
+    }
+
+    /// Reclaim a period's `PeriodChainReward` snapshot, but only once it is safe to do so: the
+    /// period must be marked completed by node-manager (`PeriodPayoutCompleted`) AND all its
+    /// `UnpaidByPeriod` records must be settled. This prevents clearing the snapshot mid-payout,
+    /// while node-manager is still recording nodes in later batches. Idempotent; safe to call from
+    /// both the payout path and `on_reward_period_completed`.
+    pub(crate) fn try_reclaim_period(period: RewardPeriodIndex) {
+        if !PeriodPayoutCompleted::<T>::contains_key(period) {
+            return
+        }
+        if UnpaidByPeriod::<T>::iter_prefix(period).next().is_some() {
+            return
+        }
+        let _ =
+            PeriodChainReward::<T>::clear_prefix(period, T::MaxRegisteredAppChains::get(), None);
+        // Only finalise once the snapshot is actually empty. `clear_prefix`'s limit bounds how many
+        // entries a single call removes; were `MaxRegisteredAppChains` ever lowered below a live
+        // snapshot's size the clear would be partial, so we keep the marker (and withhold the
+        // completion event) rather than orphan the leftover rows behind a false "completed" signal.
+        if PeriodChainReward::<T>::iter_prefix(period).next().is_none() {
+            PeriodPayoutCompleted::<T>::remove(period);
+            Self::deposit_event(Event::AppChainRewardPayoutCompleted { reward_period: period });
         }
     }
 
@@ -107,6 +143,15 @@ impl<T: Config> Pallet<T> {
             let pot = T::RewardPot::get();
 
             for (asset_id, (token, total)) in PeriodChainReward::<T>::iter_prefix(period) {
+                // Runtime-defined eligibility: skip this chain's payout for the node if ineligible.
+                if !T::AppChainRewardEligibility::is_eligible(
+                    asset_id,
+                    node,
+                    period,
+                    record.auto_stake_expiry,
+                ) {
+                    continue
+                }
                 let amount = Self::share_of(record.share, total);
                 if amount.is_zero() {
                     continue
@@ -128,15 +173,10 @@ impl<T: Config> Pallet<T> {
                 node: node.clone(),
             });
 
-            // Reclaim the period snapshot once its last record is settled.
-            if UnpaidByPeriod::<T>::iter_prefix(period).next().is_none() {
-                let _ = PeriodChainReward::<T>::clear_prefix(
-                    period,
-                    T::MaxRegisteredAppChains::get(),
-                    None,
-                );
-                Self::deposit_event(Event::AppChainRewardPayoutCompleted { reward_period: period });
-            }
+            // Reclaim the period snapshot once it is fully settled — but only after node-manager
+            // has finished recording the period (gated by `PeriodPayoutCompleted`),
+            // never mid-payout.
+            Self::try_reclaim_period(period);
 
             Ok(())
         })

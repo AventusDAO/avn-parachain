@@ -858,6 +858,7 @@ pub mod pallet {
         #[pallet::weight(
             <T as Config>::WeightInfo::offchain_pay_nodes(MAX_BATCH_SIZE)
                 .saturating_add(T::AppChainInterface::reward_paid_weight(MAX_BATCH_SIZE))
+                .saturating_add(T::AppChainInterface::on_reward_period_completed_weight())
         )]
         pub fn offchain_pay_nodes(
             origin: OriginFor<T>,
@@ -883,8 +884,12 @@ pub mod pallet {
 
             if total_uptime.total_weight == 0 && maybe_node_uptime.is_none() {
                 // No nodes to pay for this period so complete it
-                Self::complete_reward_payout(oldest_period);
-                return Ok(Some(<T as Config>::WeightInfo::offchain_pay_nodes(1u32)).into())
+                let completion_weight = Self::complete_reward_payout(oldest_period);
+                return Ok(Some(
+                    <T as Config>::WeightInfo::offchain_pay_nodes(1u32)
+                        .saturating_add(completion_weight),
+                )
+                .into())
             }
 
             ensure!(total_uptime.total_weight > 0, Error::<T>::TotalUptimeNotFound);
@@ -954,17 +959,21 @@ pub mod pallet {
 
             Self::remove_paid_nodes(oldest_period, &paid_nodes);
 
-            if iter.next().is_some() {
+            // Zero unless this call finishes the period; then it carries the app-chain completion
+            // hook weight so the post-dispatch weight stays accurate.
+            let completion_weight = if iter.next().is_some() {
                 Self::update_last_paid_pointer(oldest_period, last_node_paid);
+                Weight::zero()
             } else {
-                Self::complete_reward_payout(oldest_period);
-            }
+                Self::complete_reward_payout(oldest_period)
+            };
 
             return Ok(Some(
                 <T as Config>::WeightInfo::offchain_pay_nodes(paid_nodes.len() as u32)
                     .saturating_add(T::AppChainInterface::reward_paid_weight(
                         paid_nodes.len() as u32
-                    )),
+                    ))
+                    .saturating_add(completion_weight),
             )
             .into())
         }

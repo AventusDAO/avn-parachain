@@ -546,7 +546,7 @@ parameter_types! {
     pub const MaxRegisteredAppChains: u32 = 25;
     pub const AvnAnchorRewardPotId: PalletId = NODE_MANAGER_PALLET_ID;
     pub AvnAnchorRewardPot: AccountId = AvnAnchorRewardPotId::get().into_account_truncating();
-    pub const MaxRewardPayoutBatch: u32 = 10;
+    pub const MaxPeriodsPerPayout: u32 = 10;
 }
 
 impl pallet_avn_anchor::Config for Runtime {
@@ -564,7 +564,9 @@ impl pallet_avn_anchor::Config for Runtime {
     type AssetRegistryStringLimit = AssetRegistryStringLimit;
     type AssetRegistry = AssetRegistry;
     type RewardPot = AvnAnchorRewardPot;
-    type MaxRewardPayoutBatch = MaxRewardPayoutBatch;
+    type MaxPeriodsPerPayout = MaxPeriodsPerPayout;
+    // TODO: replace `()` with a runtime type implementing app-chain/node eligibility logic.
+    type AppChainRewardEligibility = ();
 }
 
 #[cfg(feature = "runtime-benchmarks")]
