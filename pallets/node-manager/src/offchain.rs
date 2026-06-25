@@ -153,7 +153,7 @@ impl<T: Config> Pallet<T> {
             match is_primary {
                 Err(_) => {
                     log::error!("💔 Error checking if author is Primary");
-                    return None
+                    return Some((this_author, false))
                 },
                 Ok(is_primary) => return Some((this_author, is_primary)),
             }
