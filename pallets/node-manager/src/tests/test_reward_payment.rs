@@ -924,6 +924,65 @@ mod reward {
         });
     }
 
+    // Regression: app-chain reward accrual is gated on the node's share, NOT on the native reward
+    // amount. A node whose native reward floors to zero must still have its app-chain reward
+    // recorded via `on_reward_paid` (the bug was an early return before the hook when amount == 0).
+    #[test]
+    fn pay_reward_notifies_app_chain_even_when_native_amount_is_zero() {
+        let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let context = Context::new(1u8);
+            let node = context.ocw_node;
+            let node_info = <NodeRegistry<TestRuntime>>::get(&node).expect("node is registered");
+            let period = <RewardPeriod<TestRuntime>>::get().current;
+            let share = Perquintill::from_percent(50);
+
+            ON_REWARD_PAID_CALLS.with(|c| c.borrow_mut().clear());
+
+            // Native reward is zero, but the node earned a non-zero share.
+            assert_ok!(NodeManager::pay_reward(&period, node, &node_info, 0u128, share));
+
+            // The app-chain hook must still have been notified for the node's share.
+            ON_REWARD_PAID_CALLS.with(|c| {
+                let calls = c.borrow();
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0], (period, node, share));
+            });
+        });
+    }
+
+    #[test]
+    fn pay_reward_skips_app_chain_when_share_is_zero() {
+        let (mut ext, _pool_state, _offchain_state) = ExtBuilder::build_default()
+            .with_genesis_config()
+            .with_authors()
+            .for_offchain_worker()
+            .as_externality_with_state();
+        ext.execute_with(|| {
+            let context = Context::new(1u8);
+            let node = context.ocw_node;
+            let node_info = <NodeRegistry<TestRuntime>>::get(&node).expect("node is registered");
+            let period = <RewardPeriod<TestRuntime>>::get().current;
+
+            ON_REWARD_PAID_CALLS.with(|c| c.borrow_mut().clear());
+
+            // A zero share means the node earned nothing; the app-chain hook must not fire.
+            assert_ok!(NodeManager::pay_reward(
+                &period,
+                node,
+                &node_info,
+                0u128,
+                Perquintill::from_percent(0)
+            ));
+
+            ON_REWARD_PAID_CALLS.with(|c| assert!(c.borrow().is_empty()));
+        });
+    }
+
     mod fails_when {
         use super::*;
 
