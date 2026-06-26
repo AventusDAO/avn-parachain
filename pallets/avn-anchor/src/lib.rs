@@ -52,11 +52,8 @@ pub(crate) type BalanceOf<T> =
 
 /// Decides whether a node may receive a specific app chain's reward for a period.
 ///
-/// Implemented by the runtime so eligibility can depend on the app chain (`asset_id`), the node,
-/// the reward `period`, and the node's `auto_stake_expiry` (a UNIX timestamp in seconds, captured
-/// when the reward accrued). It is checked per `(app chain, node)` at payout time: returning
-/// `false` skips that chain's payout for the node (its reward is forfeited; other chains and other
-/// nodes are unaffected).
+/// Implemented by the runtime and checked per `(app chain, node)` at payout time: returning
+/// `false` skips that chain's payout for the node.
 pub trait AppChainRewardEligibility<AssetId, AccountId> {
     fn is_eligible(
         asset_id: AssetId,
@@ -66,8 +63,7 @@ pub trait AppChainRewardEligibility<AssetId, AccountId> {
     ) -> bool;
 }
 
-/// Default implementation: every node is eligible for every app chain (preserves the behaviour
-/// from before eligibility checks existed).
+/// Default implementation: every node is eligible for every app chain.
 impl<AssetId, AccountId> AppChainRewardEligibility<AssetId, AccountId> for () {
     fn is_eligible(
         _asset_id: AssetId,
@@ -418,18 +414,14 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Round-robin resume point for the sweep: the last `(period, node)` examined. The next sweep
+    /// The last `(period, node)` examined. The next sweep
     /// resumes strictly after it, so a retained (failed) payout is stepped over by position rather
     /// than blocking the records behind it. `None` restarts the pass from the beginning.
     #[pallet::storage]
     pub type SweepCursor<T: Config> = StorageValue<_, (RewardPeriodIndex, NodeId<T>), OptionQuery>;
 
     /// Periods for which node-manager has finished paying out (and therefore finished recording app
-    /// chain shares via `on_reward_paid`). Presence marks a period as safe to reclaim: the
-    /// `PeriodChainReward` snapshot is only cleared once the period is marked here AND all its
-    /// `UnpaidByPeriod` records have been settled. Without this gate, a sweep/claim that
-    /// transiently empties `UnpaidByPeriod` between node-manager's batched payouts would clear
-    /// the snapshot mid-payout, causing later `on_reward_paid` calls to drop their records.
+    /// chain shares via `on_reward_paid`).
     #[pallet::storage]
     pub type PeriodPayoutCompleted<T: Config> =
         StorageMap<_, Blake2_128Concat, RewardPeriodIndex, (), OptionQuery>;
@@ -686,9 +678,9 @@ pub mod pallet {
         }
 
         /// Permissionless sweep that pays outstanding app-chain rewards round-robin (resuming from
-        /// `SweepCursor`), up to `MaxPeriodsPerPayout` `(period, node)` payouts. Guarantees
-        /// progress independent of `on_idle` leftover weight, and a failed payout cannot
-        /// starve the rest.
+        /// `SweepCursor`), up to `MaxPeriodsPerPayout` payouts. Guarantees
+        /// progress independent of `on_idle`. A failed payout cannot
+        /// block the rest.
         #[pallet::weight(<T as pallet::Config>::WeightInfo::process_outstanding_rewards(T::MaxPeriodsPerPayout::get(), T::MaxRegisteredAppChains::get()))]
         #[pallet::call_index(10)]
         pub fn process_outstanding_rewards(origin: OriginFor<T>) -> DispatchResult {
@@ -750,9 +742,10 @@ pub mod pallet {
             )?;
 
             RegisteredAppchains::<T>::mutate(|ids| ids.retain(|id| id != &asset_id));
-            NextRewardAmountPerPeriod::<T>::remove(asset_id);
             AssetIdToChainId::<T>::remove(asset_id);
             ChainHandlers::<T>::remove(&handler);
+            // This should have been removed already but remove it just in case.
+            NextRewardAmountPerPeriod::<T>::remove(asset_id);
 
             Self::deposit_event(Event::AppChainDeregistered { chain_id, asset_id });
             Ok(())

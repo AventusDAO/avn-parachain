@@ -27,7 +27,7 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         let mut chains: u32 = 0;
         for (asset_id, (token, amount)) in NextRewardAmountPerPeriod::<T>::iter() {
             if amount.is_zero() {
-                // App chain is not active so skip it.
+                // This should not happen but just in case, ignore them.
                 continue
             }
             PeriodChainReward::<T>::insert(*period_index, asset_id, (token, amount));
@@ -48,11 +48,13 @@ impl<T: Config> AppChainInterface for Pallet<T> {
         if reward_percentage.is_zero() {
             return Weight::zero()
         }
-        // No app chain funded a reward pool for this period, so there is nothing to pay out.
+
         if PeriodChainReward::<T>::iter_prefix(*period_index).next().is_none() {
+            // No app chain funded a reward pool for this period, so there is nothing to pay out.
             // One storage read for the emptiness probe.
             return T::DbWeight::get().reads(1)
         }
+
         UnpaidByPeriod::<T>::insert(
             *period_index,
             node_id,
@@ -103,8 +105,7 @@ impl<T: Config> Pallet<T> {
     /// Reclaim a period's `PeriodChainReward` snapshot, but only once it is safe to do so: the
     /// period must be marked completed by node-manager (`PeriodPayoutCompleted`) AND all its
     /// `UnpaidByPeriod` records must be settled. This prevents clearing the snapshot mid-payout,
-    /// while node-manager is still recording nodes in later batches. Idempotent; safe to call from
-    /// both the payout path and `on_reward_period_completed`.
+    /// while node-manager is still recording nodes in later batches.
     pub(crate) fn try_reclaim_period(period: RewardPeriodIndex) {
         if !PeriodPayoutCompleted::<T>::contains_key(period) {
             return
@@ -114,10 +115,8 @@ impl<T: Config> Pallet<T> {
         }
         let _ =
             PeriodChainReward::<T>::clear_prefix(period, T::MaxRegisteredAppChains::get(), None);
-        // Only finalise once the snapshot is actually empty. `clear_prefix`'s limit bounds how many
-        // entries a single call removes; were `MaxRegisteredAppChains` ever lowered below a live
-        // snapshot's size the clear would be partial, so we keep the marker (and withhold the
-        // completion event) rather than orphan the leftover rows behind a false "completed" signal.
+        // Only finalise once the snapshot is actually empty. If its not empty it means
+        // MaxRegisteredAppChains was lowered.
         if PeriodChainReward::<T>::iter_prefix(period).next().is_none() {
             PeriodPayoutCompleted::<T>::remove(period);
             Self::deposit_event(Event::AppChainRewardPayoutCompleted { reward_period: period });
@@ -213,6 +212,8 @@ impl<T: Config> Pallet<T> {
     /// retained failure is skipped by position rather than re-collected from the front every call,
     /// which would otherwise let one underfunded chain starve every record behind it.
     pub fn sweep(meter: &mut WeightMeter, max: u32) -> u32 {
+        // Keep this as MaxRegisteredAppChains because we are iterating over a snapshot which can be
+        // != to the current list.
         let unit = <T as Config>::WeightInfo::pay_node_period(T::MaxRegisteredAppChains::get());
 
         // Resume strictly after the last examined key, or start a fresh pass.
