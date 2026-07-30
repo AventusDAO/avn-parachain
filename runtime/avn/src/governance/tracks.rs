@@ -47,7 +47,7 @@ const TRACKS_DATA: [pallet_referenda::Track<u16, Balance, BlockNumber>; 5] = [
         info: pallet_referenda::TrackInfo {
             name: s("root"),
             max_deciding: 1,
-            decision_deposit: 1000 * AVT,
+            decision_deposit: 2_000_000 * AVT,
             prepare_period: 2 * HOURS,
             decision_period: 28 * DAYS,
             confirm_period: 24 * HOURS,
@@ -61,7 +61,7 @@ const TRACKS_DATA: [pallet_referenda::Track<u16, Balance, BlockNumber>; 5] = [
         info: pallet_referenda::TrackInfo {
             name: s("whitelisted_caller"),
             max_deciding: 100,
-            decision_deposit: 1000 * AVT,
+            decision_deposit: 1_000_000 * AVT,
             prepare_period: 30 * MINUTES,
             decision_period: 28 * DAYS,
             confirm_period: 10 * MINUTES,
@@ -75,7 +75,7 @@ const TRACKS_DATA: [pallet_referenda::Track<u16, Balance, BlockNumber>; 5] = [
         info: pallet_referenda::TrackInfo {
             name: s("general_admin"),
             max_deciding: 10,
-            decision_deposit: 500 * AVT,
+            decision_deposit: 100_000 * AVT,
             prepare_period: 2 * HOURS,
             decision_period: 28 * DAYS,
             confirm_period: 3 * HOURS,
@@ -89,7 +89,7 @@ const TRACKS_DATA: [pallet_referenda::Track<u16, Balance, BlockNumber>; 5] = [
         info: pallet_referenda::TrackInfo {
             name: s("referendum_canceller"),
             max_deciding: 1000,
-            decision_deposit: 1000 * AVT,
+            decision_deposit: 100_000 * AVT,
             prepare_period: 2 * HOURS,
             decision_period: 7 * DAYS,
             confirm_period: 3 * HOURS,
@@ -103,7 +103,7 @@ const TRACKS_DATA: [pallet_referenda::Track<u16, Balance, BlockNumber>; 5] = [
         info: pallet_referenda::TrackInfo {
             name: s("referendum_killer"),
             max_deciding: 1000,
-            decision_deposit: 2000 * AVT,
+            decision_deposit: 200_000 * AVT,
             prepare_period: 2 * HOURS,
             decision_period: 28 * DAYS,
             confirm_period: 3 * HOURS,
