@@ -431,7 +431,11 @@ mod runtime {
     #[runtime::pallet_index(99)]
     pub type Origins = pallet_custom_origins;
 
-    // pallet index 100 and 101 are reserved because they were used opreviously for the OpenGov pallets
+    #[runtime::pallet_index(100)]
+    pub type ConvictionVoting = pallet_conviction_voting;
+
+    #[runtime::pallet_index(101)]
+    pub type Referenda = pallet_referenda;
 
     #[runtime::pallet_index(102)]
     pub type Whitelist = pallet_whitelist;

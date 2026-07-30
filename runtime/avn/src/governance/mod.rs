@@ -11,6 +11,24 @@ pub mod tracks;
 use pallet_token_manager;
 pub use tracks::TracksInfo;
 
+parameter_types! {
+    pub const VoteLockingPeriod: BlockNumber = 28 * DAYS;
+}
+
+impl pallet_conviction_voting::Config for Runtime {
+    type WeightInfo = pallet_conviction_voting::weights::SubstrateWeight<Runtime>;
+    type RuntimeEvent = RuntimeEvent;
+    type Currency = Balances;
+    type VoteLockingPeriod = VoteLockingPeriod;
+    type MaxVotes = ConstU32<512>;
+    type MaxTurnout = polkadot_sdk::frame_support::traits::tokens::currency::ActiveIssuanceOf<
+        Balances,
+        Self::AccountId,
+    >;
+    type Polls = Referenda;
+    type BlockNumberProvider = System;
+    type VotingHooks = ();
+}
 
 parameter_types! {
     pub const AlarmInterval: BlockNumber = 1;
@@ -41,4 +59,25 @@ impl pallet_whitelist::Config for Runtime {
     type WhitelistOrigin = EnsureRoot<Self::AccountId>;
     type DispatchWhitelistedOrigin = EitherOf<EnsureRoot<Self::AccountId>, WhitelistedCaller>;
     type Preimages = Preimage;
+}
+
+impl pallet_referenda::Config for Runtime {
+    type WeightInfo = pallet_referenda::weights::SubstrateWeight<Runtime>;
+    type RuntimeCall = RuntimeCall;
+    type RuntimeEvent = RuntimeEvent;
+    type Scheduler = Scheduler;
+    type Currency = Balances;
+    type SubmitOrigin = frame_system::EnsureSigned<AccountId>;
+    type CancelOrigin = EitherOf<EnsureRoot<AccountId>, ReferendumCanceller>;
+    type KillOrigin = EitherOf<EnsureRoot<AccountId>, ReferendumKiller>;
+    type Slash = ToTreasury<Runtime>;
+    type Votes = pallet_conviction_voting::VotesOf<Runtime>;
+    type Tally = pallet_conviction_voting::TallyOf<Runtime>;
+    type SubmissionDeposit = SubmissionDeposit;
+    type MaxQueued = ConstU32<100>;
+    type UndecidingTimeout = UndecidingTimeout;
+    type AlarmInterval = AlarmInterval;
+    type Tracks = TracksInfo;
+    type Preimages = Preimage;
+    type BlockNumberProvider = System;
 }
