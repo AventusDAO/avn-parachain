@@ -565,7 +565,7 @@ impl pallet_avn_anchor::Config for Runtime {
     type AssetRegistry = AssetRegistry;
     type RewardPot = AvnAnchorRewardPot;
     type MaxPeriodsPerPayout = MaxPeriodsPerPayout;
-    // replace `()` with a runtime type implementing app-chain/node eligibility logic when ready.
+    // TODO: replace `()` with a runtime type implementing app-chain/node eligibility logic.
     type AppChainRewardEligibility = ();
 }
 
