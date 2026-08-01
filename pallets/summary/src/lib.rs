@@ -49,6 +49,7 @@ use sp_application_crypto::RuntimeAppPublic;
 use sp_core::H256;
 use sp_staking::offence::ReportOffence;
 
+pub mod migrations;
 pub mod offence;
 use crate::offence::{create_and_report_summary_offence, SummaryOffence, SummaryOffenceType};
 

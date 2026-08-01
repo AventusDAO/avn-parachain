@@ -337,6 +337,9 @@ mod runtime {
     #[runtime::pallet_index(74)]
     pub type Utility = pallet_utility;
 
+    #[runtime::pallet_index(75)]
+    pub type MultiBlockMigrations = pallet_migrations;
+
     // Rest of AvN pallets
     #[runtime::pallet_index(81)]
     pub type Avn = pallet_avn;

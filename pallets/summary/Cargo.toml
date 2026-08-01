@@ -36,11 +36,12 @@ frame-benchmarking = { optional = true, workspace = true }
 
 [dev-dependencies]
 parking_lot.workspace = true
-pallet-timestamp.workspace = true
-sp-state-machine = { default-features = true, workspace = true }
 assert_matches = "1.3.0"
-pallet-eth-bridge = { default-features = true, workspace = true }
+sp-state-machine = { default-features = true, workspace = true }
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
+pallet-migrations = { default-features = true, workspace = true }
+pallet-timestamp.workspace = true
+pallet-eth-bridge = { default-features = true, workspace = true }
 
 [features]
 migrate = []

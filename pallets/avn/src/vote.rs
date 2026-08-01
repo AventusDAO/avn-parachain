@@ -36,7 +36,6 @@ pub const REJECT_VOTE: bool = false;
 
 #[derive(PartialEq, Eq, Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 pub struct VotingSessionData<AccountId, BlockNumber> {
-    // TODO convert to BoundedVec
     /// The unique identifier for this voting session
     pub voting_session_id: BoundedVec<u8, VotingSessionIdBound>,
     /// The number of approval votes that are needed to reach an outcome.
