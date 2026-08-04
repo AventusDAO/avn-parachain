@@ -400,7 +400,7 @@ pub mod pallet {
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
-        /// Dummy marker.
+        #[serde(skip)]
         pub _phantom: sp_std::marker::PhantomData<I>,
         pub schedule_period: BlockNumberFor<T>,
         pub voting_period: BlockNumberFor<T>,
