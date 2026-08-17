@@ -420,23 +420,26 @@ impl<T: Config> Pallet<T> {
         signature: &<T::AuthorityId as RuntimeAppPublic>::Signature,
     ) -> bool {
         // verify that the incoming (unverified) pubkey is actually a validator
-        if !Self::is_validator(&validator.account_id) {
+        let registered_validator = Self::try_get_validator(&validator.account_id);
+        if let Some(actual_validator) = registered_validator {
+            // check signature (this is expensive so we do it last). Use the key of the actual
+            // validator.
+            let signature_valid = data.using_encoded(|encoded_data| {
+                actual_validator.key.verify(&encoded_data, &signature)
+            });
+
+            log::debug!(
+                "🪲 Validating signature: [ data {:?} - account {:?} - signature {:?} ] Result: {}",
+                data.encode(),
+                validator.encode(),
+                signature,
+                signature_valid
+            );
+            return signature_valid
+        } else {
             log::warn!("Signature validation failed, account {:?}, is not validator", validator);
             return false
         }
-
-        // check signature (this is expensive so we do it last).
-        let signature_valid =
-            data.using_encoded(|encoded_data| validator.key.verify(&encoded_data, &signature));
-
-        log::debug!(
-            "🪲 Validating signature: [ data {:?} - account {:?} - signature {:?} ] Result: {}",
-            data.encode(),
-            validator.encode(),
-            signature,
-            signature_valid
-        );
-        return signature_valid
     }
 
     pub fn convert_block_number_to_u32(block_number: BlockNumberFor<T>) -> Result<u32, Error<T>> {
