@@ -202,6 +202,17 @@ pub mod filters {
             EthBridgeEventsFilter::try_from(filter).unwrap_or_default()
         }
     }
+
+    pub struct NonLiftEventsFilter;
+    impl EthereumEventsFilterTrait for NonLiftEventsFilter {
+        fn get() -> EthBridgeEventsFilter {
+            let mut filter = CorePrimaryEventsFilter::get().into_inner();
+            filter.retain(|e| {
+                !matches!(e, ValidEvents::Lifted | ValidEvents::LiftedToPredictionMarket)
+            });
+            EthBridgeEventsFilter::try_from(filter).unwrap_or_default()
+        }
+    }
 }
 
 pub fn encode_eth_event_submission_data<AccountId: Encode, Data: Encode>(

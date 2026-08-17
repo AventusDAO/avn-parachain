@@ -51,7 +51,7 @@ use polkadot_sdk::{
 use runtime_common::OperationalFeeMultiplier;
 use sp_avn_common::{
     constants::{currency::*, time::*},
-    event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter},
+    event_discovery::filters::{CorePrimaryEventsFilter, NftEventsFilter, NonLiftEventsFilter},
     Asset, NODE_MANAGER_PALLET_ID,
 };
 
@@ -593,7 +593,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification =
         (NodeManager, ParachainStaking, Summary, TokenManager, ValidatorsManager);
-    type ProcessedEventsHandler = CorePrimaryEventsFilter;
+    type ProcessedEventsHandler = NonLiftEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
 }
