@@ -199,3 +199,83 @@ fn test_local_authority_keys_valid() {
 }
 
 /**************************** */
+
+// `signature_is_valid` must verify against
+// the key that is REGISTERED on-chain for the claimed account, never the key supplied alongside
+// the signature. Otherwise an attacker can forge a vote for any real validator's account using a
+// key they control (account membership passes, and the signature verifies against their own key).
+#[cfg(test)]
+mod signature_is_valid_key_binding {
+    use super::*;
+    use codec::Encode;
+    use sp_avn_common::event_types::Validator;
+    use sp_runtime::testing::TestSignature;
+
+    // Genesis validators (see mock `VALIDATORS`) are accounts 1, 2, 3, each registered with
+    // key `UintAuthorityId(<account_id>)`.
+    const REGISTERED_ACCOUNT: u64 = 1;
+    const REGISTERED_KEY_ID: u64 = 1;
+
+    // Arbitrary payload that gets signed. `TestSignature(key_id, msg)` verifies iff the verifying
+    // key's id == key_id AND msg == the encoding of `data` (what `using_encoded` produces).
+    fn signed_payload() -> (Vec<u8>, u64) {
+        (b"submit_ethereum_events".to_vec(), 7u64)
+    }
+
+    #[test]
+    fn accepts_signature_from_the_registered_key() {
+        let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+        ext.execute_with(|| {
+            let data = signed_payload();
+            let validator = Validator {
+                account_id: REGISTERED_ACCOUNT,
+                key: UintAuthorityId(REGISTERED_KEY_ID),
+            };
+            // Signature genuinely produced by the registered key over the encoded data.
+            let signature = TestSignature(REGISTERED_KEY_ID, data.encode());
+
+            assert!(
+                AVN::signature_is_valid(&data, &validator, &signature),
+                "a signature from the registered key must be accepted"
+            );
+        });
+    }
+
+    #[test]
+    fn rejects_forged_vote_using_attacker_key_for_a_real_account() {
+        // The core regression: attacker names a real validator account but presents a key they
+        // control and a signature made with that key.
+        let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+        ext.execute_with(|| {
+            let data = signed_payload();
+            let attacker_key_id = 99u64; // NOT the registered key for account 1
+            let forged_validator =
+                Validator { account_id: REGISTERED_ACCOUNT, key: UintAuthorityId(attacker_key_id) };
+            let forged_signature = TestSignature(attacker_key_id, data.encode());
+
+            assert!(
+                !AVN::signature_is_valid(&data, &forged_validator, &forged_signature),
+                "forged vote with an attacker-controlled key was accepted for a real validator account"
+            );
+        });
+    }
+
+    #[test]
+    fn rejects_signature_for_a_non_validator_account() {
+        let mut ext = ExtBuilder::build_default().with_validators().as_externality();
+        ext.execute_with(|| {
+            let data = signed_payload();
+            let non_validator_account = 999u64;
+            let validator = Validator {
+                account_id: non_validator_account,
+                key: UintAuthorityId(non_validator_account),
+            };
+            let signature = TestSignature(non_validator_account, data.encode());
+
+            assert!(
+                !AVN::signature_is_valid(&data, &validator, &signature),
+                "an account that is not a registered validator must be rejected"
+            );
+        });
+    }
+}
