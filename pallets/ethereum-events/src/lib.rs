@@ -1573,16 +1573,11 @@ impl<T: Config> Pallet<T> {
         validator: &Validator<T::AuthorityId, T::AccountId>,
         signature: &<T::AuthorityId as RuntimeAppPublic>::Signature,
     ) -> bool {
-        // verify that the incoming (unverified) pubkey is actually a validator
-        if !Self::is_validator(&validator.account_id) {
-            return false
-        }
-
-        // check signature (this is expensive so we do it last).
-        let signature_valid =
-            data.using_encoded(|encoded_data| validator.key.verify(&encoded_data, &signature));
-
-        return signature_valid
+        // Delegate to the shared AVN implementation, which resolves the registered key for the
+        // claimed account and verifies against that. The caller-supplied `validator.key` must never
+        // be trusted for verification, otherwise anyone could forge a vote for a real validator's
+        // account using a key they control.
+        AVN::<T>::signature_is_valid(data, validator, signature)
     }
 
     fn is_validator(account_id: &T::AccountId) -> bool {
