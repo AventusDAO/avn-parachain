@@ -75,13 +75,13 @@ use crate::{
     BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
     HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
     NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, ResolveTo, RestrictedEndpointFilter,
-    Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin,
-    RuntimeTask, Scheduler, Session, SessionKeys, Signature, StakingPotAccountId, Summary,
-    SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee, UncheckedExtrinsic,
-    ValidatorsManager, Watchtower, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
-    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
-    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
+    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime,
+    RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
+    Scheduler, Session, SessionKeys, Signature, Summary, SummaryWatchtower, System, Timestamp,
+    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
+    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
+    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
+    VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -847,13 +847,13 @@ impl orml_currencies::Config for Runtime {
     type WeightInfo = crate::third_party_weights::orml_currencies::WeightInfo<Runtime>;
 }
 
+/// Burns transaction fees and tips, and records the burned amount in
+/// `pallet_avn_transaction_payment::TotalFeesBurned`.
 pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
 impl<R> OnUnbalanced<fungible::Credit<R::AccountId, pallet_balances::Pallet<R>>> for DealWithFees<R>
 where
-    R: pallet_balances::Config + pallet_parachain_staking::Config,
-    <R as frame_system::Config>::AccountId: From<AccountId>,
-    <R as frame_system::Config>::AccountId: Into<AccountId>,
-    <R as frame_system::Config>::RuntimeEvent: From<pallet_balances::Event<R>>,
+    R: pallet_balances::Config
+        + pallet_avn_transaction_payment::Config<Currency = pallet_balances::Pallet<R>>,
 {
     fn on_unbalanceds(
         mut fees_then_tips: impl Iterator<
@@ -864,7 +864,10 @@ where
             if let Some(tips) = fees_then_tips.next() {
                 tips.merge_into(&mut fees);
             }
-            ResolveTo::<StakingPotAccountId<R>, pallet_balances::Pallet<R>>::on_unbalanced(fees)
+
+            pallet_avn_transaction_payment::Pallet::<R>::note_fees_burned(fees.peek());
+            // Dropping the credit without resolving it reduces the total issuance, i.e. burns it.
+            drop(fees);
         }
     }
 }

@@ -102,6 +102,11 @@ pub mod pallet {
     pub type KnownSenders<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, FeeAdjustmentConfig<T>, ValueQuery>;
 
+    #[pallet::storage]
+    #[pallet::getter(fn total_fees_burned)]
+    /// The cumulative amount of fees that have been burned
+    pub type TotalFeesBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         #[pallet::call_index(0)]
@@ -188,6 +193,18 @@ type BalanceOf<T> =
     <<T as Config>::Currency as Inspect<<T as frame_system::Config>::AccountId>>::Balance;
 
 impl<T: Config> Pallet<T> {
+    /// Adds `amount` to the running total of burned transaction fees.
+    ///
+    /// This does not burn anything by itself. It is meant to be called by the runtime's
+    /// `OnUnbalanced` fee handler right before it drops (burns) the fee credit.
+    pub fn note_fees_burned(amount: BalanceOf<T>) {
+        if amount.is_zero() {
+            return
+        }
+
+        <TotalFeesBurned<T>>::mutate(|total| *total = total.saturating_add(amount));
+    }
+
     pub fn calculate_refund_amount(
         fee_payer: &T::AccountId,
         amount_paid: &BalanceOf<T>,

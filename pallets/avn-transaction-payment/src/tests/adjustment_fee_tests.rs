@@ -582,3 +582,81 @@ mod refunds {
         })
     }
 }
+
+mod fees_are_burned {
+    use super::*;
+
+    #[test]
+    fn and_total_burned_is_tracked() {
+        new_test_ext().execute_with(|| {
+            let sender = to_acc_id(1u64);
+            set_initial_sender_balance(&sender);
+            let issuance_before = Balances::total_issuance();
+            assert_eq!(AvnTransactionPayment::total_fees_burned(), 0);
+
+            pay_gas_and_call_remark(&sender, NO_TIP);
+
+            let expected_fee = expected_fee();
+            assert_eq!(AvnTransactionPayment::total_fees_burned(), expected_fee);
+            assert_eq!(Balances::total_issuance(), issuance_before - expected_fee);
+        })
+    }
+
+    #[test]
+    fn including_tips() {
+        new_test_ext().execute_with(|| {
+            let sender = to_acc_id(1u64);
+            set_initial_sender_balance(&sender);
+            let issuance_before = Balances::total_issuance();
+
+            pay_gas_and_call_remark(&sender, ONE_ATTO_TIP);
+
+            let expected_burn = expected_fee() + ONE_ATTO_TIP;
+            assert_eq!(AvnTransactionPayment::total_fees_burned(), expected_burn);
+            assert_eq!(Balances::total_issuance(), issuance_before - expected_burn);
+        })
+    }
+
+    #[test]
+    fn and_total_accumulates_across_transactions() {
+        new_test_ext().execute_with(|| {
+            let sender = to_acc_id(1u64);
+            set_initial_sender_balance(&sender);
+            pay_gas_and_call_remark(&sender, NO_TIP);
+            assert_eq!(AvnTransactionPayment::total_fees_burned(), expected_fee());
+
+            // The sender can't afford a second fee, so top them up before paying again
+            set_initial_sender_balance(&sender);
+            let issuance_before = Balances::total_issuance();
+            pay_gas_and_call_remark(&sender, ONE_ATTO_TIP);
+
+            let expected_burn = expected_fee() * 2 + ONE_ATTO_TIP;
+            assert_eq!(AvnTransactionPayment::total_fees_burned(), expected_burn);
+            assert_eq!(
+                Balances::total_issuance(),
+                issuance_before - (expected_fee() + ONE_ATTO_TIP)
+            );
+        })
+    }
+
+    #[test]
+    fn and_only_the_adjusted_fee_is_burned_for_known_senders() {
+        new_test_ext().execute_with(|| {
+            let sender = to_acc_id(1u64);
+            set_initial_sender_balance(&sender);
+            let issuance_before = Balances::total_issuance();
+
+            let config = AdjustmentInput::<TestRuntime> {
+                fee_type: FeeType::FixedFee(FixedFeeConfig { fee: FIXED_FEE }),
+                adjustment_type: AdjustmentType::None,
+            };
+            set_known_sender(&sender, config);
+
+            pay_gas_and_call_remark(&sender, ONE_ATTO_TIP);
+
+            let expected_burn = FIXED_FEE + ONE_ATTO_TIP;
+            assert_eq!(AvnTransactionPayment::total_fees_burned(), expected_burn);
+            assert_eq!(Balances::total_issuance(), issuance_before - expected_burn);
+        })
+    }
+}

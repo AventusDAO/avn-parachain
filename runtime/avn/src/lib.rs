@@ -43,7 +43,6 @@ pub use frame_system::{
 use polkadot_sdk::frame_support::{
     traits::{
         fungible::{self as fungible, HoldConsideration},
-        tokens::imbalance::ResolveTo,
         AsEnsureOriginWithArg, ConstU32, Contains, Currency, Imbalance, LinearStoragePrice,
         OnUnbalanced, PrivilegeCmp,
     },
@@ -61,7 +60,7 @@ use pallet_avn::sr25519::AuthorityId as AvnId;
 pub use pallet_avn_proxy::{Event as AvnProxyEvent, ProvableProxy};
 use pallet_avn_transaction_payment::AvnGasFeeAdapter;
 use pallet_eth_bridge_runtime_api::InstanceId;
-use pallet_parachain_staking::{self, StakingPotAccountId};
+use pallet_parachain_staking;
 use sp_avn_common::{
     eth::EthBridgeInstance,
     event_discovery::{AdditionalEvents, EthBlockRange, EthereumEventsPartition},

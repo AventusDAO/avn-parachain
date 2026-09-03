@@ -118,6 +118,10 @@ impl
             if let Some(tips) = fees_then_tips.next() {
                 tips.merge_into(&mut fees);
             }
+
+            // Mirrors the runtime: record the amount, then drop the credit to burn it.
+            AvnTransactionPayment::note_fees_burned(fees.peek());
+            drop(fees);
         }
     }
 }
