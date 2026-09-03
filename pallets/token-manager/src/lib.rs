@@ -385,6 +385,7 @@ pub mod pallet {
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
+        #[serde(skip)]
         pub _phantom: sp_std::marker::PhantomData<T>,
         pub lower_account_id: H256,
         pub avt_token_contract: H160,
