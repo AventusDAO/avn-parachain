@@ -1719,8 +1719,8 @@ mod if_process_summary_is_called_a_second_time {
 
 mod constrains {
     use crate::{RootId, RootRange};
-    pub type BlockNumber = u32;
-    use sp_avn_common::bounds::VotingSessionIdBound;
+    use codec::Encode;
+    use sp_avn_common::{bounds::VotingSessionIdBound, node::BlockNumber};
     use sp_core::Get;
 
     #[test]
@@ -1728,7 +1728,12 @@ mod constrains {
         let action_id = RootId::<BlockNumber>::new(RootRange::new(0u32.into(), 60u32.into()), 1);
         assert!(
             action_id.session_id().len() as u32 <= VotingSessionIdBound::get(),
-            "The encoded size of RootId must not exceed the VotingSessionIdBound"
+            "The session_id size of RootId must not exceed the VotingSessionIdBound"
+        );
+        // Ensure we don't lose any bytes when converting to SessionId
+        assert!(
+            action_id.encode().len() as u32 == action_id.session_id().len() as u32,
+            "The encoded size of RootId should not get truncated when transformed to a session_id"
         );
     }
 }

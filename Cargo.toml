@@ -86,6 +86,7 @@ pallet-authority-discovery = { version = "40.0.0", default-features = false }
 pallet-offences = { version = "39.0.0", default-features = false }
 pallet-im-online = { version = "39.1.1", default-features = false }
 pallet-utility = { version = "40.0.0", default-features = false }
+pallet-migrations = { version = "10.1.1", default-features = false }
 pallet-referenda = { version = "40.1.0", default-features = false }
 pallet-conviction-voting = { version = "40.1.0", default-features = false }
 pallet-whitelist = { version = "39.0.0", default-features = false }
