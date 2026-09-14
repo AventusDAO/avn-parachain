@@ -1,7 +1,8 @@
 use crate::error::TreeError;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use sp_core::{hashing::keccak_256, H256};
+use sp_core::H256;
+use sp_io::hashing::keccak_256;
 
 /// Vector of bytes that represents abi encoded leaf data
 pub type EncodedLeafData = Vec<u8>;

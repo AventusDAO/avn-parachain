@@ -110,6 +110,7 @@ pub type UncheckedExtrinsic =
 pub type Migrations = (
     pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,
     pallet_avn_anchor::migration::AvnAnchorMigrations<Runtime>,
+    cumulus_pallet_parachain_system::migration::Migration<Runtime>,
 );
 
 pub type Executive = frame_executive::Executive<

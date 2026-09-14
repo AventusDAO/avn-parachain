@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-use sp_core::{keccak_256, H160};
+use sp_core::H160;
+use sp_io::hashing::keccak_256;
 
 pub fn eth_address_from_private_key_hex(hex_sk: &str) -> Result<H160> {
     let s = hex_sk.strip_prefix("0x").unwrap_or(hex_sk);

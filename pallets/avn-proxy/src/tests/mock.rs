@@ -27,7 +27,8 @@ use sp_avn_common::{
     primitives::{Amount, Balance, CurrencyId},
     Asset,
 };
-use sp_core::{keccak_256, sr25519, ByteArray, ConstU32, ConstU64, Pair, H160, H256};
+use sp_core::{sr25519, ByteArray, ConstU32, ConstU64, Pair, H160, H256};
+use sp_io::hashing::keccak_256;
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},

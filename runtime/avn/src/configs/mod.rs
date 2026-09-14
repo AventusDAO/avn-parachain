@@ -233,6 +233,8 @@ impl cumulus_pallet_parachain_system::Config for Runtime {
     type CheckAssociatedRelayNumber = RelayNumberMonotonicallyIncreases;
     type ConsensusHook = ConsensusHook;
     type RelayParentOffset = ConstU32<0>;
+    // Relay-parent header chain is still supplied through the inherent (V3 scheduling disabled).
+    type SchedulingSignatureVerifier = ();
 }
 
 impl parachain_info::Config for Runtime {}

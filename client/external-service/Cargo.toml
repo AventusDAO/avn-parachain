@@ -32,6 +32,7 @@ sp-block-builder = { default-features = true, workspace = true }
 sp-blockchain = { default-features = true, workspace = true }
 sp-avn-common = { default-features = true, workspace = true }
 sp-core = { default-features = true, workspace = true }
+sp-io = { default-features = true, workspace = true }
 sp-runtime = { default-features = true, workspace = true }
 sp-keystore = { default-features = true, workspace = true }
 sp-api = { default-features = true, workspace = true }

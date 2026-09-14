@@ -11,10 +11,10 @@ use crate::{
     },
     Config, Error, Event, NominatorAdded, Proof, StaticLookup,
 };
-use frame_support::{assert_noop, assert_ok, error::BadOrigin};
+use frame_support::{assert_noop, assert_ok};
 use frame_system::{self as system, RawOrigin};
 use pallet_avn_proxy::Error as avn_proxy_error;
-use sp_runtime::traits::Zero;
+use sp_runtime::traits::{BadOrigin, Zero};
 
 fn to_acc_id(id: u64) -> AccountId {
     return TestAccount::new(id).account_id()
