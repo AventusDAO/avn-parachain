@@ -62,7 +62,9 @@ fn generate_sender_author_account_details<T: Config>(
 }
 
 // Add additional authors, on top of genesis configuration
-fn setup_additional_authors<T: Config>(number_of_additional_authors: u32) {
+fn setup_additional_authors<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    number_of_additional_authors: u32,
+) {
     assert!(number_of_additional_authors >= MINIMUM_ADDITIONAL_BENCHMARKS_AUTHORS as u32);
 
     let mut avn_authors: Vec<Author<<T as pallet_avn::Config>::AuthorityId, T::AccountId>> =
@@ -153,45 +155,21 @@ fn advance_session<T: Config>() {
     Session::<T>::on_initialize(System::<T>::block_number());
 }
 
-fn create_benchmark_keys<T: Config>(rng: &mut rand::rngs::StdRng) -> T::Keys {
-    use rand::RngCore;
-    use sp_core::{
-        crypto::{ByteArray, KeyTypeId},
-        sr25519,
-    };
-    use sp_runtime::traits::OpaqueKeys;
-
-    const KEY_TYPES: &[KeyTypeId] = &[
-        KeyTypeId(*b"aura"), // Aura
-        KeyTypeId(*b"gran"), // GRANDPA
-        KeyTypeId(*b"avnk"), // Avn - keytypeid has a fixed size of 4 characters
-        KeyTypeId(*b"imon"), // IMONLINE
-        KeyTypeId(*b"audi"), // Authority discovery
-    ];
-
-    let mut keys = Vec::new();
-    for key_type in KEY_TYPES {
-        let mut key_data = [0u8; 32];
-        rng.fill_bytes(&mut key_data);
-        let key = sr25519::Public::from_raw(key_data);
-        keys.push((*key_type, key.as_slice().to_vec()));
-    }
-
-    T::Keys::decode(&mut &keys.encode()[..]).expect("Failed to create benchmark keys")
-}
-
-fn set_session_keys<T: Config>(author_id: &T::AccountId, index: u64) {
-    use rand::{RngCore, SeedableRng};
+fn set_session_keys<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    author_id: &T::AccountId,
+    _index: u64,
+) {
     frame_system::Pallet::<T>::inc_providers(author_id);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(index);
-
-    let keys = create_benchmark_keys::<T>(&mut rng);
+    let (keys, proof) =
+        <T as cumulus_pallet_session_benchmarking::Config>::generate_session_keys_and_proof(
+            author_id.clone(),
+        );
 
     pallet_session::Pallet::<T>::set_keys(
         RawOrigin::<T::AccountId>::Signed(author_id.clone()).into(),
         keys,
-        Vec::new(),
+        proof,
     )
     .expect("Failed to set session keys");
 }
@@ -205,7 +183,11 @@ fn generate_author_eth_public_key_from_seed<T: Config>(seed: u64) -> Public {
     return compress_eth_public_key(H512::from_slice(&public_key.serialize()[1..]))
 }
 
-fn force_add_author<T: Config>(author_id: &T::AccountId, index: u64, eth_public_key: &Public) {
+fn force_add_author<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    author_id: &T::AccountId,
+    index: u64,
+    eth_public_key: &Public,
+) {
     set_session_keys::<T>(author_id, index);
     AuthorsManager::<T>::add_author(
         RawOrigin::Root.into(),
@@ -227,6 +209,8 @@ fn force_add_author<T: Config>(author_id: &T::AccountId, index: u64, eth_public_
 }
 
 benchmarks! {
+    where_clause { where T: cumulus_pallet_session_benchmarking::Config }
+
     add_author {
         let candidate: T::AccountId = account("author_candidate", 1, 1);
         let candidate_id = <pallet_session::Pallet<T> as AuthorSet<T::AccountId>>::ValidatorIdOf::convert(candidate.clone()).unwrap();

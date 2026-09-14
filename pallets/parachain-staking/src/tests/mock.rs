@@ -120,7 +120,10 @@ parameter_types! {
     pub const AvailableBlockRatio: Perbill = Perbill::one();
     pub const SS58Prefix: u8 = 42;
 
-    pub BlockLength: limits::BlockLength = limits::BlockLength::max_with_normal_ratio(1024, NORMAL_DISPATCH_RATIO);
+    pub BlockLength: limits::BlockLength = limits::BlockLength::builder()
+        .max_length(1024)
+        .modify_max_length_for_class(DispatchClass::Normal, |m| *m = NORMAL_DISPATCH_RATIO * *m)
+        .build();
     pub RuntimeBlockWeights: limits::BlockWeights = limits::BlockWeights::builder()
         .base_block(Weight::from_parts(10, 0))
         .for_class(DispatchClass::all(), |weights| {
@@ -249,6 +252,17 @@ impl pallet_session::historical::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
+}
+
+/// Session keys for benchmarks. `UintAuthorityId` accepts any ownership proof, so a distinct dummy
+/// key per owner and an empty proof are sufficient here.
+#[cfg(feature = "runtime-benchmarks")]
+impl cumulus_pallet_session_benchmarking::Config for Test {
+    fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+        let mut id = [0u8; 8];
+        codec::Encode::using_encoded(&owner, |encoded| id.copy_from_slice(&encoded[..8]));
+        (UintAuthorityId(u64::from_le_bytes(id)), Vec::new())
+    }
 }
 
 parameter_types! {

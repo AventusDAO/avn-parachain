@@ -177,7 +177,10 @@ const MAX_BLOCK_WEIGHT: Weight =
 parameter_types! {
     pub const BlockHashCount: u64 = 250;
     // Creating custom runtime block weights similar with substrate/frame/system/src/mock.rs
-    pub BlockLength: limits::BlockLength = limits::BlockLength::max_with_normal_ratio(1024, NORMAL_DISPATCH_RATIO);
+    pub BlockLength: limits::BlockLength = limits::BlockLength::builder()
+        .max_length(1024)
+        .modify_max_length_for_class(DispatchClass::Normal, |m| *m = NORMAL_DISPATCH_RATIO * *m)
+        .build();
     pub RuntimeBlockWeights: limits::BlockWeights = limits::BlockWeights::builder()
         .base_block(Weight::from_parts(10 as u64, 0))
         .for_class(DispatchClass::all(), |weights| {

@@ -31,15 +31,7 @@ pub mod pallet_custom_origins {
     pub struct Pallet<T>(_);
 
     #[derive(
-        PartialEq,
-        Eq,
-        Clone,
-        MaxEncodedLen,
-        Encode,
-        Decode,
-        TypeInfo,
-        RuntimeDebug,
-        DecodeWithMemTracking,
+        PartialEq, Eq, Clone, MaxEncodedLen, Encode, Decode, TypeInfo, Debug, DecodeWithMemTracking,
     )]
     #[pallet::origin]
     pub enum Origin {

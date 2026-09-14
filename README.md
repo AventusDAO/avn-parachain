@@ -50,8 +50,10 @@ Once done, finish installing the support software and configure your default too
 
 # Additional OS dependencies
 sudo apt install build-essential
-sudo apt install --assume-yes git clang curl libssl-dev protobuf-compiler
+sudo apt install --assume-yes git clang libclang-dev curl libssl-dev protobuf-compiler
 ```
+
+`libclang-dev` is required since polkadot-sdk stable2512: the RocksDB bindings are generated at build time and need an unversioned `libclang.so`, which the plain `clang` package does not provide.
 
 Verify the configuration of your development environment by running the following command:
 ```bash
@@ -121,6 +123,8 @@ cargo test
 # Test the benchmark tests
 cargo test --features runtime-benchmarks
 ```
+
+Building with `runtime-benchmarks` additionally requires `solc` and `resolc` on the `PATH`, because `pallet-revive-fixtures` compiles Solidity fixtures in its build script. Use the versions pinned in `.github/workflows/cargo-test.yml`.
 AvN binaries are built on Ubuntu 20.04 (focal), which is a Long Term Support (LTS) version. Consequently, these binaries may rely on certain native libraries such as OpenSSL. While Debian bullseye-based operating systems should be compatible, we highly recommend using Ubuntu 20.04 for running a node binary.
 
 ## Storage migration tests

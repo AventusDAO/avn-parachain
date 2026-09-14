@@ -22,7 +22,7 @@ use crate::{
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{dispatch::DispatchResultWithPostInfo, ensure, traits::Get};
 use scale_info::TypeInfo;
-use sp_runtime::{traits::Saturating, BoundedVec, RuntimeDebug};
+use sp_runtime::{traits::Saturating, BoundedVec, Debug};
 use sp_std::vec;
 
 /// An action that can be performed upon a nomination
@@ -32,7 +32,7 @@ use sp_std::vec;
     PartialEq,
     Encode,
     Decode,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     PartialOrd,
     Ord,
@@ -56,9 +56,7 @@ impl<Balance: Copy> NominationAction<Balance> {
 
 /// Represents a scheduled request that define a [NominationAction]. The request is executable
 /// iff the provided [EraIndex] is achieved.
-#[derive(
-    Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, PartialOrd, Ord, MaxEncodedLen,
-)]
+#[derive(Clone, Eq, PartialEq, Encode, Decode, Debug, TypeInfo, PartialOrd, Ord, MaxEncodedLen)]
 pub struct ScheduledRequest<AccountId, Balance> {
     pub nominator: AccountId,
     pub when_executable: EraIndex,
@@ -66,7 +64,7 @@ pub struct ScheduledRequest<AccountId, Balance> {
 }
 
 /// Represents a cancelled scheduled request for emitting an event.
-#[derive(Clone, Eq, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, DecodeWithMemTracking)]
+#[derive(Clone, Eq, PartialEq, Encode, Decode, Debug, TypeInfo, DecodeWithMemTracking)]
 pub struct CancelledScheduledRequest<Balance> {
     pub when_executable: EraIndex,
     pub action: NominationAction<Balance>,

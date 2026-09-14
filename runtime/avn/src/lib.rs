@@ -24,7 +24,7 @@ use codec::{Decode, Encode};
 use scale_info::TypeInfo;
 
 use governance::pallet_custom_origins;
-pub use polkadot_sdk::sp_runtime::{MultiAddress, Perbill, Permill, RuntimeDebug};
+pub use polkadot_sdk::sp_runtime::{Debug, MultiAddress, Perbill, Permill};
 use polkadot_sdk::{
     sp_runtime::{generic, impl_opaque_keys},
     staging_parachain_info as parachain_info, *,

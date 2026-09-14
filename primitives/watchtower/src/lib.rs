@@ -9,11 +9,11 @@ use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::marker::PhantomData;
 use scale_info::TypeInfo;
 use sp_core::H256;
-use sp_runtime::{traits::Member, DispatchResult, Perbill, RuntimeDebug};
+use sp_runtime::{traits::Member, Debug, DispatchResult, Perbill};
 
 pub type ProposalId = H256;
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
+#[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum RawPayload {
     /// Small proposals that can fit safely in the runtime
     Inline(Vec<u8>),
@@ -23,15 +23,7 @@ pub enum RawPayload {
 }
 
 #[derive(
-    Encode,
-    Decode,
-    RuntimeDebug,
-    Clone,
-    PartialEq,
-    Eq,
-    TypeInfo,
-    MaxEncodedLen,
-    DecodeWithMemTracking,
+    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
 pub enum ProposalSource {
     /// External proposals created by other users. These require manual review and voting.
@@ -41,15 +33,7 @@ pub enum ProposalSource {
 }
 
 #[derive(
-    Encode,
-    Decode,
-    RuntimeDebug,
-    Clone,
-    PartialEq,
-    Eq,
-    TypeInfo,
-    MaxEncodedLen,
-    DecodeWithMemTracking,
+    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
 pub enum ProposalType {
     Summary,
@@ -59,15 +43,7 @@ pub enum ProposalType {
 }
 
 #[derive(
-    Encode,
-    Decode,
-    RuntimeDebug,
-    Clone,
-    PartialEq,
-    Eq,
-    TypeInfo,
-    MaxEncodedLen,
-    DecodeWithMemTracking,
+    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
 pub enum ProposalStatusEnum {
     Queued,
@@ -79,15 +55,7 @@ pub enum ProposalStatusEnum {
 }
 
 #[derive(
-    Encode,
-    Decode,
-    RuntimeDebug,
-    Clone,
-    PartialEq,
-    Eq,
-    TypeInfo,
-    MaxEncodedLen,
-    DecodeWithMemTracking,
+    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
 )]
 pub enum DecisionRule {
     /// Yes > No to win
@@ -101,7 +69,7 @@ impl Default for ProposalStatusEnum {
     }
 }
 
-#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
+#[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub struct ProposalRequest {
     pub title: Vec<u8>,
     pub payload: RawPayload,

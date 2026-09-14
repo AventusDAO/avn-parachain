@@ -59,7 +59,9 @@ fn generate_sender_collator_account_details<T: Config>(
 }
 
 // Add additional collators, on top of genesis configuration
-fn setup_additional_validators<T: Config>(number_of_additional_validators: u32) {
+fn setup_additional_validators<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    number_of_additional_validators: u32,
+) {
     assert!(number_of_additional_validators >= MINIMUM_ADDITIONAL_BENCHMARKS_VALIDATORS as u32);
 
     let mut avn_validators: Vec<Validator<<T as pallet_avn::Config>::AuthorityId, T::AccountId>> =
@@ -159,25 +161,21 @@ fn advance_session<T: Config>() {
     ParachainStaking::<T>::on_initialize(System::<T>::block_number());
 }
 
-fn set_session_keys<T: Config>(collator_id: &T::AccountId, index: u64) {
-    use rand::{RngCore, SeedableRng};
-
+fn set_session_keys<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    collator_id: &T::AccountId,
+    _index: u64,
+) {
     frame_system::Pallet::<T>::inc_providers(collator_id);
 
-    let keys = {
-        let mut keys = [0u8; 128];
-        // We keep the keys for the first validator as 0x00000...
-        let mut rng = rand::rngs::StdRng::seed_from_u64(index);
-        rng.fill_bytes(&mut keys);
-        keys
-    };
-
-    let keys: T::Keys = Decode::decode(&mut &keys[..]).unwrap();
+    let (keys, proof) =
+        <T as cumulus_pallet_session_benchmarking::Config>::generate_session_keys_and_proof(
+            collator_id.clone(),
+        );
 
     pallet_session::Pallet::<T>::set_keys(
         RawOrigin::<T::AccountId>::Signed(collator_id.clone()).into(),
         keys,
-        Vec::new(),
+        proof,
     )
     .unwrap();
 }
@@ -208,7 +206,11 @@ fn get_tx_id_for_validator<T: Config>(account_id: &T::AccountId) -> Option<Ether
     None
 }
 
-fn force_add_collator<T: Config>(collator_id: &T::AccountId, index: u64, eth_public_key: &Public) {
+fn force_add_collator<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    collator_id: &T::AccountId,
+    index: u64,
+    eth_public_key: &Public,
+) {
     set_session_keys::<T>(collator_id, index);
     <T as pallet_parachain_staking::Config>::Currency::make_free_balance_be(
         &collator_id,
@@ -236,6 +238,8 @@ fn force_add_collator<T: Config>(collator_id: &T::AccountId, index: u64, eth_pub
 }
 
 benchmarks! {
+    where_clause { where T: cumulus_pallet_session_benchmarking::Config }
+
     add_collator {
         let candidate = account("collator_candidate", 1, 1);
         <T as pallet_parachain_staking::Config>::Currency::make_free_balance_be(&candidate, ParachainStaking::<T>::min_collator_stake() * 2u32.into());
