@@ -37,6 +37,7 @@ pallet-timestamp.workspace = true
 
 # Optional imports for benchmarking
 frame-benchmarking = { optional = true, workspace = true }
+cumulus-pallet-session-benchmarking = { optional = true, workspace = true }
 
 [dev-dependencies]
 sp-io = { default-features = true, workspace = true }
@@ -49,6 +50,7 @@ pallet-eth-bridge = { workspace = true, default-features = true }
 [features]
 default = ["std", "pallet-session/historical"]
 std = [
+	"cumulus-pallet-session-benchmarking?/std",
 	"frame-benchmarking?/std",
 	"scale-info/std",
 	"codec/std",
@@ -69,6 +71,8 @@ std = [
 	"sha3?/std",
 ]
 runtime-benchmarks = [
+	"cumulus-pallet-session-benchmarking",
+	"cumulus-pallet-session-benchmarking/runtime-benchmarks",
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",

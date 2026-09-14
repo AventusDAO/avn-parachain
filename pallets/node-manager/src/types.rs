@@ -12,7 +12,7 @@ use sp_std::fmt::Debug;
 pub const HEARTBEAT_BASE_WEIGHT: u128 = 100_000_000;
 pub type Duration = u64;
 
-#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// The current era index and transition information
 pub struct RewardPeriodInfo<BlockNumber, Balance> {
     /// Current era index
@@ -92,7 +92,7 @@ impl<
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 pub struct RewardPotInfo<Balance> {
     /// The total reward to pay out
     pub total_reward: Balance,
@@ -116,7 +116,7 @@ impl<Balance: Copy> RewardPotInfo<Balance> {
     Eq,
     Encode,
     Decode,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
     DecodeWithMemTracking,
@@ -172,7 +172,7 @@ impl<AccountId: Clone + FullCodec + MaxEncodedLen + TypeInfo> PaymentPointer<Acc
     Clone,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
     Default,
@@ -344,7 +344,7 @@ impl<
     Copy,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
     Default,
@@ -399,7 +399,7 @@ pub enum AdminConfig<AccountId, Balance> {
     Encode,
     Decode,
     DecodeWithMemTracking,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
 )]
@@ -435,7 +435,7 @@ pub enum StakeOperation {
     Remove,
 }
 
-#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
 pub struct PendingMintRequest<Balance> {
     pub tx_id: EthereumId,
     pub amount: Balance,
@@ -451,7 +451,7 @@ pub struct PendingMintRequest<Balance> {
     Copy,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
 )]
@@ -492,7 +492,7 @@ impl Get<BonusRange> for DefaultGenesisBonus25 {
     Clone,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
 )]

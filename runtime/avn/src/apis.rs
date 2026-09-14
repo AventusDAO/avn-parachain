@@ -94,6 +94,13 @@ impl_runtime_apis! {
         }
     }
 
+    impl cumulus_primitives_core::KeyToIncludeInRelayProof<Block> for Runtime {
+        fn keys_to_prove() -> cumulus_primitives_core::RelayProofRequest {
+            // We do not read any additional relay chain storage in the runtime.
+            Default::default()
+        }
+    }
+
     impl sp_api::Core<Block> for Runtime {
         fn version() -> RuntimeVersion {
             VERSION
@@ -167,8 +174,11 @@ impl_runtime_apis! {
     }
 
     impl sp_session::SessionKeys<Block> for Runtime {
-        fn generate_session_keys(seed: Option<Vec<u8>>) -> Vec<u8> {
-            SessionKeys::generate(seed)
+        fn generate_session_keys(
+            owner: Vec<u8>,
+            seed: Option<Vec<u8>>,
+        ) -> sp_session::OpaqueGeneratedSessionKeys {
+            SessionKeys::generate(&owner, seed).into()
         }
 
         fn decode_session_keys(
@@ -386,7 +396,12 @@ impl_runtime_apis! {
             }
 
             use cumulus_pallet_session_benchmarking::Pallet as SessionBench;
-            impl cumulus_pallet_session_benchmarking::Config for Runtime {}
+            impl cumulus_pallet_session_benchmarking::Config for Runtime {
+                fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+                    let generated = SessionKeys::generate(&owner.encode(), None);
+                    (generated.keys, generated.proof.encode())
+                }
+            }
 
             use polkadot_sdk::frame_support::traits::WhitelistedStorageKeys;
             let whitelist = AllPalletsWithSystem::whitelisted_storage_keys();

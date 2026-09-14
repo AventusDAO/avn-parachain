@@ -300,6 +300,17 @@ impl pallet_session::historical::Config for TestRuntime {
     type FullIdentificationOf = ConvertInto;
 }
 
+/// Session keys for benchmarks. `UintAuthorityId` accepts any ownership proof, so a distinct dummy
+/// key per owner and an empty proof are sufficient here.
+#[cfg(feature = "runtime-benchmarks")]
+impl cumulus_pallet_session_benchmarking::Config for TestRuntime {
+    fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+        let mut id = [0u8; 8];
+        codec::Encode::using_encoded(&owner, |encoded| id.copy_from_slice(&encoded[..8]));
+        (UintAuthorityId(u64::from_le_bytes(id)), Vec::new())
+    }
+}
+
 impl pallet_session::historical::SessionManager<AccountId, AccountId> for TestSessionManager {
     fn new_session(_new_index: SessionIndex) -> Option<Vec<(AccountId, AccountId)>> {
         VALIDATORS.with(|l| {

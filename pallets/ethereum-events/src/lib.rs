@@ -28,7 +28,7 @@ use sp_runtime::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, RuntimeDebug,
+    Debug, DispatchError,
 };
 use sp_std::{cmp, prelude::*};
 
@@ -1682,7 +1682,7 @@ impl<T: Config> InnerCallValidator for Pallet<T> {
 // A value placed in storage that represents the current version of the EthereumEvents pallet
 // storage. This value is used by the `on_runtime_upgrade` logic to determine whether we run its
 // storage migration logic.
-#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, Debug, MaxEncodedLen, TypeInfo)]
 enum Releases {
     Unknown,
     V2_0_0,

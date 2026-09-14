@@ -51,7 +51,7 @@ type BalanceOf<T> =
     Copy,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
 )]
@@ -61,15 +61,7 @@ pub enum Action {
 }
 
 #[derive(
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    PartialEq,
-    Eq,
-    RuntimeDebug,
-    TypeInfo,
-    MaxEncodedLen,
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct LinkPayload<AccountId> {
     pub action: Action,

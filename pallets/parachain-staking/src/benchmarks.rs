@@ -36,7 +36,6 @@ use frame_support::traits::{Currency, Get, OnFinalize, OnInitialize};
 use frame_system::{self as system, EventRecord, RawOrigin};
 use hex_literal::hex;
 use pallet_authorship::EventHandler;
-use rand::{RngCore, SeedableRng};
 use sp_application_crypto::KeyTypeId;
 use sp_avn_common::benchmarking::convert_sr25519_signature;
 use sp_core::{bounded::BoundedVec, ecdsa, ConstU32};
@@ -106,7 +105,7 @@ fn create_funded_nominator<T: Config>(
     Ok(user)
 }
 
-fn create_funded_collator<T: Config>(
+fn create_funded_collator<T: Config + cumulus_pallet_session_benchmarking::Config>(
     string: &'static str,
     n: u32,
     extra: BalanceOf<T>,
@@ -124,7 +123,7 @@ fn create_funded_collator<T: Config>(
     Ok(user)
 }
 
-fn set_account_as_collator<T: Config>(
+fn set_account_as_collator<T: Config + cumulus_pallet_session_benchmarking::Config>(
     account: &T::AccountId,
     additional_bond: BalanceOf<T>,
     candidate_count: u32,
@@ -164,22 +163,21 @@ fn add_collator_to_avn<T: Config>(
     Ok(validator)
 }
 
-fn set_session_key<T: Config>(user: &T::AccountId, index: u32) -> Result<(), &'static str> {
+fn set_session_key<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    user: &T::AccountId,
+    _index: u32,
+) -> Result<(), &'static str> {
     frame_system::Pallet::<T>::inc_providers(user);
 
-    let keys = {
-        let mut keys = [0u8; 128];
-        let mut rng = rand::rngs::StdRng::seed_from_u64(index as u64);
-        rng.fill_bytes(&mut keys);
-        keys
-    };
-
-    let keys: T::Keys = Decode::decode(&mut &keys[..]).unwrap();
+    let (keys, proof) =
+        <T as cumulus_pallet_session_benchmarking::Config>::generate_session_keys_and_proof(
+            user.clone(),
+        );
 
     pallet_session::Pallet::<T>::set_keys(
         RawOrigin::<T::AccountId>::Signed(user.clone()).into(),
         keys,
-        Vec::new(),
+        proof,
     )?;
 
     Ok(())
@@ -248,7 +246,7 @@ fn get_allowed_max_collators<T: Config>(max_collators: u32) -> u32 {
     return actual_max_collators
 }
 
-fn setup_nomination<T: Config>(
+fn setup_nomination<T: Config + cumulus_pallet_session_benchmarking::Config>(
     max_collators: u32,
     max_nominators: u32,
     bond: BalanceOf<T>,
@@ -349,7 +347,7 @@ where
     return Ok((caller, proof))
 }
 
-fn setup_leave_nominator_state<T: Config>(
+fn setup_leave_nominator_state<T: Config + cumulus_pallet_session_benchmarking::Config>(
     num_of_collators: u32,
     caller: &T::AccountId,
 ) -> Result<u32, &'static str> {
@@ -406,6 +404,8 @@ fn generate_signature<T: pallet_avn::Config>(
 const USER_SEED: u32 = 999666;
 
 benchmarks! {
+    where_clause { where T: cumulus_pallet_session_benchmarking::Config }
+
     // ROOT DISPATCHABLES
 
     set_total_selected {

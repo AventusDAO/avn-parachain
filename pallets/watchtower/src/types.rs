@@ -1,10 +1,10 @@
 use crate::*;
-use frame_support::{CloneNoBound, EqNoBound, PartialEqNoBound, RuntimeDebugNoBound};
+use frame_support::{CloneNoBound, DebugNoBound, EqNoBound, PartialEqNoBound};
 
 #[derive(
     Encode,
     Decode,
-    RuntimeDebugNoBound,
+    DebugNoBound,
     CloneNoBound,
     PartialEqNoBound,
     EqNoBound,
@@ -70,7 +70,7 @@ pub fn to_payload<T: Config>(raw: RawPayload) -> Result<Payload<T>, Error<T>> {
 #[derive(
     Encode,
     Decode,
-    RuntimeDebugNoBound,
+    DebugNoBound,
     CloneNoBound,
     PartialEqNoBound,
     EqNoBound,
@@ -144,7 +144,7 @@ pub trait NodesInterface<AccountId, SignerId> {
     Encode,
     Decode,
     DecodeWithMemTracking,
-    RuntimeDebug,
+    Debug,
     Clone,
     PartialEq,
     Eq,

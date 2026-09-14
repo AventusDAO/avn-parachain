@@ -23,7 +23,7 @@ use scale_info::TypeInfo;
 use polkadot_sdk::{staging_parachain_info as parachain_info, *};
 
 use polkadot_sdk::sp_runtime::{generic, impl_opaque_keys};
-pub use polkadot_sdk::sp_runtime::{MultiAddress, Perbill, Permill, RuntimeDebug};
+pub use polkadot_sdk::sp_runtime::{Debug, MultiAddress, Perbill, Permill};
 
 use sp_std::{prelude::*, vec::Vec};
 
