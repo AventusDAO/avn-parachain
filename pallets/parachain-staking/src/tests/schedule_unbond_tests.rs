@@ -13,9 +13,10 @@ use crate::{
     },
     Bond, Config, Error, Event, NominationAction, Proof, ScheduledRequest,
 };
-use frame_support::{assert_noop, assert_ok, error::BadOrigin};
+use frame_support::{assert_noop, assert_ok};
 use frame_system::RawOrigin;
 use pallet_avn_proxy::Error as avn_proxy_error;
+use sp_runtime::traits::BadOrigin;
 use std::cell::RefCell;
 
 thread_local! {

@@ -37,7 +37,7 @@ use pallet_avn::CollatorPayoutDustHandler;
 use pallet_avn_proxy::{self as avn_proxy, ProvableProxy};
 use pallet_eth_bridge;
 use pallet_session as session;
-use pallet_transaction_payment::{ChargeTransactionPayment, CurrencyAdapter};
+use pallet_transaction_payment::{ChargeTransactionPayment, FungibleAdapter};
 use sp_avn_common::{eth::EthereumId, InnerCallValidator, PaymentHandler};
 use sp_core::{sr25519, ConstU64, Pair};
 use sp_io;
@@ -285,24 +285,29 @@ pub fn disable_growth() {
     GROWTH_ENABLED.with(|enabled| *enabled.borrow_mut() = false);
 }
 
+/// Fee credit type produced by `FungibleAdapter<Balances, _>`.
+type FeeCredit = frame_support::traits::fungible::Credit<AccountId, Balances>;
+
 pub struct DealWithFees;
-impl OnUnbalanced<pallet_balances::NegativeImbalance<Test>> for DealWithFees {
-    fn on_unbalanceds(
-        mut fees_then_tips: impl Iterator<Item = pallet_balances::NegativeImbalance<Test>>,
-    ) {
+impl OnUnbalanced<FeeCredit> for DealWithFees {
+    fn on_unbalanceds(mut fees_then_tips: impl Iterator<Item = FeeCredit>) {
         if let Some(mut fees) = fees_then_tips.next() {
             if let Some(tips) = fees_then_tips.next() {
                 tips.merge_into(&mut fees);
             }
             let staking_pot = ParachainStaking::compute_reward_pot_account_id();
-            Balances::resolve_creating(&staking_pot, fees);
+            // A credit that cannot be resolved is dropped, which burns it.
+            let _ = <Balances as frame_support::traits::fungible::Balanced<AccountId>>::resolve(
+                &staking_pot,
+                fees,
+            );
         }
     }
 }
 
 impl pallet_transaction_payment::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type OnChargeTransaction = CurrencyAdapter<Balances, DealWithFees>;
+    type OnChargeTransaction = FungibleAdapter<Balances, DealWithFees>;
     type LengthToFee = TransactionByteFee;
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();

@@ -21,11 +21,12 @@ use crate::{
     Call,
 };
 use codec::Encode;
-use frame_support::{assert_noop, assert_ok, error::BadOrigin};
+use frame_support::{assert_noop, assert_ok};
 use frame_system::RawOrigin;
 use hex_literal::hex;
 use mock::{RuntimeEvent as Event, RuntimeOrigin as Origin};
 use sp_core::sr25519::Pair;
+use sp_runtime::traits::BadOrigin;
 
 fn build_proof(
     signer: &AccountId,

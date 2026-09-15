@@ -166,6 +166,8 @@ pub type Migrations = (
     cumulus_pallet_xcmp_queue::migration::v6::MigrateV5ToV6<Runtime>,
     cumulus_pallet_xcmp_queue::migration::v7::MigrateV6ToV7<Runtime>,
     pallet_xcm::migration::MigrateToLatestXcmVersion<Runtime>,
+    // stable2606: storage version 2 -> 3, clears the pre-release `PoVMessagesTracker` encoding.
+    cumulus_pallet_parachain_system::migration::Migration<Runtime>,
     cumulus_pallet_aura_ext::migration::MigrateV0ToV1<Runtime>,
 );
 
