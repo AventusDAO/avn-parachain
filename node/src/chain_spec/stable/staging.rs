@@ -16,7 +16,7 @@ pub fn staging_testnet_config() -> ChainSpec {
 
     ChainSpec::builder(
         avn_parachain_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
-        Extensions { relay_chain: RELAY_CHAIN.into() },
+        Extensions { relay_chain: RELAY_CHAIN.into(), para_id: Some(staging_parachain_id) },
     )
     .with_name("AvN Staging Parachain")
     .with_protocol_id("avn-staging-testnet")
@@ -79,7 +79,7 @@ pub fn staging_dev_testnet_config() -> ChainSpec {
 
     ChainSpec::builder(
         avn_parachain_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
-        Extensions { relay_chain: RELAY_CHAIN.into() },
+        Extensions { relay_chain: RELAY_CHAIN.into(), para_id: Some(staging_parachain_id) },
     )
     .with_name("AvN Staging Dev Parachain")
     .with_protocol_id("staging-dev")

@@ -156,6 +156,13 @@ pub struct Extensions {
     /// The relay chain of the Parachain.
     #[serde(alias = "relayChain", alias = "RelayChain")]
     pub relay_chain: String,
+    /// The id of the Parachain.
+    ///
+    /// Only used as a fallback when the runtime at the best block does not implement
+    /// `cumulus_primitives_core::GetParachainInfo` (runtimes predating stable2606, and the
+    /// genesis runtime of any chain launched before that).
+    #[serde(alias = "paraId", alias = "ParaId")]
+    pub para_id: Option<u32>,
 }
 
 impl Extensions {

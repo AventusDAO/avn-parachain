@@ -24,7 +24,7 @@ use cumulus_primitives_core::{
     GetParachainInfo, ParaId,
 };
 use cumulus_relay_chain_interface::{OverseerHandle, RelayChainInterface};
-use sp_api::ProvideRuntimeApi;
+use sp_api::{ApiExt, ProvideRuntimeApi};
 
 // Substrate Imports
 use sc_consensus::ImportQueue;
@@ -282,6 +282,49 @@ where
     Ok(())
 }
 
+/// Resolve the parachain id, preferring the runtime over the chain spec.
+///
+/// The runtime is authoritative when it implements
+/// `cumulus_primitives_core::GetParachainInfo`. Runtimes built before stable2606 do not, and
+/// neither does the genesis runtime of any chain launched before then, so a fresh node's
+/// best block (genesis) will never expose the API. In both cases fall back to the `para_id`
+/// carried in the chain spec extensions.
+fn resolve_para_id(
+    client: &ParachainClient,
+    parachain_config: &Configuration,
+) -> sc_service::error::Result<ParaId> {
+    let best_hash = client.chain_info().best_hash;
+    let runtime_api = client.runtime_api();
+
+    let has_api = runtime_api.has_api::<dyn GetParachainInfo<Block>>(best_hash).unwrap_or(false);
+
+    if has_api {
+        return runtime_api.parachain_id(best_hash).map_err(|e| {
+            sc_service::Error::Other(format!(
+                "`cumulus_primitives_core::GetParachainInfo::parachain_id` runtime API call \
+                 failed at {best_hash:?}: {e}"
+            ))
+        })
+    }
+
+    log::warn!(
+        "Runtime at {best_hash:?} does not implement `cumulus_primitives_core::GetParachainInfo`; \
+         falling back to the `para_id` in the chain spec extensions."
+    );
+
+    crate::chain_spec::Extensions::try_get(&*parachain_config.chain_spec)
+        .and_then(|ext| ext.para_id)
+        .map(ParaId::from)
+        .ok_or_else(|| {
+            sc_service::Error::Other(
+                "Failed to retrieve the parachain id. The runtime does not implement \
+                 `cumulus_primitives_core::GetParachainInfo` and the chain spec has no `para_id` \
+                 extension."
+                    .into(),
+            )
+        })
+}
+
 /// Start a node with the given parachain `Configuration` and relay chain `Configuration`.
 #[sc_tracing::logging::prefix_logs_with("Parachain")]
 pub async fn start_parachain_node(
@@ -306,12 +349,7 @@ pub async fn start_parachain_node(
     let backend = params.backend.clone();
     let mut task_manager = params.task_manager;
 
-    // Take the parachain id from the runtime rather than the chain spec.
-    let best_hash = client.chain_info().best_hash;
-    let para_id = client.runtime_api().parachain_id(best_hash).map_err(|_| {
-        "Failed to retrieve parachain id from runtime. Make sure the runtime implements the \
-         `cumulus_primitives_core::GetParachainInfo` runtime API."
-    })?;
+    let para_id = resolve_para_id(&client, &parachain_config)?;
 
     let relay_chain_fork_id = polkadot_config.chain_spec.fork_id().map(ToString::to_string);
     let parachain_fork_id = parachain_config.chain_spec.fork_id().map(ToString::to_string);
