@@ -106,7 +106,7 @@ pub mod pallet {
         transactional, PalletId,
     };
     pub use frame_system::{
-        offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
+        offchain::{CreateBare, CreateTransactionBase, SubmitTransaction},
         pallet_prelude::*,
     };
     pub use pallet_avn::{
@@ -159,7 +159,7 @@ pub mod pallet {
         + pallet_avn::Config
         + pallet_session::historical::Config
         + CreateTransactionBase<Call<Self>>
-        + CreateInherent<Call<Self>>
+        + CreateBare<Call<Self>>
     {
         /// The overarching call type.
         type RuntimeCall: Parameter
@@ -167,8 +167,6 @@ pub mod pallet {
             + GetDispatchInfo
             + From<frame_system::Call<Self>>
             + IsSubType<Call<Self>>;
-        /// Overarching event type
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// The currency type
         type Currency: Currency<Self::AccountId>
             + ReservableCurrency<Self::AccountId>
@@ -859,7 +857,7 @@ pub mod pallet {
                 Self::get_collator_stakable_free_balance(&acc) >= bond,
                 Error::<T>::InsufficientBalance,
             );
-            T::Currency::set_lock(COLLATOR_LOCK_ID, &acc, bond, WithdrawReasons::all());
+            <T as Config>::Currency::set_lock(COLLATOR_LOCK_ID, &acc, bond, WithdrawReasons::all());
             let candidate = CandidateMetadata::new(bond);
             <CandidateInfo<T>>::insert(&acc, candidate);
             let empty_nominations: Nominations<T::AccountId, BalanceOf<T>> = Default::default();
@@ -943,14 +941,14 @@ pub mod pallet {
                         // since it is assumed that they were removed incrementally before only the
                         // last nomination was left.
                         <NominatorState<T>>::remove(&bond.owner);
-                        T::Currency::remove_lock(NOMINATOR_LOCK_ID, &bond.owner);
+                        <T as Config>::Currency::remove_lock(NOMINATOR_LOCK_ID, &bond.owner);
                     } else {
                         <NominatorState<T>>::insert(&bond.owner, nominator);
                     }
                 } else {
                     // TODO: review. we assume here that this nominator has no remaining staked
                     // balance, so we ensure the lock is cleared
-                    T::Currency::remove_lock(NOMINATOR_LOCK_ID, &bond.owner);
+                    <T as Config>::Currency::remove_lock(NOMINATOR_LOCK_ID, &bond.owner);
                 }
                 Ok(())
             };
@@ -971,7 +969,7 @@ pub mod pallet {
             }
             total_backing = total_backing.saturating_add(bottom_nominations.total);
             // return stake to collator
-            T::Currency::remove_lock(COLLATOR_LOCK_ID, &candidate);
+            <T as Config>::Currency::remove_lock(COLLATOR_LOCK_ID, &candidate);
             <CandidateInfo<T>>::remove(&candidate);
             <NominationScheduledRequests<T>>::remove(&candidate);
             <TopNominations<T>>::remove(&candidate);
@@ -1717,7 +1715,7 @@ pub mod pallet {
 
         /// Returns an account's free balance which is not locked in nomination staking
         pub fn get_nominator_stakable_free_balance(acc: &T::AccountId) -> BalanceOf<T> {
-            let mut balance = T::Currency::free_balance(acc);
+            let mut balance = <T as Config>::Currency::free_balance(acc);
             if let Some(state) = <NominatorState<T>>::get(acc) {
                 balance = balance.saturating_sub(state.total());
             }
@@ -1725,7 +1723,7 @@ pub mod pallet {
         }
         /// Returns an account's free balance which is not locked in collator staking
         pub fn get_collator_stakable_free_balance(acc: &T::AccountId) -> BalanceOf<T> {
-            let mut balance = T::Currency::free_balance(acc);
+            let mut balance = <T as Config>::Currency::free_balance(acc);
             if let Some(info) = <CandidateInfo<T>>::get(acc) {
                 balance = balance.saturating_sub(info.bond);
             }
@@ -1885,7 +1883,7 @@ pub mod pallet {
 
             let reward_pot_account_id = Self::compute_reward_pot_account_id();
             let pay_reward = |amount: BalanceOf<T>, to: T::AccountId| {
-                let result = T::Currency::transfer(
+                let result = <T as Config>::Currency::transfer(
                     &reward_pot_account_id,
                     &to,
                     amount,
@@ -2086,8 +2084,8 @@ pub mod pallet {
         /// The total amount of funds stored in this pallet
         pub fn reward_pot() -> BalanceOf<T> {
             // Must never be less than 0 but better be safe.
-            T::Currency::free_balance(&Self::compute_reward_pot_account_id())
-                .saturating_sub(T::Currency::minimum_balance())
+            <T as Config>::Currency::free_balance(&Self::compute_reward_pot_account_id())
+                .saturating_sub(<T as Config>::Currency::minimum_balance())
         }
 
         pub fn update_collator_payout(
@@ -2190,30 +2188,31 @@ pub mod pallet {
             );
 
             let mut imbalance: PositiveImbalanceOf<T> = PositiveImbalanceOf::<T>::zero();
-            let mut pay =
-                |collator_address: T::AccountId, amount: BalanceOf<T>| -> DispatchResult {
-                    match T::Currency::deposit_into_existing(&collator_address, amount) {
-                        Ok(amount_paid) => {
-                            Self::deposit_event(Event::CollatorPaid {
-                                account: collator_address,
-                                amount: amount_paid.peek(),
-                                period: growth_period,
-                            });
+            let mut pay = |collator_address: T::AccountId,
+                           amount: BalanceOf<T>|
+             -> DispatchResult {
+                match <T as Config>::Currency::deposit_into_existing(&collator_address, amount) {
+                    Ok(amount_paid) => {
+                        Self::deposit_event(Event::CollatorPaid {
+                            account: collator_address,
+                            amount: amount_paid.peek(),
+                            period: growth_period,
+                        });
 
-                            imbalance.subsume(amount_paid);
-                            return Ok(())
-                        },
-                        Err(e) => {
-                            log::error!(
-                                "💔💔 Error paying {:?} AVT to collator {:?}: {:?}",
-                                amount,
-                                collator_address,
-                                e
-                            );
-                            return Err(Error::<T>::ErrorPayingCollator.into())
-                        },
-                    }
-                };
+                        imbalance.subsume(amount_paid);
+                        return Ok(())
+                    },
+                    Err(e) => {
+                        log::error!(
+                            "💔💔 Error paying {:?} AVT to collator {:?}: {:?}",
+                            amount,
+                            collator_address,
+                            e
+                        );
+                        return Err(Error::<T>::ErrorPayingCollator.into())
+                    },
+                }
+            };
 
             if <Growth<T>>::contains_key(growth_period) {
                 // get the list of candidates that earned points from `growth_period`

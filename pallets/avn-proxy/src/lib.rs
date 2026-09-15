@@ -14,7 +14,7 @@ use frame_support::{
     pallet_prelude::ValueQuery,
     traits::{Currency, IsSubType},
 };
-use frame_system::{self as system, ensure_signed};
+use frame_system::ensure_signed;
 use sp_avn_common::{verify_multi_signature, InnerCallValidator, PaymentHandler, Proof};
 
 use core::convert::TryInto;
@@ -36,11 +36,6 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: frame_system::Config {
-        /// The overarching event type.
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// The overarching call type
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>

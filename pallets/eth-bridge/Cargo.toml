@@ -35,8 +35,10 @@ pallet-avn.workspace = true
 
 # Optional imports for benchmarking
 frame-benchmarking = { optional = true, workspace = true }
+cumulus-pallet-session-benchmarking = { optional = true, workspace = true }
 
 [dev-dependencies]
+pallet-balances = { workspace = true, default-features = true }
 parking_lot.workspace = true
 sp-state-machine = { default-features = true, workspace = true }
 sp-avn-common = { workspace = true, default-features = true, features=["test-utils"] }
@@ -47,6 +49,7 @@ alloy-sol-types = { workspace =true, default-features = true }
 migrate = []
 default = ["std"]
 std = [
+	"cumulus-pallet-session-benchmarking?/std",
 	"frame-benchmarking?/std",
 	"scale-info/std",
 	"codec/std",
@@ -67,6 +70,8 @@ std = [
 	"hex/std",
 ]
 runtime-benchmarks = [
+	"cumulus-pallet-session-benchmarking",
+	"cumulus-pallet-session-benchmarking/runtime-benchmarks",
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",

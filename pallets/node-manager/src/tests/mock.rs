@@ -44,7 +44,7 @@ frame_support::construct_runtime!(
         NodeManager: pallet_node_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
         AVN: pallet_avn::{Pallet, Storage, Event, Config<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
     }
 );
 
@@ -98,7 +98,6 @@ impl pallet_avn::ProcessedEventsChecker for TestProcessedEventsChecker {
 }
 
 impl Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type SignerId = UintAuthorityId;
@@ -132,6 +131,8 @@ impl session::SessionManager<AccountId> for TestSessionManager {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = TestSessionManager;
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
@@ -152,11 +153,11 @@ where
     type Extrinsic = Extrinsic;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -178,7 +179,6 @@ impl system::Config for TestRuntime {
 }
 
 impl pallet_avn::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type AuthorityId = UintAuthorityId;
     type EthereumPublicKeyChecker = ();
     type NewSessionHandler = ();

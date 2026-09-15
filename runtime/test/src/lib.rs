@@ -23,7 +23,7 @@ use scale_info::TypeInfo;
 use polkadot_sdk::{staging_parachain_info as parachain_info, *};
 
 use polkadot_sdk::sp_runtime::{generic, impl_opaque_keys};
-pub use polkadot_sdk::sp_runtime::{MultiAddress, Perbill, Permill, RuntimeDebug};
+pub use polkadot_sdk::sp_runtime::{Debug, MultiAddress, Perbill, Permill};
 
 use sp_std::{prelude::*, vec::Vec};
 
@@ -104,16 +104,21 @@ pub type UncheckedExtrinsic =
     generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, TxExtension>;
 
 /// Executive: handles dispatch to the various modules.
+/// All migrations of the runtime, aside from the ones declared in the pallets.
+///
+/// Wired into `frame_system::Config::SingleBlockMigrations`.
+pub type Migrations = (
+    pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,
+    pallet_avn_anchor::migration::AvnAnchorMigrations<Runtime>,
+    cumulus_pallet_parachain_system::migration::Migration<Runtime>,
+);
+
 pub type Executive = frame_executive::Executive<
     Runtime,
     Block,
     frame_system::ChainContext<Runtime>,
     Runtime,
     AllPalletsWithSystem,
-    (
-        pallet_validators_manager::migration::ValidatorsManagerMigrations<Runtime>,
-        pallet_avn_anchor::migration::AvnAnchorMigrations<Runtime>,
-    ),
 >;
 
 impl_opaque_keys! {
@@ -130,7 +135,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-test-parachain"),
     authoring_version: 1,
-    spec_version: 233,
+    spec_version: 234,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,

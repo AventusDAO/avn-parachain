@@ -1,6 +1,4 @@
-use crate::{
-    self as pallet_avn_transaction_payment, system::limits, AvnGasFeeAdapter, KnownSenders,
-};
+use crate::{self as pallet_avn_transaction_payment, AvnGasFeeAdapter, KnownSenders};
 use codec::{Decode, Encode};
 use frame_support::{
     derive_impl,
@@ -9,7 +7,7 @@ use frame_support::{
     traits::{ConstU8, Imbalance, OnFinalize, OnInitialize, OnUnbalanced},
     weights::{Weight, WeightToFee as WeightToFeeT},
 };
-use frame_system::{self as system, DefaultConfig};
+use frame_system::{self as system, limits, DefaultConfig};
 use pallet_balances;
 use sp_core::{sr25519, Pair};
 use sp_runtime::{
@@ -40,7 +38,10 @@ frame_support::construct_runtime!(
 );
 
 parameter_types! {
-    pub BlockLength: limits::BlockLength = limits::BlockLength::max_with_normal_ratio(1024, NORMAL_DISPATCH_RATIO);
+    pub BlockLength: limits::BlockLength = limits::BlockLength::builder()
+        .max_length(1024)
+        .modify_max_length_for_class(DispatchClass::Normal, |m| *m = NORMAL_DISPATCH_RATIO * *m)
+        .build();
     pub RuntimeBlockWeights: limits::BlockWeights = limits::BlockWeights::builder()
         .base_block(Weight::from_parts(10 as u64,0))
         .for_class(DispatchClass::all(), |weights| {
@@ -70,7 +71,6 @@ impl system::Config for TestRuntime {
 }
 
 impl pallet_avn_transaction_payment::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type KnownUserOrigin = frame_system::EnsureRoot<AccountId>;

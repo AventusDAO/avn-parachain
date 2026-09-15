@@ -165,12 +165,12 @@ where
         self.inner.ready()
     }
 
-    fn report_invalid(
+    async fn report_invalid(
         &self,
         at: Option<<Self::Block as BlockT>::Hash>,
         invalid_tx_errors: TxInvalidityReportMap<TxHash<Self>>,
     ) -> Vec<Arc<Self::InPoolTransaction>> {
-        self.inner.report_invalid(at, invalid_tx_errors)
+        self.inner.report_invalid(at, invalid_tx_errors).await
     }
 
     fn status(&self) -> PoolStatus {

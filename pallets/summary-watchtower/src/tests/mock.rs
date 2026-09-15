@@ -43,7 +43,6 @@ frame_support::construct_runtime!(
 );
 
 impl pallet_watchtower::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
     type SignerId = SignerId;
@@ -60,7 +59,6 @@ impl pallet_watchtower::Config for TestRuntime {
 }
 
 impl Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
 }
@@ -78,11 +76,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -127,7 +125,6 @@ impl pallet_timestamp::Config for TestRuntime {
 }
 
 impl pallet_avn::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type AuthorityId = UintAuthorityId;
     type EthereumPublicKeyChecker = ();
     type NewSessionHandler = ();

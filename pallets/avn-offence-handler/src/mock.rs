@@ -19,7 +19,9 @@ type Block = frame_system::mocking::MockBlock<TestRuntime>;
 frame_support::construct_runtime!(
     pub enum TestRuntime {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Balances: pallet_balances,
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
+        Historical: pallet_session::historical,
         Avn: pallet_avn::{Pallet, Storage, Event},
         AvnOffenceHandler: avn_offence_handler::{Pallet, Call, Storage, Event<T>},
     }
@@ -40,6 +42,12 @@ parameter_types! {
 impl system::Config for TestRuntime {
     type Nonce = u64;
     type Block = Block;
+    type AccountData = pallet_balances::AccountData<u64>;
+}
+
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
+impl pallet_balances::Config for TestRuntime {
+    type AccountStore = System;
 }
 
 #[derive_impl(crate::config_preludes::TestDefaultConfig as avn_offence_handler::DefaultConfig)]
@@ -48,6 +56,7 @@ impl Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = u64;
     type FullIdentificationOf = ConvertInto;
 }
@@ -68,6 +77,8 @@ parameter_types! {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = TestSessionManager;
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;

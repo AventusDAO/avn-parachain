@@ -49,7 +49,6 @@ frame_support::construct_runtime!(
 );
 
 impl Config for TestRuntime {
-    type RuntimeEvent = mock::RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type ProcessedEventsChecker = Self;
     type Public = AccountId;

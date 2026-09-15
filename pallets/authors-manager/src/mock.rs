@@ -90,7 +90,8 @@ frame_support::construct_runtime!(
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         AuthorsManager: authors_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
+        Historical: pallet_session::historical,
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
         AVN: pallet_avn::{Pallet, Storage, Event},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
@@ -130,7 +131,6 @@ parameter_types! {
 }
 
 impl Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type AccountToBytesConvert = AVN;
     type ValidatorRegistrationNotifier = Self;
     type WeightInfo = default_weights::SubstrateWeight<TestRuntime>;
@@ -146,11 +146,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -188,7 +188,6 @@ impl system::Config for TestRuntime {
 }
 
 impl avn::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type AuthorityId = UintAuthorityId;
     type EthereumPublicKeyChecker = Self;
     type NewSessionHandler = AuthorsManager;
@@ -210,7 +209,7 @@ impl pallet_balances::Config for TestRuntime {
     type ExistentialDeposit = ExistentialDeposit;
     type AccountStore = System;
     type WeightInfo = ();
-    type RuntimeHoldReason = ();
+    type RuntimeHoldReason = RuntimeHoldReason;
     type FreezeIdentifier = ();
     type MaxFreezes = ();
     type RuntimeFreezeReason = ();
@@ -230,7 +229,6 @@ impl timestamp::Config for TestRuntime {
 
 impl pallet_eth_bridge::Config for TestRuntime {
     type MaxQueuedTxRequests = frame_support::traits::ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type MinEthBlockConfirmation = ConstU64<20>;
     type RuntimeCall = RuntimeCall;
@@ -260,6 +258,8 @@ parameter_types! {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = AuthorsManager;
     type Keys = UintAuthorityId;
     type ShouldEndSession = pallet_session::PeriodicSessions<Period, Offset>;
@@ -273,8 +273,20 @@ impl session::Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
+}
+
+/// Session keys for benchmarks. `UintAuthorityId` accepts any ownership proof, so a distinct dummy
+/// key per owner and an empty proof are sufficient here.
+#[cfg(feature = "runtime-benchmarks")]
+impl cumulus_pallet_session_benchmarking::Config for TestRuntime {
+    fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+        let mut id = [0u8; 8];
+        codec::Encode::using_encoded(&owner, |encoded| id.copy_from_slice(&encoded[..8]));
+        (UintAuthorityId(u64::from_le_bytes(id)), Vec::new())
+    }
 }
 
 /// An extrinsic type used for tests.

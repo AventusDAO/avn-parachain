@@ -5,11 +5,9 @@ use alloy_primitives::{Bytes, B256, U256};
 use alloy_sol_types::{sol, SolCall};
 
 use crate::{eth::generate_send_calldata, mock::*, request::*, *};
-use frame_support::{
-    assert_err, assert_noop, assert_ok, dispatch::DispatchResultWithPostInfo, error::BadOrigin,
-};
+use frame_support::{assert_err, assert_noop, assert_ok, dispatch::DispatchResultWithPostInfo};
 use sp_avn_common::{eth::EthereumId, BridgeContractMethod};
-use sp_runtime::{testing::UintAuthorityId, DispatchError};
+use sp_runtime::{testing::UintAuthorityId, traits::BadOrigin, DispatchError};
 
 const ROOT_HASH: &str = "30b83f0d722d1d4308ab4660a72dbaf0a7392d5674eca3cd21d57256d42df7a0";
 const REWARDS: u128 = 500_000_000_000_000_000_000;

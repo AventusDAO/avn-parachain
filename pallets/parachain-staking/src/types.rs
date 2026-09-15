@@ -29,7 +29,7 @@ use frame_support::{
 use sp_avn_common::eth::EthereumId;
 use sp_runtime::{
     traits::{Saturating, Zero},
-    RuntimeDebug,
+    Debug,
 };
 use sp_std::{cmp::Ordering, prelude::*};
 
@@ -38,7 +38,7 @@ pub struct CountedNominations<T: Config> {
     pub rewardable_nominations: BoundedVec<Bond<T::AccountId, BalanceOf<T>>, MaxNominations>,
 }
 
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 pub struct MaxCloneableNominations;
 
 impl Get<u32> for MaxCloneableNominations {
@@ -50,7 +50,7 @@ impl Get<u32> for MaxCloneableNominations {
 
 pub type MaxNominations = ConstU32<300>;
 
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 pub struct Bond<AccountId, Balance> {
     pub owner: AccountId,
     pub amount: Balance,
@@ -92,7 +92,7 @@ impl<AccountId: Ord, Balance> PartialEq for Bond<AccountId, Balance> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// The activity status of the collator
 pub enum CollatorStatus {
     /// Committed to be online and producing valid blocks (not equivocating)
@@ -109,7 +109,7 @@ impl Default for CollatorStatus {
     }
 }
 
-#[derive(Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// Snapshot of collator state at the start of the era for which they are selected
 pub struct CollatorSnapshot<AccountId, Balance> {
     /// The total value locked by the collator.
@@ -152,21 +152,21 @@ impl<A, B: Default> Default for CollatorSnapshot<A, B> {
     }
 }
 
-#[derive(Default, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Default, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// Info needed to make delayed payments to stakers after era end
 pub struct DelayedPayout<Balance> {
     /// Total era reward (result of compute_total_reward_to_pay() at era end)
     pub total_staking_reward: Balance,
 }
 
-#[derive(PartialEq, Clone, Copy, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(PartialEq, Clone, Copy, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// Request scheduled to change the collator candidate self-bond
 pub struct CandidateBondLessRequest<Balance> {
     pub amount: Balance,
     pub when_executable: EraIndex,
 }
 
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// Type for top and bottom nomination storage item
 pub struct Nominations<AccountId, Balance> {
     pub nominations: BoundedVec<Bond<AccountId, Balance>, MaxNominations>,
@@ -245,7 +245,7 @@ impl<AccountId, Balance: Copy + Ord + sp_std::ops::AddAssign + Zero + Saturating
     }
 }
 
-#[derive(PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(PartialEq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// Capacity status for top or bottom nominations
 pub enum CapacityStatus {
     /// Reached capacity
@@ -256,7 +256,7 @@ pub enum CapacityStatus {
     Partial,
 }
 
-#[derive(Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// All candidate info except the top and bottom nominations
 pub struct CandidateMetadata<Balance> {
     /// This candidate's self bond amount
@@ -344,7 +344,7 @@ impl<
         let new_total = <Total<T>>::get().saturating_add(more.into());
         <Total<T>>::put(new_total);
         self.bond = self.bond.saturating_add(more);
-        T::Currency::set_lock(
+        <T as Config>::Currency::set_lock(
             COLLATOR_LOCK_ID,
             &who.clone(),
             self.bond.into(),
@@ -392,7 +392,7 @@ impl<
         // Arithmetic assumptions are self.bond > less && self.bond - less > CollatorMinBond
         // (assumptions enforced by `schedule_unbond`; if storage corrupts, must re-verify)
         self.bond = self.bond.saturating_sub(request.amount);
-        T::Currency::set_lock(
+        <T as Config>::Currency::set_lock(
             COLLATOR_LOCK_ID,
             &who.clone(),
             self.bond.into(),
@@ -1022,13 +1022,13 @@ impl<
 
 /// Convey relevant information describing if a nominator was added to the top or bottom
 /// Nominations added to the top yield a new total
-#[derive(Clone, Copy, PartialEq, Encode, Decode, RuntimeDebug, TypeInfo, DecodeWithMemTracking)]
+#[derive(Clone, Copy, PartialEq, Encode, Decode, Debug, TypeInfo, DecodeWithMemTracking)]
 pub enum NominatorAdded<B> {
     AddedToTop { new_total: B },
     AddedToBottom,
 }
 
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// Nominator state
 pub struct Nominator<AccountId, Balance> {
     /// Nominator account
@@ -1257,9 +1257,9 @@ impl<
         };
 
         if self.total.is_zero() {
-            T::Currency::remove_lock(NOMINATOR_LOCK_ID, &self.id.clone().into());
+            <T as Config>::Currency::remove_lock(NOMINATOR_LOCK_ID, &self.id.clone().into());
         } else {
-            T::Currency::set_lock(
+            <T as Config>::Currency::set_lock(
                 NOMINATOR_LOCK_ID,
                 &self.id.clone().into(),
                 self.total.into(),
@@ -1276,7 +1276,7 @@ impl<
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Copy, Clone, PartialEq, Eq, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 /// The current era index and transition information
 pub struct EraInfo<BlockNumber> {
     /// Current era index
@@ -1317,7 +1317,7 @@ pub enum BondAdjust<Balance> {
     Decrease,
 }
 
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 pub struct CollatorScore<AccountId> {
     pub collator: AccountId,
     pub points: RewardPoint,
@@ -1361,7 +1361,7 @@ impl<AccountId: Ord> PartialEq for CollatorScore<AccountId> {
 }
 
 // Data structure for tracking collator rewards
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
 pub struct GrowthInfo<AccountId, Balance> {
     pub number_of_accumulations: GrowthPeriodIndex,
     pub total_stake_accumulated: Balance,
@@ -1419,7 +1419,7 @@ impl<A: Decode, B: Default> Default for GrowthInfo<A, B> {
     Eq,
     Encode,
     Decode,
-    RuntimeDebug,
+    Debug,
     Default,
     TypeInfo,
     MaxEncodedLen,
@@ -1468,7 +1468,7 @@ impl<
 }
 
 // Amount based stake data. Note: 2 stakes with the same free amount are considered equal
-#[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo)]
+#[derive(Clone, Encode, Decode, Debug, TypeInfo)]
 pub struct StakeInfo<AccountId, Balance> {
     pub owner: AccountId,
     pub free_amount: Balance,

@@ -36,7 +36,6 @@ use frame_support::traits::{Currency, Get, OnFinalize, OnInitialize};
 use frame_system::{self as system, EventRecord, RawOrigin};
 use hex_literal::hex;
 use pallet_authorship::EventHandler;
-use rand::{RngCore, SeedableRng};
 use sp_application_crypto::KeyTypeId;
 use sp_avn_common::benchmarking::convert_sr25519_signature;
 use sp_core::{bounded::BoundedVec, ecdsa, ConstU32};
@@ -66,8 +65,8 @@ fn min_nominator_stk<T: Config>() -> BalanceOf<T> {
 fn fund_account<T: Config>(account: &T::AccountId, extra: BalanceOf<T>) -> BalanceOf<T> {
     let min_candidate_stk = min_candidate_stk::<T>();
     let total = min_candidate_stk + extra;
-    T::Currency::make_free_balance_be(&account, total);
-    T::Currency::issue(total);
+    <T as Config>::Currency::make_free_balance_be(&account, total);
+    <T as Config>::Currency::issue(total);
 
     return total
 }
@@ -106,7 +105,7 @@ fn create_funded_nominator<T: Config>(
     Ok(user)
 }
 
-fn create_funded_collator<T: Config>(
+fn create_funded_collator<T: Config + cumulus_pallet_session_benchmarking::Config>(
     string: &'static str,
     n: u32,
     extra: BalanceOf<T>,
@@ -124,7 +123,7 @@ fn create_funded_collator<T: Config>(
     Ok(user)
 }
 
-fn set_account_as_collator<T: Config>(
+fn set_account_as_collator<T: Config + cumulus_pallet_session_benchmarking::Config>(
     account: &T::AccountId,
     additional_bond: BalanceOf<T>,
     candidate_count: u32,
@@ -164,22 +163,21 @@ fn add_collator_to_avn<T: Config>(
     Ok(validator)
 }
 
-fn set_session_key<T: Config>(user: &T::AccountId, index: u32) -> Result<(), &'static str> {
+fn set_session_key<T: Config + cumulus_pallet_session_benchmarking::Config>(
+    user: &T::AccountId,
+    _index: u32,
+) -> Result<(), &'static str> {
     frame_system::Pallet::<T>::inc_providers(user);
 
-    let keys = {
-        let mut keys = [0u8; 128];
-        let mut rng = rand::rngs::StdRng::seed_from_u64(index as u64);
-        rng.fill_bytes(&mut keys);
-        keys
-    };
-
-    let keys: T::Keys = Decode::decode(&mut &keys[..]).unwrap();
+    let (keys, proof) =
+        <T as cumulus_pallet_session_benchmarking::Config>::generate_session_keys_and_proof(
+            user.clone(),
+        );
 
     pallet_session::Pallet::<T>::set_keys(
         RawOrigin::<T::AccountId>::Signed(user.clone()).into(),
         keys,
-        Vec::new(),
+        proof,
     )?;
 
     Ok(())
@@ -193,11 +191,14 @@ fn parachain_staking_on_finalize<T: Config>(author: T::AccountId) {
     <Points<T>>::mutate(now, |x| *x = x.saturating_add(20));
 }
 
-fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
+fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::RuntimeEvent) {
     assert_last_nth_event::<T>(generic_event, 1);
 }
 
-fn assert_last_nth_event<T: Config>(generic_event: <T as Config>::RuntimeEvent, n: u32) {
+fn assert_last_nth_event<T: Config>(
+    generic_event: <T as frame_system::Config>::RuntimeEvent,
+    n: u32,
+) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
     // compare to the last event record
@@ -245,7 +246,7 @@ fn get_allowed_max_collators<T: Config>(max_collators: u32) -> u32 {
     return actual_max_collators
 }
 
-fn setup_nomination<T: Config>(
+fn setup_nomination<T: Config + cumulus_pallet_session_benchmarking::Config>(
     max_collators: u32,
     max_nominators: u32,
     bond: BalanceOf<T>,
@@ -346,7 +347,7 @@ where
     return Ok((caller, proof))
 }
 
-fn setup_leave_nominator_state<T: Config>(
+fn setup_leave_nominator_state<T: Config + cumulus_pallet_session_benchmarking::Config>(
     num_of_collators: u32,
     caller: &T::AccountId,
 ) -> Result<u32, &'static str> {
@@ -403,6 +404,8 @@ fn generate_signature<T: pallet_avn::Config>(
 const USER_SEED: u32 = 999666;
 
 benchmarks! {
+    where_clause { where T: cumulus_pallet_session_benchmarking::Config }
+
     // ROOT DISPATCHABLES
 
     set_total_selected {
@@ -1300,7 +1303,7 @@ benchmarks! {
         let collator_starting_balances: Vec<(
             T::AccountId,
             <<T as Config>::Currency as Currency<T::AccountId>>::Balance
-        )> = collators.iter().map(|x| (x.clone(), T::Currency::free_balance(&x))).collect();
+        )> = collators.iter().map(|x| (x.clone(), <T as Config>::Currency::free_balance(&x))).collect();
         // INITIALIZE NOMINATIONS
         let mut col_del_count: BTreeMap<T::AccountId, u32> = BTreeMap::new();
         collators.iter().for_each(|x| {
@@ -1367,7 +1370,7 @@ benchmarks! {
         let nominator_starting_balances: Vec<(
             T::AccountId,
             <<T as Config>::Currency as Currency<T::AccountId>>::Balance
-        )> = nominators.iter().map(|x| (x.clone(), T::Currency::free_balance(&x))).collect();
+        )> = nominators.iter().map(|x| (x.clone(), <T as Config>::Currency::free_balance(&x))).collect();
         // PREPARE RUN_TO_BLOCK LOOP
         let before_running_era_index = Pallet::<T>::era().current;
         let era_length: BlockNumberFor<T> = Pallet::<T>::era().length.into();
@@ -1378,7 +1381,7 @@ benchmarks! {
         // SET collators as authors for blocks from now - end
         while now < end {
             // Set some rewards to payout
-            T::Currency::make_free_balance_be(&Pallet::<T>::compute_reward_pot_account_id(), min_candidate_stk::<T>() * 1_000_000u32.into());
+            <T as Config>::Currency::make_free_balance_be(&Pallet::<T>::compute_reward_pot_account_id(), min_candidate_stk::<T>() * 1_000_000u32.into());
 
             let author = collators[counter % collators.len()].clone();
             parachain_staking_on_finalize::<T>(author);
@@ -1394,7 +1397,7 @@ benchmarks! {
         parachain_staking_on_finalize::<T>(collators[counter % collators.len()].clone());
 
         // Set some rewards to payout
-        T::Currency::make_free_balance_be(&Pallet::<T>::compute_reward_pot_account_id(), min_candidate_stk::<T>() * 1_000_000u32.into());
+        <T as Config>::Currency::make_free_balance_be(&Pallet::<T>::compute_reward_pot_account_id(), min_candidate_stk::<T>() * 1_000_000u32.into());
 
         <frame_system::Pallet<T> as OnFinalize<BlockNumberFor<T>>>::on_finalize(<frame_system::Pallet<T>>::block_number());
         <frame_system::Pallet<T>>::set_block_number(
@@ -1405,11 +1408,11 @@ benchmarks! {
     verify {
         // Collators have been paid
         for (col, initial) in collator_starting_balances {
-            assert!(T::Currency::free_balance(&col) > initial);
+            assert!(<T as Config>::Currency::free_balance(&col) > initial);
         }
         // Nominators have been paid
         for (nom, initial) in nominator_starting_balances {
-            assert!(T::Currency::free_balance(&nom) > initial, "Free balance: {:?} should be greater than initial balance: {:?}", T::Currency::free_balance(&nom), initial);
+            assert!(<T as Config>::Currency::free_balance(&nom) > initial, "Free balance: {:?} should be greater than initial balance: {:?}", <T as Config>::Currency::free_balance(&nom), initial);
         }
         // Era transitions
         assert_eq!(Pallet::<T>::era().current, before_running_era_index + reward_delay);
@@ -1492,13 +1495,13 @@ benchmarks! {
     verify {
         // collator should have been paid
         assert!(
-            T::Currency::free_balance(&sole_collator) > initial_stake_amount,
+            <T as Config>::Currency::free_balance(&sole_collator) > initial_stake_amount,
             "collator should have been paid in pay_one_collator_reward"
         );
         // nominators should have been paid
         for nominator in &nominators {
             assert!(
-                T::Currency::free_balance(&nominator) > initial_stake_amount,
+                <T as Config>::Currency::free_balance(&nominator) > initial_stake_amount,
                 "nominator should have been paid in pay_one_collator_reward"
             );
         }

@@ -86,9 +86,9 @@ cumulus-client-cli = { default-features = true, workspace = true }
 cumulus-client-collator = { default-features = true, workspace = true }
 cumulus-client-consensus-aura = { default-features = true, workspace = true }
 cumulus-client-consensus-common = { default-features = true, workspace = true }
-cumulus-client-consensus-proposer = { default-features = true, workspace = true }
 cumulus-client-network = { default-features = true, workspace = true }
 cumulus-client-service = { default-features = true, workspace = true }
+cumulus-client-bootnodes = { default-features = true, workspace = true }
 cumulus-primitives-core = { default-features = true, workspace = true }
 cumulus-primitives-parachain-inherent = { default-features = true, workspace = true }
 cumulus-relay-chain-interface = { default-features = true, workspace = true }

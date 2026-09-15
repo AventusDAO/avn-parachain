@@ -23,7 +23,7 @@ impl<T: Config> Pallet<T> {
 
             match signature {
                 Some(signature) => {
-                    let call = T::create_inherent(
+                    let call = T::create_bare(
                         Call::<T>::offchain_pay_nodes {
                             reward_period_index,
                             author: author.clone(),
@@ -58,7 +58,7 @@ impl<T: Config> Pallet<T> {
 
             match signature {
                 Some(signature) => {
-                    let call = T::create_inherent(
+                    let call = T::create_bare(
                         Call::<T>::offchain_mint_rewards {
                             amount,
                             author: author.clone(),
@@ -107,7 +107,7 @@ impl<T: Config> Pallet<T> {
 
                 match signature {
                     Some(signature) => {
-                        let call = T::create_inherent(
+                        let call = T::create_bare(
                             Call::<T>::offchain_submit_heartbeat {
                                 node,
                                 reward_period_index: current_reward_period,

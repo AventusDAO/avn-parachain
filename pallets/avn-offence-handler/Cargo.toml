@@ -27,6 +27,7 @@ pallet-avn.workspace = true
 frame-benchmarking = { optional = true, workspace = true }
 
 [dev-dependencies]
+pallet-balances = { workspace = true, default-features = true }
 serde.workspace = true
 parking_lot.workspace = true
 sp-io.workspace = true

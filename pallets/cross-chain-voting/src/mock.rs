@@ -46,7 +46,6 @@ impl pallet_balances::Config for TestRuntime {
 }
 
 impl pallet_cross_chain_voting::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type MaxLinkedAccounts = MaxLinkedAccounts;
     type WeightInfo = ();

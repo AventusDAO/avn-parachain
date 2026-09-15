@@ -80,9 +80,9 @@ frame_support::construct_runtime!(
         Avn: pallet_avn::{Pallet, Storage, Event},
         TokenManager: token_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
         ParachainStaking: parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
-        Historical: pallet_session::historical::{Pallet, Storage},
+        Historical: pallet_session::historical::{Pallet, Storage, Event<T>},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
         Preimage: pallet_preimage,
@@ -99,7 +99,6 @@ parameter_types! {
 }
 
 impl token_manager::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type ProcessedEventsChecker = Self;
@@ -160,11 +159,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -178,7 +177,10 @@ const MAX_BLOCK_WEIGHT: Weight =
 parameter_types! {
     pub const BlockHashCount: u64 = 250;
     // Creating custom runtime block weights similar with substrate/frame/system/src/mock.rs
-    pub BlockLength: limits::BlockLength = limits::BlockLength::max_with_normal_ratio(1024, NORMAL_DISPATCH_RATIO);
+    pub BlockLength: limits::BlockLength = limits::BlockLength::builder()
+        .max_length(1024)
+        .modify_max_length_for_class(DispatchClass::Normal, |m| *m = NORMAL_DISPATCH_RATIO * *m)
+        .build();
     pub RuntimeBlockWeights: limits::BlockWeights = limits::BlockWeights::builder()
         .base_block(Weight::from_parts(10 as u64, 0))
         .for_class(DispatchClass::all(), |weights| {
@@ -239,6 +241,8 @@ impl pallet_transaction_payment::Config for TestRuntime {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = ParachainStaking;
     type Keys = UintAuthorityId;
     type ShouldEndSession = ParachainStaking;
@@ -268,7 +272,6 @@ parameter_types! {
 
 impl parachain_staking::Config for TestRuntime {
     type RuntimeCall = RuntimeCall;
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type MinBlocksPerEra = MinBlocksPerEra;
     type RewardPaymentDelay = RewardPaymentDelay;
@@ -292,13 +295,13 @@ impl parachain_staking::Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
 }
 
 impl pallet_eth_bridge::Config for TestRuntime {
     type MaxQueuedTxRequests = frame_support::traits::ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type RuntimeCall = RuntimeCall;
     type MinEthBlockConfirmation = ConstU64<20>;
@@ -350,7 +353,6 @@ impl orml_currencies::Config for TestRuntime {
 }
 
 impl orml_asset_registry::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type CustomMetadata = AvnAssetMetadata;
     type AssetId = CurrencyId;
     type AuthorityOrigin = EnsureRoot<TestAccountIdPK>;
@@ -376,11 +378,12 @@ parameter_type_with_key! {
 }
 
 impl orml_tokens::Config for TestRuntime {
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
     type Amount = Amount;
     type Balance = Balance;
     type CurrencyId = CurrencyId;
     type DustRemovalWhitelist = Everything;
-    type RuntimeEvent = RuntimeEvent;
     type ExistentialDeposits = ExistentialDeposits;
     type MaxLocks = MaxLocks;
     type MaxReserves = MaxReserves;

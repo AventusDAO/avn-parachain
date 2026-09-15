@@ -64,11 +64,6 @@ pub mod pallet {
         + pallet_avn::Config
         + pallet_session::historical::Config
     {
-        /// Overarching event type
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as frame_system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         type AccountToBytesConvert: AccountToBytesConverter<Self::AccountId>;
 
         type ValidatorRegistrationNotifier: AuthorRegistrationNotifier<

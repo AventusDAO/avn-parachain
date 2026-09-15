@@ -16,7 +16,7 @@ use frame_support::{
     traits::{Get, IsSubType},
 };
 use frame_system::{
-    offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
+    offchain::{CreateBare, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::BlockNumberFor,
 };
 use sp_core::{ConstU32, H160, H256};
@@ -28,7 +28,7 @@ use sp_runtime::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, RuntimeDebug,
+    Debug, DispatchError,
 };
 use sp_std::{cmp, prelude::*};
 
@@ -157,11 +157,8 @@ pub mod pallet {
         + avn::Config
         + pallet_session::historical::Config
         + CreateTransactionBase<Call<Self>>
-        + CreateInherent<Call<Self>>
+        + CreateBare<Call<Self>>
     {
-        #[pallet::no_default_bounds]
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         #[pallet::no_default_bounds]
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = <Self as frame_system::Config>::RuntimeOrigin>
@@ -211,8 +208,6 @@ pub mod pallet {
 
         #[frame_support::register_default_impl(TestDefaultConfig)]
         impl DefaultConfig for TestDefaultConfig {
-            #[inject_runtime_type]
-            type RuntimeEvent = ();
             #[inject_runtime_type]
             type RuntimeCall = ();
             type ProcessedEventHandler = ();
@@ -1230,7 +1225,7 @@ impl<T: Config> Pallet<T> {
             .sign(&(PROCESS_EVENT_CONTEXT, &checked.event.event_id, ingress_counter).encode())
             .ok_or(Error::<T>::ErrorSigning)?;
 
-        let xt = T::create_inherent(
+        let xt = T::create_bare(
             Call::process_event {
                 event_id: checked.event.event_id,
                 ingress_counter,
@@ -1269,7 +1264,7 @@ impl<T: Config> Pallet<T> {
             .key
             .sign(&(SUBMIT_CHECKEVENT_RESULT_CONTEXT, &result, ingress_counter).encode())
             .ok_or(Error::<T>::ErrorSigning)?;
-        let xt = T::create_inherent(
+        let xt = T::create_bare(
             Call::submit_checkevent_result {
                 result,
                 ingress_counter,
@@ -1312,7 +1307,7 @@ impl<T: Config> Pallet<T> {
                 .ok_or(Error::<T>::ErrorSigning)?;
             // TODO [TYPE: business logic][PRI: medium][CRITICAL][JIRA: 349]: Allow for this event
             // to be resubmitted if it fails here
-            let xt = T::create_inherent(
+            let xt = T::create_bare(
                 Call::challenge_event {
                     challenge,
                     ingress_counter,
@@ -1687,7 +1682,7 @@ impl<T: Config> InnerCallValidator for Pallet<T> {
 // A value placed in storage that represents the current version of the EthereumEvents pallet
 // storage. This value is used by the `on_runtime_upgrade` logic to determine whether we run its
 // storage migration logic.
-#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, Debug, MaxEncodedLen, TypeInfo)]
 enum Releases {
     Unknown,
     V2_0_0,

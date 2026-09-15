@@ -137,7 +137,22 @@ jobs:
         with:
           path: |
             target/
-          key: ${{ inputs.runs_on }}-runtime-benchmarks-${{ hashFiles('**/Cargo.lock') }}      
+          key: ${{ inputs.runs_on }}-runtime-benchmarks-${{ hashFiles('**/Cargo.lock') }}
+
+      # Since polkadot-stable2509, `pallet-xcm/runtime-benchmarks` pulls in `pallet-revive-fixtures`,
+      # whose build script compiles Solidity fixtures and needs `solc` and `resolc` on the PATH.
+      # Versions match the pair pinned by polkadot-sdk's own release pipeline for this SDK version.
+      - name: Install solc and resolc
+        run: |
+          SOLC_VERSION="0.8.30"
+          RESOLC_VERSION="0.3.0"
+          curl -Lsf --show-error -o "$HOME/.cargo/bin/solc" \
+            "https://github.com/ethereum/solidity/releases/download/v${SOLC_VERSION}/solc-static-linux"
+          curl -Lsf --show-error -o "$HOME/.cargo/bin/resolc" \
+            "https://github.com/paritytech/revive/releases/download/v${RESOLC_VERSION}/resolc-x86_64-unknown-linux-musl"
+          chmod +x "$HOME/.cargo/bin/solc" "$HOME/.cargo/bin/resolc"
+          solc --version
+          resolc --version
 
       - name: Runtime Benchmarks
         run: cargo test --features runtime-benchmarks -- benchmarks

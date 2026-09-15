@@ -97,10 +97,6 @@ pub mod pallet {
 
     #[pallet::config(with_default)]
     pub trait Config: frame_system::Config {
-        /// Overarching event type
-        #[pallet::no_default_bounds]
-        type RuntimeEvent: From<Event> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// The identifier type for an authority.
         type AuthorityId: Member
             + Parameter
@@ -129,8 +125,6 @@ pub mod pallet {
 
         #[frame_support::register_default_impl(TestDefaultConfig)]
         impl DefaultConfig for TestDefaultConfig {
-            #[inject_runtime_type]
-            type RuntimeEvent = ();
             type AuthorityId = sp_application_crypto::sr25519::AppPublic;
             type EthereumPublicKeyChecker = ();
             type NewSessionHandler = ();

@@ -37,12 +37,6 @@ pub mod pallet {
     // Public interface of this pallet
     #[pallet::config(with_default)]
     pub trait Config: frame_system::Config + session::historical::Config {
-        /// The overarching event type.
-        #[pallet::no_default_bounds]
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as frame_system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// A trait responsible for punishing malicious validators
         #[pallet::no_default]
         type Enforcer: Enforcer<<Self as session::Config>::ValidatorId>;
@@ -62,8 +56,6 @@ pub mod pallet {
 
         #[frame_support::register_default_impl(TestDefaultConfig)]
         impl DefaultConfig for TestDefaultConfig {
-            #[inject_runtime_type]
-            type RuntimeEvent = ();
             type WeightInfo = ();
         }
     }

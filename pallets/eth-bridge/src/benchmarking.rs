@@ -10,7 +10,6 @@ use frame_benchmarking::{account, benchmarks_instance_pallet, impl_benchmark_tes
 use frame_support::{ensure, traits::Hooks, BoundedVec};
 use frame_system::RawOrigin;
 use hex_literal::hex;
-use rand::{RngCore, SeedableRng};
 use sp_avn_common::{
     eth::EthereumId,
     event_types::{EthEvent, EthEventId, LiftedData, ValidEvents},
@@ -18,7 +17,7 @@ use sp_avn_common::{
 use sp_core::{ByteArray, Get, H160, H256, U256};
 use sp_runtime::{traits::One, WeakBoundedVec};
 
-fn setup_authors<T: Config<I>, I: 'static>(
+fn setup_authors<T: Config<I> + cumulus_pallet_session_benchmarking::Config, I: 'static>(
     number_of_validator_account_ids: u32,
 ) -> Vec<crate::Author<T>> {
     let current_authors = avn::Validators::<T>::get();
@@ -47,7 +46,7 @@ fn setup_authors<T: Config<I>, I: 'static>(
     return total_authors
 }
 
-fn add_collator_to_avn<T: Config<I>, I: 'static>(
+fn add_collator_to_avn<T: Config<I> + cumulus_pallet_session_benchmarking::Config, I: 'static>(
     collator: &T::AccountId,
     candidate_count: u32,
 ) -> Result<Validator<T::AuthorityId, T::AccountId>, &'static str> {
@@ -72,25 +71,21 @@ fn add_collator_to_avn<T: Config<I>, I: 'static>(
     Ok(validator)
 }
 
-fn set_session_key<T: Config<I>, I: 'static>(
+fn set_session_key<T: Config<I> + cumulus_pallet_session_benchmarking::Config, I: 'static>(
     user: &T::AccountId,
-    index: u32,
+    _index: u32,
 ) -> Result<(), &'static str> {
     frame_system::Pallet::<T>::inc_providers(user);
 
-    let keys = {
-        let mut keys = [0u8; 128];
-        let mut rng = rand::rngs::StdRng::seed_from_u64(index as u64);
-        rng.fill_bytes(&mut keys);
-        keys
-    };
-
-    let keys: T::Keys = Decode::decode(&mut &keys[..]).unwrap();
+    let (keys, proof) =
+        <T as cumulus_pallet_session_benchmarking::Config>::generate_session_keys_and_proof(
+            user.clone(),
+        );
 
     pallet_session::Pallet::<T>::set_keys(
         RawOrigin::<T::AccountId>::Signed(user.clone()).into(),
         keys,
-        Vec::new(),
+        proof,
     )?;
 
     Ok(())
@@ -321,6 +316,8 @@ fn submit_latest_block_from_other_authors<T: Config<I>, I: 'static>(
 }
 
 benchmarks_instance_pallet! {
+    where_clause { where T: cumulus_pallet_session_benchmarking::Config }
+
     add_confirmation {
         let v in 1 .. MAX_CONFIRMATIONS;
         let authors = setup_authors::<T, I>(v + 4);

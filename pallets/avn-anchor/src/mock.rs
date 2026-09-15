@@ -148,11 +148,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -204,7 +204,6 @@ impl pallet_scheduler::Config for TestRuntime {
 }
 
 impl pallet_token_manager::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type ProcessedEventsChecker = ();
@@ -241,7 +240,6 @@ impl pallet_avn::Config for TestRuntime {
 }
 
 impl avn_proxy::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type Public = AccountId;
@@ -254,7 +252,6 @@ impl avn_proxy::Config for TestRuntime {
 
 impl pallet_eth_bridge::Config for TestRuntime {
     type MaxQueuedTxRequests = frame_support::traits::ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type MinEthBlockConfirmation = ConstU64<20>;
     type RuntimeCall = RuntimeCall;
@@ -295,6 +292,8 @@ impl session::SessionManager<AccountId> for TestSessionManager {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager =
         pallet_session::historical::NoteHistoricalRoot<TestRuntime, TestSessionManager>;
     type Keys = UintAuthorityId;
@@ -309,6 +308,7 @@ impl session::Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
 }
@@ -373,7 +373,6 @@ pub fn register_mock_node(node: AccountId, serial: NodeSerial) {
 }
 
 impl Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Public = AccountId;
     type Signature = Signature;
@@ -441,7 +440,6 @@ impl orml_currencies::Config for TestRuntime {
 }
 
 impl orml_asset_registry::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type CustomMetadata = AvnAssetMetadata;
     type AssetId = CurrencyId;
     type AuthorityOrigin = EnsureRoot<TestAccountIdPK>;
@@ -467,11 +465,12 @@ parameter_type_with_key! {
 }
 
 impl orml_tokens::Config for TestRuntime {
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
     type Amount = Amount;
     type Balance = Balance;
     type CurrencyId = CurrencyId;
     type DustRemovalWhitelist = Everything;
-    type RuntimeEvent = RuntimeEvent;
     type ExistentialDeposits = ExistentialDeposits;
     type MaxLocks = MaxLocks;
     type MaxReserves = MaxReserves;

@@ -102,7 +102,8 @@ frame_support::construct_runtime!(
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         ValidatorManager: validators_manager::{Pallet, Call, Storage, Event<T>, Config<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
+        Historical: pallet_session::historical,
         Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
         ParachainStaking: parachain_staking::{Pallet, Call, Storage, Config<T>, Event<T>},
@@ -139,7 +140,6 @@ parameter_types! {
 }
 
 impl Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type ProcessedEventsChecker = Self;
     type VotingPeriod = VotingPeriod;
     type AccountToBytesConvert = Avn;
@@ -157,11 +157,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -211,7 +211,6 @@ impl timestamp::Config for TestRuntime {
 
 impl pallet_eth_bridge::Config for TestRuntime {
     type MaxQueuedTxRequests = frame_support::traits::ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type MinEthBlockConfirmation = ConstU64<20>;
     type RuntimeCall = RuntimeCall;
@@ -241,6 +240,8 @@ parameter_types! {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = ParachainStaking;
     type Keys = UintAuthorityId;
     type ShouldEndSession = ParachainStaking;
@@ -254,8 +255,20 @@ impl session::Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
+}
+
+/// Session keys for benchmarks. `UintAuthorityId` accepts any ownership proof, so a distinct dummy
+/// key per owner and an empty proof are sufficient here.
+#[cfg(feature = "runtime-benchmarks")]
+impl cumulus_pallet_session_benchmarking::Config for TestRuntime {
+    fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+        let mut id = [0u8; 8];
+        codec::Encode::using_encoded(&owner, |encoded| id.copy_from_slice(&encoded[..8]));
+        (UintAuthorityId(u64::from_le_bytes(id)), Vec::new())
+    }
 }
 
 parameter_types! {
@@ -275,7 +288,6 @@ parameter_types! {
 
 impl parachain_staking::Config for TestRuntime {
     type RuntimeCall = RuntimeCall;
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type MinBlocksPerEra = MinBlocksPerEra;
     type RewardPaymentDelay = RewardPaymentDelay;

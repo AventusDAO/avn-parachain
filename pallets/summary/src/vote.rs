@@ -227,7 +227,7 @@ pub fn end_voting_if_required<T: Config<I>, I: 'static>(
             },
         };
 
-        let xt = T::create_inherent(
+        let xt = T::create_bare(
             Call::end_voting_period {
                 root_id: root_id.clone(),
                 validator: this_validator.clone(),
@@ -268,7 +268,7 @@ fn send_approve_vote<T: Config<I>, I: 'static>(
 
     log::trace!(target: "avn", "🖊️  Worker sends approval vote for summary calculation: {:?}]", &root_id);
 
-    let xt = T::create_inherent(
+    let xt = T::create_bare(
         Call::approve_root {
             root_id: root_id.clone(),
             validator: this_validator.clone(),
@@ -335,7 +335,7 @@ fn send_reject_vote<T: Config<I>, I: 'static>(
 
     log::trace!(target: "avn", "🖊️  Worker sends reject vote for summary calculation: {:?}]", &root_id);
 
-    let xt = T::create_inherent(
+    let xt = T::create_bare(
         Call::reject_root {
             root_id: root_id.clone(),
             validator: this_validator.clone(),

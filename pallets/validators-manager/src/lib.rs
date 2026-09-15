@@ -20,7 +20,7 @@ use frame_support::{
     transactional,
 };
 use frame_system::{
-    offchain::{CreateInherent, CreateTransactionBase},
+    offchain::{CreateBare, CreateTransactionBase},
     pallet_prelude::BlockNumberFor,
     RawOrigin,
 };
@@ -78,12 +78,8 @@ pub mod pallet {
         + parachain_staking::Config
         + pallet_session::historical::Config
         + CreateTransactionBase<Call<Self>>
-        + CreateInherent<Call<Self>>
+        + CreateBare<Call<Self>>
     {
-        /// Overarching event type
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as frame_system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// A trait that allows to subscribe to notifications triggered when ethereum event
         /// processes an event
         type ProcessedEventsChecker: ProcessedEventsChecker;

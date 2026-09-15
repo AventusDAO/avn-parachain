@@ -150,6 +150,7 @@ std = [
 ]
 
 runtime-benchmarks = [
+	"orml-tokens/runtime-benchmarks",
 	# Polkadot SDK
 	"polkadot-sdk/runtime-benchmarks",
 	"pallet-balances/runtime-benchmarks",

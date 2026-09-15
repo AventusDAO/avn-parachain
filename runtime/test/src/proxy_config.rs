@@ -1,6 +1,6 @@
 use super::{
-    AccountId, Box, Decode, Encode, InnerCallValidator, Proof, ProvableProxy, Runtime, RuntimeCall,
-    RuntimeDebug, Signature, TypeInfo,
+    AccountId, Box, Debug, Decode, Encode, InnerCallValidator, Proof, ProvableProxy, Runtime,
+    RuntimeCall, Signature, TypeInfo,
 };
 use codec::DecodeWithMemTracking;
 
@@ -14,7 +14,7 @@ use codec::DecodeWithMemTracking;
     PartialOrd,
     Encode,
     Decode,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     DecodeWithMemTracking,
 )]

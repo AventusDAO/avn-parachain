@@ -157,7 +157,7 @@ fn send_challenge_transaction<T: Config<I>, I: 'static>(
         return Err(())
     };
 
-    let xt = T::create_inherent(
+    let xt = T::create_bare(
         Call::add_challenge {
             challenge: challenge.clone(),
             validator: this_validator.clone(),

@@ -115,10 +115,6 @@ pub mod pallet {
     // Public interface of this pallet
     #[pallet::config]
     pub trait Config: frame_system::Config + avn::Config {
-        /// The overarching event type.
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as frame_system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// The overarching call type.
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = <Self as frame_system::Config>::RuntimeOrigin>

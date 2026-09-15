@@ -174,12 +174,14 @@ fn generate_signature<T: pallet_avn::Config>(
     return signature
 }
 
-fn assert_last_event<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {
+fn assert_last_event<T: Config<I>, I: 'static>(
+    generic_event: <T as frame_system::Config>::RuntimeEvent,
+) {
     assert_last_nth_event::<T, I>(generic_event, 1);
 }
 
 fn assert_last_nth_event<T: Config<I>, I: 'static>(
-    generic_event: <T as Config<I>>::RuntimeEvent,
+    generic_event: <T as frame_system::Config>::RuntimeEvent,
     n: u32,
 ) {
     let events = frame_system::Pallet::<T>::events();
@@ -189,7 +191,9 @@ fn assert_last_nth_event<T: Config<I>, I: 'static>(
     assert_eq!(event, &system_event);
 }
 
-fn assert_event_exists<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>::RuntimeEvent) {
+fn assert_event_exists<T: Config<I>, I: 'static>(
+    generic_event: <T as frame_system::Config>::RuntimeEvent,
+) {
     let all_emitted_events = frame_system::Pallet::<T>::events();
     let summary_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
 
@@ -206,7 +210,7 @@ fn assert_event_exists<T: Config<I>, I: 'static>(generic_event: <T as Config<I>>
 }
 
 fn assert_event_not_emitted<T: Config<I>, I: 'static>(
-    generic_event: <T as Config<I>>::RuntimeEvent,
+    generic_event: <T as frame_system::Config>::RuntimeEvent,
 ) {
     let all_emitted_events = frame_system::Pallet::<T>::events();
     let summary_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();

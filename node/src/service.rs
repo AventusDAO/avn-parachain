@@ -9,26 +9,27 @@ use sp_core::offchain::OffchainStorage;
 use std::{sync::Arc, time::Duration};
 
 // Cumulus Imports
+use cumulus_client_bootnodes::{start_bootnode_tasks, StartBootnodeTasksParams};
 use cumulus_client_cli::CollatorOptions;
 use cumulus_client_collator::service::CollatorService;
 #[docify::export(lookahead_collator)]
 use cumulus_client_consensus_aura::collators::lookahead::{self as aura, Params as AuraParams};
 use cumulus_client_consensus_common::ParachainBlockImport as TParachainBlockImport;
-use cumulus_client_consensus_proposer::Proposer;
 use cumulus_client_service::{
     build_relay_chain_interface, prepare_node_config, start_relay_chain_tasks,
     CollatorSybilResistance, DARecoveryProfile, StartRelayChainTasksParams,
 };
 use cumulus_primitives_core::{
     relay_chain::{CollatorPair, ValidationCode},
-    ParaId,
+    GetParachainInfo, ParaId,
 };
 use cumulus_relay_chain_interface::{OverseerHandle, RelayChainInterface};
+use sp_api::ProvideRuntimeApi;
 
 // Substrate Imports
 use sc_consensus::ImportQueue;
 use sc_executor::{HeapAllocStrategy, WasmExecutor, DEFAULT_HEAP_ALLOC_STRATEGY};
-use sc_network::NetworkBlock;
+use sc_network::{NetworkBackend, NetworkBlock, PeerId};
 use sc_service::{
     config::KeystoreConfig, Configuration, PartialComponents, TFullBackend, TFullClient,
     TaskManager,
@@ -43,7 +44,7 @@ use sp_keystore::KeystorePtr;
 use substrate_prometheus_endpoint::Registry;
 
 use crate::{avn_config::*, RuntimeApi};
-use cumulus_client_service::ParachainHostFunctions;
+use cumulus_client_service::{ParachainHostFunctions, ParachainTracingExecuteBlock};
 use external_service::node_integration::{self, NodeDeps};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 
@@ -143,6 +144,9 @@ pub fn new_partial(config: &Configuration) -> Result<Service, sc_service::Error>
             telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
             executor,
             true,
+            // Pruning filters: parachain nodes keep no justifications, so nothing needs
+            // protecting.
+            Default::default(),
         )?;
     let client = Arc::new(client);
 
@@ -226,21 +230,20 @@ fn start_consensus<Pool>(
     relay_chain_slot_duration: Duration,
     para_id: ParaId,
     collator_key: CollatorPair,
+    collator_peer_id: PeerId,
     overseer_handle: OverseerHandle,
     announce_block: Arc<dyn Fn(Hash, Option<Vec<u8>>) + Send + Sync>,
 ) -> Result<(), sc_service::Error>
 where
     Pool: sc_transaction_pool_api::TransactionPool<Block = Block> + 'static,
 {
-    let proposer_factory = sc_basic_authorship::ProposerFactory::with_proof_recording(
+    let proposer = sc_basic_authorship::ProposerFactory::new(
         task_manager.spawn_handle(),
         client.clone(),
         transaction_pool,
         prometheus_registry,
         telemetry.clone(),
     );
-
-    let proposer = Proposer::new(proposer_factory);
 
     let collator_service = CollatorService::new(
         client.clone(),
@@ -260,6 +263,7 @@ where
         },
         keystore,
         collator_key,
+        collator_peer_id,
         para_id,
         overseer_handle,
         relay_chain_slot_duration,
@@ -285,7 +289,6 @@ pub async fn start_parachain_node(
     polkadot_config: Configuration,
     avn_cli_config: AvnCliConfiguration,
     collator_options: CollatorOptions,
-    para_id: ParaId,
     hwbench: Option<sc_sysinfo::HwBench>,
 ) -> sc_service::error::Result<(TaskManager, Arc<ParachainClient>)> {
     let parachain_config = prepare_node_config(parachain_config);
@@ -303,16 +306,29 @@ pub async fn start_parachain_node(
     let backend = params.backend.clone();
     let mut task_manager = params.task_manager;
 
-    let (relay_chain_interface, collator_key) = build_relay_chain_interface(
-        polkadot_config,
-        &parachain_config,
-        telemetry_worker_handle,
-        &mut task_manager,
-        collator_options.clone(),
-        hwbench.clone(),
-    )
-    .await
-    .map_err(|e| sc_service::Error::Application(Box::new(e) as Box<_>))?;
+    // Take the parachain id from the runtime rather than the chain spec.
+    let best_hash = client.chain_info().best_hash;
+    let para_id = client.runtime_api().parachain_id(best_hash).map_err(|_| {
+        "Failed to retrieve parachain id from runtime. Make sure the runtime implements the \
+         `cumulus_primitives_core::GetParachainInfo` runtime API."
+    })?;
+
+    let relay_chain_fork_id = polkadot_config.chain_spec.fork_id().map(ToString::to_string);
+    let parachain_fork_id = parachain_config.chain_spec.fork_id().map(ToString::to_string);
+    let advertise_non_global_ips = parachain_config.network.allow_non_globals_in_dht;
+    let parachain_public_addresses = parachain_config.network.public_addresses.clone();
+
+    let (relay_chain_interface, collator_key, relay_chain_network, paranode_rx) =
+        build_relay_chain_interface(
+            polkadot_config,
+            &parachain_config,
+            telemetry_worker_handle,
+            &mut task_manager,
+            collator_options.clone(),
+            hwbench.clone(),
+        )
+        .await
+        .map_err(|e| sc_service::Error::Application(Box::new(e) as Box<_>))?;
 
     let validator = parachain_config.role.is_authority();
 
@@ -326,6 +342,9 @@ pub async fn start_parachain_node(
     let offchain_worker_enabled = parachain_config.offchain_worker.enabled;
     let avn_port = avn_cli_config.avn_port.clone();
 
+    let metrics = sc_network::NetworkWorker::<Block, Hash>::register_notification_metrics(
+        parachain_config.prometheus_config.as_ref().map(|config| &config.registry),
+    );
     // NOTE: because we use Aura here explicitly, we can use `CollatorSybilResistance::Resistant`
     // when starting the network.
     let (network, system_rpc_tx, tx_handler_controller, sync_service) =
@@ -336,11 +355,16 @@ pub async fn start_parachain_node(
             transaction_pool: inner_pool, // Cumulus API requires concrete pool type
             para_id,
             spawn_handle: task_manager.spawn_handle(),
+            spawn_essential_handle: task_manager.spawn_essential_handle(),
             relay_chain_interface: relay_chain_interface.clone(),
             import_queue: params.import_queue,
             sybil_resistance_level: CollatorSybilResistance::Resistant, // because of Aura
+            metrics,
         })
         .await?;
+
+    // Our own network identity, advertised to the relay chain via UMP signal when authoring.
+    let collator_peer_id = network.local_peer_id();
 
     if offchain_worker_enabled {
         use futures::FutureExt;
@@ -414,11 +438,13 @@ pub async fn start_parachain_node(
         config: parachain_config,
         keystore: params.keystore_container.keystore(),
         backend: backend.clone(),
-        network,
+        network: network.clone(),
         sync_service: sync_service.clone(),
         system_rpc_tx,
         tx_handler_controller,
         telemetry: telemetry.as_mut(),
+        // Lets the `trace_block` RPC re-execute blocks with the parachain block executor.
+        tracing_execute_block: Some(Arc::new(ParachainTracingExecuteBlock::new(client.clone()))),
     })?;
 
     if let Some(hwbench) = hwbench {
@@ -460,7 +486,24 @@ pub async fn start_parachain_node(
         relay_chain_slot_duration,
         recovery_handle: Box::new(overseer_handle.clone()),
         sync_service: sync_service.clone(),
+        prometheus_registry: prometheus_registry.as_ref(),
     })?;
+
+    start_bootnode_tasks(StartBootnodeTasksParams {
+        embedded_dht_bootnode: collator_options.embedded_dht_bootnode,
+        dht_bootnode_discovery: collator_options.dht_bootnode_discovery,
+        para_id,
+        task_manager: &mut task_manager,
+        relay_chain_interface: relay_chain_interface.clone(),
+        relay_chain_fork_id,
+        relay_chain_network,
+        request_receiver: paranode_rx,
+        parachain_network: network,
+        advertise_non_global_ips,
+        parachain_genesis_hash: client.chain_info().genesis_hash.encode(),
+        parachain_fork_id,
+        parachain_public_addresses,
+    });
 
     if validator || offchain_worker_enabled {
         let keystore_path = match parachain_config_keystore {
@@ -513,6 +556,7 @@ pub async fn start_parachain_node(
                 relay_chain_slot_duration,
                 para_id,
                 collator_key.expect("Command line arguments do not allow this. qed"),
+                collator_peer_id,
                 overseer_handle,
                 announce_block,
             )?;

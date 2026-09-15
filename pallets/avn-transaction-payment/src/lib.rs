@@ -15,7 +15,6 @@ use frame_support::{
     },
     unsigned::TransactionValidityError,
 };
-use frame_system::{self as system};
 
 use core::convert::TryInto;
 pub use pallet::*;
@@ -24,7 +23,10 @@ use sp_runtime::{
     transaction_validity::InvalidTransaction,
 };
 
-use pallet_transaction_payment::OnChargeTransaction;
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
+use frame_support::traits::NoDrop;
+use pallet_transaction_payment::{OnChargeTransaction, TxCreditHold};
+use scale_info::TypeInfo;
 use sp_std::{marker::PhantomData, prelude::*};
 
 pub mod fee_adjustment_config;
@@ -41,11 +43,6 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: frame_system::Config + pallet_transaction_payment::Config {
-        /// The overarching event type.
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// The overarching call type
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
@@ -239,7 +236,25 @@ impl<T: Config> Pallet<T> {
 
 // The fungible changes are copied from PolkadotSdk:
 // https://github.com/paritytech/polkadot-sdk/commit/bda4e75ac49786a7246531cf729b25c208cd38e6
+/// Marker credit type for fee adapters that do **not** publish the withdrawn fee through
+/// `pallet_transaction_payment`'s shared `TxPaymentCredit` storage.
+///
+/// It deliberately implements no `Imbalance`. Any pallet that calls
+/// `pallet_transaction_payment::Pallet::withdraw_txfee` / `remaining_txfee` therefore fails to
+/// compile against this runtime, in both std and no_std builds, instead of silently finding an
+/// empty credit at runtime. To support such a pallet, move the adapters to the shared-credit
+/// pattern: deposit the inclusion fee in `withdraw_fee`, take the remainder in
+/// `correct_and_deposit_fee`, and set `Credit = NoDrop<Credit<AccountId, F>>`.
+#[derive(Default, Encode, Decode, DecodeWithMemTracking, MaxEncodedLen, TypeInfo)]
+pub struct NoSharedTxCredit;
+
 pub struct AvnGasFeeAdapter<F, OU>(PhantomData<(F, OU)>);
+
+/// This adapter keeps the withdrawn fee credit in `LiquidityInfo` and never publishes it through
+/// `pallet_transaction_payment`'s shared tx-credit storage. See [`NoSharedTxCredit`].
+impl<T: pallet_transaction_payment::Config, F, OU> TxCreditHold<T> for AvnGasFeeAdapter<F, OU> {
+    type Credit = NoDrop<NoSharedTxCredit>;
+}
 
 /// Default implementation for a Fungible and an OnUnbalanced handler.
 ///
@@ -362,6 +377,12 @@ where
 
 // Vanilla fungible adapter from polkadot sdk without any discount logic
 pub struct FungibleAdapter<F, OU>(PhantomData<(F, OU)>);
+
+/// This adapter keeps the withdrawn fee credit in `LiquidityInfo` and never publishes it through
+/// `pallet_transaction_payment`'s shared tx-credit storage. See [`NoSharedTxCredit`].
+impl<T: pallet_transaction_payment::Config, F, OU> TxCreditHold<T> for FungibleAdapter<F, OU> {
+    type Credit = NoDrop<NoSharedTxCredit>;
+}
 
 /// Default implementation for a Fungible and an OnUnbalanced handler.
 ///

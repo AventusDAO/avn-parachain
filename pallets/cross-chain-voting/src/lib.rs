@@ -51,7 +51,7 @@ type BalanceOf<T> =
     Copy,
     PartialEq,
     Eq,
-    RuntimeDebug,
+    Debug,
     TypeInfo,
     MaxEncodedLen,
 )]
@@ -61,15 +61,7 @@ pub enum Action {
 }
 
 #[derive(
-    Encode,
-    Decode,
-    DecodeWithMemTracking,
-    Clone,
-    PartialEq,
-    Eq,
-    RuntimeDebug,
-    TypeInfo,
-    MaxEncodedLen,
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
 )]
 pub struct LinkPayload<AccountId> {
     pub action: Action,
@@ -92,7 +84,6 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: frame_system::Config {
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// Native currency for voting weight
         type Currency: Currency<Self::AccountId>;
         /// Max linked T2 accounts per T1 identity (set to 10 in runtime)

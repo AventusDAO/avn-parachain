@@ -28,14 +28,14 @@ macro_rules! assert_approx {
     };
 }
 
-fn assert_last_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
+fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::RuntimeEvent) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
     let EventRecord { event, .. } = &events[events.len().saturating_sub(1 as usize)];
     assert_eq!(event, &system_event);
 }
 
-fn assert_has_event<T: Config>(generic_event: <T as Config>::RuntimeEvent) {
+fn assert_has_event<T: Config>(generic_event: <T as frame_system::Config>::RuntimeEvent) {
     let events = frame_system::Pallet::<T>::events();
     let system_event: <T as frame_system::Config>::RuntimeEvent = generic_event.into();
     assert!(

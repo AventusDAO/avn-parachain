@@ -20,7 +20,7 @@ use frame_support::{
     PalletId,
 };
 use frame_system::{
-    offchain::{CreateInherent, CreateTransactionBase, SubmitTransaction},
+    offchain::{CreateBare, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::*,
 };
 use pallet_avn::{
@@ -45,7 +45,7 @@ use sp_runtime::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, Perbill, Perquintill, RuntimeDebug, Saturating,
+    DispatchError, Perbill, Perquintill, Saturating,
 };
 
 pub mod offchain;
@@ -630,13 +630,9 @@ pub mod pallet {
     pub trait Config:
         frame_system::Config
         + avn::Config
-        + CreateInherent<Call<Self>>
+        + CreateBare<Call<Self>>
         + CreateTransactionBase<Call<Self>>
     {
-        /// Runtime event type
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as frame_system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
         /// Runtime call type
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = <Self as frame_system::Config>::RuntimeOrigin>

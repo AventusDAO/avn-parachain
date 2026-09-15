@@ -11,7 +11,7 @@ pub fn add_confirmation<T: Config<I>, I: 'static>(
     let proof = add_confirmation_proof::<T, I>(request_id, &confirmation, &author.account_id);
     let signature = author.key.sign(&proof).expect("Error signing proof");
     let call = Call::<T, I>::add_confirmation { request_id, confirmation, author, signature };
-    let xt = T::create_inherent(call.into());
+    let xt = T::create_bare(call.into());
     let _ = SubmitTransaction::<T, Call<T, I>>::submit_transaction(xt);
 }
 
@@ -23,7 +23,7 @@ pub fn add_eth_tx_hash<T: Config<I>, I: 'static>(
     let proof = add_eth_tx_hash_proof::<T, I>(tx_id, &eth_tx_hash, &author.account_id);
     let signature = author.key.sign(&proof).expect("Error signing proof");
     let call = Call::<T, I>::add_eth_tx_hash { tx_id, eth_tx_hash, author, signature };
-    let xt = T::create_inherent(call.into());
+    let xt = T::create_bare(call.into());
     let _ = SubmitTransaction::<T, Call<T, I>>::submit_transaction(xt);
 }
 
@@ -50,7 +50,7 @@ pub fn add_corroboration<T: Config<I>, I: 'static>(
         replay_attempt,
         signature,
     };
-    let xt = T::create_inherent(call.into());
+    let xt = T::create_bare(call.into());
     let _ = SubmitTransaction::<T, Call<T, I>>::submit_transaction(xt);
 }
 
@@ -60,7 +60,7 @@ pub fn submit_ethereum_events<T: Config<I>, I: 'static>(
     signature: <T::AuthorityId as RuntimeAppPublic>::Signature,
 ) -> Result<(), ()> {
     let call = Call::<T, I>::submit_ethereum_events { author, events_partition, signature };
-    let xt = T::create_inherent(call.into());
+    let xt = T::create_bare(call.into());
     SubmitTransaction::<T, Call<T, I>>::submit_transaction(xt)
 }
 
@@ -70,7 +70,7 @@ pub fn submit_latest_ethereum_block<T: Config<I>, I: 'static>(
     signature: <T::AuthorityId as RuntimeAppPublic>::Signature,
 ) -> Result<(), ()> {
     let call = Call::<T, I>::submit_latest_ethereum_block { author, latest_seen_block, signature };
-    let xt = T::create_inherent(call.into());
+    let xt = T::create_bare(call.into());
     SubmitTransaction::<T, Call<T, I>>::submit_transaction(xt)
 }
 

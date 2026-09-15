@@ -103,7 +103,7 @@ pub mod pallet {
     pub type ChainId = u32;
     pub type CheckpointId = u64;
 
-    #[derive(Encode, Decode, Clone, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Encode, Decode, Clone, PartialEq, Debug, TypeInfo, MaxEncodedLen)]
     pub struct CheckpointData {
         pub hash: H256,
         pub origin_id: OriginId,
@@ -111,7 +111,7 @@ pub mod pallet {
 
     /// A node's accrued, unpaid app-chain reward for a single reward period.
     /// The owner is snapshotted at accrual time because nodes can be transferred afterwards.
-    #[derive(Encode, Decode, Clone, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Encode, Decode, Clone, PartialEq, Debug, TypeInfo, MaxEncodedLen)]
     pub struct RewardRecord<AccountId> {
         /// The node owner at the time the reward accrued.
         pub owner: AccountId,
@@ -123,10 +123,6 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: frame_system::Config + pallet_avn::Config {
-        type RuntimeEvent: From<Event<Self>>
-            + Into<<Self as frame_system::Config>::RuntimeEvent>
-            + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         /// The overarching call type.
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = <Self as frame_system::Config>::RuntimeOrigin>

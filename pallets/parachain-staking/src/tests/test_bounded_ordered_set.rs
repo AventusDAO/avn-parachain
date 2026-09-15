@@ -5,12 +5,11 @@ mod tests {
     use codec::{Decode, Encode, MaxEncodedLen};
     use frame_support::traits::Get;
     use scale_info::TypeInfo;
-    use sp_core::RuntimeDebug;
     use sp_runtime::BoundedVec;
 
     use crate::set::BoundedOrderedSet;
 
-    #[derive(Clone, Encode, Decode, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+    #[derive(Clone, Encode, Decode, Debug, TypeInfo, MaxEncodedLen)]
     pub struct MaxBound;
 
     impl Get<u32> for MaxBound {

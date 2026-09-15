@@ -87,10 +87,12 @@ frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
+        Balances: pallet_balances,
         Timestamp: pallet_timestamp,
         Avn: pallet_avn::{Pallet, Storage, Event},
         EthBridge: eth_bridge::{Pallet, Call, Storage, Event<T>, Config<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
+        Historical: pallet_session::historical,
     }
 );
 
@@ -102,11 +104,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -118,7 +120,6 @@ parameter_types! {
 
 impl Config for TestRuntime {
     type MaxQueuedTxRequests = ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
@@ -136,6 +137,12 @@ impl Config for TestRuntime {
 impl system::Config for TestRuntime {
     type Nonce = u64;
     type Block = Block;
+    type AccountData = pallet_balances::AccountData<u64>;
+}
+
+#[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
+impl pallet_balances::Config for TestRuntime {
+    type AccountStore = System;
 }
 
 #[derive_impl(pallet_avn::config_preludes::TestDefaultConfig as pallet_avn::DefaultConfig)]
@@ -273,6 +280,8 @@ impl session::SessionManager<u64> for TestSessionManager {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = TestSessionManager;
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
@@ -286,8 +295,20 @@ impl session::Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
+}
+
+/// Session keys for benchmarks. `UintAuthorityId` accepts any ownership proof, so a distinct dummy
+/// key per owner and an empty proof are sufficient here.
+#[cfg(feature = "runtime-benchmarks")]
+impl cumulus_pallet_session_benchmarking::Config for TestRuntime {
+    fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+        let mut id = [0u8; 8];
+        codec::Encode::using_encoded(&owner, |encoded| id.copy_from_slice(&encoded[..8]));
+        (UintAuthorityId(u64::from_le_bytes(id)), Vec::new())
+    }
 }
 
 impl pallet_session::historical::SessionManager<AccountId, AccountId> for TestSessionManager {

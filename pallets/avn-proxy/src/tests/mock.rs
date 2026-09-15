@@ -27,7 +27,8 @@ use sp_avn_common::{
     primitives::{Amount, Balance, CurrencyId},
     Asset,
 };
-use sp_core::{keccak_256, sr25519, ByteArray, ConstU32, ConstU64, Pair, H160, H256};
+use sp_core::{sr25519, ByteArray, ConstU32, ConstU64, Pair, H160, H256};
+use sp_io::hashing::keccak_256;
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 use sp_runtime::{
     testing::{TestXt, UintAuthorityId},
@@ -67,11 +68,11 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for TestRuntime
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for TestRuntime
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
@@ -80,7 +81,7 @@ frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
         Balances: pallet_balances::{Pallet, Call, Storage, Event<T>},
         NftManager: pallet_nft_manager::{Pallet, Call, Storage, Event<T>},
         AvnProxy: avn_proxy::{Pallet, Call, Storage, Event<T>},
@@ -89,7 +90,7 @@ frame_support::construct_runtime!(
         Scheduler: pallet_scheduler::{Pallet, Call, Storage, Event<T>},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
-        Historical: pallet_session::historical::{Pallet, Storage},
+        Historical: pallet_session::historical::{Pallet, Storage, Event<T>},
         AssetRegistry: orml_asset_registry,
         AssetManager: orml_currencies,
         Tokens: orml_tokens,
@@ -97,7 +98,6 @@ frame_support::construct_runtime!(
 );
 
 impl Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type Public = AccountPublic;
@@ -146,7 +146,6 @@ impl pallet_balances::Config for TestRuntime {
 }
 
 impl pallet_nft_manager::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type ProcessedEventsChecker = ();
     type Public = AccountPublic;
@@ -166,7 +165,6 @@ parameter_types! {
 }
 
 impl pallet_token_manager::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type ProcessedEventsChecker = ();
@@ -225,7 +223,6 @@ impl pallet_scheduler::Config for TestRuntime {
 
 impl pallet_eth_bridge::Config for TestRuntime {
     type MaxQueuedTxRequests = frame_support::traits::ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type MinEthBlockConfirmation = ConstU64<20>;
     type RuntimeCall = RuntimeCall;
@@ -252,6 +249,8 @@ parameter_types! {
 }
 
 impl session::Config for TestRuntime {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = ();
     type Keys = UintAuthorityId;
     type ShouldEndSession = session::PeriodicSessions<Period, Offset>;
@@ -265,6 +264,7 @@ impl session::Config for TestRuntime {
 }
 
 impl pallet_session::historical::Config for TestRuntime {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
 }
@@ -300,7 +300,6 @@ impl orml_currencies::Config for TestRuntime {
 }
 
 impl orml_asset_registry::Config for TestRuntime {
-    type RuntimeEvent = RuntimeEvent;
     type CustomMetadata = AvnAssetMetadata;
     type AssetId = CurrencyId;
     type AuthorityOrigin = EnsureRoot<TestAccountIdPK>;
@@ -326,11 +325,12 @@ parameter_type_with_key! {
 }
 
 impl orml_tokens::Config for TestRuntime {
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
     type Amount = Amount;
     type Balance = Balance;
     type CurrencyId = CurrencyId;
     type DustRemovalWhitelist = Everything;
-    type RuntimeEvent = RuntimeEvent;
     type ExistentialDeposits = ExistentialDeposits;
     type MaxLocks = MaxLocks;
     type MaxReserves = MaxReserves;

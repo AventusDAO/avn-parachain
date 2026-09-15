@@ -156,9 +156,6 @@ pub struct Extensions {
     /// The relay chain of the Parachain.
     #[serde(alias = "relayChain", alias = "RelayChain")]
     pub relay_chain: String,
-    /// The id of the Parachain.
-    #[serde(alias = "paraId", alias = "ParaId")]
-    pub para_id: u32,
 }
 
 impl Extensions {

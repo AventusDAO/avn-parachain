@@ -9,7 +9,8 @@ use sp_avn_common::{
     eth::EthereumId, recover_public_key_from_ecdsa_signature, short_hex, EthQueryRequest,
     EthQueryResponseType, EthTransaction, ADDRESS, BYTES, BYTES32, UINT128, UINT256, UINT32,
 };
-use sp_core::{blake2_256, ecdsa, Get, H256};
+use sp_core::{ecdsa, Get, H256};
+use sp_io::hashing::blake2_256;
 use sp_runtime::DispatchError;
 use sp_std::vec;
 

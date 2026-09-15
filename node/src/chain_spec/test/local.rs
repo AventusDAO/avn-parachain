@@ -13,11 +13,7 @@ pub fn avn_garde_local_config() -> ChainSpec {
 
     ChainSpec::builder(
         avn_test_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
-        Extensions {
-            relay_chain: RELAY_CHAIN.into(),
-            // You MUST set this to the correct network!
-            para_id: parachain_id,
-        },
+        Extensions { relay_chain: RELAY_CHAIN.into() },
     )
     .with_name("AvN Garde Local Parachain")
     .with_protocol_id("avn_garde_local")

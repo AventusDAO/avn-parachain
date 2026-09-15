@@ -28,7 +28,7 @@ use polkadot_sdk::{
 use sp_avn_common::Asset;
 
 #[cfg(feature = "try-runtime")]
-use sp_runtime::TryRuntimeError;
+use polkadot_sdk::sp_runtime::TryRuntimeError;
 
 use crate::{Balance, Runtime, EXISTENTIAL_DEPOSIT};
 

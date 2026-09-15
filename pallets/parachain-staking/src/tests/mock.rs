@@ -37,7 +37,7 @@ use pallet_avn::CollatorPayoutDustHandler;
 use pallet_avn_proxy::{self as avn_proxy, ProvableProxy};
 use pallet_eth_bridge;
 use pallet_session as session;
-use pallet_transaction_payment::{ChargeTransactionPayment, CurrencyAdapter};
+use pallet_transaction_payment::{ChargeTransactionPayment, FungibleAdapter};
 use sp_avn_common::{eth::EthereumId, InnerCallValidator, PaymentHandler};
 use sp_core::{sr25519, ConstU64, Pair};
 use sp_io;
@@ -69,9 +69,9 @@ construct_runtime!(
         Authorship: pallet_authorship::{Pallet, Storage},
         TransactionPayment: pallet_transaction_payment::{Pallet, Storage, Event<T>, Config<T>},
         Avn: pallet_avn::{Pallet, Storage, Event},
-        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>},
+        Session: pallet_session::{Pallet, Call, Storage, Event<T>, Config<T>, HoldReason},
         AvnProxy: avn_proxy::{Pallet, Call, Storage, Event<T>},
-        Historical: pallet_session::historical::{Pallet, Storage},
+        Historical: pallet_session::historical::{Pallet, Storage, Event<T>},
         EthBridge: pallet_eth_bridge::{Pallet, Call, Storage, Event<T>},
         Timestamp: pallet_timestamp,
     }
@@ -120,7 +120,10 @@ parameter_types! {
     pub const AvailableBlockRatio: Perbill = Perbill::one();
     pub const SS58Prefix: u8 = 42;
 
-    pub BlockLength: limits::BlockLength = limits::BlockLength::max_with_normal_ratio(1024, NORMAL_DISPATCH_RATIO);
+    pub BlockLength: limits::BlockLength = limits::BlockLength::builder()
+        .max_length(1024)
+        .modify_max_length_for_class(DispatchClass::Normal, |m| *m = NORMAL_DISPATCH_RATIO * *m)
+        .build();
     pub RuntimeBlockWeights: limits::BlockWeights = limits::BlockWeights::builder()
         .base_block(Weight::from_parts(10, 0))
         .for_class(DispatchClass::all(), |weights| {
@@ -202,18 +205,17 @@ where
     type RuntimeCall = RuntimeCall;
 }
 
-impl<LocalCall> frame_system::offchain::CreateInherent<LocalCall> for Test
+impl<LocalCall> frame_system::offchain::CreateBare<LocalCall> for Test
 where
     RuntimeCall: From<LocalCall>,
 {
-    fn create_inherent(call: Self::RuntimeCall) -> Self::Extrinsic {
+    fn create_bare(call: Self::RuntimeCall) -> Self::Extrinsic {
         Extrinsic::new_bare(call)
     }
 }
 
 impl Config for Test {
     type RuntimeCall = RuntimeCall;
-    type RuntimeEvent = RuntimeEvent;
     type Currency = Balances;
     type RewardPaymentDelay = RewardPaymentDelay;
     type MinBlocksPerEra = MinBlocksPerEra;
@@ -247,8 +249,20 @@ impl CollatorPayoutDustHandler<Balance> for TestCollatorPayoutDustHandler {
 }
 
 impl pallet_session::historical::Config for Test {
+    type RuntimeEvent = RuntimeEvent;
     type FullIdentification = AccountId;
     type FullIdentificationOf = ConvertInto;
+}
+
+/// Session keys for benchmarks. `UintAuthorityId` accepts any ownership proof, so a distinct dummy
+/// key per owner and an empty proof are sufficient here.
+#[cfg(feature = "runtime-benchmarks")]
+impl cumulus_pallet_session_benchmarking::Config for Test {
+    fn generate_session_keys_and_proof(owner: Self::AccountId) -> (Self::Keys, Vec<u8>) {
+        let mut id = [0u8; 8];
+        codec::Encode::using_encoded(&owner, |encoded| id.copy_from_slice(&encoded[..8]));
+        (UintAuthorityId(u64::from_le_bytes(id)), Vec::new())
+    }
 }
 
 parameter_types! {
@@ -271,24 +285,29 @@ pub fn disable_growth() {
     GROWTH_ENABLED.with(|enabled| *enabled.borrow_mut() = false);
 }
 
+/// Fee credit type produced by `FungibleAdapter<Balances, _>`.
+type FeeCredit = frame_support::traits::fungible::Credit<AccountId, Balances>;
+
 pub struct DealWithFees;
-impl OnUnbalanced<pallet_balances::NegativeImbalance<Test>> for DealWithFees {
-    fn on_unbalanceds(
-        mut fees_then_tips: impl Iterator<Item = pallet_balances::NegativeImbalance<Test>>,
-    ) {
+impl OnUnbalanced<FeeCredit> for DealWithFees {
+    fn on_unbalanceds(mut fees_then_tips: impl Iterator<Item = FeeCredit>) {
         if let Some(mut fees) = fees_then_tips.next() {
             if let Some(tips) = fees_then_tips.next() {
                 tips.merge_into(&mut fees);
             }
             let staking_pot = ParachainStaking::compute_reward_pot_account_id();
-            Balances::resolve_creating(&staking_pot, fees);
+            // A credit that cannot be resolved is dropped, which burns it.
+            let _ = <Balances as frame_support::traits::fungible::Balanced<AccountId>>::resolve(
+                &staking_pot,
+                fees,
+            );
         }
     }
 }
 
 impl pallet_transaction_payment::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type OnChargeTransaction = CurrencyAdapter<Balances, DealWithFees>;
+    type OnChargeTransaction = FungibleAdapter<Balances, DealWithFees>;
     type LengthToFee = TransactionByteFee;
     type WeightToFee = WeightToFee;
     type FeeMultiplierUpdate = ();
@@ -321,6 +340,8 @@ impl avn::Config for Test {
 }
 
 impl session::Config for Test {
+    type Currency = Balances;
+    type KeyDeposit = ();
     type SessionManager = ParachainStaking;
     type Keys = UintAuthorityId;
     type ShouldEndSession = ParachainStaking;
@@ -334,7 +355,6 @@ impl session::Config for Test {
 }
 
 impl avn_proxy::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
     type Public = AccountId;
@@ -347,7 +367,6 @@ impl avn_proxy::Config for Test {
 
 impl pallet_eth_bridge::Config for Test {
     type MaxQueuedTxRequests = ConstU32<100>;
-    type RuntimeEvent = RuntimeEvent;
     type TimeProvider = Timestamp;
     type RuntimeCall = RuntimeCall;
     type MinEthBlockConfirmation = ConstU64<20>;
