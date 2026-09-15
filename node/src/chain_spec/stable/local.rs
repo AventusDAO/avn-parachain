@@ -16,7 +16,7 @@ pub fn development_config() -> ChainSpec {
 
     ChainSpec::builder(
         avn_parachain_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
-        Extensions { relay_chain: RELAY_CHAIN.into() },
+        Extensions { relay_chain: RELAY_CHAIN.into(), para_id: Some(dev_rococo_parachain_id) },
     )
     .with_name("Development")
     .with_protocol_id("template-dev")
@@ -72,10 +72,11 @@ pub fn development_config() -> ChainSpec {
 }
 
 pub fn local_testnet_config() -> ChainSpec {
+    let local_parachain_id: u32 = 2000;
     let properties = avn_chain_properties();
     ChainSpec::builder(
         avn_parachain_runtime::WASM_BINARY.expect("WASM binary was not built, please build it!"),
-        Extensions { relay_chain: RELAY_CHAIN.into() },
+        Extensions { relay_chain: RELAY_CHAIN.into(), para_id: Some(local_parachain_id) },
     )
     .with_name("AvN Local Parachain")
     .with_protocol_id("avn-local")
@@ -116,7 +117,7 @@ pub fn local_testnet_config() -> ChainSpec {
             (get_account_id_from_seed::<sr25519::Public>("onboarding-relayer"), AVT_ENDOWMENT),
             (get_account_id_from_seed::<sr25519::Public>("test-account"), AVT_ENDOWMENT),
         ],
-        2000.into(),
+        local_parachain_id.into(),
         // SUDO account
         get_account_id_from_seed::<sr25519::Public>("Ferdie"),
         // AVT contract
