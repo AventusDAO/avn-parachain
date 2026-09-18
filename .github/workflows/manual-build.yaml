@@ -34,13 +34,38 @@ jobs:
       GIT_TAG: ${{ steps.set.outputs.GIT_TAG }}
       TEST_CODE: ${{ steps.set.outputs.TEST_CODE }}
     steps:
-      - name: Set outputs from workflow inputs
+      # GIT_TAG is free text typed by whoever dispatches the workflow. It is validated
+      # against a strict allowlist BEFORE anything is written to $GITHUB_OUTPUT: a value
+      # containing a newline could otherwise append extra records (such as RELEASE=true)
+      # and change downstream job conditions. The same allowlist keeps it a valid git tag
+      # and docker tag. RELEASE and TEST_CODE are booleans rendered by GitHub itself.
+      - name: Validate inputs and set outputs
         id: set
         env:
           RELEASE: ${{ inputs.RELEASE }}
           GIT_TAG: ${{ inputs.GIT_TAG }}
           TEST_CODE: ${{ inputs.TEST_CODE }}
         run: |
+          set -euo pipefail
+
+          allowed='^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+          prod='^v([0-9]+\.){0,2}(\*|[0-9]+)$'
+
+          if [[ -n "$GIT_TAG" && ! "$GIT_TAG" =~ $allowed ]]; then
+            echo "::error::GIT_TAG must start with an alphanumeric character and contain only [A-Za-z0-9._-] (max 128 chars)."
+            exit 1
+          fi
+
+          if [[ "$GIT_TAG" =~ $prod ]]; then
+            echo "::error::GIT_TAG '$GIT_TAG' matches the semver scheme 'vX.Y.Z' reserved for production tags. This workflow can only be used without prod tags."
+            exit 1
+          fi
+
+          if [[ "$RELEASE" == "true" && -z "$GIT_TAG" ]]; then
+            echo "::error::GIT_TAG is required when RELEASE is true."
+            exit 1
+          fi
+
           echo "Release: $RELEASE"
           echo "Git tag: $GIT_TAG"
           echo "Test code: $TEST_CODE"
@@ -50,17 +75,6 @@ jobs:
             echo "GIT_TAG=$GIT_TAG"
             echo "TEST_CODE=$TEST_CODE"
           } >> "$GITHUB_OUTPUT"
-
-      - name: verify GIT TAG
-        env:
-          VERSION: ${{ inputs.GIT_TAG }}
-        run: |
-          rx='^v([0-9]+\.){0,2}(\*|[0-9]+)$'
-
-          if [[ $VERSION =~ $rx ]]; then
-            echo "version $VERSION matches the semver scheme 'vX.Y.Z' (prod tags). This workflow can only be used without prod tags";
-            exit 1
-          fi
 
   test-code:
     needs: [set-up-job]
