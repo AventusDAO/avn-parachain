@@ -19,9 +19,11 @@ on:
         type: boolean
         description: Should we run the tests ?
 
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,24 +36,32 @@ jobs:
     steps:
       - name: Set outputs from workflow inputs
         id: set
+        env:
+          RELEASE: ${{ inputs.RELEASE }}
+          GIT_TAG: ${{ inputs.GIT_TAG }}
+          TEST_CODE: ${{ inputs.TEST_CODE }}
         run: |
-          echo "Release: ${{ github.event.inputs.RELEASE }}"
-          echo "Git tag: ${{ github.event.inputs.GIT_TAG }}"
-          echo "Test code: ${{ github.event.inputs.TEST_CODE }}"
+          echo "Release: $RELEASE"
+          echo "Git tag: $GIT_TAG"
+          echo "Test code: $TEST_CODE"
 
-          echo "RELEASE=${{ github.event.inputs.RELEASE }}" >> "$GITHUB_OUTPUT"
-          echo "GIT_TAG=${{ github.event.inputs.GIT_TAG }}" >> "$GITHUB_OUTPUT"
-          echo "TEST_CODE=${{ github.event.inputs.TEST_CODE }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "RELEASE=$RELEASE"
+            echo "GIT_TAG=$GIT_TAG"
+            echo "TEST_CODE=$TEST_CODE"
+          } >> "$GITHUB_OUTPUT"
 
       - name: verify GIT TAG
+        env:
+          VERSION: ${{ inputs.GIT_TAG }}
         run: |
-          VERSION=${{ github.event.inputs.GIT_TAG }}
           rx='^v([0-9]+\.){0,2}(\*|[0-9]+)$'
 
           if [[ $VERSION =~ $rx ]]; then
             echo "version $VERSION matches the semver scheme 'vX.Y.Z' (prod tags). This workflow can only be used without prod tags";
             exit 1
           fi
+
   test-code:
     needs: [set-up-job]
     if: ${{ needs.set-up-job.outputs.TEST_CODE == 'true' }}
@@ -86,6 +96,8 @@ jobs:
       (needs.set-up-job.outputs.RELEASE == 'true') &&
       (needs.build-code.result == 'success') &&
       (needs.build-docker.result == 'success')
+    permissions:
+      contents: write
     uses: ./.github/workflows/gh-release.yml
     with:
       repo_tag: ${{ needs.set-up-job.outputs.GIT_TAG }}

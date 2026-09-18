@@ -1,13 +1,19 @@
 name: CI PR
 
+# `pull_request` (not `pull_request_target`): the workflow file and CI scripts come from
+# the merge commit, fork PRs get a read-only GITHUB_TOKEN and no secrets, so untrusted
+# code can be built and tested without exposing anything it could steal.
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -15,63 +21,76 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # Write access is only needed to push the version bump to same-repo PR branches.
+    # GitHub caps the token at read-only for fork PRs regardless of this setting.
+    permissions:
+      contents: write
+    env:
+      # True only for PRs opened from branches of this repository. Fork PRs never get
+      # the version bump or the skip-tests shortcut.
+      SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-          ref: ${{github.event.pull_request.head.ref}}
-          repository: ${{github.event.pull_request.head.repo.full_name}}
+          persist-credentials: false
 
       - name: Install cargo-edit
-        uses: baptiste0928/cargo-install@v2
+        if: env.SAME_REPO == 'true'
+        uses: baptiste0928/cargo-install@c7dafcfd8a0035d58dfc65d0fbaf71a9ac347715 # v2
         with:
           crate: cargo-edit
           version: '0.13.6'
+
       - name: Verify PR type
         env:
           description: ${{ github.event.pull_request.body }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          ./.github/ci-scripts/verify_pr_type.sh "$description" "${{ github.event_name }}"
+          ./.github/ci-scripts/verify_pr_type.sh "$description" "$EVENT_NAME"
 
       - name: skip testing
         id: skip_tests
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git checkout ${{ github.head_ref }}
-          commit_message=$(git log -1 --pretty=format:"%s")
-          git checkout $GITHUB_SHA
+          commit_message=$(git log -1 --pretty=%s "$HEAD_SHA")
 
-          SKIP_TESTS=$([[ "$commit_message" == *"tag:skip_testing"* ]] && echo true || echo false)
+          SKIP_TESTS=false
+          if [[ "$SAME_REPO" == "true" && "$commit_message" == *"tag:skip_testing"* ]]; then
+            SKIP_TESTS=true
+          fi
           echo "SKIP_TESTS=$SKIP_TESTS" >> "$GITHUB_ENV"
           echo "SKIP_TESTS=$SKIP_TESTS" >> "$GITHUB_OUTPUT"
 
       - name: Get latest repo tag
-        if: env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
+        if: env.SAME_REPO == 'true' && env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
         id: latest_repo_tag
-        uses: WyriHaximus/github-action-get-previous-tag@v1
+        uses: WyriHaximus/github-action-get-previous-tag@27c04b107bd8de27966ed909e0992078a9121de8 # v1
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get next repo tag
-        if: env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
+        if: env.SAME_REPO == 'true' && env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
         id: new_repo_tag
-        uses: WyriHaximus/github-action-next-semvers@v1
+        uses: WyriHaximus/github-action-next-semvers@1b773ddb3831644dabc80ef5e791ebd4925f7651 # v1
         with:
           version: ${{ steps.latest_repo_tag.outputs.tag }}
 
       - name: update Versions
-        if: env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
+        if: env.SAME_REPO == 'true' && env.RELEASE == 'true' && env.SKIP_TESTS != 'true'
         env:
           REGEX_PACKAGE_VERSION: '\(^s*\)\(version\s*=\s*\)\("\([0-9]\+\.\?\)\{3\}"\)'
           REGEX_SPEC_VERSION: '\(^[[:space:]]*\)\(spec_version:\s*\)\([0-9]\+\)'
           REGEX_IMPL_VERSION: '\(^[[:space:]]*\)\(impl_version:\s*\)\([0-9]\+\)'
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAJOR: ${{ steps.new_repo_tag.outputs.major }}
+          MINOR: ${{ steps.new_repo_tag.outputs.minor }}
+          PATCH: ${{ steps.new_repo_tag.outputs.patch }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          ./.github/ci-scripts/update_versions.sh \
-            ${{ steps.new_repo_tag.outputs.major }} \
-            ${{ steps.new_repo_tag.outputs.minor }} \
-            ${{ steps.new_repo_tag.outputs.patch }} \
-            "${{ github.event_name }}"
+          ./.github/ci-scripts/update_versions.sh "$MAJOR" "$MINOR" "$PATCH" "$EVENT_NAME"
     outputs:
       SKIP_TESTS: ${{ steps.skip_tests.outputs.SKIP_TESTS }}
 
@@ -81,10 +100,6 @@ jobs:
       ( !github.event.pull_request.draft ) &&
       ( needs.set-up-job.outputs.SKIP_TESTS != 'true' )
     uses: ./.github/workflows/cargo-check.yml
-    with:
-      fetch-depth: 0
-      ref: ${{ github.event.pull_request.head.ref }}
-      repository: ${{ github.event.pull_request.head.repo.full_name }}
 
   test-code:
     needs: [set-up-job]
@@ -92,7 +107,3 @@ jobs:
       ( !github.event.pull_request.draft ) &&
       ( needs.set-up-job.outputs.SKIP_TESTS != 'true' )
     uses: ./.github/workflows/cargo-test.yml
-    with:
-      fetch-depth: 0
-      ref: ${{ github.event.pull_request.head.ref }}
-      repository: ${{ github.event.pull_request.head.repo.full_name }}

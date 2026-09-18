@@ -5,71 +5,105 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 concurrency:
-  group: ${{ github.head_ref || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   set-up-job:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install cargo-edit
-        uses: baptiste0928/cargo-install@v2
+        uses: baptiste0928/cargo-install@c7dafcfd8a0035d58dfc65d0fbaf71a9ac347715 # v2
         with:
           crate: cargo-edit
           version: "0.13.6"
+
       - name: Check if Release
         id: release_type_check
         env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          git fetch
-          PR_URL=$(gh pr list --search $GITHUB_SHA --state merged --json url --jq '.[0].url')
-          description=$(gh pr view $PR_URL)
-          echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
+          PR_NUMBER=$(gh pr list --search "$GITHUB_SHA" --state merged --json number --jq '.[0].number')
 
-          ./.github/ci-scripts/verify_pr_type.sh "$description" "${{ github.event_name }}"
+          if [[ -z "$PR_NUMBER" ]]; then
+            echo "No merged PR found for $GITHUB_SHA; treating this push as a non-release."
+            description=""
+            AUTHOR_ASSOCIATION="NONE"
+          else
+            PR_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+            description=$(jq -r '.body // ""' <<< "$PR_JSON")
+            AUTHOR_ASSOCIATION=$(jq -r '.author_association' <<< "$PR_JSON")
+            echo "PR_URL=$(jq -r '.html_url' <<< "$PR_JSON")" >> "$GITHUB_ENV"
+          fi
+          echo "AUTHOR_ASSOCIATION=$AUTHOR_ASSOCIATION" >> "$GITHUB_ENV"
+
+          ./.github/ci-scripts/verify_pr_type.sh "$description" "$EVENT_NAME"
+
+      # The release flags live in the PR description, which anyone can write. Only honour
+      # them when the PR was authored by an organisation member or owner.
+      - name: Require a maintainer-authored PR for releases
+        if: env.RELEASE == 'true'
+        run: |
+          case "$AUTHOR_ASSOCIATION" in
+            MEMBER|OWNER)
+              echo "Release requested by a PR author with association '$AUTHOR_ASSOCIATION'."
+              ;;
+            *)
+              echo "::error::Release flags found in a PR whose author association is '$AUTHOR_ASSOCIATION'. Only organisation members and owners may trigger a release."
+              exit 1
+              ;;
+          esac
 
       - name: Get latest repo tag
         if: env.RELEASE == 'true'
         id: latest_repo_tag
-        uses: WyriHaximus/github-action-get-previous-tag@v1
+        uses: WyriHaximus/github-action-get-previous-tag@27c04b107bd8de27966ed909e0992078a9121de8 # v1
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get next repo tags
         if: env.RELEASE == 'true'
         id: new_repo_tag
-        uses: WyriHaximus/github-action-next-semvers@v1
+        uses: WyriHaximus/github-action-next-semvers@1b773ddb3831644dabc80ef5e791ebd4925f7651 # v1
         with:
           version: ${{ steps.latest_repo_tag.outputs.tag }}
 
       - name: choose next repo tag
         if: env.RELEASE == 'true'
         id: choose_next_repo_tag
+        env:
+          V_MAJOR: ${{ steps.new_repo_tag.outputs.v_major }}
+          V_MINOR: ${{ steps.new_repo_tag.outputs.v_minor }}
+          V_PATCH: ${{ steps.new_repo_tag.outputs.v_patch }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           echo "SEM_VERSION_TYPE: $SEM_VERSION_TYPE"
 
-          ./.github/ci-scripts/update_versions.sh \
-            ${{ steps.new_repo_tag.outputs.v_major }} \
-            ${{ steps.new_repo_tag.outputs.v_minor }} \
-            ${{ steps.new_repo_tag.outputs.v_patch }} \
-            "${{ github.event_name }}"
+          ./.github/ci-scripts/update_versions.sh "$V_MAJOR" "$V_MINOR" "$V_PATCH" "$EVENT_NAME"
     outputs:
       RELEASE: ${{ steps.release_type_check.outputs.RELEASE }}
       INCREASE_VERSIONS: ${{ steps.release_type_check.outputs.INCREASE_VERSIONS }}
       SEM_VERSION_TYPE: ${{ steps.release_type_check.outputs.SEM_VERSION_TYPE }}
       NEW_PACKAGE_TAG: ${{ steps.choose_next_repo_tag.outputs.NEW_PACKAGE_TAG }}
 
+  # Every merge to main is tested, not only releases.
   test-code:
     needs: [set-up-job]
-    if: ${{ needs.set-up-job.outputs.RELEASE == 'true' }}
     uses: ./.github/workflows/cargo-test.yml
 
   build-code:
@@ -94,6 +128,8 @@ jobs:
   release:
     needs: [set-up-job, build-code, build-docker]
     if: ${{ needs.set-up-job.outputs.RELEASE == 'true' }}
+    permissions:
+      contents: write
     uses: ./.github/workflows/gh-release.yml
     with:
       repo_tag: ${{ needs.set-up-job.outputs.NEW_PACKAGE_TAG }}

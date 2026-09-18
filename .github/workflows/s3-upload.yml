@@ -30,6 +30,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -38,22 +41,24 @@ jobs:
     runs-on: ${{ inputs.runs_on }}
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: get AvN Parachain collator Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.parachain-collator-artifact }}
           path: target/release/
 
       - name: get AvN Parachain runtime Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.parachain-runtime-artifact }}
           path: target/release/wbuild/avn-parachain-runtime/
 
       - name: get AvN Parachain test runtime Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.parachain-test-runtime-artifact }}
           path: target/release/wbuild/avn-parachain-test-runtime/
@@ -61,6 +66,7 @@ jobs:
       - name: Upload assets to s3
         env:
           REPO_TAG: ${{ inputs.repo_tag }}
+          BUCKET_NAME: ${{ inputs.bucket_name }}
         run: |
           COLLATOR_SHA=$(sha256sum -z target/release/avn-parachain-collator | awk '{print $1}')
           WASM_SHA=$(sha256sum -z target/release/wbuild/avn-parachain-runtime/avn_parachain_runtime.compact.compressed.wasm | awk '{print $1}')
@@ -71,19 +77,19 @@ jobs:
           echo "$TEST_WASM_SHA" > target/release/wbuild/avn-parachain-test-runtime/avn_parachain_test_runtime.compact.compressed.wasm.sha256
 
           aws s3 cp target/release/avn-parachain-collator.sha256 \
-            ${{ inputs.bucket_name }}/$REPO_TAG/
+            "$BUCKET_NAME/$REPO_TAG/"
 
           aws s3 cp target/release/wbuild/avn-parachain-runtime/avn_parachain_runtime.compact.compressed.wasm.sha256 \
-            ${{ inputs.bucket_name }}/$REPO_TAG/
+            "$BUCKET_NAME/$REPO_TAG/"
 
           aws s3 cp target/release/wbuild/avn-parachain-runtime/avn_parachain_runtime.compact.compressed.wasm \
-            ${{ inputs.bucket_name }}/$REPO_TAG/
+            "$BUCKET_NAME/$REPO_TAG/"
 
           aws s3 cp target/release/wbuild/avn-parachain-test-runtime/avn_parachain_test_runtime.compact.compressed.wasm.sha256 \
-            ${{ inputs.bucket_name }}/$REPO_TAG/
+            "$BUCKET_NAME/$REPO_TAG/"
 
           aws s3 cp target/release/wbuild/avn-parachain-test-runtime/avn_parachain_test_runtime.compact.compressed.wasm \
-            ${{ inputs.bucket_name }}/$REPO_TAG/
+            "$BUCKET_NAME/$REPO_TAG/"
 
           aws s3 cp target/release/avn-parachain-collator \
-            ${{ inputs.bucket_name }}/$REPO_TAG/
+            "$BUCKET_NAME/$REPO_TAG/"

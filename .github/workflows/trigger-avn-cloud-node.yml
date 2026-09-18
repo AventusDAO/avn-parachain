@@ -11,14 +11,20 @@ on:
         description: "GitHub PAT with Actions workflow dispatch on AventusDAO/avn-cloud-node."
         required: true
 
+# This job only uses the PAT passed in; the repository GITHUB_TOKEN gets no permissions.
+permissions: {}
+
 jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger workflow in avn-cloud-node
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          VERSION: ${{ inputs.version }}
         run: |
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
+          curl -fsS -X POST \
+            -H "Authorization: token ${PAT_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/AventusDAO/avn-cloud-node/actions/workflows/build.yml/dispatches \
-            -d '{"ref":"main","inputs":{"version":"${{ inputs.version }}"}}'
+            -d "{\"ref\":\"main\",\"inputs\":{\"version\":\"${VERSION}\"}}"

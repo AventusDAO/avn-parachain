@@ -27,6 +27,9 @@ on:
         description: 'Parachain test runtime artifact name'
         default: parachain-test-runtime
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -36,20 +39,19 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
-          profile: minimal
           toolchain: 1.88.0
           components: rustfmt, clippy
-          target: wasm32v1-none
-          override: true
-          default: true
+          targets: wasm32v1-none
 
       - name: Restore cargo cache - common
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: |
             ~/.cargo/bin/
@@ -59,7 +61,7 @@ jobs:
           key: ${{ inputs.runs_on }}-cargo-common-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Set up cargo cache - build
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         continue-on-error: false
         with:
           path: |
@@ -71,7 +73,7 @@ jobs:
 
       - name: AvN Parachain collator Artifact
         if: ${{ inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.parachain-collator-artifact }}
           path: target/release/avn-parachain-collator
@@ -80,7 +82,7 @@ jobs:
 
       - name: AvN Parachain runtime Artifact
         if: ${{ inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.parachain-runtime-artifact }}
           path: target/release/wbuild/avn-parachain-runtime/avn_parachain_runtime.compact.compressed.wasm
@@ -89,7 +91,7 @@ jobs:
 
       - name: AvN Parachain Test runtime Artifact
         if: ${{ inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.parachain-test-runtime-artifact }}
           path: target/release/wbuild/avn-parachain-test-runtime/avn_parachain_test_runtime.compact.compressed.wasm
