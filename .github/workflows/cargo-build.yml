@@ -37,6 +37,10 @@ jobs:
   cargo-build:
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: 90
+    env:
+      # Highest-priority rustup selector: beats stale directory overrides on the
+      # runner, the repo's rust-toolchain.toml, and the rustup default.
+      RUSTUP_TOOLCHAIN: 1.88.0
     steps:
       - name: Check out
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

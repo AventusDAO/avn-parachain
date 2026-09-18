@@ -12,10 +12,18 @@ on:
 permissions:
   contents: read
 
+# RUSTUP_TOOLCHAIN is the highest-priority toolchain selector in rustup: it beats
+# directory overrides left on the runner by earlier jobs, the repo's
+# rust-toolchain.toml, and the rustup default. Each job pins exactly the toolchain
+# it installs so cargo can never run on anything else.
 jobs:
   ci:
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: 90
+    env:
+      # Nightly is required because .rustfmt.toml uses unstable options; stable rustfmt
+      # silently ignores them and reports spurious diffs.
+      RUSTUP_TOOLCHAIN: nightly-2023-05-22
 
     steps:
       - name: Check out
@@ -39,17 +47,16 @@ jobs:
             ~/.cargo/git/db/
           key: ${{ inputs.runs_on }}-cargo-common-${{ hashFiles('**/Cargo.lock') }}
 
-      # The repo's rust-toolchain.toml pins stable, which rustup would otherwise pick
-      # over the nightly installed above. `.rustfmt.toml` uses unstable options, so the
-      # nightly must be selected explicitly or rustfmt silently ignores them.
       - name: Linting check
-        run: cargo +nightly-2023-05-22 fmt --all --check
+        run: cargo fmt --all --check
 
   test:
     name: Test Code
     runs-on: ${{ inputs.runs_on }}
     needs: ci
     timeout-minutes: 90
+    env:
+      RUSTUP_TOOLCHAIN: 1.88.0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -87,6 +94,8 @@ jobs:
     runs-on: ${{ inputs.runs_on }}
     needs: ci
     timeout-minutes: 90
+    env:
+      RUSTUP_TOOLCHAIN: 1.88.0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
