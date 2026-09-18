@@ -5,7 +5,10 @@ name: CI PR
 # code can be built and tested without exposing anything it could steal.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` is included on purpose: the release checkboxes live in the PR body, so a
+    # body change must re-run the whole pipeline. Safe under `pull_request` because the
+    # body only ever reaches scripts through `env`, never through shell interpolation.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
     branches:
       - main
 
