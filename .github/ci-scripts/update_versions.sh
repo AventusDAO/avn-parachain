@@ -21,6 +21,14 @@ echo "NEW_PACKAGE_TAG=$NEW_PACKAGE_TAG" >> "$GITHUB_OUTPUT"
 git config --global user.name aventus-ci-agent
 git config --global user.email ci-agent-bot@aventus.io
 
+# The checkout runs with `persist-credentials: false`, so the token is supplied
+# explicitly here and only for the push. It never lands in `.git/config` for the
+# build and test jobs.
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    git remote set-url --push origin \
+        "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+fi
+
 if $INCREASE_VERSIONS; then
     git checkout main
     CURRENT_SPEC_VERSION=$(grep -Eow "spec_version: [0-9]+" runtime/avn/src/lib.rs | grep -Eow "[0-9]+")

@@ -12,7 +12,7 @@ else
     SEM_VERSION_TYPE='noVersion'
 fi
 
-if [[ "$event_type" == "pull_request_target" ]]; then
+if [[ "$event_type" == "pull_request" ]]; then
     # VAR CHECKS
     if $RELEASE; then
         [[ "$(echo "$SEM_VERSION_TYPE" | wc -l | tr -d " ")" != "1" ]] && \

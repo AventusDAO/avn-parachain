@@ -5,6 +5,9 @@ on:
     # At 3am on sunday
     - cron: '0 3 * * 0'
 
+permissions:
+  contents: read
+
 jobs:
   test-code:
     uses: ./.github/workflows/cargo-test.yml

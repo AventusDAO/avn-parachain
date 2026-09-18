@@ -32,26 +32,31 @@ env:
 jobs:
   gh-release:
     runs-on: ubuntu-latest
+    # Creating the tag and the GitHub release needs write access to contents. The caller
+    # must grant at least this much to the job that invokes this workflow.
+    permissions:
+      contents: write
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: get AvN Parachain collator Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.parachain-collator-artifact }}
           path: target/release/
 
       - name: get AvN Parachain runtime Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.parachain-runtime-artifact }}
           path: target/release/wbuild/avn-parachain-runtime/
 
       - name: get AvN Parachain test runtime Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.parachain-test-runtime-artifact }}
           path: target/release/wbuild/avn-parachain-test-runtime/
@@ -75,19 +80,17 @@ jobs:
 
       - name: Bump version and push tag
         id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
-        env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9daf6e72c477b07b # v6.2
         with:
           custom_tag: ${{ inputs.repo_tag }}
           tag_prefix: ""
-          github_token: ${{ env.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release
         if: ${{ !inputs.hotfix }}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1
         env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ inputs.repo_tag }}
           fail_on_unmatched_files: true
@@ -112,9 +115,9 @@ jobs:
 
       - name: Hotfix Release
         if: ${{ inputs.hotfix }}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1
         env:
-          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ inputs.repo_tag }}
           fail_on_unmatched_files: true
@@ -138,6 +141,7 @@ jobs:
   trigger-avn-cloud-node:
     needs: gh-release
     if: ${{ !inputs.hotfix }}
+    permissions: {}
     uses: ./.github/workflows/trigger-avn-cloud-node.yml
     with:
       version: ${{ inputs.repo_tag }}

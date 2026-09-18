@@ -8,43 +8,37 @@ on:
         type: string
         description: 'Machine type where the workflow will be run'
         default: gh-ubuntu-2404-x64
-      fetch-depth:
-        required: false
-        type: number
-        default: 1
-      ref:
-        required: false
-        type: string
-        default: ''
-      repository:
-        required: false
-        type: string
-        default: ''
 
+permissions:
+  contents: read
+
+# RUSTUP_TOOLCHAIN is the highest-priority toolchain selector in rustup: it beats
+# directory overrides left on the runner by earlier jobs, the repo's
+# rust-toolchain.toml, and the rustup default. Each job pins exactly the toolchain
+# it installs so cargo can never run on anything else.
 jobs:
   ci:
     runs-on: ${{ inputs.runs_on }}
     timeout-minutes: 90
-    
+    env:
+      # Nightly is required because .rustfmt.toml uses unstable options; stable rustfmt
+      # silently ignores them and reports spurious diffs.
+      RUSTUP_TOOLCHAIN: nightly-2023-05-22
+
     steps:
       - name: Check out
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: ${{ inputs.fetch-depth }}
-          ref: ${{ inputs.ref }}
-          repository: ${{ inputs.repository }}
+          persist-credentials: false
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
-          profile: minimal
           toolchain: nightly-2023-05-22
           components: rustfmt, clippy
-          override: true
-          default: true
 
       - name: Restore cargo cache - common
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: |
             ~/.cargo/bin/
@@ -58,29 +52,25 @@ jobs:
 
   test:
     name: Test Code
-    runs-on: ${{ inputs.runs_on }}    
+    runs-on: ${{ inputs.runs_on }}
     needs: ci
     timeout-minutes: 90
+    env:
+      RUSTUP_TOOLCHAIN: 1.88.0
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: ${{ inputs.fetch-depth }}
-          ref: ${{ inputs.ref }}
-          repository: ${{ inputs.repository }}
+          persist-credentials: false
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
-          profile: minimal
           toolchain: 1.88.0
           components: rustfmt, clippy
-          target: wasm32v1-none
-          override: true
-          default: true
-
+          targets: wasm32v1-none
 
       - name: Restore cargo cache - common
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: |
             ~/.cargo/bin/
@@ -90,40 +80,36 @@ jobs:
           key: ${{ inputs.runs_on }}-cargo-common-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Restore cargo cache - test
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: |
             target/
-          key: ${{ inputs.runs_on }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}      
+          key: ${{ inputs.runs_on }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Test Code
         run: cargo test -- --skip test_genesis_config_builds
 
   runtime-benchmarks:
     name: Runtime Benchmarks
-    runs-on: ${{ inputs.runs_on }}    
+    runs-on: ${{ inputs.runs_on }}
     needs: ci
     timeout-minutes: 90
+    env:
+      RUSTUP_TOOLCHAIN: 1.88.0
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: ${{ inputs.fetch-depth }}
-          ref: ${{ inputs.ref }}
-          repository: ${{ inputs.repository }}
+          persist-credentials: false
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
-          profile: minimal
           toolchain: 1.88.0
           components: rustfmt, clippy
-          target: wasm32v1-none
-          override: true
-          default: true
-
+          targets: wasm32v1-none
 
       - name: Restore cargo cache - common
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: |
             ~/.cargo/bin/
@@ -133,7 +119,7 @@ jobs:
           key: ${{ inputs.runs_on }}-cargo-common-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Restore cargo cache - runtime benchmarks
-        uses: actions/cache@v3
+        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
         with:
           path: |
             target/
@@ -142,14 +128,23 @@ jobs:
       # Since polkadot-stable2509, `pallet-xcm/runtime-benchmarks` pulls in `pallet-revive-fixtures`,
       # whose build script compiles Solidity fixtures and needs `solc` and `resolc` on the PATH.
       # Versions match the pair pinned by polkadot-sdk's own release pipeline for this SDK version.
+      # The binaries are verified against pinned sha256 digests before they are made executable.
       - name: Install solc and resolc
+        env:
+          SOLC_VERSION: "0.8.30"
+          SOLC_SHA256: "f3e987dc6ecebd4bd350c48edcbc320b46cf9e3109bd3fc3d88f1acaf4c428f7"
+          RESOLC_VERSION: "0.3.0"
+          RESOLC_SHA256: "07a468d6ca8defa35ef73094339f5a051d2eeb53213c50ab4e6e4062c5f1ea34"
         run: |
-          SOLC_VERSION="0.8.30"
-          RESOLC_VERSION="0.3.0"
+          set -euo pipefail
           curl -Lsf --show-error -o "$HOME/.cargo/bin/solc" \
             "https://github.com/ethereum/solidity/releases/download/v${SOLC_VERSION}/solc-static-linux"
           curl -Lsf --show-error -o "$HOME/.cargo/bin/resolc" \
             "https://github.com/paritytech/revive/releases/download/v${RESOLC_VERSION}/resolc-x86_64-unknown-linux-musl"
+
+          echo "${SOLC_SHA256}  $HOME/.cargo/bin/solc" | sha256sum --check --strict -
+          echo "${RESOLC_SHA256}  $HOME/.cargo/bin/resolc" | sha256sum --check --strict -
+
           chmod +x "$HOME/.cargo/bin/solc" "$HOME/.cargo/bin/resolc"
           solc --version
           resolc --version
