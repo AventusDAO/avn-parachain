@@ -115,6 +115,7 @@ pub mod pallet {
 
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config> {
+        #[serde(skip)]
         pub _phantom: sp_std::marker::PhantomData<T>,
     }
 
