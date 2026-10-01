@@ -654,12 +654,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `b` is `[1, 64]`.
 	fn move_stake(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `753 + b * (168 ±0)`
+		//  Measured:  `777 + b * (192 ±0)`
 		//  Estimated: `3656 + b * (2666 ±0)`
-		// Minimum execution time: 40_237_000 picoseconds.
-		Weight::from_parts(26_437_540, 3656)
-			// Standard Error: 68_559
-			.saturating_add(Weight::from_parts(6_619_340, 0).saturating_mul(b.into()))
+		// Minimum execution time: 41_564_000 picoseconds.
+		Weight::from_parts(38_619_988, 3656)
+			// Standard Error: 15_326
+			.saturating_add(Weight::from_parts(6_837_017, 0).saturating_mul(b.into()))
 			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(b.into())))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
@@ -689,12 +689,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `b` is `[1, 64]`.
 	fn move_nodes_with_stake(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1108 + b * (222 ±0)`
+		//  Measured:  `1108 + b * (246 ±0)`
 		//  Estimated: `6196 + b * (2666 ±0)`
-		// Minimum execution time: 117_431_000 picoseconds.
-		Weight::from_parts(113_968_848, 6196)
-			// Standard Error: 87_769
-			.saturating_add(Weight::from_parts(16_144_543, 0).saturating_mul(b.into()))
+		// Minimum execution time: 139_806_000 picoseconds.
+		Weight::from_parts(134_877_721, 6196)
+			// Standard Error: 38_571
+			.saturating_add(Weight::from_parts(17_851_724, 0).saturating_mul(b.into()))
 			.saturating_add(T::DbWeight::get().reads(11_u64))
 			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(b.into())))
 			.saturating_add(T::DbWeight::get().writes(6_u64))
@@ -1315,12 +1315,12 @@ impl WeightInfo for () {
 	/// The range of component `b` is `[1, 64]`.
 	fn move_stake(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `753 + b * (168 ±0)`
+		//  Measured:  `777 + b * (192 ±0)`
 		//  Estimated: `3656 + b * (2666 ±0)`
-		// Minimum execution time: 40_237_000 picoseconds.
-		Weight::from_parts(26_437_540, 3656)
-			// Standard Error: 68_559
-			.saturating_add(Weight::from_parts(6_619_340, 0).saturating_mul(b.into()))
+		// Minimum execution time: 41_564_000 picoseconds.
+		Weight::from_parts(38_619_988, 3656)
+			// Standard Error: 15_326
+			.saturating_add(Weight::from_parts(6_837_017, 0).saturating_mul(b.into()))
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(b.into())))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
@@ -1350,12 +1350,12 @@ impl WeightInfo for () {
 	/// The range of component `b` is `[1, 64]`.
 	fn move_nodes_with_stake(b: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1108 + b * (222 ±0)`
+		//  Measured:  `1108 + b * (246 ±0)`
 		//  Estimated: `6196 + b * (2666 ±0)`
-		// Minimum execution time: 117_431_000 picoseconds.
-		Weight::from_parts(113_968_848, 6196)
-			// Standard Error: 87_769
-			.saturating_add(Weight::from_parts(16_144_543, 0).saturating_mul(b.into()))
+		// Minimum execution time: 139_806_000 picoseconds.
+		Weight::from_parts(134_877_721, 6196)
+			// Standard Error: 38_571
+			.saturating_add(Weight::from_parts(17_851_724, 0).saturating_mul(b.into()))
 			.saturating_add(RocksDbWeight::get().reads(11_u64))
 			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(b.into())))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
