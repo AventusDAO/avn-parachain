@@ -1160,3 +1160,82 @@ fn move_stake_then_move_nodes_with_stake_after_expiry_integration() {
         assert_eq!(Balances::reserved_balance(&ctx.new_owner), 2_100);
     });
 }
+
+#[test]
+fn move_nodes_with_stake_all_periodic_allowance_dust_goes_to_last_node() {
+    ext().execute_with(|| {
+        let ctx = Context::new(3);
+        // Allowances 100 / 50 / 25 pool to 175, which does not divide by 3.
+        for (i, amount) in [1_000u128, 500, 250].iter().enumerate() {
+            add_stake_to_node(&ctx.owner, &ctx.nodes[i], *amount);
+        }
+
+        set_time(ctx.expiry_of(2));
+        assert_ok!(ctx.move_nodes_with_stake(&[0, 1, 2], 1_750));
+
+        // Stake: 1_750 / 3 = 583, dust 1 to the last node.
+        // Allowance and settled unlocked stake: 175 / 3 = 58, dust 1 to the last node.
+        for i in 0..2 {
+            let info = ctx.info(i);
+            assert_eq!(info.stake.amount, 583);
+            assert_eq!(info.stake.restriction.per_period_allowance(), Some(58));
+            assert_eq!(info.stake.unlocked_stake, 58);
+        }
+        let last = ctx.info(2);
+        assert_eq!(last.stake.amount, 584);
+        assert_eq!(last.stake.restriction.per_period_allowance(), Some(59));
+        assert_eq!(last.stake.unlocked_stake, 59);
+
+        // Nothing lost: totals are preserved exactly.
+        let total_allowance: u128 = (0..3)
+            .map(|i| ctx.info(i).stake.restriction.per_period_allowance().unwrap())
+            .sum();
+        let total_unlocked: u128 = (0..3).map(|i| ctx.info(i).stake.unlocked_stake).sum();
+        assert_eq!(total_allowance, 175);
+        assert_eq!(total_unlocked, 175);
+        assert_eq!(unstake_all_available(&ctx.new_owner, &ctx.nodes[2]), 59);
+    });
+}
+
+#[test]
+fn move_nodes_with_stake_half_avt_across_fifty_nodes_splits_evenly() {
+    ext().execute_with(|| {
+        let ctx = Context::new(50);
+        let half_avt: u128 = 500_000_000_000_000_000; // 0.5 AVT in planck (18 decimals)
+        add_stake_to_node(&ctx.owner, &ctx.nodes[0], half_avt);
+
+        // All nodes Free: node 0 past its restriction window, the rest held nothing at expiry.
+        set_time(ctx.restriction_end_of(49));
+        let all: Vec<usize> = (0..50).collect();
+        assert_ok!(ctx.move_nodes_with_stake(&all, half_avt));
+
+        for i in 0..50 {
+            let info = ctx.info(i);
+            assert_eq!(info.owner, ctx.new_owner);
+            assert_eq!(info.stake.amount, half_avt / 50);
+            assert!(matches!(info.stake.restriction, UnstakeRestriction::Free));
+        }
+        assert_eq!(Balances::reserved_balance(&ctx.owner), 0);
+        assert_eq!(Balances::reserved_balance(&ctx.new_owner), half_avt);
+        assert_eq!(<TotalStake<TestRuntime>>::get(&ctx.new_owner), Some(half_avt));
+    });
+}
+
+#[test]
+fn move_nodes_with_stake_total_smaller_than_node_count_leaves_everything_on_last_node() {
+    ext().execute_with(|| {
+        let ctx = Context::new(4);
+        add_stake_to_node(&ctx.owner, &ctx.nodes[0], 3);
+
+        set_time(ctx.restriction_end_of(3));
+        assert_ok!(ctx.move_nodes_with_stake(&[0, 1, 2, 3], 3));
+
+        // 3 / 4 = 0 per node, dust 3 to the last node.
+        for i in 0..3 {
+            assert_eq!(ctx.info(i).stake.amount, 0);
+        }
+        assert_eq!(ctx.info(3).stake.amount, 3);
+        assert_eq!(Balances::reserved_balance(&ctx.new_owner), 3);
+        assert_eq!(unstake_all_available(&ctx.new_owner, &ctx.nodes[3]), 3);
+    });
+}
