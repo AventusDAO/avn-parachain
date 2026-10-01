@@ -624,6 +624,8 @@ pub mod pallet {
         DuplicateNodeInList,
         /// Auto-stake window has expired for this node
         AutoStakeExpired,
+        /// Nodes are not in compatible unstake-restriction states for moving stake
+        IncompatibleStakeRestriction,
     }
 
     #[pallet::config]
@@ -1362,7 +1364,12 @@ pub mod pallet {
 
         /// Move stake from multiple source nodes into a single destination node.
         /// For each source, an optional amount may be provided. If `None`, the full stake of
-        /// that node is moved. Nodes must be within the auto-expiry window.
+        /// that node is moved.
+        ///
+        /// Source and destination must be in the same unstake-restriction state (both
+        /// `Locked`, both `Periodic` or both `Free`); `Free` stake may also be moved into a
+        /// `Locked` node. When both are `Periodic`, the source's per-period allowance and
+        /// already-unlocked stake move with the stake pro rata.
         #[pallet::call_index(15)]
         #[pallet::weight(<T as Config>::WeightInfo::move_stake(source_nodes.len() as u32))]
         pub fn move_stake(
@@ -1380,6 +1387,10 @@ pub mod pallet {
         /// Move nodes to a new owner, distributing `stake_amount` equally across them
         /// (dust goes to the last node). Errors if the nodes' current total stake does not
         /// match `stake_amount`. Use `move_stake` to pre-balance first.
+        ///
+        /// All nodes must be in the same unstake-restriction state. For `Periodic` nodes the
+        /// per-period allowance and already-unlocked stake are pooled and split equally
+        /// alongside the stake.
         #[pallet::call_index(16)]
         #[pallet::weight(<T as Config>::WeightInfo::move_nodes_with_stake(nodes.len() as u32))]
         pub fn move_nodes_with_stake(
@@ -1781,10 +1792,19 @@ pub mod pallet {
             let per_node = stake_amount / n_balance;
             let dust = stake_amount % n_balance;
             let now = Self::time_now_sec();
+            let max_pct = <MaxUnstakePercentage<T>>::get();
+            let restriction_duration = <RestrictedUnstakeDurationSec<T>>::get();
+            let unstake_period = <UnstakePeriodSec<T>>::get();
 
             // Validate all nodes, compute current total stake, and cache infos for the update pass.
+            // Stake is redistributed across the set, so every node must be in the same
+            // unstake-restriction state. For `Periodic` nodes the allowance and already-unlocked
+            // stake are pooled and redistributed in the same way as the stake.
             let mut nodes_current_total = BalanceOf::<T>::zero();
-            let mut node_infos = Vec::with_capacity(n);
+            let mut pooled_allowance = BalanceOf::<T>::zero();
+            let mut pooled_unlocked = BalanceOf::<T>::zero();
+            let mut node_infos: Vec<NodeInfo<T::SignerId, T::AccountId, BalanceOf<T>>> =
+                Vec::with_capacity(n);
             let mut seen = BTreeSet::new();
             for node_id in nodes.iter() {
                 ensure!(seen.insert(node_id), Error::<T>::DuplicateNodeInList);
@@ -1792,9 +1812,24 @@ pub mod pallet {
                     <OwnedNodes<T>>::contains_key(current_owner, node_id),
                     Error::<T>::NodeNotOwnedByOwner
                 );
-                let node_info =
+                let mut node_info =
                     NodeRegistry::<T>::get(node_id).ok_or(Error::<T>::NodeNotRegistered)?;
-                ensure!(now < node_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+                node_info.try_snapshot_stake(now, max_pct, restriction_duration);
+                if let Some(first) = node_infos.first() {
+                    ensure!(
+                        node_info.stake.restriction.is_same_kind(&first.stake.restriction),
+                        Error::<T>::IncompatibleStakeRestriction
+                    );
+                }
+                if let Some(allowance) = node_info.stake.restriction.per_period_allowance() {
+                    node_info.settle_accrued_allowance(now, unstake_period)?;
+                    pooled_allowance = pooled_allowance
+                        .checked_add(&allowance)
+                        .ok_or(Error::<T>::BalanceOverflow)?;
+                    pooled_unlocked = pooled_unlocked
+                        .checked_add(&node_info.stake.unlocked_stake)
+                        .ok_or(Error::<T>::BalanceOverflow)?;
+                }
                 nodes_current_total = nodes_current_total
                     .checked_add(&node_info.stake.amount)
                     .ok_or(Error::<T>::BalanceOverflow)?;
@@ -1803,15 +1838,37 @@ pub mod pallet {
 
             ensure!(nodes_current_total == stake_amount, Error::<T>::StakeMismatch);
 
+            let allowance_per_node = pooled_allowance / n_balance;
+            let allowance_dust = pooled_allowance % n_balance;
+            let unlocked_per_node = pooled_unlocked / n_balance;
+            let unlocked_dust = pooled_unlocked % n_balance;
+
             let last_idx = n.saturating_sub(1);
             for (i, (node_id, mut node_info)) in nodes.iter().zip(node_infos).enumerate() {
-                let target = if i == last_idx {
+                let is_last = i == last_idx;
+                let target = if is_last {
                     per_node.checked_add(&dust).ok_or(Error::<T>::BalanceOverflow)?
                 } else {
                     per_node
                 };
 
                 node_info.stake.amount = target;
+                if let Some(allowance) = node_info.stake.restriction.per_period_allowance_mut() {
+                    *allowance = if is_last {
+                        allowance_per_node
+                            .checked_add(&allowance_dust)
+                            .ok_or(Error::<T>::BalanceOverflow)?
+                    } else {
+                        allowance_per_node
+                    };
+                    node_info.stake.unlocked_stake = if is_last {
+                        unlocked_per_node
+                            .checked_add(&unlocked_dust)
+                            .ok_or(Error::<T>::BalanceOverflow)?
+                    } else {
+                        unlocked_per_node
+                    };
+                }
                 node_info.owner = new_owner.clone();
                 NodeRegistry::<T>::insert(node_id, node_info);
 
