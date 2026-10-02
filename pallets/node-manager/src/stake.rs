@@ -2,7 +2,7 @@
 
 use crate::*;
 use frame_support::storage::{with_transaction, TransactionOutcome};
-use sp_runtime::{traits::UniqueSaturatedInto, FixedPointNumber, FixedU128};
+use sp_runtime::{traits::UniqueSaturatedInto, ArithmeticError, FixedPointNumber, FixedU128};
 
 impl<T: Config> Pallet<T> {
     fn calculate_genesis_bonus(
@@ -215,11 +215,16 @@ impl<T: Config> Pallet<T> {
         ensure!(!source_nodes.is_empty(), Error::<T>::EmptyNodeList);
 
         let now = Self::time_now_sec();
+        let max_pct = <MaxUnstakePercentage<T>>::get();
+        let restriction_duration = <RestrictedUnstakeDurationSec<T>>::get();
+        let unstake_period = <UnstakePeriodSec<T>>::get();
+
         let mut to_info = NodeRegistry::<T>::get(to_node).ok_or(Error::<T>::NodeNotRegistered)?;
         ensure!(to_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
-        // Only allow moving if within the auto stake window. This is important because
-        // the unlock logic depends on the total stake of the node.
-        ensure!(now < to_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+        // Bring the destination's restriction state up to date and bank any allowance it has
+        // accrued so far, so that allowance moved in below is not double counted.
+        to_info.try_snapshot_stake(now, max_pct, restriction_duration);
+        to_info.settle_accrued_allowance(now, unstake_period)?;
 
         let mut total_amount = BalanceOf::<T>::zero();
         let mut seen = BTreeSet::new();
@@ -231,7 +236,11 @@ impl<T: Config> Pallet<T> {
             let mut from_info =
                 NodeRegistry::<T>::get(from_node).ok_or(Error::<T>::NodeNotRegistered)?;
             ensure!(from_info.owner == *owner, Error::<T>::NodeNotOwnedByOwner);
-            ensure!(now < from_info.auto_stake_expiry, Error::<T>::AutoStakeExpired);
+            from_info.try_snapshot_stake(now, max_pct, restriction_duration);
+            ensure!(
+                from_info.can_move_stake_to(&to_info),
+                Error::<T>::IncompatibleStakeRestriction
+            );
 
             let amount = match maybe_amount {
                 Some(amt) => {
@@ -246,11 +255,11 @@ impl<T: Config> Pallet<T> {
                 continue
             }
 
-            from_info.stake.amount = from_info
-                .stake
-                .amount
-                .checked_sub(&amount)
-                .ok_or(Error::<T>::BalanceUnderflow)?;
+            from_info.settle_accrued_allowance(now, unstake_period)?;
+            from_info.move_stake_to(&mut to_info, amount).map_err(|e| match e {
+                ArithmeticError::Underflow => Error::<T>::BalanceUnderflow,
+                _ => Error::<T>::BalanceOverflow,
+            })?;
             NodeRegistry::<T>::insert(from_node, from_info);
 
             total_amount = total_amount.checked_add(&amount).ok_or(Error::<T>::BalanceOverflow)?;
@@ -260,11 +269,6 @@ impl<T: Config> Pallet<T> {
             return Ok(())
         }
 
-        to_info.stake.amount = to_info
-            .stake
-            .amount
-            .checked_add(&total_amount)
-            .ok_or(Error::<T>::BalanceOverflow)?;
         NodeRegistry::<T>::insert(to_node, to_info);
 
         // TotalStake is unchanged — same owner, same total reserved balance.
