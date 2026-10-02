@@ -6,17 +6,25 @@ use frame_support::{
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
 use frame_system::{self as system, EnsureRoot, EnsureSigned};
+pub use parking_lot::RwLock;
 
 pub use sp_avn_common::avn_tests_helpers::utilities::{
     get_test_account_from_mnemonic, TestAccount,
 };
-pub use sp_core::{crypto::DEV_PHRASE, sr25519, H256};
+pub use sp_core::{
+    crypto::DEV_PHRASE,
+    offchain::{
+        testing::{OffchainState, PoolState, TestOffchainExt, TestTransactionPoolExt},
+        OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
+    },
+    sr25519, H256,
+};
 
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 pub use sp_runtime::{
     testing::TestXt,
     traits::{IdentityLookup, Verify},
-    BuildStorage, Perbill,
+    BuildStorage, DispatchError, Perbill,
 };
 use std::cell::RefCell;
 
@@ -45,7 +53,7 @@ impl Config for TestRuntime {
     type WeightInfo = ();
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
     type Watchtowers = TestNodeManager;
-    type WatchtowerHooks = ();
+    type WatchtowerHooks = TestHooks;
     type SignedTxLifetime = ConstU32<5>;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
@@ -214,6 +222,11 @@ thread_local! {
 
 pub struct ExtBuilder {
     pub storage: sp_runtime::Storage,
+    offchain_state: Option<Arc<RwLock<OffchainState>>>,
+    pool_state: Option<Arc<RwLock<PoolState>>>,
+    txpool_extension: Option<TestTransactionPoolExt>,
+    offchain_extension: Option<TestOffchainExt>,
+    offchain_registered: bool,
 }
 
 impl ExtBuilder {
@@ -223,7 +236,26 @@ impl ExtBuilder {
             .unwrap()
             .into();
 
-        Self { storage }
+        Self {
+            storage,
+            offchain_state: None,
+            pool_state: None,
+            txpool_extension: None,
+            offchain_extension: None,
+            offchain_registered: false,
+        }
+    }
+
+    pub fn for_offchain_worker(mut self) -> Self {
+        assert!(!self.offchain_registered);
+        let (offchain, offchain_state) = TestOffchainExt::new();
+        let (pool, pool_state) = TestTransactionPoolExt::new();
+        self.txpool_extension = Some(pool);
+        self.offchain_extension = Some(offchain);
+        self.pool_state = Some(pool_state);
+        self.offchain_state = Some(offchain_state);
+        self.offchain_registered = true;
+        self
     }
 
     pub fn as_externality(self) -> sp_io::TestExternalities {
@@ -237,6 +269,53 @@ impl ExtBuilder {
         });
         ext
     }
+
+    pub fn as_externality_with_state(
+        self,
+    ) -> (sp_io::TestExternalities, Arc<RwLock<PoolState>>, Arc<RwLock<OffchainState>>) {
+        assert!(self.offchain_registered);
+        let mut ext = sp_io::TestExternalities::from(self.storage);
+        ext.register_extension(OffchainDbExt::new(self.offchain_extension.clone().unwrap()));
+        ext.register_extension(OffchainWorkerExt::new(self.offchain_extension.unwrap()));
+        ext.register_extension(TransactionPoolExt::new(self.txpool_extension.unwrap()));
+        ext.execute_with(|| {
+            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
+        });
+        (ext, self.pool_state.unwrap(), self.offchain_state.unwrap())
+    }
+}
+
+thread_local! {
+    /// When true, `TestHooks::on_proposal_submitted` returns an error.
+    pub static FAIL_ON_PROPOSAL_SUBMITTED: RefCell<bool> = RefCell::new(false);
+    /// Every proposal id `TestHooks::on_proposal_submitted` was called with, in order.
+    pub static SUBMITTED_TO_HOOKS: RefCell<Vec<ProposalId>> = RefCell::new(vec![]);
+}
+
+pub fn set_hook_failure(fail: bool) {
+    FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = fail);
+}
+
+pub fn proposals_submitted_to_hooks() -> Vec<ProposalId> {
+    SUBMITTED_TO_HOOKS.with(|s| s.borrow().clone())
+}
+
+pub struct TestHooks;
+impl WatchtowerHooks<Proposal<TestRuntime>> for TestHooks {
+    fn on_proposal_submitted(
+        proposal_id: ProposalId,
+        _proposal: Proposal<TestRuntime>,
+    ) -> DispatchResult {
+        if FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow()) {
+            return Err(DispatchError::Other("TestHooks: on_proposal_submitted failed"))
+        }
+        SUBMITTED_TO_HOOKS.with(|s| s.borrow_mut().push(proposal_id));
+        Ok(())
+    }
+
+    fn on_voting_completed(_: ProposalId, _: &H256, _: &ProposalStatusEnum) {}
+
+    fn on_cancelled(_: ProposalId, _: &H256) {}
 }
 
 /// Rolls desired block number of times.

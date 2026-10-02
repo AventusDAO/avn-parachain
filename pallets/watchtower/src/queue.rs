@@ -14,7 +14,7 @@ impl<T: Config> Pallet<T> {
         Tail::<T>::get().saturating_sub(Head::<T>::get())
     }
 
-    fn is_empty() -> bool {
+    pub(crate) fn is_empty() -> bool {
         Self::len() == 0
     }
 
@@ -54,7 +54,9 @@ impl<T: Config> Pallet<T> {
         Ok(proposal_id)
     }
 
-    pub fn peek_front() -> Result<Option<(ProposalId, Proposal<T>)>, Error<T>> {
+    /// Returns the id at the head of the queue without removing it and without loading the
+    /// proposal itself. Cheap enough to be used from `validate_unsigned` and the offchain worker.
+    pub fn peek_front_id() -> Result<Option<ProposalId>, Error<T>> {
         if Self::is_empty() {
             return Ok(None)
         }
@@ -66,6 +68,15 @@ impl<T: Config> Pallet<T> {
 
         let proposal_id =
             InternalProposalQueue::<T>::get(slot).ok_or(Error::<T>::QueueCorruptState)?;
+
+        Ok(Some(proposal_id))
+    }
+
+    pub fn peek_front() -> Result<Option<(ProposalId, Proposal<T>)>, Error<T>> {
+        let Some(proposal_id) = Self::peek_front_id()? else {
+            return Ok(None);
+        };
+
         let item = Proposals::<T>::get(proposal_id).ok_or(Error::<T>::QueueCorruptState)?;
 
         Ok(Some((proposal_id, item)))

@@ -322,8 +322,11 @@ benchmarks! {
     }: finalise_proposal(RawOrigin::Signed(signer), proposal_id)
     verify {
         assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
-        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
-        assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
+        // Finalisation no longer activates the next proposal; that is done by
+        // `activate_next_proposal`.
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
+        assert!(ActiveInternalProposal::<T>::get().is_none());
     }
 
     set_admin_config_voting {
@@ -373,8 +376,27 @@ benchmarks! {
     }: { let _ = Pallet::<T>::finalise_expired_voting(proposal_id, &active_proposal); }
     verify {
         assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
+        assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
+        assert!(ActiveInternalProposal::<T>::get().is_none());
+    }
+
+    activate_next_proposal {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+
+        let queued_proposal_id = H256::repeat_byte(7);
+        let queued_proposal = queue_proposal::<T>(queued_proposal_id, 100u32);
+        let expected_end: BlockNumberFor<T> =
+            (100u32 + queued_proposal.vote_duration).into();
+    }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
+    verify {
         assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
         assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(Proposals::<T>::get(queued_proposal_id).unwrap().end_at == Some(expected_end));
+        assert!(Head::<T>::get() == Tail::<T>::get());
+        assert_last_event::<T>(
+            Event::ProposalActivated { proposal_id: queued_proposal_id }.into()
+        );
     }
 
 }

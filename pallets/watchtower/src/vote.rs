@@ -63,7 +63,9 @@ impl<T: Config> Pallet<T> {
         // The order matters here:
         // - we first call the hook so other pallets cleanup their state
         // - then emit the event
-        // - finally we add a new active proposal if needed
+        // - finally we clear the active slot. The next queued proposal is NOT activated here; that
+        //   happens in `activate_next_proposal`, submitted by the offchain worker, so the
+        //   (potentially expensive) activation never runs inside a vote or a block hook.
         T::WatchtowerHooks::on_voting_completed(
             proposal_id,
             &proposal.external_ref,
@@ -76,25 +78,66 @@ impl<T: Config> Pallet<T> {
             consensus_result,
         });
 
-        // If this was an internal proposal, activate the next one in the queue
         if let ProposalSource::Internal(_) = proposal.source {
             ActiveInternalProposal::<T>::kill();
-            if let Ok(next_proposal_id) = Self::dequeue() {
-                ActiveInternalProposal::<T>::put(next_proposal_id);
-                ProposalStatus::<T>::insert(next_proposal_id, ProposalStatusEnum::Active);
-                // Try to mutate and fetch the proposal in one storage access
-                let updated_proposal = Proposals::<T>::try_mutate(next_proposal_id, |p_opt| {
-                    let p = p_opt.as_mut().ok_or(Error::<T>::ProposalNotFound)?;
-                    p.end_at =
-                        Some(frame_system::Pallet::<T>::block_number() + p.vote_duration.into());
-                    Ok::<_, Error<T>>(p.clone())
-                })?;
-
-                T::WatchtowerHooks::on_proposal_submitted(next_proposal_id, updated_proposal)?;
-            }
         }
 
         ProposalsToRemove::<T>::insert(proposal_id, ());
+
+        Ok(())
+    }
+
+    /// Single place where a proposal is marked as active. Any future per-activation logic
+    /// (e.g. committee selection) must be added here so that both the immediate activation in
+    /// `add_proposal` and the deferred activation in `activate_next_proposal` share it.
+    pub(crate) fn activate_proposal(
+        _proposal_id: ProposalId,
+        proposal: &mut Proposal<T>,
+        now: BlockNumberFor<T>,
+    ) {
+        proposal.end_at = Some(now.saturating_add(proposal.vote_duration.into()));
+    }
+
+    /// Dequeues the head of the internal proposal queue and activates it.
+    /// Callers must have verified there is no active internal proposal.
+    pub(crate) fn activate_next_proposal_inner() -> DispatchResult {
+        ensure!(ActiveInternalProposal::<T>::get().is_none(), Error::<T>::ProposalAlreadyActive);
+
+        let proposal_id = Self::dequeue()?;
+
+        // Only reachable if storage was tampered with. Advance the head rather than leaving a
+        // dangling id at the front of the queue forever.
+        if !Proposals::<T>::contains_key(proposal_id) {
+            ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Unknown);
+            Self::deposit_event(Event::ProposalActivationSkipped { proposal_id });
+            return Ok(())
+        }
+
+        let now = frame_system::Pallet::<T>::block_number();
+        let proposal = Proposals::<T>::mutate(proposal_id, |p_opt| {
+            // Safe: checked above.
+            let p = p_opt.as_mut().expect("proposal exists; qed");
+            Self::activate_proposal(proposal_id, p, now);
+            p.clone()
+        });
+
+        ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Active);
+        ActiveInternalProposal::<T>::put(proposal_id);
+
+        if let Err(e) = T::WatchtowerHooks::on_proposal_submitted(proposal_id, proposal.clone()) {
+            // The extrinsic is transactional: propagating the error would roll back the
+            // dequeue, leave this proposal at the head and make the OCW resubmit a failing tx
+            // every block. Cancel it instead so the queue can move on.
+            log::error!(
+                "🪲 on_proposal_submitted failed for proposal {:?}: {:?}. Cancelling it.",
+                proposal_id,
+                e
+            );
+            Self::finalise_voting(proposal_id, &proposal, ProposalStatusEnum::Cancelled)?;
+            return Ok(())
+        }
+
+        Self::deposit_event(Event::ProposalActivated { proposal_id });
 
         Ok(())
     }

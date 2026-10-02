@@ -449,6 +449,7 @@ mod proposal_lifecycle {
                 ProposalStatus::<TestRuntime>::get(proposal_id),
                 ProposalStatusEnum::Expired
             );
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
             System::assert_last_event(Event::ProposalCleaned { proposal_id }.into());
         });
     }

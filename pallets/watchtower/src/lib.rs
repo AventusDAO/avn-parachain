@@ -13,9 +13,10 @@ use frame_support::{
     dispatch::DispatchResult, pallet_prelude::*, traits::IsSubType, weights::WeightMeter,
 };
 use frame_system::{
-    offchain::{CreateBare, CreateTransactionBase},
+    offchain::{CreateBare, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::*,
 };
+use sp_avn_common::ocw_lock::{self as OcwLock};
 pub use sp_avn_common::{verify_signature, InnerCallValidator, Proof};
 use sp_core::{MaxEncodedLen, H256};
 pub use sp_runtime::{
@@ -37,7 +38,11 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const DEFAULT_VOTING_PERIOD_BLOCKS: u32 = 100;
 pub const WATCHTOWER_UNSIGNED_VOTE_CONTEXT: &'static [u8] = b"wt_unsigned_vote";
 pub const WATCHTOWER_FINALISE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_finalise_proposal";
+pub const WATCHTOWER_ACTIVATE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_activate_proposal";
 pub const UNSIGNED_VOTE_NOT_VALID: u8 = 2;
+pub const ACTIVATE_PROPOSAL_NOT_VALID: u8 = 3;
+/// Offchain worker lock id used to make sure activation is attempted at most once per block.
+pub const ACTIVATION_OCW_ID: &'static [u8] = b"watchtower_activation";
 
 pub mod proxy;
 pub mod types;
@@ -52,6 +57,9 @@ mod benchmarking;
 pub mod default_weights;
 pub use default_weights::WeightInfo;
 
+#[cfg(test)]
+#[path = "tests/activation.rs"]
+mod activation;
 #[cfg(test)]
 #[path = "tests/add_proposal.rs"]
 mod add_proposal;
@@ -214,6 +222,10 @@ pub mod pallet {
         },
         /// A completed or expired proposal has been cleaned from storage
         ProposalCleaned { proposal_id: ProposalId },
+        /// A queued internal proposal has become the active proposal
+        ProposalActivated { proposal_id: ProposalId },
+        /// The id at the head of the queue had no proposal data and was skipped
+        ProposalActivationSkipped { proposal_id: ProposalId },
         /// Minimum voting period has been updated
         MinVotingPeriodSet { new_period: BlockNumberFor<T> },
         /// Admin account has been updated
@@ -270,6 +282,10 @@ pub mod pallet {
         InvalidProposalForUnsignedVote,
         /// Admin account is not set
         AdminAccountNotSet,
+        /// There is already an active internal proposal
+        ProposalAlreadyActive,
+        /// The proposal is not at the head of the internal proposal queue
+        ProposalNotNextInQueue,
     }
 
     #[pallet::call]
@@ -459,16 +475,64 @@ pub mod pallet {
                 },
             }
         }
+
+        /// Activate the internal proposal at the head of the queue.
+        ///
+        /// Unsigned. Submitted by the offchain worker of collators once the previous internal
+        /// proposal has been finalised. `validate_unsigned` only accepts locally produced
+        /// copies, so this cannot be submitted via RPC or gossip.
+        #[pallet::call_index(7)]
+        #[pallet::weight(<T as Config>::WeightInfo::activate_next_proposal())]
+        pub fn activate_next_proposal(
+            origin: OriginFor<T>,
+            proposal_id: ProposalId,
+        ) -> DispatchResult {
+            ensure_none(origin)?;
+            ensure!(
+                Self::peek_front_id()? == Some(proposal_id),
+                Error::<T>::ProposalNotNextInQueue
+            );
+
+            Self::activate_next_proposal_inner()
+        }
     }
 
     #[pallet::validate_unsigned]
     impl<T: Config> ValidateUnsigned for Pallet<T> {
         type Call = Call<T>;
 
-        fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
+        fn validate_unsigned(source: TransactionSource, call: &Self::Call) -> TransactionValidity {
             let reduce_priority: TransactionPriority = TransactionPriority::from(1000u64);
 
             match call {
+                Call::activate_next_proposal { proposal_id } => {
+                    // No signature: the call carries no privileged data. Its only argument must
+                    // match the queue head and it only runs when nothing is active, so a forged
+                    // copy is either rejected or does exactly what the legitimate one does.
+                    // `Local` is only produced by this node's own OCW (RPC and gossip are
+                    // `External`); `InBlock` is needed so other nodes can import the block.
+                    match source {
+                        TransactionSource::Local | TransactionSource::InBlock => {},
+                        _ => return InvalidTransaction::Call.into(),
+                    }
+
+                    if ActiveInternalProposal::<T>::get().is_some() {
+                        return InvalidTransaction::Stale.into()
+                    }
+
+                    match Self::peek_front_id() {
+                        Ok(Some(head)) if head == *proposal_id => {},
+                        _ => return InvalidTransaction::Custom(ACTIVATE_PROPOSAL_NOT_VALID).into(),
+                    }
+
+                    ValidTransaction::with_tag_prefix("wt_activateProposal")
+                        .priority(TransactionPriority::max_value() - reduce_priority)
+                        .and_provides((WATCHTOWER_ACTIVATE_PROPOSAL_CONTEXT, proposal_id))
+                        .longevity(64_u64)
+                        // Every collator submits its own copy locally; nothing is gossiped.
+                        .propagate(false)
+                        .build()
+                },
                 Call::unsigned_vote { proposal_id, in_favor, watchtower, signature } => {
                     // Fail early if vote is invalid. This avoids DDos attacks with invalid votes
                     if let Err(_) = Self::validate_unsigned_vote(
@@ -496,6 +560,48 @@ pub mod pallet {
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_idle(n: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
             Self::cleanup_proposals(n, remaining_weight)
+        }
+
+        /// Submits `activate_next_proposal` from every collator when there is no active
+        /// internal proposal but the queue is not empty. The tx is local-only, so whichever
+        /// collator authors the next block includes its own copy and the rest become stale.
+        fn offchain_worker(now: BlockNumberFor<T>) {
+            // Cheapest check first: a host call with no storage access. Watchtower nodes are
+            // not validators and exit here.
+            if !sp_io::offchain::is_validator() {
+                return
+            }
+
+            // One state read.
+            if ActiveInternalProposal::<T>::get().is_some() {
+                return
+            }
+
+            // Three state reads (Tail, Head, slot).
+            let proposal_id = match Self::peek_front_id() {
+                Ok(Some(id)) => id,
+                Ok(None) => return,
+                Err(e) => {
+                    log::error!("🪲 Watchtower activation OCW: queue in corrupt state: {:?}", e);
+                    return
+                },
+            };
+
+            // Writes to offchain storage, so it comes after the read-only checks. At most one
+            // attempt per block, even if the OCW re-runs for the same height.
+            if OcwLock::record_block_run(now, ACTIVATION_OCW_ID.to_vec()).is_err() {
+                return
+            }
+
+            let xt = T::create_bare(Call::<T>::activate_next_proposal { proposal_id }.into());
+            if let Err(e) = SubmitTransaction::<T, Call<T>>::submit_transaction(xt) {
+                // Usually means an identical copy is already in the local pool.
+                log::debug!(
+                    "Watchtower activation OCW: could not submit activation for {:?}: {:?}",
+                    proposal_id,
+                    e
+                );
+            }
         }
     }
 
@@ -525,9 +631,10 @@ pub mod pallet {
 
             let status: ProposalStatusEnum;
             if let ProposalSource::Internal(_) = proposal.source {
-                if ActiveInternalProposal::<T>::get().is_none() {
-                    proposal.end_at =
-                        Some(current_block.saturating_add(proposal.vote_duration.into()));
+                // Activate immediately only if nothing is active AND nothing is waiting,
+                // otherwise this proposal would jump ahead of already queued ones.
+                if ActiveInternalProposal::<T>::get().is_none() && Self::is_empty() {
+                    Self::activate_proposal(proposal_id, &mut proposal, current_block);
                     ActiveInternalProposal::<T>::put(proposal_id);
                     status = ProposalStatusEnum::Active;
                 } else {
@@ -535,7 +642,7 @@ pub mod pallet {
                     status = ProposalStatusEnum::Queued;
                 }
             } else {
-                proposal.end_at = Some(current_block.saturating_add(proposal.vote_duration.into()));
+                Self::activate_proposal(proposal_id, &mut proposal, current_block);
                 status = ProposalStatusEnum::Active;
             }
 
