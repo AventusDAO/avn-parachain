@@ -792,6 +792,27 @@ mod stake_and_reward_weight_tests {
         }
 
         #[test]
+        fn move_stake_to_periodic_keeps_precision_for_tiny_ratios() {
+            // 10^8 out of 10^18 is a ratio of 10^-10, below Perbill resolution. The exact
+            // floor of the allowance share (10^17 * 10^8 / 10^18) is 10^7 and must not be lost.
+            let source_stake: u128 = 1_000_000_000_000_000_000;
+            let allowance: u128 = 100_000_000_000_000_000;
+            let moved: u128 = 100_000_000;
+            let mut from = make_node(1000, periodic(allowance, 5000), source_stake);
+            from.stake.unlocked_stake = allowance;
+            let mut to = make_node(1000, periodic(0, 5000), 0);
+
+            assert_ok!(from.move_stake_to(&mut to, moved));
+
+            assert_eq!(to.stake.restriction.per_period_allowance(), Some(10_000_000));
+            assert_eq!(to.stake.unlocked_stake, 10_000_000);
+            assert_eq!(from.stake.restriction.per_period_allowance(), Some(allowance - 10_000_000));
+            assert_eq!(from.stake.unlocked_stake, allowance - 10_000_000);
+            assert_eq!(from.stake.amount, source_stake - moved);
+            assert_eq!(to.stake.amount, moved);
+        }
+
+        #[test]
         fn move_stake_to_non_periodic_moves_amount_only() {
             let mut from = make_node(1000, UnstakeRestriction::Locked, 500);
             let mut to = make_node(1000, UnstakeRestriction::Locked, 100);

@@ -3,8 +3,9 @@
 use crate::*;
 use frame_support::traits::Get;
 use sp_runtime::{
-    traits::{AtLeast32BitUnsigned, Zero},
-    ArithmeticError, FixedPointNumber, FixedU128, Saturating,
+    helpers_128bit::multiply_by_rational_with_rounding,
+    traits::{AtLeast32BitUnsigned, UniqueSaturatedInto, Zero},
+    ArithmeticError, FixedPointNumber, FixedU128, Rounding, Saturating,
 };
 use sp_std::fmt::Debug;
 // This is used to scale a single heartbeat so we can preserve precision when applying the reward
@@ -397,10 +398,30 @@ impl<
         )
     }
 
+    /// Floor of `value * amount / total`, computed exactly in 128-bit arithmetic so that very
+    /// small ratios are not quantised away (a `Perbill` ratio would round `10^8 / 10^18` to
+    /// zero). The caller guarantees `amount <= total`, so the result never exceeds `value`.
+    fn pro_rata_share(
+        value: Balance,
+        amount: Balance,
+        total: Balance,
+    ) -> Result<Balance, ArithmeticError> {
+        let value: u128 = value.unique_saturated_into();
+        let amount: u128 = amount.unique_saturated_into();
+        let total: u128 = total.unique_saturated_into();
+        if total.is_zero() {
+            return Err(ArithmeticError::DivisionByZero)
+        }
+        let share = multiply_by_rational_with_rounding(value, amount, total, Rounding::Down)
+            .ok_or(ArithmeticError::Overflow)?;
+        Ok(share.unique_saturated_into())
+    }
+
     /// Moves `amount` of stake from `self` into `dest`. When both nodes are `Periodic`, the
     /// proportional share of the per-period allowance and already-unlocked stake travels
-    /// with it. The caller must have checked `can_move_stake_to`, validated
-    /// `0 < amount <= self.stake.amount`, and settled both nodes (`settle_accrued_allowance`).
+    /// with it (exact floor of `value * amount / source_stake`). The caller must have checked
+    /// `can_move_stake_to`, validated `0 < amount <= self.stake.amount`, and settled both nodes
+    /// (`settle_accrued_allowance`).
     pub fn move_stake_to(
         &mut self,
         dest: &mut Self,
@@ -409,12 +430,12 @@ impl<
         if self.stake.restriction.per_period_allowance().is_some() &&
             dest.stake.restriction.per_period_allowance().is_some()
         {
-            let ratio = Perbill::from_rational(amount, self.stake.amount);
-
+            let source_stake = self.stake.amount;
             let from_allowance =
                 self.stake.restriction.per_period_allowance().unwrap_or_else(Zero::zero);
-            let moved_allowance = ratio * from_allowance;
-            let moved_unlocked = ratio * self.stake.unlocked_stake;
+            let moved_allowance = Self::pro_rata_share(from_allowance, amount, source_stake)?;
+            let moved_unlocked =
+                Self::pro_rata_share(self.stake.unlocked_stake, amount, source_stake)?;
 
             if let Some(allowance) = self.stake.restriction.per_period_allowance_mut() {
                 *allowance =
