@@ -222,14 +222,14 @@ pub mod pallet {
         },
         /// A completed or expired proposal has been cleaned from storage
         ProposalCleaned { proposal_id: ProposalId },
-        /// A queued internal proposal has become the active proposal
-        ProposalActivated { proposal_id: ProposalId },
-        /// The id at the head of the queue had no proposal data and was skipped
-        ProposalActivationSkipped { proposal_id: ProposalId },
         /// Minimum voting period has been updated
         MinVotingPeriodSet { new_period: BlockNumberFor<T> },
         /// Admin account has been updated
         AdminAccountSet { new_admin: Option<T::AccountId> },
+        /// A queued internal proposal has become the active proposal
+        ProposalActivated { proposal_id: ProposalId },
+        /// The id at the head of the queue had no proposal data and was skipped
+        ProposalActivationSkipped { proposal_id: ProposalId },
     }
 
     #[pallet::error]
@@ -740,7 +740,9 @@ pub mod pallet {
             let dbw = <T as frame_system::Config>::DbWeight::get();
             const MAX_VOTERS: usize = 250;
 
-            // Check if the active proposal has expired and finalise it if needed
+            // Check if the active proposal has expired and finalise it if needed. An active
+            // proposal that has not expired is left alone and does NOT block the cleanup
+            // below: the two jobs are independent.
             if meter
                 .try_consume(<T as Config>::WeightInfo::active_proposal_expiry_status())
                 .is_err()
@@ -767,8 +769,6 @@ pub mod pallet {
                             );
                         },
                     );
-                } else {
-                    return meter.consumed()
                 }
             };
 

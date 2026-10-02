@@ -5,7 +5,7 @@
 use super::*;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
-use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof, RootId, RootRange};
 use sp_core::{crypto::DEV_PHRASE, sr25519, ByteArray};
 use sp_runtime::{traits::Hash, SaturatedConversion};
 
@@ -24,16 +24,26 @@ fn create_proposal<T: Config>(
     is_internal: bool,
 ) -> Proposal<T> {
     let external_ref: T::Hash = T::Hashing::hash_of(&external_ref_id);
-    let inner_payload = BoundedVec::try_from(external_ref_id.encode()).unwrap();
     let source: ProposalSource;
     let proposer: Option<T::AccountId>;
+    let inner_payload: BoundedVec<u8, T::MaxInlineLen>;
 
     if is_internal {
-        source = ProposalSource::Internal(ProposalType::Governance);
+        // Use a Summary proposal with a payload the summary-watchtower hook can decode, so
+        // benchmarks that activate the proposal measure the `on_proposal_submitted` work too.
+        // The root range must end at or before the current block for the hook to accept it.
+        source = ProposalSource::Internal(ProposalType::Summary);
         proposer = None;
+        let root_id = RootId::<BlockNumberFor<T>>::new(
+            RootRange::new(1u32.into(), created_at),
+            external_ref_id as u64,
+        );
+        let root_hash = H256::from_slice(&external_ref.as_ref());
+        inner_payload = BoundedVec::try_from((root_id, root_hash).encode()).unwrap();
     } else {
         source = ProposalSource::External;
         proposer = Some(account("proposer", 0, 0));
+        inner_payload = BoundedVec::try_from(external_ref_id.encode()).unwrap();
     };
 
     Proposal {
