@@ -309,16 +309,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
 	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:1)
+	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	fn activate_next_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `266`
+		//  Measured:  `386`
 		//  Estimated: `12308`
-		// Minimum execution time: 30_378_000 picoseconds.
-		Weight::from_parts(35_601_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(5_u64))
-			.saturating_add(T::DbWeight::get().writes(5_u64))
+		// Minimum execution time: 40_561_000 picoseconds.
+		Weight::from_parts(49_423_000, 12308)
+			.saturating_add(T::DbWeight::get().reads(6_u64))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
 	}
 }
 
@@ -578,15 +580,17 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
 	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:1)
+	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	fn activate_next_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `266`
+		//  Measured:  `386`
 		//  Estimated: `12308`
-		// Minimum execution time: 30_378_000 picoseconds.
-		Weight::from_parts(35_601_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(5_u64))
-			.saturating_add(RocksDbWeight::get().writes(5_u64))
+		// Minimum execution time: 40_561_000 picoseconds.
+		Weight::from_parts(49_423_000, 12308)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
 	}
 }
