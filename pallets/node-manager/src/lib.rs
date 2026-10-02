@@ -1341,8 +1341,8 @@ pub mod pallet {
             Ok(())
         }
 
-        // This must be called by the registrar. If the origin is relaxed, additional changes are needed
-        // to ensure this doesn't bypass unlock rules.
+        // This must be called by the registrar. If the origin is relaxed, additional changes are
+        // needed to ensure this doesn't bypass unlock rules.
         #[pallet::call_index(14)]
         #[pallet::weight(<T as Config>::WeightInfo::move_nodes(nodes.len() as u32))]
         pub fn move_nodes(
@@ -1369,8 +1369,8 @@ pub mod pallet {
         /// `Locked` node. When both are `Periodic`, the source's per-period allowance and
         /// already-unlocked stake move with the stake pro rata.
         ///
-        /// This must be called by the registrar. If the origin is relaxed, additional changes are needed
-        /// to ensure this doesn't bypass unlock rules.
+        /// This must be called by the registrar. If the origin is relaxed, additional changes are
+        /// needed to ensure this doesn't bypass unlock rules.
         #[pallet::call_index(15)]
         #[pallet::weight(<T as Config>::WeightInfo::move_stake(source_nodes.len() as u32))]
         pub fn move_stake(
