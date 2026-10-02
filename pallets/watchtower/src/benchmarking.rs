@@ -5,7 +5,7 @@
 use super::*;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
-use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof, RootId, RootRange};
 use sp_core::{crypto::DEV_PHRASE, sr25519, ByteArray};
 use sp_runtime::{traits::Hash, SaturatedConversion};
 
@@ -24,16 +24,26 @@ fn create_proposal<T: Config>(
     is_internal: bool,
 ) -> Proposal<T> {
     let external_ref: T::Hash = T::Hashing::hash_of(&external_ref_id);
-    let inner_payload = BoundedVec::try_from(external_ref_id.encode()).unwrap();
     let source: ProposalSource;
     let proposer: Option<T::AccountId>;
+    let inner_payload: BoundedVec<u8, T::MaxInlineLen>;
 
     if is_internal {
-        source = ProposalSource::Internal(ProposalType::Governance);
+        // Use a Summary proposal with a payload the summary-watchtower hook can decode, so
+        // benchmarks that activate the proposal measure the `on_proposal_submitted` work too.
+        // The root range must end at or before the current block for the hook to accept it.
+        source = ProposalSource::Internal(ProposalType::Summary);
         proposer = None;
+        let root_id = RootId::<BlockNumberFor<T>>::new(
+            RootRange::new(1u32.into(), created_at),
+            external_ref_id as u64,
+        );
+        let root_hash = H256::from_slice(&external_ref.as_ref());
+        inner_payload = BoundedVec::try_from((root_id, root_hash).encode()).unwrap();
     } else {
         source = ProposalSource::External;
         proposer = Some(account("proposer", 0, 0));
+        inner_payload = BoundedVec::try_from(external_ref_id.encode()).unwrap();
     };
 
     Proposal {
@@ -322,8 +332,11 @@ benchmarks! {
     }: finalise_proposal(RawOrigin::Signed(signer), proposal_id)
     verify {
         assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
-        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
-        assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
+        // Finalisation no longer activates the next proposal; that is done by
+        // `activate_next_proposal`.
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
+        assert!(ActiveInternalProposal::<T>::get().is_none());
     }
 
     set_admin_config_voting {
@@ -373,8 +386,27 @@ benchmarks! {
     }: { let _ = Pallet::<T>::finalise_expired_voting(proposal_id, &active_proposal); }
     verify {
         assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
+        assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
+        assert!(ActiveInternalProposal::<T>::get().is_none());
+    }
+
+    activate_next_proposal {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+
+        let queued_proposal_id = H256::repeat_byte(7);
+        let queued_proposal = queue_proposal::<T>(queued_proposal_id, 100u32);
+        let expected_end: BlockNumberFor<T> =
+            (100u32 + queued_proposal.vote_duration).into();
+    }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
+    verify {
         assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
         assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(Proposals::<T>::get(queued_proposal_id).unwrap().end_at == Some(expected_end));
+        assert!(Head::<T>::get() == Tail::<T>::get());
+        assert_last_event::<T>(
+            Event::ProposalActivated { proposal_id: queued_proposal_id }.into()
+        );
     }
 
 }
