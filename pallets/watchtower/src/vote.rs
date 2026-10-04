@@ -125,9 +125,11 @@ impl<T: Config> Pallet<T> {
         ActiveInternalProposal::<T>::put(proposal_id);
 
         if let Err(e) = T::WatchtowerHooks::on_proposal_submitted(proposal_id, proposal.clone()) {
-            // The extrinsic is transactional: propagating the error would roll back the
-            // dequeue, leave this proposal at the head and make the OCW resubmit a failing tx
-            // every block. Cancel it instead so the queue can move on.
+            // Reached when a consumer (e.g. summary-watchtower) rejects the proposal; the tuple
+            // hook impl propagates the first error. The extrinsic is transactional: propagating
+            // the error would roll back the dequeue, leave this proposal at the head and make
+            // the OCW resubmit a failing tx every block. Cancel it instead so the queue can move
+            // on and the consumer is told via `on_voting_completed`.
             log::error!(
                 "🪲 on_proposal_submitted failed for proposal {:?}: {:?}. Cancelling it.",
                 proposal_id,

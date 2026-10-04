@@ -50,6 +50,7 @@ pub trait WeightInfo {
 	fn active_proposal_expiry_status() -> Weight;
 	fn finalise_expired_voting() -> Weight;
 	fn activate_next_proposal() -> Weight;
+	fn activate_next_proposal_hook_fails() -> Weight;
 }
 
 /// Weights for pallet_watchtower using the Substrate node and recommended hardware.
@@ -322,6 +323,14 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(6_u64))
 	}
+	// TODO: hand-written placeholder (activation + cancellation), regenerate with the benchmark CLI.
+	fn activate_next_proposal_hook_fails() -> Weight {
+		// Proof Size summary in bytes:
+		//  Estimated: `12308`
+		Weight::from_parts(70_000_000, 12308)
+			.saturating_add(T::DbWeight::get().reads(8_u64))
+			.saturating_add(T::DbWeight::get().writes(9_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -592,5 +601,13 @@ impl WeightInfo for () {
 		Weight::from_parts(49_423_000, 12308)
 			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
+	}
+	// TODO: hand-written placeholder (activation + cancellation), regenerate with the benchmark CLI.
+	fn activate_next_proposal_hook_fails() -> Weight {
+		// Proof Size summary in bytes:
+		//  Estimated: `12308`
+		Weight::from_parts(70_000_000, 12308)
+			.saturating_add(RocksDbWeight::get().reads(8_u64))
+			.saturating_add(RocksDbWeight::get().writes(9_u64))
 	}
 }

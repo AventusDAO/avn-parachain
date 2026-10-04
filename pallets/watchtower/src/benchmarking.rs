@@ -109,6 +109,22 @@ fn queue_proposal<T: Config>(proposal_id: H256, created_at: u32) -> Proposal<T> 
     queued_proposal
 }
 
+/// Queues a Summary proposal whose payload the summary-watchtower hook cannot decode, so that
+/// activating it in the runtime exercises the cancel path of `activate_next_proposal`.
+fn queue_proposal_with_invalid_payload<T: Config>(
+    proposal_id: H256,
+    created_at: u32,
+) -> Proposal<T> {
+    let created_at: BlockNumberFor<T> = created_at.into();
+    let mut queued_proposal = create_proposal::<T>(2, created_at, None, true);
+    queued_proposal.payload =
+        Payload::Inline(BoundedVec::try_from(b"not a root".to_vec()).unwrap());
+    Proposals::<T>::insert(proposal_id, &queued_proposal);
+    Pallet::<T>::enqueue(proposal_id).unwrap();
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Queued);
+    queued_proposal
+}
+
 fn get_proof<T: Config>(
     relayer: &T::AccountId,
     signer: &T::AccountId,
@@ -407,6 +423,21 @@ benchmarks! {
         assert_last_event::<T>(
             Event::ProposalActivated { proposal_id: queued_proposal_id }.into()
         );
+    }
+
+    // Worst case: the consumer hook rejects the proposal and it is cancelled instead of
+    // activated. In the runtime this runs the cancel path; the test mock's hooks always
+    // accept, so verify only what holds in both cases.
+    activate_next_proposal_hook_fails {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+
+        let queued_proposal_id = H256::repeat_byte(7);
+        let _ = queue_proposal_with_invalid_payload::<T>(queued_proposal_id, 100u32);
+    }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
+    verify {
+        // Dequeued either way.
+        assert!(Head::<T>::get() == Tail::<T>::get());
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) != ProposalStatusEnum::Queued);
     }
 
 }

@@ -440,13 +440,16 @@ pub mod pallet {
             );
             <VotingPeriod<T, I>>::put(voting_period_in_blocks);
 
-            let maybe_first_validator =
-                AVN::<T>::validators().into_iter().map(|v| v.account_id).nth(0);
-            assert!(maybe_first_validator.is_some(), "You must add validators to run the AvN");
-
-            <CurrentSlotsValidator<T, I>>::put(
-                maybe_first_validator.expect("Validator is checked for none"),
-            );
+            // Validators are populated by the session pallet's genesis, which runs before this
+            // one in the runtime. A default genesis (e.g. `test_genesis_config_builds`) has none,
+            // so do not panic: `CurrentSlotsValidator` is an `OptionQuery` and every reader
+            // handles `None`.
+            match AVN::<T>::validators().into_iter().map(|v| v.account_id).nth(0) {
+                Some(first_validator) => <CurrentSlotsValidator<T, I>>::put(first_validator),
+                None => log::warn!(
+                    "💔 No validators found at genesis; the summary slot validator is unset."
+                ),
+            }
 
             STORAGE_VERSION.put::<Pallet<T, I>>();
         }

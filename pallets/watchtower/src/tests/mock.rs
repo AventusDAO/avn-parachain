@@ -231,6 +231,10 @@ pub struct ExtBuilder {
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
+        // libtest spawns a fresh thread per test, so these are normally already clean. Reset
+        // anyway so tests stay independent if a test is ever run inline on a shared thread.
+        reset_hook_state();
+
         let storage = frame_system::GenesisConfig::<TestRuntime>::default()
             .build_storage()
             .unwrap()
@@ -294,6 +298,11 @@ thread_local! {
 
 pub fn set_hook_failure(fail: bool) {
     FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = fail);
+}
+
+pub fn reset_hook_state() {
+    FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = false);
+    SUBMITTED_TO_HOOKS.with(|s| s.borrow_mut().clear());
 }
 
 pub fn proposals_submitted_to_hooks() -> Vec<ProposalId> {

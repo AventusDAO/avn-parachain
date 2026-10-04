@@ -129,8 +129,11 @@ pub trait WatchtowerHooks<P> {
 
 #[impl_trait_for_tuples::impl_for_tuples(30)]
 impl<P: Clone> WatchtowerHooks<P> for Tuple {
+    /// Stops at the first member that rejects the proposal and returns its error, so the
+    /// watchtower pallet can refuse (on submission) or cancel (on deferred activation) a
+    /// proposal that a consumer cannot process. Members before the failing one have already run.
     fn on_proposal_submitted(proposal_id: ProposalId, proposal: P) -> DispatchResult {
-        for_tuples!( #( Tuple::on_proposal_submitted(proposal_id, proposal.clone()); )* );
+        for_tuples!( #( Tuple::on_proposal_submitted(proposal_id, proposal.clone())?; )* );
         Ok(())
     }
 

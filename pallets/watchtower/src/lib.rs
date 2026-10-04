@@ -482,7 +482,10 @@ pub mod pallet {
         /// proposal has been finalised. `validate_unsigned` only accepts locally produced
         /// copies, so this cannot be submitted via RPC or gossip.
         #[pallet::call_index(7)]
-        #[pallet::weight(<T as Config>::WeightInfo::activate_next_proposal())]
+        #[pallet::weight(
+            <T as Config>::WeightInfo::activate_next_proposal()
+            .max(<T as Config>::WeightInfo::activate_next_proposal_hook_fails())
+        )]
         pub fn activate_next_proposal(
             origin: OriginFor<T>,
             proposal_id: ProposalId,
