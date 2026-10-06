@@ -118,6 +118,9 @@ fn create_nodes_and_heartbeat<T: Config>(
     for i in 1..=node_to_create {
         let node: NodeId<T> = account("node", i, i);
         let _ = register_new_node::<T>(node.clone(), owner.clone(), i);
+        // Registered through the extrinsic these nodes would be indexed, so deregistration
+        // benchmarks must measure the swap-remove too.
+        Pallet::<T>::index_insert(&node);
         create_heartbeat::<T>(node.clone(), reward_period_index);
         registered_nodes.push(node);
     }

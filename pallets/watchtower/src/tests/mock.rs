@@ -63,6 +63,24 @@ impl Config for TestRuntime {
     type MinCommitteeSize = ConstU32<2>;
     type MaxCommitteeSize = ConstU32<5>;
     type Randomness = TestRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = TestBenchmarkHelper;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub struct TestBenchmarkHelper;
+#[cfg(feature = "runtime-benchmarks")]
+impl BenchmarkHelper for TestBenchmarkHelper {
+    fn setup_nodes(n: u32) {
+        let nodes = (0..n).map(|i| frame_benchmarking::account("node", i, 0)).collect();
+        set_authorized_watchtowers(nodes);
+    }
+
+    fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
+
+    fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
+        true
+    }
 }
 
 /// Deterministic randomness derived from a thread-local seed so tests can force committees.

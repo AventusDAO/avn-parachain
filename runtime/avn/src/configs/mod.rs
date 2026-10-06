@@ -815,6 +815,8 @@ impl pallet_watchtower::Config for Runtime {
     type MinCommitteeSize = ConstU32<10>;
     type MaxCommitteeSize = ConstU32<500>;
     type Randomness = RelayChainRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = WatchtowerBenchmarkHelper;
 }
 
 impl pallet_summary_watchtower::Config for Runtime {
@@ -952,39 +954,40 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
         pallet_node_manager::OwnedNodesCount::<Runtime>::get(owner)
     }
 
+    // The node counts and the index are never stubbed: benchmarks that need nodes register
+    // real ones through `WatchtowerBenchmarkHelper`, so the measured weights include the index
+    // reads.
     fn get_authorized_watchtowers_count() -> u32 {
-        // Benchmarks: enough nodes to select a committee of `MaxCommitteeSize`.
-        #[cfg(feature = "runtime-benchmarks")]
-        {
-            use polkadot_sdk::frame_support::traits::Get;
-            return <<Runtime as pallet_watchtower::Config>::MaxCommitteeSize as Get<u32>>::get()
-        }
-
-        #[cfg(not(feature = "runtime-benchmarks"))]
         pallet_node_manager::TotalRegisteredNodes::<Runtime>::get()
     }
 
     fn get_node_at_index(index: u32) -> Option<AccountId> {
-        #[cfg(feature = "runtime-benchmarks")]
-        {
-            if index < Self::get_authorized_watchtowers_count() {
-                return Some(frame_benchmarking::account("committee", index, 0))
-            }
-            return None
-        }
-
-        #[cfg(not(feature = "runtime-benchmarks"))]
         pallet_node_manager::Pallet::<Runtime>::node_at_index(index)
     }
 
     fn get_indexed_nodes_count() -> u32 {
-        #[cfg(feature = "runtime-benchmarks")]
-        {
-            return Self::get_authorized_watchtowers_count()
-        }
-
-        #[cfg(not(feature = "runtime-benchmarks"))]
         pallet_node_manager::Pallet::<Runtime>::indexed_node_count()
+    }
+}
+
+/// Gives the watchtower benchmarks real node-manager and summary state to run against.
+#[cfg(feature = "runtime-benchmarks")]
+pub struct WatchtowerBenchmarkHelper;
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_watchtower::BenchmarkHelper for WatchtowerBenchmarkHelper {
+    fn setup_nodes(n: u32) {
+        pallet_node_manager::Pallet::<Runtime>::benchmark_register_indexed_nodes(n);
+    }
+
+    fn setup_consumer_proposal(external_ref: sp_core::H256, payload: sp_std::vec::Vec<u8>) {
+        pallet_summary::Pallet::<Runtime>::benchmark_setup_external_validation(
+            external_ref,
+            payload,
+        );
+    }
+
+    fn consumer_proposal_cancelled(external_ref: sp_core::H256) -> bool {
+        pallet_summary::Pallet::<Runtime>::benchmark_is_pending_admin_review(external_ref)
     }
 }
 

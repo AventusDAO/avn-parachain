@@ -161,6 +161,34 @@ pub trait NodesInterface<AccountId, SignerId> {
     fn get_indexed_nodes_count() -> u32;
 }
 
+/// Runtime-provided setup for benchmarks, so they measure the real storage work of the
+/// `NodesInterface` provider and of the `WatchtowerHooks` consumers instead of stubs.
+#[cfg(feature = "runtime-benchmarks")]
+pub trait BenchmarkHelper {
+    /// Registers `n` nodes with the `NodesInterface` provider so that both
+    /// `get_authorized_watchtowers_count` and `get_indexed_nodes_count` return `n` and
+    /// `get_node_at_index` reads a stored entry for every `index < n`.
+    fn setup_nodes(n: u32);
+
+    /// Makes the consumers recognise `external_ref` as a proposal they are waiting on, with
+    /// `payload` being the consumer-specific encoded payload such a proposal carries. After
+    /// this, the completion hooks do their real work for that proposal.
+    fn setup_consumer_proposal(external_ref: H256, payload: Vec<u8>);
+
+    /// True if the consumers recorded `external_ref` as cancelled (e.g. sent to admin review).
+    /// Implementations without such state return true.
+    fn consumer_proposal_cancelled(external_ref: H256) -> bool;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+impl BenchmarkHelper for () {
+    fn setup_nodes(_n: u32) {}
+    fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
+    fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
+        true
+    }
+}
+
 #[derive(
     Encode,
     Decode,

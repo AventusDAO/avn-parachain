@@ -104,6 +104,33 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
+    /// Registers `n` fresh nodes straight into the registry and the dense index, for
+    /// benchmarks of pallets that sample the index (e.g. watchtower committee selection).
+    #[cfg(feature = "runtime-benchmarks")]
+    pub fn benchmark_register_indexed_nodes(n: u32) {
+        use frame_benchmarking::account;
+        use sp_runtime::traits::Zero;
+
+        let owner: T::AccountId = account("index_owner", 0, 0);
+        let first = TotalRegisteredNodes::<T>::get();
+        for i in first..first.saturating_add(n) {
+            let node: NodeId<T> = account("indexed_node", i, 0);
+            let signing_key: T::SignerId = account("indexed_key", i, 0);
+            let stake = StakeInfo::<BalanceOf<T>>::new(
+                Zero::zero(),
+                Zero::zero(),
+                None,
+                UnstakeRestriction::Locked,
+            );
+            NodeRegistry::<T>::insert(
+                &node,
+                NodeInfo::new(owner.clone(), signing_key, i, 0u64, false, stake),
+            );
+            Self::index_insert(&node);
+        }
+        TotalRegisteredNodes::<T>::mutate(|total| *total = total.saturating_add(n));
+    }
+
     /// Checks the dense index invariants. Only meaningful once the backfill is complete.
     #[cfg(any(feature = "try-runtime", test))]
     pub fn check_node_index_invariants() -> Result<(), &'static str> {

@@ -83,6 +83,10 @@ mod mock;
 mod voting;
 
 pub use pallet::*;
+
+/// Most `Voters` (and, separately, `ProposalCommittee`) entries of one proposal that `on_idle`
+/// removes per block.
+pub const CLEANUP_PAGE_SIZE: u32 = 250;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -155,6 +159,10 @@ pub mod pallet {
 
         /// Seed source for committee selection.
         type Randomness: frame_support::traits::Randomness<Self::Hash, BlockNumberFor<Self>>;
+
+        /// Populates the node provider and the consumers so benchmarks measure real storage.
+        #[cfg(feature = "runtime-benchmarks")]
+        type BenchmarkHelper: BenchmarkHelper;
     }
 
     #[pallet::type_value]
@@ -558,9 +566,9 @@ pub mod pallet {
                 Error::<T>::ProposalNotNextInQueue
             );
 
-            Self::activate_next_proposal_inner()?;
-
-            let committee_size = ProposalCommitteeSize::<T>::get(proposal_id).unwrap_or(0);
+            // Refund from the size selection actually ran for, not from storage: a failed
+            // selection rolls `ProposalCommitteeSize` back but its reads were still done.
+            let committee_size = Self::activate_next_proposal_inner()?;
             Ok(Some(Self::activation_weight(committee_size)).into())
         }
 
@@ -883,8 +891,6 @@ pub mod pallet {
 
         fn cleanup_proposals(now: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
             let mut meter = WeightMeter::with_limit(remaining_weight);
-            let dbw = <T as frame_system::Config>::DbWeight::get();
-            const MAX_VOTERS: usize = 250;
 
             // Check if the active proposal has expired and finalise it if needed. An active
             // proposal that has not expired is left alone and does NOT block the cleanup
@@ -918,71 +924,97 @@ pub mod pallet {
                 }
             };
 
-            // Now remove any completed proposals
-            if meter.try_consume(dbw.reads(1)).is_err() {
+            // Now remove any completed proposals. Every storage access below is paid for, in
+            // both weight components, before it happens: the fixed part (head read, emptiness
+            // check, final removal) is reserved here and each page of entries is sized to
+            // what the meter can still afford.
+            if meter
+                .try_consume(<T as Config>::WeightInfo::cleanup_finished_proposal())
+                .is_err()
+            {
                 return meter.consumed()
             }
 
-            let Some(proposal_id) = ProposalsToRemove::<T>::iter_keys().next() else {
+            let Some(proposal_id) = Self::next_proposal_to_remove() else {
                 // Nothing to clean
                 return meter.consumed();
             };
 
-            // Avoid deleting while iterating. Its safer to do it in 2 steps
-            let mut to_delete: Vec<T::AccountId> = Vec::new();
-            for (who, _) in Voters::<T>::iter_prefix(&proposal_id).take(MAX_VOTERS) {
-                // read for this item
-                if meter.try_consume(dbw.reads(1)).is_err() {
-                    break
-                }
-                to_delete.push(who);
+            let page =
+                Self::affordable_entries(&meter, <T as Config>::WeightInfo::cleanup_voters_page);
+            if page > 0 {
+                let removed = Self::remove_voters_page(proposal_id, page);
+                meter.consume(<T as Config>::WeightInfo::cleanup_voters_page(removed));
             }
 
-            for who in to_delete.iter() {
-                if meter.try_consume(dbw.writes(1)).is_err() {
-                    break
-                }
-                Voters::<T>::remove(&proposal_id, who);
+            let page =
+                Self::affordable_entries(&meter, <T as Config>::WeightInfo::cleanup_committee_page);
+            if page > 0 {
+                let removed = Self::remove_committee_page(proposal_id, page);
+                meter.consume(<T as Config>::WeightInfo::cleanup_committee_page(removed));
             }
 
-            // Same two-step, metered removal for the committee members (if any).
-            let mut members_to_delete: Vec<T::AccountId> = Vec::new();
-            for (who, _) in ProposalCommittee::<T>::iter_prefix(&proposal_id).take(MAX_VOTERS) {
-                if meter.try_consume(dbw.reads(1)).is_err() {
-                    break
-                }
-                members_to_delete.push(who);
-            }
-
-            for who in members_to_delete.iter() {
-                if meter.try_consume(dbw.writes(1)).is_err() {
-                    break
-                }
-                ProposalCommittee::<T>::remove(&proposal_id, who);
-            }
-
-            // Check if we have finished removing all votes and committee members
-            if meter.try_consume(dbw.reads(2)).is_err() {
-                return meter.consumed()
-            }
-
-            if Voters::<T>::iter_prefix(proposal_id).next().is_none() &&
-                ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_none()
-            {
-                // We have removed all votes, now we can remove the proposal and its data
-                if meter.try_consume(dbw.writes(5)).is_err() {
-                    return meter.consumed()
-                }
-
-                Proposals::<T>::remove(proposal_id);
-                Votes::<T>::remove(proposal_id);
-                ProposalCommitteeSize::<T>::remove(proposal_id);
-                ProposalsToRemove::<T>::remove(proposal_id);
-
-                Self::deposit_event(Event::ProposalCleaned { proposal_id });
-            }
+            Self::remove_proposal_if_cleaned(proposal_id);
 
             meter.consumed()
+        }
+
+        /// Largest page of at most `CLEANUP_PAGE_SIZE` entries whose `page_weight` fits in
+        /// `meter`, or 0 if not even an empty page does. Generated weights are linear in the
+        /// page size, so `page_weight(n)` for any `n` up to the result fits too.
+        fn affordable_entries(meter: &WeightMeter, page_weight: fn(u32) -> Weight) -> u32 {
+            let base = page_weight(0);
+            let per_entry = page_weight(1).saturating_sub(base);
+            let Some(spare) = meter.remaining().checked_sub(&base) else { return 0 };
+            spare
+                .checked_div_per_component(&per_entry)
+                .unwrap_or(CLEANUP_PAGE_SIZE as u64)
+                .min(CLEANUP_PAGE_SIZE as u64) as u32
+        }
+
+        /// Oldest proposal waiting to have its data removed.
+        pub(crate) fn next_proposal_to_remove() -> Option<ProposalId> {
+            ProposalsToRemove::<T>::iter_keys().next()
+        }
+
+        /// Removes at most `max` `Voters` entries of `proposal_id`, collecting the keys first
+        /// so nothing is deleted while iterating. Returns how many were removed.
+        pub(crate) fn remove_voters_page(proposal_id: ProposalId, max: u32) -> u32 {
+            let voters: Vec<T::AccountId> =
+                Voters::<T>::iter_key_prefix(proposal_id).take(max as usize).collect();
+            for who in &voters {
+                Voters::<T>::remove(proposal_id, who);
+            }
+            voters.len() as u32
+        }
+
+        /// Same as `remove_voters_page` for the committee members.
+        pub(crate) fn remove_committee_page(proposal_id: ProposalId, max: u32) -> u32 {
+            let members: Vec<T::AccountId> = ProposalCommittee::<T>::iter_key_prefix(proposal_id)
+                .take(max as usize)
+                .collect();
+            for who in &members {
+                ProposalCommittee::<T>::remove(proposal_id, who);
+            }
+            members.len() as u32
+        }
+
+        /// Removes the proposal and its remaining data once no voters and no committee members
+        /// are left. Returns true if it was removed.
+        pub(crate) fn remove_proposal_if_cleaned(proposal_id: ProposalId) -> bool {
+            if Voters::<T>::iter_prefix(proposal_id).next().is_some() ||
+                ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_some()
+            {
+                return false
+            }
+
+            Proposals::<T>::remove(proposal_id);
+            Votes::<T>::remove(proposal_id);
+            ProposalCommitteeSize::<T>::remove(proposal_id);
+            ProposalsToRemove::<T>::remove(proposal_id);
+
+            Self::deposit_event(Event::ProposalCleaned { proposal_id });
+            true
         }
 
         fn validate_unsigned_vote(

@@ -83,6 +83,33 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
         Ok(())
     }
 
+    /// Benchmark setup: records `external_ref` as the in-progress external validation of the
+    /// root in `payload`, the `(RootId, H256)` a summary proposal carries, so that the
+    /// watchtower completion hooks do their real work for that proposal.
+    #[cfg(feature = "runtime-benchmarks")]
+    pub fn benchmark_setup_external_validation(external_ref: H256, payload: Vec<u8>) {
+        let (root_id, root_hash): (RootId<BlockNumberFor<T>>, H256) =
+            Decode::decode(&mut &payload[..]).expect("benchmark payload is a summary root");
+        let validator: T::AccountId = frame_benchmarking::account("summary_validator", 0, 0);
+        <Roots<T, I>>::insert(
+            root_id.range,
+            root_id.ingress_counter,
+            RootData::new(root_hash, validator, None),
+        );
+        ExternalValidationRef::<T, I>::insert(external_ref, root_id);
+        Self::set_summary_status(&root_id, ExternalValidationEnum::ValidationInProgress);
+    }
+
+    /// Benchmark check: true if the root behind `external_ref` was sent to admin review.
+    #[cfg(feature = "runtime-benchmarks")]
+    pub fn benchmark_is_pending_admin_review(external_ref: H256) -> bool {
+        ExternalValidationRef::<T, I>::get(external_ref).map_or(false, |root_id| {
+            <PendingAdminReviews<T, I>>::contains_key(root_id) &&
+                <ExternalValidationStatus<T, I>>::get(root_id) ==
+                    Some(ExternalValidationEnum::PendingAdminReview)
+        })
+    }
+
     pub fn get_root_id_by_external_ref(
         external_ref: &H256,
     ) -> Result<RootId<BlockNumberFor<T>>, DispatchError> {

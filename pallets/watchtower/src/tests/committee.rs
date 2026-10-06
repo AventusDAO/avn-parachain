@@ -332,6 +332,28 @@ mod corrupt_index {
     }
 
     #[test]
+    fn a_failed_selection_is_still_charged_for_the_members_it_read() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // 3 nodes, 5 requested: selection runs for an effective committee of 3 before
+            // the hole cancels it, and the rollback leaves no stored committee size behind.
+            set_authorized_watchtowers(first_n_watchtowers(3));
+            set_index_fault(Some(IndexFault::Hole(1)));
+            let bad = submit_internal(1, Some(5));
+
+            let post_info = activate(bad).expect("cancelled, not failed");
+
+            assert_eq!(committee_size(bad), None);
+            let weight_for = |k: u32| {
+                <TestRuntime as Config>::WeightInfo::activate_next_proposal(k)
+                    .max(<TestRuntime as Config>::WeightInfo::activate_next_proposal_hook_fails(k))
+            };
+            assert_ne!(weight_for(3), weight_for(0));
+            assert_eq!(post_info.actual_weight, Some(weight_for(3)));
+        });
+    }
+
+    #[test]
     fn a_duplicate_entry_cancels_the_proposal() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {

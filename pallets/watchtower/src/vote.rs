@@ -116,7 +116,12 @@ impl<T: Config> Pallet<T> {
 
     /// Dequeues the head of the internal proposal queue and activates it.
     /// Callers must have verified there is no active internal proposal.
-    pub(crate) fn activate_next_proposal_inner() -> DispatchResult {
+    ///
+    /// Returns the effective committee size that selection ran for (0 when the proposal has
+    /// no committee or was skipped), so the caller can refund weight from it. The stored
+    /// `ProposalCommitteeSize` is not a substitute: a failed selection rolls it back although
+    /// the per-member work was done.
+    pub(crate) fn activate_next_proposal_inner() -> Result<u32, DispatchError> {
         ensure!(ActiveInternalProposal::<T>::get().is_none(), Error::<T>::ProposalAlreadyActive);
 
         // The proposal is loaded once, before dequeuing, and threaded through activation.
@@ -128,13 +133,14 @@ impl<T: Config> Pallet<T> {
             Self::dequeue()?;
             ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Unknown);
             Self::deposit_event(Event::ProposalActivationSkipped { proposal_id });
-            return Ok(())
+            return Ok(0)
         };
 
         // Decided before dequeuing: a proposal whose committee cannot be built yet (index
         // backfilling, too few nodes) stays at the head and is retried later. The policy is
         // never silently changed to "everyone votes".
         let committee = Self::committee_ready_for(&proposal)?;
+        let committee_size = committee.unwrap_or(0);
 
         Self::dequeue()?;
 
@@ -155,7 +161,7 @@ impl<T: Config> Pallet<T> {
             );
             Self::deposit_event(Event::CommitteeSelectionFailed { proposal_id, error });
             Self::finalise_voting(proposal_id, &proposal, ProposalStatusEnum::Cancelled)?;
-            return Ok(())
+            return Ok(committee_size)
         }
 
         Proposals::<T>::insert(proposal_id, &proposal);
@@ -174,12 +180,12 @@ impl<T: Config> Pallet<T> {
                 e
             );
             Self::finalise_voting(proposal_id, &proposal, ProposalStatusEnum::Cancelled)?;
-            return Ok(())
+            return Ok(committee_size)
         }
 
         Self::deposit_event(Event::ProposalActivated { proposal_id });
 
-        Ok(())
+        Ok(committee_size)
     }
 
     pub fn proposal_expired(current_block: BlockNumberFor<T>, proposal: &Proposal<T>) -> bool {

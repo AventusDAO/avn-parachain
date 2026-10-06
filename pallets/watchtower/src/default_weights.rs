@@ -53,6 +53,9 @@ pub trait WeightInfo {
 	fn activate_next_proposal_hook_fails(k: u32, ) -> Weight;
 	fn demote_queue_head() -> Weight;
 	fn cancel_queue_head() -> Weight;
+	fn cleanup_finished_proposal() -> Weight;
+	fn cleanup_voters_page(n: u32, ) -> Weight;
+	fn cleanup_committee_page(n: u32, ) -> Weight;
 }
 
 /// Weights for pallet_watchtower using the Substrate node and recommended hardware.
@@ -450,6 +453,31 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(7_u64))
 			.saturating_add(T::DbWeight::get().writes(4_u64))
 	}
+	// PLACEHOLDER until regenerated: `ProposalsToRemove` head read, both prefix checks and
+	// the removal of `Proposals`, `Votes`, `ProposalCommitteeSize` and `ProposalsToRemove`.
+	fn cleanup_finished_proposal() -> Weight {
+		Weight::from_parts(40_000_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
+	}
+	// PLACEHOLDER until regenerated: `n` `Voters` entries collected then removed.
+	fn cleanup_voters_page(n: u32, ) -> Weight {
+		Weight::from_parts(5_000_000, 3561)
+			.saturating_add(Weight::from_parts(5_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(n.into())))
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(n.into()))
+	}
+	// PLACEHOLDER until regenerated: `n` `ProposalCommittee` entries collected then removed.
+	fn cleanup_committee_page(n: u32, ) -> Weight {
+		Weight::from_parts(5_000_000, 3561)
+			.saturating_add(Weight::from_parts(5_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(n.into())))
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(n.into()))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -845,5 +873,30 @@ impl WeightInfo for () {
 		Weight::from_parts(59_511_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(7_u64))
 			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	// PLACEHOLDER until regenerated: `ProposalsToRemove` head read, both prefix checks and
+	// the removal of `Proposals`, `Votes`, `ProposalCommitteeSize` and `ProposalsToRemove`.
+	fn cleanup_finished_proposal() -> Weight {
+		Weight::from_parts(40_000_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+	}
+	// PLACEHOLDER until regenerated: `n` `Voters` entries collected then removed.
+	fn cleanup_voters_page(n: u32, ) -> Weight {
+		Weight::from_parts(5_000_000, 3561)
+			.saturating_add(Weight::from_parts(5_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(n.into())))
+			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(n.into()))
+	}
+	// PLACEHOLDER until regenerated: `n` `ProposalCommittee` entries collected then removed.
+	fn cleanup_committee_page(n: u32, ) -> Weight {
+		Weight::from_parts(5_000_000, 3561)
+			.saturating_add(Weight::from_parts(5_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(n.into())))
+			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(n.into()))
 	}
 }

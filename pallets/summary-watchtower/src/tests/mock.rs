@@ -59,6 +59,8 @@ impl pallet_watchtower::Config for TestRuntime {
     type MinCommitteeSize = ConstU32<2>;
     type MaxCommitteeSize = ConstU32<5>;
     type Randomness = TestRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
 }
 
 pub struct TestRandomness;
