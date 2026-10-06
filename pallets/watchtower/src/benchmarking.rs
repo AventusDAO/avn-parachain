@@ -17,6 +17,15 @@ fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::Runt
     assert_eq!(event, &system_event);
 }
 
+/// The rule v0 proposals implicitly had for each source.
+fn legacy_decision_rule(is_internal: bool) -> DecisionRule {
+    if is_internal {
+        DecisionRule::ExpireUnresolved
+    } else {
+        DecisionRule::SimpleMajorityOnExpiry
+    }
+}
+
 fn create_proposal<T: Config>(
     external_ref_id: u32,
     created_at: BlockNumberFor<T>,
@@ -53,7 +62,7 @@ fn create_proposal<T: Config>(
         payload: Payload::Inline(inner_payload),
         source,
         proposer,
-        decision_rule: DecisionRule::SimpleMajority,
+        decision_rule: legacy_decision_rule(is_internal),
         created_at,
         vote_duration: if let Some(end) = end_at {
             end.saturating_sub(created_at).saturated_into::<u32>()
@@ -61,6 +70,7 @@ fn create_proposal<T: Config>(
             MinVotingPeriod::<T>::get().saturated_into::<u32>()
         },
         end_at,
+        committee_size: None,
     }
 }
 
@@ -84,9 +94,10 @@ fn create_proposal_request<T: Config>(
         threshold: Perbill::from_percent(50),
         payload: RawPayload::Uri(external_ref_id.encode()),
         source,
-        decision_rule: DecisionRule::SimpleMajority,
+        decision_rule: legacy_decision_rule(is_internal),
         created_at,
         vote_duration: Some(MinVotingPeriod::<T>::get().saturated_into::<u32>() + 1u32),
+        committee_size: None,
     }
 }
 
@@ -97,6 +108,11 @@ fn set_active_proposal<T: Config>(proposal_id: H256, created_at: u32, length: u3
     Proposals::<T>::insert(proposal_id, &active_proposal);
     ActiveInternalProposal::<T>::put(proposal_id);
     ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Active);
+    // Vote benchmarks measure the committee-gated path: a 10-node committee that includes the
+    // benchmark voter, so `*_end_proposal` thresholds are measured against 10 members.
+    ProposalCommitteeSize::<T>::insert(proposal_id, 10u32);
+    let (_, voter) = get_voter::<T>();
+    ProposalCommittee::<T>::insert(proposal_id, &voter, ());
     active_proposal
 }
 
@@ -107,6 +123,15 @@ fn queue_proposal<T: Config>(proposal_id: H256, created_at: u32) -> Proposal<T> 
     Pallet::<T>::enqueue(proposal_id).unwrap();
     ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Queued);
     queued_proposal
+}
+
+/// Makes an already stored proposal request a committee of `size` nodes.
+fn request_committee<T: Config>(proposal_id: H256, size: u32) -> Proposal<T> {
+    Proposals::<T>::mutate(proposal_id, |p| {
+        let p = p.as_mut().expect("proposal stored by the benchmark setup");
+        p.committee_size = Some(size);
+        p.clone()
+    })
 }
 
 /// Queues a Summary proposal whose payload the summary-watchtower hook cannot decode, so that
@@ -407,19 +432,29 @@ benchmarks! {
         assert!(ActiveInternalProposal::<T>::get().is_none());
     }
 
+    // `k` is the requested committee size, ranged over the values a proposal may actually
+    // request. The measured cost is linear in the effective size `min(k, nodes)`: the benchmark
+    // runtime exposes `MaxCommitteeSize` nodes, the test mock 10.
     activate_next_proposal {
+        let k in (T::MinCommitteeSize::get()) .. T::MaxCommitteeSize::get();
         <frame_system::Pallet<T>>::set_block_number(100u32.into());
 
         let queued_proposal_id = H256::repeat_byte(7);
-        let queued_proposal = queue_proposal::<T>(queued_proposal_id, 100u32);
+        let _ = queue_proposal::<T>(queued_proposal_id, 100u32);
+        let queued_proposal = request_committee::<T>(queued_proposal_id, k);
         let expected_end: BlockNumberFor<T> =
             (100u32 + queued_proposal.vote_duration).into();
+        let expected_size = k.min(T::Watchtowers::get_indexed_nodes_count());
     }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
     verify {
         assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
         assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
         assert!(Proposals::<T>::get(queued_proposal_id).unwrap().end_at == Some(expected_end));
         assert!(Head::<T>::get() == Tail::<T>::get());
+        assert!(ProposalCommitteeSize::<T>::get(queued_proposal_id) == Some(expected_size));
+        assert!(
+            ProposalCommittee::<T>::iter_prefix(queued_proposal_id).count() as u32 == expected_size
+        );
         assert_last_event::<T>(
             Event::ProposalActivated { proposal_id: queued_proposal_id }.into()
         );
@@ -429,15 +464,45 @@ benchmarks! {
     // activated. In the runtime this runs the cancel path; the test mock's hooks always
     // accept, so verify only what holds in both cases.
     activate_next_proposal_hook_fails {
+        let k in (T::MinCommitteeSize::get()) .. T::MaxCommitteeSize::get();
         <frame_system::Pallet<T>>::set_block_number(100u32.into());
 
         let queued_proposal_id = H256::repeat_byte(7);
         let _ = queue_proposal_with_invalid_payload::<T>(queued_proposal_id, 100u32);
+        let _ = request_committee::<T>(queued_proposal_id, k);
     }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
     verify {
         // Dequeued either way.
         assert!(Head::<T>::get() == Tail::<T>::get());
         assert!(ProposalStatus::<T>::get(queued_proposal_id) != ProposalStatusEnum::Queued);
+    }
+
+    demote_queue_head {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+        let first = H256::repeat_byte(7);
+        let second = H256::repeat_byte(8);
+        let _ = queue_proposal::<T>(first, 100u32);
+        let _ = queue_proposal::<T>(second, 100u32);
+    }: demote_queue_head(RawOrigin::Root, first)
+    verify {
+        assert!(Pallet::<T>::peek_front_id().unwrap() == Some(second));
+        assert_last_event::<T>(
+            Event::QueueHeadDemoted { demoted: first, promoted: second }.into()
+        );
+    }
+
+    cancel_queue_head {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+        let first = H256::repeat_byte(7);
+        let second = H256::repeat_byte(8);
+        let _ = queue_proposal::<T>(first, 100u32);
+        let _ = queue_proposal::<T>(second, 100u32);
+    }: cancel_queue_head(RawOrigin::Root, first)
+    verify {
+        assert!(ProposalStatus::<T>::get(first) == ProposalStatusEnum::Cancelled);
+        assert!(ProposalsToRemove::<T>::contains_key(first));
+        assert!(Pallet::<T>::peek_front_id().unwrap() == Some(second));
+        assert_last_event::<T>(Event::QueueHeadCancelled { proposal_id: first }.into());
     }
 
 }

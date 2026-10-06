@@ -32,6 +32,11 @@ pub fn to_proposal<T: Config>(
         return Err(Error::<T>::VotingPeriodTooShort)
     }
 
+    if let Some(size) = request.committee_size {
+        ensure!(size >= T::MinCommitteeSize::get(), Error::<T>::CommitteeSizeTooSmall);
+        ensure!(size <= T::MaxCommitteeSize::get(), Error::<T>::CommitteeSizeTooLarge);
+    }
+
     let proposal = Proposal {
         title: BoundedVec::try_from(request.title).map_err(|_| Error::<T>::InvalidTitle)?,
         payload: to_payload(request.payload)?,
@@ -44,6 +49,7 @@ pub fn to_proposal<T: Config>(
         vote_duration,
         // This gets updated when the proposal is activated
         end_at: None,
+        committee_size: request.committee_size,
     };
 
     if !proposal.is_valid(current_block) {
@@ -92,6 +98,10 @@ pub struct Proposal<T: Config> {
     pub created_at: BlockNumberFor<T>,
     pub vote_duration: u32,
     pub end_at: Option<BlockNumberFor<T>>,
+    /// Requested number of randomly selected voters. `None` means every node votes and the
+    /// threshold is measured against the live node count. The effective size, fixed at
+    /// activation, lives in `ProposalCommitteeSize`.
+    pub committee_size: Option<u32>,
 }
 
 impl<T: Config> Proposal<T> {
@@ -116,7 +126,11 @@ impl<T: Config> Proposal<T> {
                 !data.is_empty() && matches!(self.source, ProposalSource::External),
         };
 
-        base_is_valid && payload_valid
+        // Committees are only meaningful for node-voted (internal) proposals.
+        let committee_valid =
+            self.committee_size.is_none() || matches!(self.source, ProposalSource::Internal(_));
+
+        base_is_valid && payload_valid && committee_valid
     }
 }
 
@@ -138,6 +152,13 @@ pub trait NodesInterface<AccountId, SignerId> {
 
     /// Get a local watchtower account and its signing key, if available on this node
     fn get_node_from_local_signing_keys() -> Option<(AccountId, SignerId)>;
+
+    /// Node at `index` in the dense node index, used for random sampling
+    fn get_node_at_index(index: u32) -> Option<AccountId>;
+
+    /// Length of the dense node index. Lags `get_authorized_watchtowers_count` while nodes
+    /// registered before the index existed are still being backfilled.
+    fn get_indexed_nodes_count() -> u32;
 }
 
 #[derive(

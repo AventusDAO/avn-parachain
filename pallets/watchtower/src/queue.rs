@@ -72,6 +72,27 @@ impl<T: Config> Pallet<T> {
         Ok(Some(proposal_id))
     }
 
+    /// Swaps the head of the queue with the item behind it. Returns `(old head, new head)`.
+    /// Needs at least two queued items.
+    pub(crate) fn demote_head() -> Result<(ProposalId, ProposalId), Error<T>> {
+        ensure!(Self::len() >= 2, Error::<T>::QueueTooShort);
+
+        let head = Head::<T>::get();
+        let cap = Self::cap() as u64;
+        let first_slot = (QueueId::default(), (head % cap) as u32);
+        let second_slot = (QueueId::default(), ((head + 1) % cap) as u32);
+
+        let first =
+            InternalProposalQueue::<T>::get(first_slot).ok_or(Error::<T>::QueueCorruptState)?;
+        let second =
+            InternalProposalQueue::<T>::get(second_slot).ok_or(Error::<T>::QueueCorruptState)?;
+
+        InternalProposalQueue::<T>::insert(first_slot, second);
+        InternalProposalQueue::<T>::insert(second_slot, first);
+
+        Ok((first, second))
+    }
+
     pub fn peek_front() -> Result<Option<(ProposalId, Proposal<T>)>, Error<T>> {
         let Some(proposal_id) = Self::peek_front_id()? else {
             return Ok(None);

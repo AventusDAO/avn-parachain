@@ -48,6 +48,7 @@ use sp_runtime::{
     DispatchError, Perbill, Perquintill, Saturating,
 };
 
+pub mod node_index;
 pub mod offchain;
 pub mod reward;
 pub mod stake;
@@ -77,6 +78,9 @@ mod test_move_nodes;
 #[cfg(test)]
 #[path = "tests/test_node_deregistration.rs"]
 mod test_node_deregistration;
+#[cfg(test)]
+#[path = "tests/test_node_index.rs"]
+mod test_node_index;
 #[cfg(test)]
 #[path = "tests/test_node_registration.rs"]
 mod test_node_registration;
@@ -109,6 +113,8 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
 pub const MAX_NODES: u32 = 64;
+/// Max nodes the registrar can add to the dense node index per `backfill_node_index` call.
+pub const MAX_BACKFILL_NODES: u32 = 250;
 pub const MAX_STAKE_CHANGES_PER_PERIOD: u32 = 256;
 
 const PALLET_ID: &'static [u8; 12] = b"node-manager";
@@ -141,6 +147,8 @@ pub(crate) type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
 pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 /// Max nodes per deregistration call
 pub type MaxNodes = ConstU32<MAX_NODES>;
+/// Max nodes per `backfill_node_index` call
+pub type MaxBackfillNodes = ConstU32<MAX_BACKFILL_NODES>;
 /// Max stake changes per period
 pub type MaxStakeChangesPerPeriod = ConstU32<MAX_STAKE_CHANGES_PER_PERIOD>;
 
@@ -172,6 +180,20 @@ pub mod pallet {
     /// Total registered nodes
     #[pallet::storage]
     pub type TotalRegisteredNodes<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    /// Dense index -> node. Positions `0..NodeIndexCount` are always populated. Used to sample
+    /// nodes at random without iterating the registry.
+    #[pallet::storage]
+    pub type NodeIndex<T: Config> = StorageMap<_, Twox64Concat, u32, NodeId<T>, OptionQuery>;
+
+    /// Node -> position in `NodeIndex`. Reverse lookup used for swap-remove.
+    #[pallet::storage]
+    pub type NodeIndexOf<T: Config> = StorageMap<_, Blake2_128Concat, NodeId<T>, u32, OptionQuery>;
+
+    /// Length of the dense index. Equals `TotalRegisteredNodes` once the backfill of
+    /// pre-existing nodes (`backfill_node_index`) is complete.
+    #[pallet::storage]
+    pub type NodeIndexCount<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     /// Owner to node mapping
     #[pallet::storage]
@@ -514,6 +536,10 @@ pub mod pallet {
         },
         /// Stake moved from multiple source nodes into a single destination node
         StakeMoved { owner: T::AccountId, to_node: NodeId<T>, total_amount: BalanceOf<T> },
+        /// Some pre-existing nodes were added to the dense node index; more remain
+        NodeIndexBackfillProgress { indexed: u32, total: u32 },
+        /// Every registered node is now in the dense node index
+        NodeIndexBackfillCompleted { count: u32 },
     }
 
     #[pallet::error]
@@ -624,6 +650,12 @@ pub mod pallet {
         DuplicateNodeInList,
         /// Auto-stake window has expired for this node
         AutoStakeExpired,
+        /// Every registered node is already in the dense node index
+        NodeIndexBackfillComplete,
+        /// The node is already in the dense node index
+        NodeAlreadyIndexed,
+        /// The list holds more nodes than remain to be indexed
+        TooManyNodesToIndex,
     }
 
     #[pallet::config]
@@ -1393,10 +1425,36 @@ pub mod pallet {
 
             Self::do_move_nodes_with_stake(&current_owner, &new_owner, &nodes, total_stake_to_move)
         }
+
+        /// Add nodes that were registered before the dense node index existed to the index.
+        ///
+        /// Registrar only. Every node must be registered and not yet indexed, otherwise the whole
+        /// call fails. Nodes registered after the index was introduced are indexed on
+        /// registration and must not be passed here. The registrar builds each list offchain as
+        /// `NodeRegistry` keys minus `NodeIndexOf` keys. Emits `NodeIndexBackfillCompleted` once
+        /// `NodeIndexCount` reaches `TotalRegisteredNodes`.
+        #[pallet::call_index(17)]
+        #[pallet::weight(<T as Config>::WeightInfo::backfill_node_index(nodes.len() as u32))]
+        pub fn backfill_node_index(
+            origin: OriginFor<T>,
+            nodes: BoundedVec<NodeId<T>, MaxBackfillNodes>,
+        ) -> DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(registrar == sender, Error::<T>::OriginNotRegistrar);
+
+            Self::do_backfill_node_index(&nodes)
+        }
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        #[cfg(feature = "try-runtime")]
+        fn try_state(_n: BlockNumberFor<T>) -> Result<(), sp_runtime::TryRuntimeError> {
+            Self::check_node_index_invariants().map_err(sp_runtime::TryRuntimeError::Other)
+        }
+
         // Keep this logic light and bounded
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
             if !RewardEnabled::<T>::get() {
@@ -1647,6 +1705,7 @@ pub mod pallet {
                 );
 
                 let info = NodeRegistry::<T>::take(node).ok_or(Error::<T>::NodeNotRegistered)?;
+                Self::index_remove(node);
                 Self::remove_signing_key_index(node, &info.signing_key)?;
 
                 <OwnedNodes<T>>::remove(owner, node);
@@ -1917,6 +1976,7 @@ pub mod pallet {
                     ),
                 ),
             );
+            Self::index_insert(&node);
 
             Self::deposit_event(Event::NodeRegistered { owner, node });
 

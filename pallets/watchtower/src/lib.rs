@@ -34,13 +34,16 @@ use sp_runtime::{
 use sp_std::prelude::*;
 pub use sp_watchtower::*;
 
-pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 pub const DEFAULT_VOTING_PERIOD_BLOCKS: u32 = 100;
 pub const WATCHTOWER_UNSIGNED_VOTE_CONTEXT: &'static [u8] = b"wt_unsigned_vote";
 pub const WATCHTOWER_FINALISE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_finalise_proposal";
 pub const WATCHTOWER_ACTIVATE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_activate_proposal";
 pub const UNSIGNED_VOTE_NOT_VALID: u8 = 2;
 pub const ACTIVATE_PROPOSAL_NOT_VALID: u8 = 3;
+/// The queue head requests a committee that cannot be built yet (index backfilling or too few
+/// nodes). Activation is deferred, not degraded.
+pub const COMMITTEE_NOT_READY: u8 = 4;
 /// Offchain worker lock id used to make sure activation is attempted at most once per block.
 pub const ACTIVATION_OCW_ID: &'static [u8] = b"watchtower_activation";
 
@@ -50,6 +53,9 @@ pub mod vote;
 pub use types::*;
 pub mod queue;
 pub use queue::*;
+pub mod committee;
+pub use committee::*;
+pub mod migration;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
@@ -66,6 +72,9 @@ mod add_proposal;
 #[cfg(test)]
 #[path = "tests/admin.rs"]
 mod admin;
+#[cfg(test)]
+#[path = "tests/committee.rs"]
+mod committee_tests;
 #[cfg(test)]
 #[path = "tests/mock.rs"]
 mod mock;
@@ -134,6 +143,18 @@ pub mod pallet {
         /// Maximum length of Internal proposals
         #[pallet::constant]
         type MaxInternalProposalLen: Get<u32>;
+
+        /// Smallest committee a proposal may request, and the smallest effective committee
+        /// that may be activated. Stops a handful of nodes deciding a proposal.
+        #[pallet::constant]
+        type MinCommitteeSize: Get<u32>;
+
+        /// Largest committee a proposal may request. Bounds the activation weight.
+        #[pallet::constant]
+        type MaxCommitteeSize: Get<u32>;
+
+        /// Seed source for committee selection.
+        type Randomness: frame_support::traits::Randomness<Self::Hash, BlockNumberFor<Self>>;
     }
 
     #[pallet::type_value]
@@ -174,6 +195,24 @@ pub mod pallet {
         bool,         // voted in_favor or against
         ValueQuery,
     >;
+
+    /// Nodes selected to vote on a proposal. Only populated for proposals with a committee.
+    #[pallet::storage]
+    pub type ProposalCommittee<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        ProposalId,
+        Blake2_128Concat,
+        T::AccountId, // Committee member
+        (),
+        OptionQuery,
+    >;
+
+    /// Effective committee size, fixed at activation. Present iff the proposal has a committee.
+    /// It is the threshold denominator and a cheap "has committee" flag.
+    #[pallet::storage]
+    pub type ProposalCommitteeSize<T: Config> =
+        StorageMap<_, Blake2_128Concat, ProposalId, u32, OptionQuery>;
 
     /// The currently active internal proposal being voted on, if any
     #[pallet::storage]
@@ -230,6 +269,14 @@ pub mod pallet {
         ProposalActivated { proposal_id: ProposalId },
         /// The id at the head of the queue had no proposal data and was skipped
         ProposalActivationSkipped { proposal_id: ProposalId },
+        /// A committee of `size` nodes was selected to vote on the proposal
+        CommitteeSelected { proposal_id: ProposalId, size: u32 },
+        /// The committee could not be built (corrupt node index); the proposal was cancelled
+        CommitteeSelectionFailed { proposal_id: ProposalId, error: DispatchError },
+        /// The queue head was moved one place back by an admin; `promoted` is the new head
+        QueueHeadDemoted { demoted: ProposalId, promoted: ProposalId },
+        /// The queue head was cancelled by an admin without being activated
+        QueueHeadCancelled { proposal_id: ProposalId },
     }
 
     #[pallet::error]
@@ -286,6 +333,20 @@ pub mod pallet {
         ProposalAlreadyActive,
         /// The proposal is not at the head of the internal proposal queue
         ProposalNotNextInQueue,
+        /// The voter is not in the committee selected for this proposal
+        NotInCommittee,
+        /// The requested committee is smaller than `MinCommitteeSize`
+        CommitteeSizeTooSmall,
+        /// The requested committee is larger than `MaxCommitteeSize`
+        CommitteeSizeTooLarge,
+        /// The dense node index is still being backfilled; a committee cannot be sampled yet
+        NodeIndexNotReady,
+        /// Fewer than `MinCommitteeSize` nodes are available for the committee
+        NotEnoughNodesForCommittee,
+        /// The dense node index is inconsistent (hole or duplicate)
+        NodeIndexCorrupt,
+        /// The internal proposal queue needs at least two entries for this operation
+        QueueTooShort,
     }
 
     #[pallet::call]
@@ -481,22 +542,71 @@ pub mod pallet {
         /// Unsigned. Submitted by the offchain worker of collators once the previous internal
         /// proposal has been finalised. `validate_unsigned` only accepts locally produced
         /// copies, so this cannot be submitted via RPC or gossip.
+        ///
+        /// This is the only place internal proposals are activated, so it also carries the
+        /// committee selection cost. The weight is charged for `MaxCommitteeSize` members and
+        /// refunded to the actual committee size.
         #[pallet::call_index(7)]
-        #[pallet::weight(
-            <T as Config>::WeightInfo::activate_next_proposal()
-            .max(<T as Config>::WeightInfo::activate_next_proposal_hook_fails())
-        )]
+        #[pallet::weight(Pallet::<T>::activation_weight(T::MaxCommitteeSize::get()))]
         pub fn activate_next_proposal(
             origin: OriginFor<T>,
             proposal_id: ProposalId,
-        ) -> DispatchResult {
+        ) -> DispatchResultWithPostInfo {
             ensure_none(origin)?;
             ensure!(
                 Self::peek_front_id()? == Some(proposal_id),
                 Error::<T>::ProposalNotNextInQueue
             );
 
-            Self::activate_next_proposal_inner()
+            Self::activate_next_proposal_inner()?;
+
+            let committee_size = ProposalCommitteeSize::<T>::get(proposal_id).unwrap_or(0);
+            Ok(Some(Self::activation_weight(committee_size)).into())
+        }
+
+        /// Move the proposal at the head of the internal queue one place back, so the proposal
+        /// behind it is activated first.
+        ///
+        /// Root only. Unblocks a head whose committee cannot be selected yet (for example it
+        /// requests a committee while the node index is still being backfilled) when a proposal
+        /// behind it could proceed. Needs at least two queued proposals.
+        #[pallet::call_index(8)]
+        #[pallet::weight(<T as Config>::WeightInfo::demote_queue_head())]
+        pub fn demote_queue_head(origin: OriginFor<T>, proposal_id: ProposalId) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(
+                Self::peek_front_id()? == Some(proposal_id),
+                Error::<T>::ProposalNotNextInQueue
+            );
+
+            let (demoted, promoted) = Self::demote_head()?;
+            Self::deposit_event(Event::QueueHeadDemoted { demoted, promoted });
+
+            Ok(())
+        }
+
+        /// Cancel the proposal at the head of the internal queue without activating it.
+        ///
+        /// Root only. The consumer is told through `on_voting_completed` with `Cancelled` (the
+        /// summary pallet sends the root to admin review) and the queue moves on. Meant for a
+        /// head whose committee can never be built, for example one that requests a committee
+        /// while fewer than `MinCommitteeSize` nodes are registered. The active proposal, if
+        /// any, is untouched.
+        #[pallet::call_index(9)]
+        #[pallet::weight(<T as Config>::WeightInfo::cancel_queue_head())]
+        pub fn cancel_queue_head(origin: OriginFor<T>, proposal_id: ProposalId) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(
+                Self::peek_front_id()? == Some(proposal_id),
+                Error::<T>::ProposalNotNextInQueue
+            );
+
+            let proposal_id = Self::dequeue()?;
+            let proposal = Proposals::<T>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
+            Self::finalise_voting(proposal_id, &proposal, ProposalStatusEnum::Cancelled)?;
+            Self::deposit_event(Event::QueueHeadCancelled { proposal_id });
+
+            Ok(())
         }
     }
 
@@ -526,6 +636,12 @@ pub mod pallet {
                     match Self::peek_front_id() {
                         Ok(Some(head)) if head == *proposal_id => {},
                         _ => return InvalidTransaction::Custom(ACTIVATE_PROPOSAL_NOT_VALID).into(),
+                    }
+
+                    // A head whose committee cannot be built yet stays queued. Keep the
+                    // activation out of the block rather than include a failing tx.
+                    if Self::head_committee_ready(*proposal_id).is_err() {
+                        return InvalidTransaction::Custom(COMMITTEE_NOT_READY).into()
                     }
 
                     ValidTransaction::with_tag_prefix("wt_activateProposal")
@@ -590,6 +706,19 @@ pub mod pallet {
                 },
             };
 
+            // The head may request a committee the node index cannot provide yet (backfill in
+            // progress or too few nodes). `validate_unsigned` would reject the tx anyway; skip
+            // it here and say why. Root can `demote_queue_head` to let the proposal behind it
+            // go first.
+            if let Err(e) = Self::head_committee_ready(proposal_id) {
+                log::warn!(
+                    "⚠️ Watchtower activation OCW: proposal {:?} cannot be activated yet: {:?}",
+                    proposal_id,
+                    e
+                );
+                return
+            }
+
             // Writes to offchain storage, so it comes after the read-only checks. At most one
             // attempt per block, even if the OCW re-runs for the same height.
             if OcwLock::record_block_run(now, ACTIVATION_OCW_ID.to_vec()).is_err() {
@@ -615,6 +744,21 @@ pub mod pallet {
             Ok(<AdminAccount<T>>::get().ok_or(Error::<T>::AdminAccountNotSet)?)
         }
 
+        /// Worst case of the two `activate_next_proposal` outcomes for a committee of `k`.
+        fn activation_weight(k: u32) -> Weight {
+            <T as Config>::WeightInfo::activate_next_proposal(k)
+                .max(<T as Config>::WeightInfo::activate_next_proposal_hook_fails(k))
+        }
+
+        /// Readiness of the committee requested by `proposal_id` (expected to be the queue head).
+        /// Proposals without a committee, or without data, are always ready.
+        pub(crate) fn head_committee_ready(proposal_id: ProposalId) -> Result<(), Error<T>> {
+            match Proposals::<T>::get(proposal_id) {
+                Some(proposal) => Self::committee_ready_for(&proposal).map(|_| ()),
+                None => Ok(()),
+            }
+        }
+
         fn add_proposal(
             proposer: Option<T::AccountId>,
             proposal_request: ProposalRequest,
@@ -634,18 +778,14 @@ pub mod pallet {
 
             let status: ProposalStatusEnum;
             if let ProposalSource::Internal(_) = proposal.source {
-                // Activate immediately only if nothing is active AND nothing is waiting,
-                // otherwise this proposal would jump ahead of already queued ones.
-                if ActiveInternalProposal::<T>::get().is_none() && Self::is_empty() {
-                    Self::activate_proposal(proposal_id, &mut proposal, current_block);
-                    ActiveInternalProposal::<T>::put(proposal_id);
-                    status = ProposalStatusEnum::Active;
-                } else {
-                    Self::enqueue(proposal_id)?;
-                    status = ProposalStatusEnum::Queued;
-                }
+                // Internal proposals are always queued. Activation, including committee
+                // selection, happens in `activate_next_proposal` (submitted by the collator
+                // OCW) so its weight never lands inside the submitting extrinsic.
+                Self::enqueue(proposal_id)?;
+                status = ProposalStatusEnum::Queued;
             } else {
-                Self::activate_proposal(proposal_id, &mut proposal, current_block);
+                // External proposals never have a committee, so this cannot fail.
+                Self::activate_proposal(proposal_id, &mut proposal, current_block, None)?;
                 status = ProposalStatusEnum::Active;
             }
 
@@ -690,6 +830,10 @@ pub mod pallet {
                         T::Watchtowers::is_authorized_watchtower(voter),
                         Error::<T>::UnauthorizedVoter
                     );
+                    ensure!(
+                        Self::is_committee_member(proposal_id, voter),
+                        Error::<T>::NotInCommittee
+                    );
 
                     // This should not happen but just in case (defensive programming)
                     ensure!(
@@ -727,9 +871,8 @@ pub mod pallet {
                 vote_weight,
             });
 
-            if let Some(result) =
-                Self::get_finalised_consensus_result(proposal_id, &proposal, current_block)
-            {
+            let expired = Self::proposal_expired(current_block, &proposal);
+            if let Some(result) = Self::decide(proposal_id, &proposal, expired) {
                 // Consensus has been reached, finalise voting
                 Self::finalise_voting(proposal_id, &proposal, result)?;
                 return Ok(true)
@@ -802,19 +945,38 @@ pub mod pallet {
                 Voters::<T>::remove(&proposal_id, who);
             }
 
-            // Check if we have finished removing all votes
-            if meter.try_consume(dbw.reads(1)).is_err() {
+            // Same two-step, metered removal for the committee members (if any).
+            let mut members_to_delete: Vec<T::AccountId> = Vec::new();
+            for (who, _) in ProposalCommittee::<T>::iter_prefix(&proposal_id).take(MAX_VOTERS) {
+                if meter.try_consume(dbw.reads(1)).is_err() {
+                    break
+                }
+                members_to_delete.push(who);
+            }
+
+            for who in members_to_delete.iter() {
+                if meter.try_consume(dbw.writes(1)).is_err() {
+                    break
+                }
+                ProposalCommittee::<T>::remove(&proposal_id, who);
+            }
+
+            // Check if we have finished removing all votes and committee members
+            if meter.try_consume(dbw.reads(2)).is_err() {
                 return meter.consumed()
             }
 
-            if Voters::<T>::iter_prefix(proposal_id).next().is_none() {
+            if Voters::<T>::iter_prefix(proposal_id).next().is_none() &&
+                ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_none()
+            {
                 // We have removed all votes, now we can remove the proposal and its data
-                if meter.try_consume(dbw.writes(4)).is_err() {
+                if meter.try_consume(dbw.writes(5)).is_err() {
                     return meter.consumed()
                 }
 
                 Proposals::<T>::remove(proposal_id);
                 Votes::<T>::remove(proposal_id);
+                ProposalCommitteeSize::<T>::remove(proposal_id);
                 ProposalsToRemove::<T>::remove(proposal_id);
 
                 Self::deposit_event(Event::ProposalCleaned { proposal_id });
@@ -833,6 +995,12 @@ pub mod pallet {
             ensure!(
                 ActiveInternalProposal::<T>::get() == Some(proposal_id),
                 Error::<T>::InvalidProposalForUnsignedVote
+            );
+
+            // Reject non-members before the signature check so they never reach the pool.
+            ensure!(
+                Self::is_committee_member(proposal_id, &watchtower),
+                Error::<T>::NotInCommittee
             );
 
             let voter_signing_key = match T::Watchtowers::get_node_signing_key(&watchtower) {
@@ -868,6 +1036,18 @@ pub mod pallet {
             proposal: ProposalRequest,
         ) -> DispatchResult {
             Self::add_proposal(proposer, proposal)
+        }
+
+        fn min_committee_size() -> u32 {
+            T::MinCommitteeSize::get()
+        }
+
+        fn max_committee_size() -> u32 {
+            T::MaxCommitteeSize::get()
+        }
+
+        fn ensure_committee_ready(size: u32) -> DispatchResult {
+            Self::committee_ready(size).map(|_| ()).map_err(Into::into)
         }
     }
 

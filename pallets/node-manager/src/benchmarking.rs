@@ -850,6 +850,30 @@ benchmarks! {
             stake: stake_per_node,
         }.into());
     }
+
+    backfill_node_index {
+        let n in 1 .. MAX_BACKFILL_NODES;
+        let registrar: T::AccountId = account("registrar", 0, 0);
+        set_registrar::<T>(registrar.clone());
+        let owner: T::AccountId = account("owner", 0, 0);
+
+        // Nodes written straight into the registry, as if registered before the index existed.
+        let already_indexed = <NodeIndexCount<T>>::get();
+        let mut nodes: Vec<NodeId<T>> = Vec::new();
+        for i in 0..n {
+            let node: NodeId<T> = account("unindexed", i, 0);
+            register_new_node::<T>(node.clone(), owner.clone(), i);
+            nodes.push(node);
+        }
+        <TotalRegisteredNodes<T>>::put(already_indexed + n);
+    }: backfill_node_index(RawOrigin::Signed(registrar), BoundedVec::truncate_from(nodes.clone()))
+    verify {
+        assert!(<NodeIndexCount<T>>::get() == already_indexed + n);
+        for (i, node) in nodes.iter().enumerate() {
+            assert!(<NodeIndexOf<T>>::get(node) == Some(already_indexed + i as u32));
+        }
+        assert_last_event::<T>(Event::NodeIndexBackfillCompleted { count: already_indexed + n }.into());
+    }
 }
 
 impl_benchmark_test_suite!(

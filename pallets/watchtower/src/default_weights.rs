@@ -49,8 +49,10 @@ pub trait WeightInfo {
 	fn set_admin_config_account() -> Weight;
 	fn active_proposal_expiry_status() -> Weight;
 	fn finalise_expired_voting() -> Weight;
-	fn activate_next_proposal() -> Weight;
-	fn activate_next_proposal_hook_fails() -> Weight;
+	fn activate_next_proposal(k: u32, ) -> Weight;
+	fn activate_next_proposal_hook_fails(k: u32, ) -> Weight;
+	fn demote_queue_head() -> Weight;
+	fn cancel_queue_head() -> Weight;
 }
 
 /// Weights for pallet_watchtower using the Substrate node and recommended hardware.
@@ -63,7 +65,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Watchtower::ExternalRef` (r:1 w:1)
 	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	fn submit_external_proposal() -> Weight {
@@ -82,7 +84,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Watchtower::ExternalRef` (r:1 w:1)
 	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	fn signed_submit_external_proposal() -> Weight {
@@ -95,30 +97,38 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:0)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
 	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	fn vote() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
-		//  Estimated: `12308`
-		// Minimum execution time: 44_651_000 picoseconds.
-		Weight::from_parts(45_491_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(5_u64))
+		//  Measured:  `521`
+		//  Estimated: `12313`
+		// Minimum execution time: 42_644_000 picoseconds.
+		Weight::from_parts(58_129_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(7_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
@@ -131,38 +141,46 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	fn vote_end_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `889`
-		//  Estimated: `12308`
-		// Minimum execution time: 52_300_000 picoseconds.
-		Weight::from_parts(63_051_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(7_u64))
+		//  Measured:  `1126`
+		//  Estimated: `12313`
+		// Minimum execution time: 62_424_000 picoseconds.
+		Weight::from_parts(80_336_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(9_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:0)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
 	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	fn signed_vote() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
-		//  Estimated: `12308`
-		// Minimum execution time: 150_853_000 picoseconds.
-		Weight::from_parts(152_703_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(5_u64))
+		//  Measured:  `521`
+		//  Estimated: `12313`
+		// Minimum execution time: 116_452_000 picoseconds.
+		Weight::from_parts(139_074_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(7_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
@@ -175,17 +193,21 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	fn signed_vote_end_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `889`
-		//  Estimated: `12308`
-		// Minimum execution time: 128_398_000 picoseconds.
-		Weight::from_parts(149_362_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(7_u64))
+		//  Measured:  `1126`
+		//  Estimated: `12313`
+		// Minimum execution time: 139_528_000 picoseconds.
+		Weight::from_parts(201_278_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(9_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:0)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
@@ -194,17 +216,21 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	fn unsigned_vote() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
-		//  Estimated: `12308`
-		// Minimum execution time: 99_572_000 picoseconds.
-		Weight::from_parts(100_642_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(5_u64))
+		//  Measured:  `521`
+		//  Estimated: `12313`
+		// Minimum execution time: 88_238_000 picoseconds.
+		Weight::from_parts(123_095_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(7_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
@@ -219,32 +245,34 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	fn unsigned_vote_end_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `889`
-		//  Estimated: `12308`
-		// Minimum execution time: 95_030_000 picoseconds.
-		Weight::from_parts(125_403_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(7_u64))
+		//  Measured:  `1126`
+		//  Estimated: `12313`
+		// Minimum execution time: 111_391_000 picoseconds.
+		Weight::from_parts(157_306_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(9_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Votes` (r:1 w:0)
+	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
 	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
 	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
+	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	/// Storage: `Watchtower::ActiveInternalProposal` (r:0 w:1)
-	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	fn finalise_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `626`
-		//  Estimated: `12308`
-		// Minimum execution time: 34_243_000 picoseconds.
-		Weight::from_parts(42_019_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(4_u64))
+		//  Measured:  `755`
+		//  Estimated: `12313`
+		// Minimum execution time: 41_082_000 picoseconds.
+		Weight::from_parts(52_371_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:1)
@@ -272,32 +300,34 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	fn active_proposal_expiry_status() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `222`
-		//  Estimated: `12308`
-		// Minimum execution time: 11_661_000 picoseconds.
-		Weight::from_parts(11_780_000, 12308)
+		//  Measured:  `334`
+		//  Estimated: `12313`
+		// Minimum execution time: 7_652_000 picoseconds.
+		Weight::from_parts(9_620_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 	}
+	/// Storage: `Watchtower::Votes` (r:1 w:0)
+	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
 	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
 	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
+	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	/// Storage: `Watchtower::ActiveInternalProposal` (r:0 w:1)
-	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	fn finalise_expired_voting() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `225`
+		//  Measured:  `461`
 		//  Estimated: `3529`
-		// Minimum execution time: 16_158_000 picoseconds.
-		Weight::from_parts(19_036_000, 3529)
-			.saturating_add(T::DbWeight::get().reads(2_u64))
+		// Minimum execution time: 24_403_000 picoseconds.
+		Weight::from_parts(31_981_000, 3529)
+			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::Tail` (r:1 w:0)
@@ -309,19 +339,33 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:500 w:500)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:1)
 	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
-	fn activate_next_proposal() -> Weight {
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `ParachainSystem::ValidationData` (r:1 w:0)
+	/// Proof: `ParachainSystem::ValidationData` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
+	/// Storage: `System::ParentHash` (r:1 w:0)
+	/// Proof: `System::ParentHash` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// The range of component `k` is `[10, 500]`.
+	fn activate_next_proposal(k: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `386`
-		//  Estimated: `12308`
-		// Minimum execution time: 40_561_000 picoseconds.
-		Weight::from_parts(49_423_000, 12308)
-			.saturating_add(T::DbWeight::get().reads(6_u64))
-			.saturating_add(T::DbWeight::get().writes(6_u64))
+		//  Measured:  `391`
+		//  Estimated: `12313 + k * (2571 ±0)`
+		// Minimum execution time: 120_183_000 picoseconds.
+		Weight::from_parts(75_044_817, 12313)
+			// Standard Error: 29_994
+			.saturating_add(Weight::from_parts(7_454_659, 0).saturating_mul(k.into()))
+			.saturating_add(T::DbWeight::get().reads(8_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(k.into())))
+			.saturating_add(T::DbWeight::get().writes(7_u64))
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(k.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(k.into()))
 	}
 	/// Storage: `Watchtower::Tail` (r:1 w:0)
 	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
@@ -332,7 +376,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:500 w:500)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
 	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
@@ -341,14 +387,68 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	fn activate_next_proposal_hook_fails() -> Weight {
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `ParachainSystem::ValidationData` (r:1 w:0)
+	/// Proof: `ParachainSystem::ValidationData` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
+	/// Storage: `System::ParentHash` (r:1 w:0)
+	/// Proof: `System::ParentHash` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// The range of component `k` is `[10, 500]`.
+	fn activate_next_proposal_hook_fails(k: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `497`
-		//  Estimated: `12308`
-		// Minimum execution time: 59_390_000 picoseconds.
-		Weight::from_parts(81_444_000, 12308)
+		//  Measured:  `502`
+		//  Estimated: `12313 + k * (2571 ±0)`
+		// Minimum execution time: 148_555_000 picoseconds.
+		Weight::from_parts(91_082_031, 12313)
+			// Standard Error: 30_711
+			.saturating_add(Weight::from_parts(8_291_765, 0).saturating_mul(k.into()))
+			.saturating_add(T::DbWeight::get().reads(9_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(k.into())))
+			.saturating_add(T::DbWeight::get().writes(7_u64))
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(k.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(k.into()))
+	}
+	/// Storage: `Watchtower::Tail` (r:1 w:0)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:2 w:2)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	fn demote_queue_head() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `216`
+		//  Estimated: `6046`
+		// Minimum execution time: 25_084_000 picoseconds.
+		Weight::from_parts(33_135_000, 6046)
+			.saturating_add(T::DbWeight::get().reads(4_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Watchtower::Tail` (r:1 w:0)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:1)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:1 w:1)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:1 w:0)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
+	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
+	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
+	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
+	fn cancel_queue_head() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `609`
+		//  Estimated: `12313`
+		// Minimum execution time: 41_822_000 picoseconds.
+		Weight::from_parts(59_511_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(7_u64))
-			.saturating_add(T::DbWeight::get().writes(6_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
 	}
 }
 
@@ -361,7 +461,7 @@ impl WeightInfo for () {
 	/// Storage: `Watchtower::ExternalRef` (r:1 w:1)
 	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	fn submit_external_proposal() -> Weight {
@@ -380,7 +480,7 @@ impl WeightInfo for () {
 	/// Storage: `Watchtower::ExternalRef` (r:1 w:1)
 	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	fn signed_submit_external_proposal() -> Weight {
@@ -393,30 +493,38 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:0)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
 	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	fn vote() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
-		//  Estimated: `12308`
-		// Minimum execution time: 44_651_000 picoseconds.
-		Weight::from_parts(45_491_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(5_u64))
+		//  Measured:  `521`
+		//  Estimated: `12313`
+		// Minimum execution time: 42_644_000 picoseconds.
+		Weight::from_parts(58_129_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(7_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
@@ -429,38 +537,46 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	fn vote_end_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `889`
-		//  Estimated: `12308`
-		// Minimum execution time: 52_300_000 picoseconds.
-		Weight::from_parts(63_051_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(7_u64))
+		//  Measured:  `1126`
+		//  Estimated: `12313`
+		// Minimum execution time: 62_424_000 picoseconds.
+		Weight::from_parts(80_336_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(9_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:0)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
 	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	fn signed_vote() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
-		//  Estimated: `12308`
-		// Minimum execution time: 150_853_000 picoseconds.
-		Weight::from_parts(152_703_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(5_u64))
+		//  Measured:  `521`
+		//  Estimated: `12313`
+		// Minimum execution time: 116_452_000 picoseconds.
+		Weight::from_parts(139_074_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(7_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
 	/// Proof: `Watchtower::Voters` (`max_values`: None, `max_size`: Some(97), added: 2572, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Votes` (r:1 w:1)
@@ -473,17 +589,21 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	fn signed_vote_end_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `889`
-		//  Estimated: `12308`
-		// Minimum execution time: 128_398_000 picoseconds.
-		Weight::from_parts(149_362_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(7_u64))
+		//  Measured:  `1126`
+		//  Estimated: `12313`
+		// Minimum execution time: 139_528_000 picoseconds.
+		Weight::from_parts(201_278_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(9_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:0)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
@@ -492,17 +612,21 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	fn unsigned_vote() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
-		//  Estimated: `12308`
-		// Minimum execution time: 99_572_000 picoseconds.
-		Weight::from_parts(100_642_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(5_u64))
+		//  Measured:  `521`
+		//  Estimated: `12313`
+		// Minimum execution time: 88_238_000 picoseconds.
+		Weight::from_parts(123_095_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(7_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Voters` (r:1 w:1)
@@ -517,32 +641,34 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
 	fn unsigned_vote_end_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `889`
-		//  Estimated: `12308`
-		// Minimum execution time: 95_030_000 picoseconds.
-		Weight::from_parts(125_403_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(7_u64))
+		//  Measured:  `1126`
+		//  Estimated: `12313`
+		// Minimum execution time: 111_391_000 picoseconds.
+		Weight::from_parts(157_306_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(9_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:1 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Votes` (r:1 w:0)
+	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
 	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
 	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
+	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	/// Storage: `Watchtower::ActiveInternalProposal` (r:0 w:1)
-	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	fn finalise_proposal() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `626`
-		//  Estimated: `12308`
-		// Minimum execution time: 34_243_000 picoseconds.
-		Weight::from_parts(42_019_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(4_u64))
+		//  Measured:  `755`
+		//  Estimated: `12313`
+		// Minimum execution time: 41_082_000 picoseconds.
+		Weight::from_parts(52_371_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:1)
@@ -570,32 +696,34 @@ impl WeightInfo for () {
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
 	fn active_proposal_expiry_status() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `222`
-		//  Estimated: `12308`
-		// Minimum execution time: 11_661_000 picoseconds.
-		Weight::from_parts(11_780_000, 12308)
+		//  Measured:  `334`
+		//  Estimated: `12313`
+		// Minimum execution time: 7_652_000 picoseconds.
+		Weight::from_parts(9_620_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 	}
+	/// Storage: `Watchtower::Votes` (r:1 w:0)
+	/// Proof: `Watchtower::Votes` (`max_values`: None, `max_size`: Some(56), added: 2531, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
 	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
 	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
+	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	/// Storage: `Watchtower::ActiveInternalProposal` (r:0 w:1)
-	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	fn finalise_expired_voting() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `225`
+		//  Measured:  `461`
 		//  Estimated: `3529`
-		// Minimum execution time: 16_158_000 picoseconds.
-		Weight::from_parts(19_036_000, 3529)
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
+		// Minimum execution time: 24_403_000 picoseconds.
+		Weight::from_parts(31_981_000, 3529)
+			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::Tail` (r:1 w:0)
@@ -607,19 +735,33 @@ impl WeightInfo for () {
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:500 w:500)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:1)
 	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
-	fn activate_next_proposal() -> Weight {
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `ParachainSystem::ValidationData` (r:1 w:0)
+	/// Proof: `ParachainSystem::ValidationData` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
+	/// Storage: `System::ParentHash` (r:1 w:0)
+	/// Proof: `System::ParentHash` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// The range of component `k` is `[10, 500]`.
+	fn activate_next_proposal(k: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `386`
-		//  Estimated: `12308`
-		// Minimum execution time: 40_561_000 picoseconds.
-		Weight::from_parts(49_423_000, 12308)
-			.saturating_add(RocksDbWeight::get().reads(6_u64))
-			.saturating_add(RocksDbWeight::get().writes(6_u64))
+		//  Measured:  `391`
+		//  Estimated: `12313 + k * (2571 ±0)`
+		// Minimum execution time: 120_183_000 picoseconds.
+		Weight::from_parts(75_044_817, 12313)
+			// Standard Error: 29_994
+			.saturating_add(Weight::from_parts(7_454_659, 0).saturating_mul(k.into()))
+			.saturating_add(RocksDbWeight::get().reads(8_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(k.into())))
+			.saturating_add(RocksDbWeight::get().writes(7_u64))
+			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(k.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(k.into()))
 	}
 	/// Storage: `Watchtower::Tail` (r:1 w:0)
 	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
@@ -630,7 +772,9 @@ impl WeightInfo for () {
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:1 w:1)
-	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8843), added: 11318, mode: `MaxEncodedLen`)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalCommittee` (r:500 w:500)
+	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
 	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
 	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
@@ -639,13 +783,67 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
 	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
-	fn activate_next_proposal_hook_fails() -> Weight {
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalCommitteeSize` (`max_values`: None, `max_size`: Some(52), added: 2527, mode: `MaxEncodedLen`)
+	/// Storage: `ParachainSystem::ValidationData` (r:1 w:0)
+	/// Proof: `ParachainSystem::ValidationData` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
+	/// Storage: `System::ParentHash` (r:1 w:0)
+	/// Proof: `System::ParentHash` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// The range of component `k` is `[10, 500]`.
+	fn activate_next_proposal_hook_fails(k: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `497`
-		//  Estimated: `12308`
-		// Minimum execution time: 59_390_000 picoseconds.
-		Weight::from_parts(81_444_000, 12308)
+		//  Measured:  `502`
+		//  Estimated: `12313 + k * (2571 ±0)`
+		// Minimum execution time: 148_555_000 picoseconds.
+		Weight::from_parts(91_082_031, 12313)
+			// Standard Error: 30_711
+			.saturating_add(Weight::from_parts(8_291_765, 0).saturating_mul(k.into()))
+			.saturating_add(RocksDbWeight::get().reads(9_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(k.into())))
+			.saturating_add(RocksDbWeight::get().writes(7_u64))
+			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(k.into())))
+			.saturating_add(Weight::from_parts(0, 2571).saturating_mul(k.into()))
+	}
+	/// Storage: `Watchtower::Tail` (r:1 w:0)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:2 w:2)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	fn demote_queue_head() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `216`
+		//  Estimated: `6046`
+		// Minimum execution time: 25_084_000 picoseconds.
+		Weight::from_parts(33_135_000, 6046)
+			.saturating_add(RocksDbWeight::get().reads(4_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	/// Storage: `Watchtower::Tail` (r:1 w:0)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:1)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:1 w:1)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:1 w:0)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Summary::ExternalValidationRef` (r:1 w:0)
+	/// Proof: `Summary::ExternalValidationRef` (`max_values`: None, `max_size`: Some(64), added: 2539, mode: `MaxEncodedLen`)
+	/// Storage: `SummaryWatchtower::RootInfo` (r:1 w:0)
+	/// Proof: `SummaryWatchtower::RootInfo` (`max_values`: Some(1), `max_size`: Some(80), added: 575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
+	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalsToRemove` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalsToRemove` (`max_values`: None, `max_size`: Some(48), added: 2523, mode: `MaxEncodedLen`)
+	fn cancel_queue_head() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `609`
+		//  Estimated: `12313`
+		// Minimum execution time: 41_822_000 picoseconds.
+		Weight::from_parts(59_511_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(7_u64))
-			.saturating_add(RocksDbWeight::get().writes(6_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
 	}
 }

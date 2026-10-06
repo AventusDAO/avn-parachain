@@ -69,9 +69,10 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             threshold: Perbill::from_percent(threshold_val),
             payload: RawPayload::Inline(inner_payload.encode()),
             source: ProposalSource::Internal(proposal_type),
-            decision_rule: DecisionRule::SimpleMajority,
+            decision_rule: <ExternalValidationDecisionRule<T, I>>::get(),
             created_at: current_block.saturated_into::<u32>(),
             vote_duration: None,
+            committee_size: <ExternalValidationCommitteeSize<T, I>>::get(),
         };
 
         T::ExternalValidator::submit_proposal(None, request)?;

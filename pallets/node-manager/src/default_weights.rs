@@ -70,11 +70,29 @@ pub trait WeightInfo {
 	fn move_nodes(b: u32, ) -> Weight;
 	fn move_stake(b: u32, ) -> Weight;
 	fn move_nodes_with_stake(b: u32, ) -> Weight;
+	fn backfill_node_index(n: u32, ) -> Weight;
 }
 
 /// Weights for pallet_node_manager using the Substrate node and recommended hardware.
 pub struct SubstrateWeight<T>(PhantomData<T>);
 impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
+	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
+	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:0)
+	/// Storage: `NodeManager::NodeIndexCount` (r:1 w:1)
+	/// Storage: `NodeManager::NodeRegistry` (r:250 w:0)
+	/// Storage: `NodeManager::NodeIndexOf` (r:250 w:250)
+	/// Storage: `NodeManager::NodeIndex` (r:0 w:250)
+	/// The range of component `n` is `[1, 250]`.
+	/// PLACEHOLDER: regenerate with the benchmark CLI.
+	fn backfill_node_index(n: u32, ) -> Weight {
+		Weight::from_parts(20_000_000, 3593)
+			.saturating_add(Weight::from_parts(10_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(n.into())))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+			.saturating_add(T::DbWeight::get().writes((2_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(n.into()))
+	}
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
@@ -724,6 +742,23 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests.
 impl WeightInfo for () {
+	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
+	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:0)
+	/// Storage: `NodeManager::NodeIndexCount` (r:1 w:1)
+	/// Storage: `NodeManager::NodeRegistry` (r:250 w:0)
+	/// Storage: `NodeManager::NodeIndexOf` (r:250 w:250)
+	/// Storage: `NodeManager::NodeIndex` (r:0 w:250)
+	/// The range of component `n` is `[1, 250]`.
+	/// PLACEHOLDER: regenerate with the benchmark CLI.
+	fn backfill_node_index(n: u32, ) -> Weight {
+		Weight::from_parts(20_000_000, 3593)
+			.saturating_add(Weight::from_parts(10_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(n.into())))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(RocksDbWeight::get().writes((2_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 2666).saturating_mul(n.into()))
+	}
 	/// Storage: `NodeManager::NodeRegistrar` (r:1 w:0)
 	/// Proof: `NodeManager::NodeRegistrar` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
 	/// Storage: `NodeManager::NodeRegistry` (r:1 w:1)
