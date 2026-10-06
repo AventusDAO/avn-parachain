@@ -18,6 +18,7 @@ fn create_and_submit_proposal(payload: RawPayload, source: ProposalSource) -> (P
     let is_internal;
     if let ProposalSource::Internal(_) = source {
         assert_ok!(Watchtower::submit_proposal(None, proposal));
+        activate_head();
         is_internal = true;
     } else {
         assert_ok!(Watchtower::submit_external_proposal(
@@ -43,6 +44,7 @@ mod voting_on_proposals {
             let vote_weight;
             if let ProposalSource::Internal(_) = source {
                 assert_ok!(Watchtower::submit_proposal(None, proposal));
+                activate_head();
                 vote_weight = 1;
                 voter = watchtower_1();
             } else {
@@ -84,6 +86,7 @@ mod voting_on_proposals {
             let voter = watchtower_1();
             let vote_weight = 1;
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
 
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
             let signature = sign_vote(
@@ -235,6 +238,7 @@ mod proposal_lifecycle {
             let context = Context::default();
             let proposal = context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             // 1st vote - in favor
@@ -351,6 +355,7 @@ mod proposal_lifecycle {
             context.threshold = Perbill::from_percent(80); // Set high threshold
             let proposal = context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             // 1st vote - in favor
@@ -426,6 +431,7 @@ mod proposal_lifecycle {
             let context = Context::default();
             let proposal = context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             assert_ok!(Watchtower::vote(
@@ -472,6 +478,7 @@ mod proposal_lifecycle {
             };
             let internal_proposal = internal_context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, internal_proposal));
+            activate_head();
             let internal_id = ExternalRef::<TestRuntime>::get(&internal_context.external_ref);
             assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(internal_id));
 

@@ -56,6 +56,19 @@ impl pallet_watchtower::Config for TestRuntime {
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
     type MaxInternalProposalLen = ConstU32<100>;
+    type MinCommitteeSize = ConstU32<2>;
+    type MaxCommitteeSize = ConstU32<5>;
+    type Randomness = TestRandomness;
+}
+
+pub struct TestRandomness;
+impl frame_support::traits::Randomness<sp_core::H256, u64> for TestRandomness {
+    fn random(subject: &[u8]) -> (sp_core::H256, u64) {
+        (
+            sp_core::H256::from(sp_io::hashing::blake2_256(subject)),
+            frame_system::Pallet::<TestRuntime>::block_number(),
+        )
+    }
 }
 
 impl Config for TestRuntime {
@@ -310,6 +323,14 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
 
     fn get_authorized_watchtowers_count() -> u32 {
         AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().len() as u32)
+    }
+
+    fn get_node_at_index(index: u32) -> Option<AccountId> {
+        AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().get(index as usize).cloned())
+    }
+
+    fn get_indexed_nodes_count() -> u32 {
+        Self::get_authorized_watchtowers_count()
     }
 }
 

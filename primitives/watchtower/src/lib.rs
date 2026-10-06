@@ -54,12 +54,33 @@ pub enum ProposalStatusEnum {
     Unknown,
 }
 
+/// How a proposal is decided.
+///
+/// Either side holding `threshold` of the eligible voters always resolves the proposal early,
+/// whatever the rule. The rule says what happens when the voting period ends first.
 #[derive(
-    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+    Default,
 )]
 pub enum DecisionRule {
-    /// Yes > No to win
-    SimpleMajority,
+    /// Report `Expired` and let the consumer decide what that means. The summary pallet treats
+    /// it as "no objection in time, accepted". Legacy default for internal proposals.
+    #[default]
+    ExpireUnresolved,
+    /// `Resolved { passed: in_favors > againsts }` over the votes actually cast. Legacy
+    /// behaviour of external proposals.
+    SimpleMajorityOnExpiry,
+    /// `Resolved { passed: false }`.
+    RejectOnExpiry,
 }
 
 //implement default for ProposalStatusEnum to be Unknown
@@ -80,6 +101,9 @@ pub struct ProposalRequest {
     pub external_ref: H256,
     pub created_at: u32,
     pub vote_duration: Option<u32>,
+    /// Number of nodes to randomly select to vote on this proposal. `None` means every node
+    /// votes. Only valid for internal proposals.
+    pub committee_size: Option<u32>,
 }
 
 // Interface for other pallets to interact with the watchtower pallet
@@ -93,6 +117,14 @@ pub trait WatchtowerInterface {
 
     fn get_proposal_status(proposal_id: ProposalId) -> ProposalStatusEnum;
     fn get_proposer(proposal_id: ProposalId) -> Option<Self::AccountId>;
+    /// Smallest committee a proposal may request.
+    fn min_committee_size() -> u32;
+    /// Largest committee a proposal may request.
+    fn max_committee_size() -> u32;
+    /// Fails if a committee of `size` nodes could not be selected right now (node index still
+    /// backfilling, or fewer than `min_committee_size` nodes registered). Lets a consumer
+    /// refuse a configuration that would leave its proposals stuck in the queue.
+    fn ensure_committee_ready(size: u32) -> DispatchResult;
 }
 
 // A simple no-op implementation of the WatchtowerInterface trait
@@ -113,6 +145,18 @@ where
 
     fn get_proposer(_id: ProposalId) -> Option<Self::AccountId> {
         None
+    }
+
+    fn min_committee_size() -> u32 {
+        0
+    }
+
+    fn max_committee_size() -> u32 {
+        u32::MAX
+    }
+
+    fn ensure_committee_ready(_size: u32) -> DispatchResult {
+        Ok(())
     }
 }
 
