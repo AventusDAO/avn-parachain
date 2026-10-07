@@ -16,12 +16,13 @@ fn make_proposal(created_at: u64, root_id: RootId<u64>, root_hash: H256) -> Prop
         payload: Payload::Inline(BoundedVec::try_from(payload_bytes).unwrap()),
         threshold: Perbill::from_percent(50),
         source: ProposalSource::Internal(ProposalType::Summary),
-        decision_rule: DecisionRule::SimpleMajority,
+        decision_rule: DecisionRule::ExpireUnresolved,
         external_ref: H256::repeat_byte(0xaa),
         proposer: None,
         created_at,
         vote_duration: 10,
         end_at: Some(100),
+        committee_size: None,
     }
 }
 
@@ -51,12 +52,13 @@ mod process_new_proposal {
                 payload: Payload::Inline(inline_payload),
                 threshold: Perbill::from_percent(60),
                 source: ProposalSource::Internal(ProposalType::Summary),
-                decision_rule: DecisionRule::SimpleMajority,
+                decision_rule: DecisionRule::ExpireUnresolved,
                 external_ref: H256::repeat_byte(0xaa),
                 proposer: None,
                 created_at: 5u64,
                 vote_duration: 10,
                 end_at: None,
+                committee_size: None,
             };
 
             let proposal_id = H256::repeat_byte(0x11);

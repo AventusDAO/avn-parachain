@@ -81,4 +81,8 @@ pub enum AdminConfig<BlockNumber> {
     ExternalValidationThreshold(u32),
     SchedulePeriod(BlockNumber),
     VotingPeriod(BlockNumber),
+    /// `None` disables committee selection: every node votes on each root.
+    ExternalValidationCommitteeSize(Option<u32>),
+    /// How root proposals are decided when the voting period ends without reaching the threshold.
+    ExternalValidationDecisionRule(DecisionRule),
 }

@@ -144,6 +144,61 @@ mod test_set_periods {
                 );
             });
         }
+
+        #[test]
+        fn committee_size_can_be_set_and_cleared_via_admin_config() {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                assert_eq!(<ExternalValidationCommitteeSize<TestRuntime>>::get(), None);
+
+                let config = AdminConfig::ExternalValidationCommitteeSize(Some(50));
+                assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config));
+                assert_eq!(<ExternalValidationCommitteeSize<TestRuntime>>::get(), Some(50));
+                System::assert_last_event(
+                    crate::Event::<TestRuntime>::ExternalValidationCommitteeSizeSet {
+                        new_size: Some(50),
+                    }
+                    .into(),
+                );
+
+                // `None` goes back to every node voting.
+                let config = AdminConfig::ExternalValidationCommitteeSize(None);
+                assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config));
+                assert_eq!(<ExternalValidationCommitteeSize<TestRuntime>>::get(), None);
+                System::assert_last_event(
+                    crate::Event::<TestRuntime>::ExternalValidationCommitteeSizeSet {
+                        new_size: None,
+                    }
+                    .into(),
+                );
+            });
+        }
+
+        #[test]
+        fn decision_rule_can_be_set_via_admin_config() {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                // Legacy default: no objection in time means accepted.
+                assert_eq!(
+                    <ExternalValidationDecisionRule<TestRuntime>>::get(),
+                    DecisionRule::ExpireUnresolved
+                );
+
+                let config =
+                    AdminConfig::ExternalValidationDecisionRule(DecisionRule::RejectOnExpiry);
+                assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config));
+                assert_eq!(
+                    <ExternalValidationDecisionRule<TestRuntime>>::get(),
+                    DecisionRule::RejectOnExpiry
+                );
+                System::assert_last_event(
+                    crate::Event::<TestRuntime>::ExternalValidationDecisionRuleSet {
+                        new_rule: DecisionRule::RejectOnExpiry,
+                    }
+                    .into(),
+                );
+            });
+        }
     }
 
     mod fails_when {

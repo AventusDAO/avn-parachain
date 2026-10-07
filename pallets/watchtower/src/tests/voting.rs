@@ -18,6 +18,7 @@ fn create_and_submit_proposal(payload: RawPayload, source: ProposalSource) -> (P
     let is_internal;
     if let ProposalSource::Internal(_) = source {
         assert_ok!(Watchtower::submit_proposal(None, proposal));
+        activate_head();
         is_internal = true;
     } else {
         assert_ok!(Watchtower::submit_external_proposal(
@@ -43,6 +44,7 @@ mod voting_on_proposals {
             let vote_weight;
             if let ProposalSource::Internal(_) = source {
                 assert_ok!(Watchtower::submit_proposal(None, proposal));
+                activate_head();
                 vote_weight = 1;
                 voter = watchtower_1();
             } else {
@@ -84,6 +86,7 @@ mod voting_on_proposals {
             let voter = watchtower_1();
             let vote_weight = 1;
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
 
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
             let signature = sign_vote(
@@ -235,6 +238,7 @@ mod proposal_lifecycle {
             let context = Context::default();
             let proposal = context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             // 1st vote - in favor
@@ -351,6 +355,7 @@ mod proposal_lifecycle {
             context.threshold = Perbill::from_percent(80); // Set high threshold
             let proposal = context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             // 1st vote - in favor
@@ -426,6 +431,7 @@ mod proposal_lifecycle {
             let context = Context::default();
             let proposal = context.build_internal_request(b"test".to_vec());
             assert_ok!(Watchtower::submit_proposal(None, proposal));
+            activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             assert_ok!(Watchtower::vote(
@@ -449,7 +455,61 @@ mod proposal_lifecycle {
                 ProposalStatus::<TestRuntime>::get(proposal_id),
                 ProposalStatusEnum::Expired
             );
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
             System::assert_last_event(Event::ProposalCleaned { proposal_id }.into());
+        });
+    }
+
+    #[test]
+    fn cleanup_runs_while_an_internal_proposal_is_active() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // An external proposal that will be finalised and need cleaning up.
+            let external_context = Context::default();
+            let external_proposal = external_context.build_external_request(b"test".to_vec());
+            assert_ok!(Watchtower::submit_proposal(None, external_proposal));
+            let external_id = ExternalRef::<TestRuntime>::get(&external_context.external_ref);
+
+            // An internal proposal that stays active for the whole test.
+            let internal_context = Context {
+                external_ref: H256::repeat_byte(2),
+                vote_duration: Some(1_000),
+                ..Context::default()
+            };
+            let internal_proposal = internal_context.build_internal_request(b"test".to_vec());
+            assert_ok!(Watchtower::submit_proposal(None, internal_proposal));
+            activate_head();
+            let internal_id = ExternalRef::<TestRuntime>::get(&internal_context.external_ref);
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(internal_id));
+
+            // Two owners with weight 3 each reach the 50% threshold of 10.
+            assert_ok!(Watchtower::vote(
+                RawOrigin::Signed(watchtower_owner_1()).into(),
+                external_id,
+                true
+            ));
+            assert_ok!(Watchtower::vote(
+                RawOrigin::Signed(watchtower_owner_2()).into(),
+                external_id,
+                true
+            ));
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(external_id),
+                ProposalStatusEnum::Resolved { passed: true }
+            );
+            assert!(ProposalsToRemove::<TestRuntime>::contains_key(external_id));
+
+            roll_forward(2);
+
+            // The internal proposal is still active and not expired...
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(internal_id));
+            assert_eq!(ProposalStatus::<TestRuntime>::get(internal_id), ProposalStatusEnum::Active);
+            // ...and that did not stop the external proposal being cleaned up.
+            assert!(!ProposalsToRemove::<TestRuntime>::contains_key(external_id));
+            assert!(!Proposals::<TestRuntime>::contains_key(external_id));
+            assert!(!Votes::<TestRuntime>::contains_key(external_id));
+            assert!(!Voters::<TestRuntime>::contains_key(external_id, watchtower_owner_1()));
+            System::assert_last_event(Event::ProposalCleaned { proposal_id: external_id }.into());
         });
     }
 

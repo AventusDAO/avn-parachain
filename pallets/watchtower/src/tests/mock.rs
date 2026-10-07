@@ -1,22 +1,30 @@
 use crate::{self as pallet_watchtower, *};
 pub use codec::alloc::sync::Arc;
 use frame_support::{
-    derive_impl, parameter_types,
-    traits::ConstU32,
+    assert_ok, derive_impl, parameter_types,
+    traits::{ConstU32, Randomness},
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
 };
-use frame_system::{self as system, EnsureRoot, EnsureSigned};
+use frame_system::{self as system, EnsureRoot, EnsureSigned, RawOrigin};
+pub use parking_lot::RwLock;
 
 pub use sp_avn_common::avn_tests_helpers::utilities::{
     get_test_account_from_mnemonic, TestAccount,
 };
-pub use sp_core::{crypto::DEV_PHRASE, sr25519, H256};
+pub use sp_core::{
+    crypto::DEV_PHRASE,
+    offchain::{
+        testing::{OffchainState, PoolState, TestOffchainExt, TestTransactionPoolExt},
+        OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
+    },
+    sr25519, H256,
+};
 
 use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
 pub use sp_runtime::{
     testing::TestXt,
     traits::{IdentityLookup, Verify},
-    BuildStorage, Perbill,
+    BuildStorage, DispatchError, Perbill,
 };
 use std::cell::RefCell;
 
@@ -45,12 +53,88 @@ impl Config for TestRuntime {
     type WeightInfo = ();
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
     type Watchtowers = TestNodeManager;
-    type WatchtowerHooks = ();
+    type WatchtowerHooks = TestHooks;
     type SignedTxLifetime = ConstU32<5>;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
     type MaxInternalProposalLen = ConstU32<100>;
+    // Small bounds so that `k < n` is testable with 10 authorized watchtowers.
+    type MinCommitteeSize = ConstU32<2>;
+    type MaxCommitteeSize = ConstU32<5>;
+    type Randomness = TestRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = TestBenchmarkHelper;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+pub struct TestBenchmarkHelper;
+#[cfg(feature = "runtime-benchmarks")]
+impl BenchmarkHelper for TestBenchmarkHelper {
+    fn setup_nodes(n: u32) {
+        let nodes = (0..n).map(|i| frame_benchmarking::account("node", i, 0)).collect();
+        set_authorized_watchtowers(nodes);
+    }
+
+    fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
+
+    fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
+        true
+    }
+}
+
+/// Deterministic randomness derived from a thread-local seed so tests can force committees.
+pub struct TestRandomness;
+impl Randomness<H256, u64> for TestRandomness {
+    fn random(subject: &[u8]) -> (H256, u64) {
+        let seed = RANDOM_SEED.with(|s| *s.borrow());
+        let hash = sp_io::hashing::blake2_256(&(seed, subject).encode());
+        (H256::from(hash), System::block_number())
+    }
+}
+
+pub fn set_random_seed(seed: u64) {
+    RANDOM_SEED.with(|s| *s.borrow_mut() = seed);
+}
+
+/// Simulates an incomplete node-index backfill: `get_indexed_nodes_count` returns this value
+/// instead of the number of authorized watchtowers.
+pub fn set_indexed_count_override(count: Option<u32>) {
+    INDEXED_COUNT_OVERRIDE.with(|o| *o.borrow_mut() = count);
+}
+
+/// A fault injected into the mock node index, to exercise the corruption paths.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum IndexFault {
+    /// `get_node_at_index(i)` returns `None`.
+    Hole(u32),
+    /// `get_node_at_index(i)` returns the node at position 0.
+    Duplicate(u32),
+}
+
+pub fn set_index_fault(fault: Option<IndexFault>) {
+    INDEX_FAULT.with(|f| *f.borrow_mut() = fault);
+}
+
+pub fn set_authorized_watchtowers(watchtowers: Vec<AccountId>) {
+    AUTHORIZED_WATCHTOWERS.with(|w| *w.borrow_mut() = watchtowers);
+}
+
+pub fn authorized_watchtowers() -> Vec<AccountId> {
+    AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().clone())
+}
+
+/// `(proposal_id, result)` for every `on_voting_completed` call, in order.
+pub fn completed_votes() -> Vec<(ProposalId, ProposalStatusEnum)> {
+    COMPLETED_VOTES.with(|c| c.borrow().clone())
+}
+
+/// Internal proposals are always queued on submission. Activates the queue head the way the
+/// collator OCW would.
+pub fn activate_head() -> ProposalId {
+    let head = Watchtower::peek_front_id().expect("queue not corrupt").expect("queue head");
+    assert_ok!(Watchtower::activate_next_proposal(RawOrigin::None.into(), head));
+    head
 }
 
 parameter_types! {
@@ -171,8 +255,8 @@ pub fn random_user() -> AccountId {
     TestAccount::new([99u8; 32]).account_id()
 }
 
-thread_local! {
-    pub static AUTHORIZED_WATCHTOWERS: RefCell<Vec<AccountId>> = RefCell::new(vec![
+pub fn default_watchtowers() -> Vec<AccountId> {
+    vec![
         watchtower_1(),
         watchtower_2(),
         watchtower_3(),
@@ -183,7 +267,15 @@ thread_local! {
         watchtower_8(),
         watchtower_9(),
         watchtower_10(),
-    ]);
+    ]
+}
+
+thread_local! {
+    pub static AUTHORIZED_WATCHTOWERS: RefCell<Vec<AccountId>> = RefCell::new(default_watchtowers());
+    pub static RANDOM_SEED: RefCell<u64> = RefCell::new(0);
+    pub static INDEXED_COUNT_OVERRIDE: RefCell<Option<u32>> = RefCell::new(None);
+    pub static INDEX_FAULT: RefCell<Option<IndexFault>> = RefCell::new(None);
+    pub static COMPLETED_VOTES: RefCell<Vec<(ProposalId, ProposalStatusEnum)>> = RefCell::new(vec![]);
 
     pub static NODE_SIGNING_KEYS: RefCell<std::collections::HashMap<AccountId, SignerId>> =
         RefCell::new({
@@ -214,16 +306,44 @@ thread_local! {
 
 pub struct ExtBuilder {
     pub storage: sp_runtime::Storage,
+    offchain_state: Option<Arc<RwLock<OffchainState>>>,
+    pool_state: Option<Arc<RwLock<PoolState>>>,
+    txpool_extension: Option<TestTransactionPoolExt>,
+    offchain_extension: Option<TestOffchainExt>,
+    offchain_registered: bool,
 }
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
+        // libtest spawns a fresh thread per test, so these are normally already clean. Reset
+        // anyway so tests stay independent if a test is ever run inline on a shared thread.
+        reset_hook_state();
+
         let storage = frame_system::GenesisConfig::<TestRuntime>::default()
             .build_storage()
             .unwrap()
             .into();
 
-        Self { storage }
+        Self {
+            storage,
+            offchain_state: None,
+            pool_state: None,
+            txpool_extension: None,
+            offchain_extension: None,
+            offchain_registered: false,
+        }
+    }
+
+    pub fn for_offchain_worker(mut self) -> Self {
+        assert!(!self.offchain_registered);
+        let (offchain, offchain_state) = TestOffchainExt::new();
+        let (pool, pool_state) = TestTransactionPoolExt::new();
+        self.txpool_extension = Some(pool);
+        self.offchain_extension = Some(offchain);
+        self.pool_state = Some(pool_state);
+        self.offchain_state = Some(offchain_state);
+        self.offchain_registered = true;
+        self
     }
 
     pub fn as_externality(self) -> sp_io::TestExternalities {
@@ -237,6 +357,65 @@ impl ExtBuilder {
         });
         ext
     }
+
+    pub fn as_externality_with_state(
+        self,
+    ) -> (sp_io::TestExternalities, Arc<RwLock<PoolState>>, Arc<RwLock<OffchainState>>) {
+        assert!(self.offchain_registered);
+        let mut ext = sp_io::TestExternalities::from(self.storage);
+        ext.register_extension(OffchainDbExt::new(self.offchain_extension.clone().unwrap()));
+        ext.register_extension(OffchainWorkerExt::new(self.offchain_extension.unwrap()));
+        ext.register_extension(TransactionPoolExt::new(self.txpool_extension.unwrap()));
+        ext.execute_with(|| {
+            frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
+        });
+        (ext, self.pool_state.unwrap(), self.offchain_state.unwrap())
+    }
+}
+
+thread_local! {
+    /// When true, `TestHooks::on_proposal_submitted` returns an error.
+    pub static FAIL_ON_PROPOSAL_SUBMITTED: RefCell<bool> = RefCell::new(false);
+    /// Every proposal id `TestHooks::on_proposal_submitted` was called with, in order.
+    pub static SUBMITTED_TO_HOOKS: RefCell<Vec<ProposalId>> = RefCell::new(vec![]);
+}
+
+pub fn set_hook_failure(fail: bool) {
+    FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = fail);
+}
+
+pub fn reset_hook_state() {
+    FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = false);
+    SUBMITTED_TO_HOOKS.with(|s| s.borrow_mut().clear());
+    COMPLETED_VOTES.with(|c| c.borrow_mut().clear());
+    AUTHORIZED_WATCHTOWERS.with(|w| *w.borrow_mut() = default_watchtowers());
+    set_random_seed(0);
+    set_indexed_count_override(None);
+    set_index_fault(None);
+}
+
+pub fn proposals_submitted_to_hooks() -> Vec<ProposalId> {
+    SUBMITTED_TO_HOOKS.with(|s| s.borrow().clone())
+}
+
+pub struct TestHooks;
+impl WatchtowerHooks<Proposal<TestRuntime>> for TestHooks {
+    fn on_proposal_submitted(
+        proposal_id: ProposalId,
+        _proposal: Proposal<TestRuntime>,
+    ) -> DispatchResult {
+        if FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow()) {
+            return Err(DispatchError::Other("TestHooks: on_proposal_submitted failed"))
+        }
+        SUBMITTED_TO_HOOKS.with(|s| s.borrow_mut().push(proposal_id));
+        Ok(())
+    }
+
+    fn on_voting_completed(proposal_id: ProposalId, _: &H256, result: &ProposalStatusEnum) {
+        COMPLETED_VOTES.with(|c| c.borrow_mut().push((proposal_id, result.clone())));
+    }
+
+    fn on_cancelled(_: ProposalId, _: &H256) {}
 }
 
 /// Rolls desired block number of times.
@@ -290,6 +469,22 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     fn get_authorized_watchtowers_count() -> u32 {
         AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().len() as u32)
     }
+
+    fn get_node_at_index(index: u32) -> Option<AccountId> {
+        match INDEX_FAULT.with(|f| *f.borrow()) {
+            Some(IndexFault::Hole(i)) if i == index => return None,
+            Some(IndexFault::Duplicate(i)) if i == index =>
+                return AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().first().cloned()),
+            _ => {},
+        }
+        AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().get(index as usize).cloned())
+    }
+
+    fn get_indexed_nodes_count() -> u32 {
+        INDEXED_COUNT_OVERRIDE
+            .with(|o| *o.borrow())
+            .unwrap_or_else(Self::get_authorized_watchtowers_count)
+    }
 }
 
 pub struct EnsureExternalProposerOrRoot;
@@ -325,10 +520,13 @@ pub struct Context {
     pub title: Vec<u8>,
     pub threshold: Perbill,
     pub source: ProposalSource,
-    pub decision_rule: DecisionRule,
+    /// `None` = the legacy rule for the source (`ExpireUnresolved` internally,
+    /// `SimpleMajorityOnExpiry` externally).
+    pub decision_rule: Option<DecisionRule>,
     pub external_ref: H256,
     pub created_at: u32,
     pub vote_duration: Option<u32>,
+    pub committee_size: Option<u32>,
 }
 
 impl Default for Context {
@@ -339,52 +537,40 @@ impl Default for Context {
             external_ref,
             threshold: Perbill::from_percent(50),
             source: ProposalSource::Internal(ProposalType::Summary),
-            decision_rule: DecisionRule::SimpleMajority,
+            decision_rule: None,
             vote_duration: Some(
                 MinVotingPeriod::<TestRuntime>::get().saturated_into::<u32>() + 1u32,
             ),
             created_at: 1u32,
+            committee_size: None,
         }
     }
 }
 
 impl Context {
     pub fn build_internal_request(&self, payload: Vec<u8>) -> ProposalRequest {
-        ProposalRequest {
-            title: self.title.clone(),
-            external_ref: self.external_ref,
-            threshold: self.threshold,
-            payload: RawPayload::Inline(payload),
-            source: self.source.clone(),
-            decision_rule: self.decision_rule.clone(),
-            created_at: self.created_at,
-            vote_duration: self.vote_duration,
-        }
+        self.build_request(RawPayload::Inline(payload), self.source.clone())
     }
 
     pub fn build_external_request(&self, uri: Vec<u8>) -> ProposalRequest {
-        ProposalRequest {
-            title: self.title.clone(),
-            external_ref: self.external_ref,
-            threshold: self.threshold,
-            payload: RawPayload::Uri(uri),
-            source: ProposalSource::External,
-            decision_rule: self.decision_rule.clone(),
-            created_at: self.created_at,
-            vote_duration: self.vote_duration,
-        }
+        self.build_request(RawPayload::Uri(uri), ProposalSource::External)
     }
 
     pub fn build_request(&self, payload: RawPayload, source: ProposalSource) -> ProposalRequest {
+        let decision_rule = self.decision_rule.unwrap_or(match source {
+            ProposalSource::Internal(_) => DecisionRule::ExpireUnresolved,
+            ProposalSource::External => DecisionRule::SimpleMajorityOnExpiry,
+        });
         ProposalRequest {
             title: self.title.clone(),
             external_ref: self.external_ref,
             threshold: self.threshold,
             payload,
             source,
-            decision_rule: self.decision_rule.clone(),
+            decision_rule,
             created_at: self.created_at,
             vote_duration: self.vote_duration,
+            committee_size: self.committee_size,
         }
     }
 }
