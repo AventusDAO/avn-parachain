@@ -728,6 +728,129 @@ mod stake_and_reward_weight_tests {
                     );
                 });
         }
+
+        // ----- helpers used by move_stake / move_nodes_with_stake -----
+
+        fn periodic(allowance: u128, expires_sec: Duration) -> UnstakeRestriction<u128> {
+            UnstakeRestriction::Periodic { per_period_allowance: allowance, expires_sec }
+        }
+
+        #[test]
+        fn can_move_stake_to_follows_same_state_rule() {
+            use UnstakeRestriction::*;
+            let states = [Locked, Free, periodic(10, 2000)];
+            let allowed = |from: &UnstakeRestriction<u128>, to: &UnstakeRestriction<u128>| {
+                make_node(1000, from.clone(), 100).can_move_stake_to(&make_node(
+                    1000,
+                    to.clone(),
+                    100,
+                ))
+            };
+
+            for from in &states {
+                for to in &states {
+                    let expected = from.is_same_kind(to) || matches!((from, to), (Free, Locked));
+                    assert_eq!(allowed(from, to), expected, "{:?} -> {:?}", from, to);
+                }
+            }
+            // Explicit spot checks of the blocked pairs that matter most.
+            assert!(!allowed(&Locked, &Free));
+            assert!(!allowed(&periodic(10, 2000), &Free));
+            assert!(!allowed(&Locked, &periodic(10, 2000)));
+            assert!(!allowed(&periodic(10, 2000), &Locked));
+        }
+
+        #[test]
+        fn move_stake_to_periodic_splits_allowance_and_unlocked_pro_rata() {
+            let mut from = make_node(1000, periodic(100, 5000), 1_000);
+            from.stake.unlocked_stake = 30;
+            let mut to = make_node(1000, periodic(50, 5000), 500);
+            to.stake.unlocked_stake = 10;
+
+            assert_ok!(from.move_stake_to(&mut to, 400));
+
+            assert_eq!(from.stake.amount, 600);
+            assert_eq!(from.stake.restriction.per_period_allowance(), Some(60));
+            assert_eq!(from.stake.unlocked_stake, 18);
+            assert_eq!(to.stake.amount, 900);
+            assert_eq!(to.stake.restriction.per_period_allowance(), Some(90));
+            assert_eq!(to.stake.unlocked_stake, 22);
+        }
+
+        #[test]
+        fn move_stake_to_periodic_rounds_moved_share_down() {
+            let mut from = make_node(1000, periodic(10, 5000), 3);
+            let mut to = make_node(1000, periodic(0, 5000), 0);
+
+            assert_ok!(from.move_stake_to(&mut to, 1));
+
+            // 1/3 of 10 rounds down to 3; the dust stays on the source.
+            assert_eq!(from.stake.restriction.per_period_allowance(), Some(7));
+            assert_eq!(to.stake.restriction.per_period_allowance(), Some(3));
+            assert_eq!(from.stake.amount, 2);
+            assert_eq!(to.stake.amount, 1);
+        }
+
+        #[test]
+        fn move_stake_to_periodic_keeps_precision_for_tiny_ratios() {
+            // 10^8 out of 10^18 is a ratio of 10^-10, below Perbill resolution. The exact
+            // floor of the allowance share (10^17 * 10^8 / 10^18) is 10^7 and must not be lost.
+            let source_stake: u128 = 1_000_000_000_000_000_000;
+            let allowance: u128 = 100_000_000_000_000_000;
+            let moved: u128 = 100_000_000;
+            let mut from = make_node(1000, periodic(allowance, 5000), source_stake);
+            from.stake.unlocked_stake = allowance;
+            let mut to = make_node(1000, periodic(0, 5000), 0);
+
+            assert_ok!(from.move_stake_to(&mut to, moved));
+
+            assert_eq!(to.stake.restriction.per_period_allowance(), Some(10_000_000));
+            assert_eq!(to.stake.unlocked_stake, 10_000_000);
+            assert_eq!(from.stake.restriction.per_period_allowance(), Some(allowance - 10_000_000));
+            assert_eq!(from.stake.unlocked_stake, allowance - 10_000_000);
+            assert_eq!(from.stake.amount, source_stake - moved);
+            assert_eq!(to.stake.amount, moved);
+        }
+
+        #[test]
+        fn move_stake_to_non_periodic_moves_amount_only() {
+            let mut from = make_node(1000, UnstakeRestriction::Locked, 500);
+            let mut to = make_node(1000, UnstakeRestriction::Locked, 100);
+            assert_ok!(from.move_stake_to(&mut to, 200));
+            assert_eq!(from.stake.amount, 300);
+            assert_eq!(to.stake.amount, 300);
+            assert_eq!(from.stake.unlocked_stake, 0);
+            assert_eq!(to.stake.unlocked_stake, 0);
+        }
+
+        #[test]
+        fn settle_accrued_allowance_stores_uncapped_accrual_and_advances_pointer() {
+            // expiry 1000, period 100, allowance 10, only 5 staked.
+            let mut node = make_node(1000, periodic(10, 5000), 5);
+            assert_ok!(node.settle_accrued_allowance(1250, 100));
+            // Three periods (1000, 1100, 1200) have elapsed: 30, not capped to the 5 staked.
+            assert_eq!(node.stake.unlocked_stake, 30);
+            assert_eq!(node.stake.next_unstake_time_sec, Some(1300));
+            // Withdrawable amount is still capped by the stake.
+            assert_eq!(node.available_to_unstake(1250, 100).unwrap().0, 5);
+
+            // Settling again in the same period changes nothing.
+            assert_ok!(node.settle_accrued_allowance(1260, 100));
+            assert_eq!(node.stake.unlocked_stake, 30);
+            assert_eq!(node.stake.next_unstake_time_sec, Some(1300));
+        }
+
+        #[test]
+        fn settle_accrued_allowance_is_noop_for_locked_free_and_expired_periodic() {
+            for restriction in
+                [UnstakeRestriction::Locked, UnstakeRestriction::Free, periodic(10, 1200)]
+            {
+                let mut node = make_node(1000, restriction.clone(), 500);
+                assert_ok!(node.settle_accrued_allowance(1250, 100));
+                assert_eq!(node.stake.unlocked_stake, 0, "{:?}", restriction);
+                assert_eq!(node.stake.next_unstake_time_sec, None, "{:?}", restriction);
+            }
+        }
     }
 
     mod do_add_stake_transaction {

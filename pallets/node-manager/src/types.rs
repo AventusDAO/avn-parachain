@@ -3,8 +3,9 @@
 use crate::*;
 use frame_support::traits::Get;
 use sp_runtime::{
-    traits::{AtLeast32BitUnsigned, Zero},
-    ArithmeticError, FixedPointNumber, FixedU128, Saturating,
+    helpers_128bit::multiply_by_rational_with_rounding,
+    traits::{AtLeast32BitUnsigned, UniqueSaturatedInto, Zero},
+    ArithmeticError, FixedPointNumber, FixedU128, Rounding, Saturating,
 };
 use sp_std::fmt::Debug;
 // This is used to scale a single heartbeat so we can preserve precision when applying the reward
@@ -201,6 +202,18 @@ impl<Balance: Copy> UnstakeRestriction<Balance> {
             _ => None,
         }
     }
+
+    pub fn per_period_allowance_mut(&mut self) -> Option<&mut Balance> {
+        match self {
+            UnstakeRestriction::Periodic { per_period_allowance, .. } => Some(per_period_allowance),
+            _ => None,
+        }
+    }
+
+    /// True when both restrictions are the same variant, ignoring their payloads.
+    pub fn is_same_kind(&self, other: &Self) -> bool {
+        sp_std::mem::discriminant(self) == sp_std::mem::discriminant(other)
+    }
 }
 
 #[derive(
@@ -274,25 +287,31 @@ impl<
             return
         }
 
-        self.stake.restriction = if self.stake.amount.is_zero() {
-            // No stake was present at expiry. User is free to operate without restriction.
+        let expires_sec = self.auto_stake_expiry.saturating_add(restriction_duration);
+
+        self.stake.restriction = if self.stake.amount.is_zero() || now_sec >= expires_sec {
+            // No stake was present at expiry or expiry has passed.
+            // User is free to operate without restriction.
             UnstakeRestriction::Free
         } else {
             // Snapshot the stake present at expiry and set up periodic unlock.
             UnstakeRestriction::Periodic {
                 per_period_allowance: max_pct * self.stake.amount,
-                expires_sec: self.auto_stake_expiry.saturating_add(restriction_duration),
+                expires_sec,
             }
         };
     }
 
-    pub fn available_to_unstake(
+    /// Computes the allowance accrued up to `now_sec` (carried-over `unlocked_stake` plus any
+    /// newly elapsed periods) and the next period boundary. The result is NOT capped by the
+    /// staked amount; use `available_to_unstake` for the withdrawable amount.
+    pub fn accrued_allowance(
         &self,
         now_sec: Duration,
         unstake_period: Duration,
     ) -> Result<(Balance, Option<Duration>), DispatchError> {
-        if self.stake.amount.is_zero() || unstake_period == 0 {
-            return Ok((Zero::zero(), self.stake.next_unstake_time_sec))
+        if unstake_period == 0 {
+            return Ok((self.stake.unlocked_stake, self.stake.next_unstake_time_sec))
         }
 
         match &self.stake.restriction {
@@ -310,29 +329,140 @@ impl<
 
                 // Still within the current period return already free allowance only.
                 if now_sec < next_unstake {
-                    return Ok((
-                        self.stake.unlocked_stake.min(self.stake.amount),
-                        Some(next_unstake),
-                    ))
+                    return Ok((self.stake.unlocked_stake, Some(next_unstake)))
                 }
 
                 let elapsed = now_sec.saturating_sub(next_unstake);
                 let periods = 1u64.saturating_add(elapsed / unstake_period);
                 let newly_unlocked = per_period_allowance.saturating_mul((periods as u32).into());
-                let available = self
+                let accrued = self
                     .stake
                     .unlocked_stake
                     .checked_add(&newly_unlocked)
-                    .ok_or(ArithmeticError::Overflow)?
-                    .min(self.stake.amount);
+                    .ok_or(ArithmeticError::Overflow)?;
 
                 let next = next_unstake
                     .checked_add(periods.saturating_mul(unstake_period))
                     .ok_or(ArithmeticError::Overflow)?;
 
-                Ok((available, Some(next)))
+                Ok((accrued, Some(next)))
             },
         }
+    }
+
+    /// The amount that can be withdrawn right now (accrued allowance capped by the staked
+    /// amount) and the next period boundary.
+    pub fn available_to_unstake(
+        &self,
+        now_sec: Duration,
+        unstake_period: Duration,
+    ) -> Result<(Balance, Option<Duration>), DispatchError> {
+        if self.stake.amount.is_zero() || unstake_period == 0 {
+            return Ok((Zero::zero(), self.stake.next_unstake_time_sec))
+        }
+
+        let (accrued, next) = self.accrued_allowance(now_sec, unstake_period)?;
+        Ok((accrued.min(self.stake.amount), next))
+    }
+
+    /// Persists the accrued allowance of a `Periodic` node into `unlocked_stake` and advances
+    /// `next_unstake_time_sec`, so that the allowance can be transferred without double
+    /// counting elapsed periods. No-op for `Locked`, `Free` or an expired `Periodic` node.
+    pub fn settle_accrued_allowance(
+        &mut self,
+        now_sec: Duration,
+        unstake_period: Duration,
+    ) -> Result<(), DispatchError> {
+        match &self.stake.restriction {
+            UnstakeRestriction::Periodic { expires_sec, .. } if now_sec < *expires_sec => {},
+            _ => return Ok(()),
+        }
+
+        let (accrued, next) = self.accrued_allowance(now_sec, unstake_period)?;
+        self.stake.unlocked_stake = accrued;
+        self.stake.next_unstake_time_sec = next;
+        Ok(())
+    }
+
+    /// Whether stake may be moved from `self` into `dest`. Both nodes must have been
+    /// snapshotted (`try_snapshot_stake`) first so their restriction state is current.
+    ///
+    /// Moves between nodes in the same state are always allowed. `Free` stake may also be
+    /// moved into a `Locked` node (it only re-locks). Any other combination would let stake
+    /// escape its restriction early and is rejected.
+    pub fn can_move_stake_to(&self, dest: &Self) -> bool {
+        use UnstakeRestriction::*;
+        matches!(
+            (&self.stake.restriction, &dest.stake.restriction),
+            (Locked, Locked) | (Free, Free) | (Periodic { .. }, Periodic { .. }) | (Free, Locked)
+        )
+    }
+
+    /// Floor of `value * amount / total`, computed exactly in 128-bit arithmetic so that very
+    /// small ratios are not quantised away (a `Perbill` ratio would round `10^8 / 10^18` to
+    /// zero). The caller guarantees `amount <= total`, so the result never exceeds `value`.
+    fn pro_rata_share(
+        value: Balance,
+        amount: Balance,
+        total: Balance,
+    ) -> Result<Balance, ArithmeticError> {
+        let value: u128 = value.unique_saturated_into();
+        let amount: u128 = amount.unique_saturated_into();
+        let total: u128 = total.unique_saturated_into();
+        if total.is_zero() {
+            return Err(ArithmeticError::DivisionByZero)
+        }
+        let share = multiply_by_rational_with_rounding(value, amount, total, Rounding::Down)
+            .ok_or(ArithmeticError::Overflow)?;
+        Ok(share.unique_saturated_into())
+    }
+
+    /// Moves `amount` of stake from `self` into `dest`. When both nodes are `Periodic`, the
+    /// proportional share of the per-period allowance and already-unlocked stake travels
+    /// with it (exact floor of `value * amount / source_stake`). The caller must have checked
+    /// `can_move_stake_to`, validated `0 < amount <= self.stake.amount`, and settled both nodes
+    /// (`settle_accrued_allowance`).
+    pub fn move_stake_to(
+        &mut self,
+        dest: &mut Self,
+        amount: Balance,
+    ) -> Result<(), ArithmeticError> {
+        if self.stake.restriction.per_period_allowance().is_some() &&
+            dest.stake.restriction.per_period_allowance().is_some()
+        {
+            let source_stake = self.stake.amount;
+            let from_allowance =
+                self.stake.restriction.per_period_allowance().unwrap_or_else(Zero::zero);
+            let moved_allowance = Self::pro_rata_share(from_allowance, amount, source_stake)?;
+            let moved_unlocked =
+                Self::pro_rata_share(self.stake.unlocked_stake, amount, source_stake)?;
+
+            if let Some(allowance) = self.stake.restriction.per_period_allowance_mut() {
+                *allowance =
+                    allowance.checked_sub(&moved_allowance).ok_or(ArithmeticError::Underflow)?;
+            }
+            if let Some(allowance) = dest.stake.restriction.per_period_allowance_mut() {
+                *allowance =
+                    allowance.checked_add(&moved_allowance).ok_or(ArithmeticError::Overflow)?;
+            }
+
+            self.stake.unlocked_stake = self
+                .stake
+                .unlocked_stake
+                .checked_sub(&moved_unlocked)
+                .ok_or(ArithmeticError::Underflow)?;
+            dest.stake.unlocked_stake = dest
+                .stake
+                .unlocked_stake
+                .checked_add(&moved_unlocked)
+                .ok_or(ArithmeticError::Overflow)?;
+        }
+
+        self.stake.amount =
+            self.stake.amount.checked_sub(&amount).ok_or(ArithmeticError::Underflow)?;
+        dest.stake.amount =
+            dest.stake.amount.checked_add(&amount).ok_or(ArithmeticError::Overflow)?;
+        Ok(())
     }
 }
 

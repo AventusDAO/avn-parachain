@@ -70,6 +70,30 @@ fn register_new_node<T: Config>(
     key
 }
 
+/// Puts `node` into the most expensive state for the stake-moving extrinsics: an active
+/// `Periodic` restriction with several elapsed-but-unsettled periods and carried-over unlocked
+/// stake, so that settlement, pro-rata transfer and pooling all do real work.
+fn make_periodic_with_unsettled_periods<T: Config>(node: &NodeId<T>) {
+    let unstake_period: u64 = 1_000;
+    let now_sec = Pallet::<T>::time_now_sec();
+    UnstakePeriodSec::<T>::put(unstake_period);
+    RestrictedUnstakeDurationSec::<T>::put(1_000_000u64);
+    MaxUnstakePercentage::<T>::put(Perbill::from_percent(10));
+
+    <NodeRegistry<T>>::mutate(node, |info| {
+        if let Some(info) = info.as_mut() {
+            // Expired five periods ago and never settled since.
+            info.auto_stake_expiry = now_sec.saturating_sub(5 * unstake_period);
+            info.stake.unlocked_stake = 50u32.into();
+            info.stake.next_unstake_time_sec = None;
+            info.stake.restriction = UnstakeRestriction::Periodic {
+                per_period_allowance: 100u32.into(),
+                expires_sec: now_sec.saturating_add(1_000_000),
+            };
+        }
+    });
+}
+
 fn create_heartbeat<T: Config>(node: NodeId<T>, reward_period_index: RewardPeriodIndex) {
     let uptime = 1u64;
     let node_info = <NodeRegistry<T>>::get(&node).unwrap();
@@ -768,21 +792,20 @@ benchmarks! {
 
         T::Currency::make_free_balance_be(&owner, 1_000_000u32.into());
 
-        // Register b source nodes and a destination node; stake each source.
+        pallet_timestamp::Pallet::<T>::set_timestamp(10_000 * 12_000);
+
+        // Register b source nodes and a destination node; stake each source. All nodes are
+        // active Periodic nodes with unsettled periods (the worst case for this call).
         let to_node: NodeId<T> = account("to_node", 0, 0);
         register_new_node::<T>(to_node.clone(), owner.clone(), 0);
-        <NodeRegistry<T>>::mutate(&to_node, |i| {
-            if let Some(i) = i.as_mut() { i.auto_stake_expiry = u64::MAX; }
-        });
+        make_periodic_with_unsettled_periods::<T>(&to_node);
 
         let mut sources: Vec<(NodeId<T>, Option<BalanceOf<T>>)> = vec![];
         for i in 1..=b {
             let node: NodeId<T> = account("node", i, i);
             register_new_node::<T>(node.clone(), owner.clone(), i);
-            <NodeRegistry<T>>::mutate(&node, |info| {
-                if let Some(info) = info.as_mut() { info.auto_stake_expiry = u64::MAX; }
-            });
             Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
+            make_periodic_with_unsettled_periods::<T>(&node);
             sources.push((node, None));
         }
 
@@ -794,10 +817,11 @@ benchmarks! {
     verify {
         let expected_total: BalanceOf<T> =
             stake_per_node.saturating_mul((b as u32).into());
-        assert_eq!(
-            <NodeRegistry<T>>::get(&to_node).unwrap().stake.amount,
-            expected_total
-        );
+        let to_info = <NodeRegistry<T>>::get(&to_node).unwrap();
+        assert_eq!(to_info.stake.amount, expected_total);
+        // The Periodic path ran: every source's allowance was pooled into the destination.
+        let expected_allowance: BalanceOf<T> = 100u32.saturating_mul(b + 1).into();
+        assert_eq!(to_info.stake.restriction.per_period_allowance(), Some(expected_allowance));
         assert_last_event::<T>(Event::StakeMoved {
             owner,
             to_node,
@@ -819,14 +843,16 @@ benchmarks! {
         T::Currency::make_free_balance_be(&owner, 1_000_000u32.into());
         T::Currency::make_free_balance_be(&new_owner, 1_000_000u32.into());
 
+        pallet_timestamp::Pallet::<T>::set_timestamp(10_000 * 12_000);
+
+        // All nodes are active Periodic nodes with unsettled periods, so settlement, pooling
+        // and redistribution of the allowance are all exercised (the worst case for this call).
         let mut nodes: Vec<NodeId<T>> = vec![];
         for i in 1..=b {
             let node: NodeId<T> = account("node", i, i);
             register_new_node::<T>(node.clone(), owner.clone(), i);
-            <NodeRegistry<T>>::mutate(&node, |info| {
-                if let Some(info) = info.as_mut() { info.auto_stake_expiry = u64::MAX; }
-            });
             Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
+            make_periodic_with_unsettled_periods::<T>(&node);
             nodes.push(node);
         }
 
@@ -844,7 +870,10 @@ benchmarks! {
         for node in &nodes {
             assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
             assert!(<OwnedNodes<T>>::contains_key(new_owner.clone(), node));
-            assert_eq!(<NodeRegistry<T>>::get(node).unwrap().owner, new_owner);
+            let info = <NodeRegistry<T>>::get(node).unwrap();
+            assert_eq!(info.owner, new_owner);
+            // The Periodic path ran: allowance pooled and split evenly across the set.
+            assert_eq!(info.stake.restriction.per_period_allowance(), Some(100u32.into()));
         }
         assert_has_event::<T>(Event::NodeMoved {
             old_owner: owner,
