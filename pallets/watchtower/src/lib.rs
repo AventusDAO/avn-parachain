@@ -1081,6 +1081,11 @@ pub mod pallet {
         fn ensure_committee_ready(size: u32) -> DispatchResult {
             Self::committee_ready(size).map(|_| ()).map_err(Into::into)
         }
+
+        #[cfg(feature = "runtime-benchmarks")]
+        fn setup_nodes_for_benchmark(size: u32) {
+            T::BenchmarkHelper::setup_nodes(size);
+        }
     }
 
     impl<T: Config> InnerCallValidator for Pallet<T> {

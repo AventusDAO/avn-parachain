@@ -71,5 +71,6 @@ runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
+	"sp-watchtower/runtime-benchmarks",
 ]
 try-runtime = ["frame-support/try-runtime"]

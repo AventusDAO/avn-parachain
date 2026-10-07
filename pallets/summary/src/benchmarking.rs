@@ -838,6 +838,8 @@ mod benchmarks {
     #[benchmark]
     fn set_external_validation_committee_size() {
         let new_size = T::ExternalValidator::min_committee_size().max(1);
+        // The call refuses a size the watchtower cannot serve, so give it real nodes.
+        T::ExternalValidator::setup_nodes_for_benchmark(new_size);
         let config = AdminConfig::ExternalValidationCommitteeSize(Some(new_size));
 
         #[extrinsic_call]

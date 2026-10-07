@@ -125,6 +125,11 @@ pub trait WatchtowerInterface {
     /// backfilling, or fewer than `min_committee_size` nodes registered). Lets a consumer
     /// refuse a configuration that would leave its proposals stuck in the queue.
     fn ensure_committee_ready(size: u32) -> DispatchResult;
+
+    /// Benchmark setup for consumers: registers enough nodes that `ensure_committee_ready(size)`
+    /// passes. Implementations without real nodes need not override it.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn setup_nodes_for_benchmark(_size: u32) {}
 }
 
 // A simple no-op implementation of the WatchtowerInterface trait
