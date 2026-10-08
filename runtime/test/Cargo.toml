@@ -98,6 +98,7 @@ pallet-parachain-staking.workspace = true
 pallet-avn-anchor.workspace = true
 pallet-cross-chain-voting.workspace = true
 pallet-cross-chain-voting-runtime-api.workspace = true
+pallet-watchtower-floor-oracle.workspace = true
 
 # Common Runtime
 runtime-common.workspace = true
@@ -131,6 +132,7 @@ std = [
 	"pallet-avn-offence-handler/std",
 	"pallet-cross-chain-voting/std",
 	"pallet-cross-chain-voting-runtime-api/std",
+	"pallet-watchtower-floor-oracle/std",
 	"pallet-eth-bridge/std",
 	"pallet-eth-bridge-runtime-api/std",
 	"pallet-ethereum-events/std",
@@ -160,6 +162,7 @@ runtime-benchmarks = [
 	"pallet-avn-proxy/runtime-benchmarks",
 	"pallet-avn-offence-handler/runtime-benchmarks",
 	"pallet-cross-chain-voting/runtime-benchmarks",
+	"pallet-watchtower-floor-oracle/runtime-benchmarks",
 	"pallet-eth-bridge/runtime-benchmarks",
 	"pallet-ethereum-events/runtime-benchmarks",
 	"pallet-avn/runtime-benchmarks",
@@ -192,4 +195,5 @@ try-runtime = [
 	"pallet-parachain-staking/try-runtime",
 	"pallet-eth-bridge/try-runtime",
 	"pallet-cross-chain-voting/try-runtime",
+	"pallet-watchtower-floor-oracle/try-runtime",
 ]

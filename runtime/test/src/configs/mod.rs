@@ -647,6 +647,20 @@ impl pallet_cross_chain_voting::Config for Runtime {
     type WeightInfo = pallet_cross_chain_voting::default_weights::SubstrateWeight<Runtime>;
 }
 
+parameter_types! {
+    /// A checkpoint round that has not settled after this many blocks (about 10 minutes) is
+    /// restarted by the next request.
+    pub const CheckpointRoundTimeoutBlocks: BlockNumber = 50;
+}
+
+impl pallet_watchtower_floor_oracle::Config for Runtime {
+    type RuntimeCall = RuntimeCall;
+    type TimeProvider = Timestamp;
+    type Quorum = Avn;
+    type RoundTimeoutBlocks = CheckpointRoundTimeoutBlocks;
+    type WeightInfo = pallet_watchtower_floor_oracle::default_weights::SubstrateWeight<Runtime>;
+}
+
 // Other pallets
 parameter_types! {
     pub const AssetDeposit: Balance = 10 * MILLI_AVT;

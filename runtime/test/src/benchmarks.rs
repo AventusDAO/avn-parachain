@@ -22,6 +22,7 @@ polkadot_sdk::frame_benchmarking::define_benchmarks!(
     [pallet_avn_proxy, AvnProxy]
     [pallet_avn, Avn]
     [pallet_cross_chain_voting, CrossChainVoting]
+    [pallet_watchtower_floor_oracle, WatchtowerFloorOracle]
     [pallet_eth_bridge, EthBridge]
     [pallet_ethereum_events, EthereumEvents]
     [pallet_nft_manager, NftManager]
