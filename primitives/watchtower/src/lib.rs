@@ -9,9 +9,57 @@ use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::marker::PhantomData;
 use scale_info::TypeInfo;
 use sp_core::H256;
-use sp_runtime::{traits::Member, Debug, DispatchResult, Perbill};
+use sp_runtime::{traits::Member, Debug, DispatchError, DispatchResult, Perbill};
 
 pub type ProposalId = H256;
+
+// External chain checkpoints
+/// EVM chain id of an external chain (Ethereum = 1, Base = 8453, Sepolia = 11155111).
+pub type ExternalChainId = u64;
+/// Identifier of one checkpoint voting round. `0` marks a root seeded checkpoint.
+pub type RoundId = u64;
+
+/// A point in time on an external chain that every node agrees to observe it at.
+#[derive(
+    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
+pub struct Checkpoint {
+    /// Finalised block number on the external chain.
+    pub block_number: u32,
+    /// Parachain unix timestamp, in seconds, when agreement completed.
+    pub agreed_at: u64,
+    /// The round that produced this checkpoint.
+    pub round_id: RoundId,
+}
+
+/// Result of asking the oracle for a checkpoint.
+#[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
+pub enum CheckpointRequest<BlockNumber> {
+    /// The stored checkpoint is within the freshness limit and can be used as is.
+    Ready(Checkpoint),
+    /// A voting round is in progress. Its result will be written to storage under `round_id`.
+    Pending {
+        round_id: RoundId,
+        /// Parachain block the round started at.
+        started_at: BlockNumber,
+        /// The previous checkpoint, if any, for callers that can tolerate a stale value.
+        stale: Option<Checkpoint>,
+    },
+}
+
+/// Interface for other pallets to obtain an agreed checkpoint for an external chain.
+pub trait CheckpointOracle<BlockNumber> {
+    /// Reuse the stored checkpoint if it is younger than the chain's freshness limit. Otherwise
+    /// start a voting round, or join the one already running, and return `Pending`.
+    ///
+    /// This MUTATES storage. Never call it from a runtime API or a view function.
+    fn request_checkpoint(
+        chain_id: ExternalChainId,
+    ) -> Result<CheckpointRequest<BlockNumber>, DispatchError>;
+
+    /// Read the latest agreed checkpoint without touching storage.
+    fn checkpoint(chain_id: ExternalChainId) -> Option<Checkpoint>;
+}
 
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum RawPayload {

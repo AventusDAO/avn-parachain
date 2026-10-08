@@ -2113,6 +2113,7 @@ dependencies = [
  "pallet-token-manager",
  "pallet-validators-manager",
  "pallet-watchtower",
+ "pallet-watchtower-floor-oracle",
  "parity-scale-codec",
  "polkadot-sdk",
  "scale-info",
@@ -2152,6 +2153,7 @@ dependencies = [
  "pallet-summary",
  "pallet-token-manager",
  "pallet-validators-manager",
+ "pallet-watchtower-floor-oracle",
  "parity-scale-codec",
  "polkadot-sdk",
  "scale-info",
@@ -12297,6 +12299,28 @@ dependencies = [
  "sp-std",
  "sp-watchtower",
  "test-case",
+]
+
+[[package]]
+name = "pallet-watchtower-floor-oracle"
+version = "10.0.1"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-avn",
+ "pallet-balances",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-application-crypto",
+ "sp-avn-common",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+ "sp-watchtower",
 ]
 
 [[package]]

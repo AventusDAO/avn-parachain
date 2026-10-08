@@ -182,6 +182,7 @@ pallet-cross-chain-voting-runtime-api = { path = "./pallets/cross-chain-voting/r
 pallet-node-manager = { path = "./pallets/node-manager", default-features = false }
 pallet-watchtower = { path = "./pallets/watchtower", default-features = false }
 pallet-summary-watchtower = { path = "./pallets/summary-watchtower", default-features = false }
+pallet-watchtower-floor-oracle = { path = "./pallets/watchtower-floor-oracle", default-features = false }
 
 # Common Runtime
 runtime-common = { package = "avn-runtime-common", path = "./runtime/common", default-features = false }

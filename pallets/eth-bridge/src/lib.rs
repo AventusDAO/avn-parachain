@@ -146,9 +146,12 @@ pub type LowerId = u32;
 
 pub const MAX_CONFIRMATIONS: u32 = 100u32;
 const PALLET_NAME: &'static [u8] = b"EthBridge";
-use sp_avn_common::constants::context::{
-    ADD_CONFIRMATION_CONTEXT, ADD_CORROBORATION_CONTEXT, ADD_ETH_TX_HASH_CONTEXT,
-    SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT, SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
+use sp_avn_common::{
+    constants::context::{
+        ADD_CONFIRMATION_CONTEXT, ADD_CORROBORATION_CONTEXT, ADD_ETH_TX_HASH_CONTEXT,
+        SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT, SUBMIT_LATEST_ETH_BLOCK_CONTEXT,
+    },
+    quorum::{select_with_quorum, QuorumSelection},
 };
 pub const DEFAULT_ETH_RANGE: u32 = 20u32;
 
@@ -663,35 +666,25 @@ pub mod pallet {
 
             SubmittedEthBlocks::<T, I>::insert(&latest_finalised_block, votes);
 
-            let mut total_votes_count = 0;
-            let mut submitted_blocks = Vec::new();
+            let submitted_blocks: Vec<(u32, usize)> = SubmittedEthBlocks::<T, I>::iter()
+                .map(|(eth_block_num, votes)| (eth_block_num, votes.len()))
+                .collect();
 
-            for (eth_block_num, votes) in SubmittedEthBlocks::<T, I>::iter() {
-                let vote_count = votes.len();
-                total_votes_count += vote_count;
-                submitted_blocks.push((eth_block_num, vote_count));
-            }
+            let selection = select_with_quorum(
+                &submitted_blocks,
+                T::Quorum::get_supermajority_quorum() as usize,
+                T::Quorum::get_quorum() as usize,
+            );
 
-            submitted_blocks.sort();
-
-            let mut remaining_votes_threshold = T::Quorum::get_supermajority_quorum() as usize;
             let mut threshold_met = false;
 
-            if total_votes_count >= remaining_votes_threshold as usize {
+            if selection != QuorumSelection::BelowThreshold {
                 threshold_met = true;
-                let quorum = T::Quorum::get_quorum() as usize;
-                let mut selected_range: EthBlockRange = Default::default();
-
-                for (eth_block_num, votes_count) in submitted_blocks.iter() {
-                    remaining_votes_threshold.saturating_reduce(*votes_count);
-                    if remaining_votes_threshold < quorum {
-                        selected_range = EthBlockRange {
-                            start_block: *eth_block_num,
-                            length: eth_block_range_size,
-                        };
-                        break
-                    }
-                }
+                let selected_range = match selection {
+                    QuorumSelection::Selected(start_block) =>
+                        EthBlockRange { start_block, length: eth_block_range_size },
+                    _ => Default::default(),
+                };
 
                 ActiveEthereumRange::<T, I>::put(ActiveEthRange {
                     range: selected_range,

@@ -26,6 +26,8 @@ pub mod context {
     pub const SUBMIT_ETHEREUM_EVENTS_HASH_CONTEXT: &'static [u8] =
         b"EthBridgeDiscoveredEthEventsHash";
     pub const SUBMIT_LATEST_ETH_BLOCK_CONTEXT: &'static [u8] = b"EthBridgeLatestEthereumBlockHash";
+    pub const SUBMIT_CHECKPOINT_VOTE_CONTEXT: &'static [u8] =
+        b"WatchtowerFloorOracleCheckpointVote";
 }
 
 pub mod currency {

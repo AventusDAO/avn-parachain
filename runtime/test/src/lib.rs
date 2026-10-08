@@ -388,6 +388,9 @@ mod runtime {
     #[runtime::pallet_index(103)]
     pub type CrossChainVoting = pallet_cross_chain_voting;
 
+    #[runtime::pallet_index(104)]
+    pub type WatchtowerFloorOracle = pallet_watchtower_floor_oracle;
+
     // ORML pallets
     #[runtime::pallet_index(120)]
     pub type OrmlTokens = orml_tokens;
