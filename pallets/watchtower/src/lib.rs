@@ -73,6 +73,9 @@ mod add_proposal;
 #[path = "tests/admin.rs"]
 mod admin;
 #[cfg(test)]
+#[path = "tests/choice_voting.rs"]
+mod choice_voting;
+#[cfg(test)]
 #[path = "tests/committee.rs"]
 mod committee_tests;
 #[cfg(test)]
@@ -229,6 +232,24 @@ pub mod pallet {
     #[pallet::storage]
     pub type ActiveInternalProposal<T: Config> = StorageValue<_, ProposalId, OptionQuery>;
 
+    /// How each proposal is voted on. Absent means `Binary`, so existing proposals need no
+    /// migration.
+    #[pallet::storage]
+    pub type VotingKindOf<T: Config> =
+        StorageMap<_, Blake2_128Concat, ProposalId, VotingKind, ValueQuery>;
+
+    /// Votes per answer for `Choice` proposals.
+    #[pallet::storage]
+    #[pallet::getter(fn choice_tally)]
+    pub type ChoiceTally<T: Config> =
+        StorageDoubleMap<_, Blake2_128Concat, ProposalId, Blake2_128Concat, H256, u32, ValueQuery>;
+
+    /// The answer a `Choice` proposal settled on. Readable from `on_voting_completed`.
+    #[pallet::storage]
+    #[pallet::getter(fn winning_choice)]
+    pub type WinningChoice<T: Config> =
+        StorageMap<_, Blake2_128Concat, ProposalId, H256, OptionQuery>;
+
     #[pallet::storage] // ring slots: physical index -> item id
     pub type InternalProposalQueue<T: Config> =
         StorageMap<_, Blake2_128Concat, (QueueId, u32), ProposalId, OptionQuery>;
@@ -264,11 +285,15 @@ pub mod pallet {
             in_favor: bool,
             vote_weight: u32,
         },
+        /// A vote naming an answer was counted on a `Choice` proposal.
+        ChoiceVoteSubmitted { voter: T::AccountId, proposal_id: ProposalId, choice: H256 },
         /// Consensus has been reached on a proposal
         VotingEnded {
             proposal_id: ProposalId,
             external_ref: H256,
             consensus_result: ProposalStatusEnum,
+            /// The answer a passed `Choice` proposal settled on.
+            winning_choice: Option<H256>,
         },
         /// A completed or expired proposal has been cleaned from storage
         ProposalCleaned { proposal_id: ProposalId },
@@ -322,6 +347,8 @@ pub mod pallet {
         ProposalNotFound,
         /// The voter is not an authorized watchtower
         UnauthorizedVoter,
+        /// A yes/no vote on a `Choice` proposal, or an answer on a yes/no one.
+        WrongVoteKind,
         /// The proposal is not currently active
         ProposalNotActive,
         /// The voter has already voted
@@ -492,7 +519,12 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             ensure_none(origin)?;
 
-            Self::validate_unsigned_vote(proposal_id, watchtower.clone(), signature, in_favor)?;
+            Self::validate_unsigned_vote(
+                proposal_id,
+                watchtower.clone(),
+                signature,
+                VoteChoice::Binary(in_favor),
+            )?;
 
             let finalised = Self::process_vote(&watchtower, proposal_id, in_favor)?;
 
@@ -500,6 +532,38 @@ pub mod pallet {
                 Ok(Some(<T as Config>::WeightInfo::unsigned_vote_end_proposal()).into())
             } else {
                 Ok(Some(<T as Config>::WeightInfo::unsigned_vote()).into())
+            }
+        }
+
+        /// A watchtower names its answer on a `Choice` proposal. Signed by the node key over
+        /// `(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, watchtower)`.
+        #[pallet::call_index(10)]
+        #[pallet::weight(
+            <T as Config>::WeightInfo::unsigned_vote_choice()
+            .max(<T as Config>::WeightInfo::unsigned_vote_choice_end_proposal())
+        )]
+        pub fn unsigned_vote_choice(
+            origin: OriginFor<T>,
+            proposal_id: ProposalId,
+            choice: H256,
+            watchtower: T::AccountId,
+            signature: <T::SignerId as RuntimeAppPublic>::Signature,
+        ) -> DispatchResultWithPostInfo {
+            ensure_none(origin)?;
+
+            Self::validate_unsigned_vote(
+                proposal_id,
+                watchtower.clone(),
+                signature,
+                VoteChoice::Choice(choice),
+            )?;
+
+            let finalised = Self::vote_choice_for(&watchtower, proposal_id, choice)?;
+
+            if finalised {
+                Ok(Some(<T as Config>::WeightInfo::unsigned_vote_choice_end_proposal()).into())
+            } else {
+                Ok(Some(<T as Config>::WeightInfo::unsigned_vote_choice()).into())
             }
         }
 
@@ -669,7 +733,24 @@ pub mod pallet {
                         *proposal_id,
                         watchtower.clone(),
                         signature.clone(),
-                        *in_favor,
+                        VoteChoice::Binary(*in_favor),
+                    ) {
+                        return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
+                    }
+
+                    ValidTransaction::with_tag_prefix("wt_unsignedVote")
+                        .priority(TransactionPriority::max_value() - reduce_priority)
+                        .and_provides((watchtower, proposal_id))
+                        .longevity(64_u64)
+                        .propagate(true)
+                        .build()
+                },
+                Call::unsigned_vote_choice { proposal_id, choice, watchtower, signature } => {
+                    if let Err(_) = Self::validate_unsigned_vote(
+                        *proposal_id,
+                        watchtower.clone(),
+                        signature.clone(),
+                        VoteChoice::Choice(*choice),
                     ) {
                         return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
                     }
@@ -775,6 +856,7 @@ pub mod pallet {
             proposal_request: ProposalRequest,
         ) -> DispatchResult {
             let current_block = <frame_system::Pallet<T>>::block_number();
+            let voting = proposal_request.voting;
             // Proposal is validated before creating it.
             let mut proposal = to_proposal::<T>(proposal_request, proposer, current_block)?;
 
@@ -803,6 +885,9 @@ pub mod pallet {
             ProposalStatus::<T>::insert(proposal_id, &status);
             Proposals::<T>::insert(proposal_id, &proposal);
             ExternalRef::<T>::insert(external_ref, proposal_id);
+            if voting != VotingKind::Binary {
+                VotingKindOf::<T>::insert(proposal_id, voting);
+            }
 
             if status == ProposalStatusEnum::Active {
                 T::WatchtowerHooks::on_proposal_submitted(proposal_id, proposal)?;
@@ -818,7 +903,37 @@ pub mod pallet {
             proposal_id: ProposalId,
             in_favor: bool,
         ) -> Result<bool, DispatchError> {
+            Self::process_vote_choice(voter, proposal_id, VoteChoice::Binary(in_favor))
+        }
+
+        /// Counts an answer from an already authenticated voter on a `Choice` proposal. For
+        /// consumer pallets whose own extrinsic carries the vote (the floor oracle's report).
+        /// Returns whether the proposal was finalised by this vote.
+        pub fn vote_choice_for(
+            voter: &T::AccountId,
+            proposal_id: ProposalId,
+            choice: H256,
+        ) -> Result<bool, DispatchError> {
+            Self::process_vote_choice(voter, proposal_id, VoteChoice::Choice(choice))
+        }
+
+        fn kind_of(vote: &VoteChoice) -> VotingKind {
+            match vote {
+                VoteChoice::Binary(_) => VotingKind::Binary,
+                VoteChoice::Choice(_) => VotingKind::Choice,
+            }
+        }
+
+        fn process_vote_choice(
+            voter: &T::AccountId,
+            proposal_id: ProposalId,
+            vote: VoteChoice,
+        ) -> Result<bool, DispatchError> {
             let proposal = Proposals::<T>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
+            ensure!(
+                VotingKindOf::<T>::get(proposal_id) == Self::kind_of(&vote),
+                Error::<T>::WrongVoteKind
+            );
             ensure!(
                 ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Active,
                 Error::<T>::ProposalNotActive
@@ -845,7 +960,7 @@ pub mod pallet {
                         Self::is_committee_member(proposal_id, voter),
                         Error::<T>::NotInCommittee
                     );
-                    T::VoteFilter::ensure_can_vote(proposal_id, voter, in_favor)?;
+                    T::VoteFilter::ensure_can_vote(proposal_id, voter, &vote)?;
 
                     // This should not happen but just in case (defensive programming)
                     ensure!(
@@ -867,21 +982,35 @@ pub mod pallet {
                 },
             };
 
-            Voters::<T>::insert(proposal_id, voter, in_favor);
-            Votes::<T>::mutate(proposal_id, |vote| {
-                if in_favor {
-                    vote.in_favors = vote.in_favors.saturating_add(vote_weight);
-                } else {
-                    vote.againsts = vote.againsts.saturating_add(vote_weight);
-                }
-            });
-
-            Self::deposit_event(Event::VoteSubmitted {
-                voter: voter.clone(),
-                proposal_id,
-                in_favor,
-                vote_weight,
-            });
+            match vote {
+                VoteChoice::Binary(in_favor) => {
+                    Voters::<T>::insert(proposal_id, voter, in_favor);
+                    Votes::<T>::mutate(proposal_id, |tally| {
+                        if in_favor {
+                            tally.in_favors = tally.in_favors.saturating_add(vote_weight);
+                        } else {
+                            tally.againsts = tally.againsts.saturating_add(vote_weight);
+                        }
+                    });
+                    Self::deposit_event(Event::VoteSubmitted {
+                        voter: voter.clone(),
+                        proposal_id,
+                        in_favor,
+                        vote_weight,
+                    });
+                },
+                VoteChoice::Choice(choice) => {
+                    Voters::<T>::insert(proposal_id, voter, true);
+                    ChoiceTally::<T>::mutate(proposal_id, choice, |tally| {
+                        *tally = tally.saturating_add(vote_weight)
+                    });
+                    Self::deposit_event(Event::ChoiceVoteSubmitted {
+                        voter: voter.clone(),
+                        proposal_id,
+                        choice,
+                    });
+                },
+            }
 
             let expired = Self::proposal_expired(current_block, &proposal);
             if let Some(result) = Self::decide(proposal_id, &proposal, expired) {
@@ -958,6 +1087,15 @@ pub mod pallet {
                 meter.consume(<T as Config>::WeightInfo::cleanup_committee_page(removed));
             }
 
+            let page = Self::affordable_entries(
+                &meter,
+                <T as Config>::WeightInfo::cleanup_choice_tally_page,
+            );
+            if page > 0 {
+                let removed = Self::remove_choice_tally_page(proposal_id, page);
+                meter.consume(<T as Config>::WeightInfo::cleanup_choice_tally_page(removed));
+            }
+
             Self::remove_proposal_if_cleaned(proposal_id);
 
             meter.consumed()
@@ -1003,11 +1141,22 @@ pub mod pallet {
             members.len() as u32
         }
 
-        /// Removes the proposal and its remaining data once no voters and no committee members
-        /// are left. Returns true if it was removed.
+        /// Same as `remove_voters_page` for the per-answer tallies of a `Choice` proposal.
+        pub(crate) fn remove_choice_tally_page(proposal_id: ProposalId, max: u32) -> u32 {
+            let answers: Vec<H256> =
+                ChoiceTally::<T>::iter_key_prefix(proposal_id).take(max as usize).collect();
+            for answer in &answers {
+                ChoiceTally::<T>::remove(proposal_id, answer);
+            }
+            answers.len() as u32
+        }
+
+        /// Removes the proposal and its remaining data once no voters, no committee members
+        /// and no tallies are left. Returns true if it was removed.
         pub(crate) fn remove_proposal_if_cleaned(proposal_id: ProposalId) -> bool {
             if Voters::<T>::iter_prefix(proposal_id).next().is_some() ||
-                ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_some()
+                ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_some() ||
+                ChoiceTally::<T>::iter_prefix(proposal_id).next().is_some()
             {
                 return false
             }
@@ -1015,6 +1164,8 @@ pub mod pallet {
             Proposals::<T>::remove(proposal_id);
             Votes::<T>::remove(proposal_id);
             ProposalCommitteeSize::<T>::remove(proposal_id);
+            VotingKindOf::<T>::remove(proposal_id);
+            WinningChoice::<T>::remove(proposal_id);
             ProposalsToRemove::<T>::remove(proposal_id);
 
             Self::deposit_event(Event::ProposalCleaned { proposal_id });
@@ -1025,12 +1176,16 @@ pub mod pallet {
             proposal_id: ProposalId,
             watchtower: T::AccountId,
             signature: <T::SignerId as RuntimeAppPublic>::Signature,
-            in_favor: bool,
+            vote: VoteChoice,
         ) -> Result<(), DispatchError> {
             // Only Active internal proposals can be voted on with unsigned txs
             ensure!(
                 ActiveInternalProposal::<T>::get() == Some(proposal_id),
                 Error::<T>::InvalidProposalForUnsignedVote
+            );
+            ensure!(
+                VotingKindOf::<T>::get(proposal_id) == Self::kind_of(&vote),
+                Error::<T>::WrongVoteKind
             );
 
             // Reject non-members before the signature check so they never reach the pool.
@@ -1039,20 +1194,27 @@ pub mod pallet {
                 Error::<T>::NotInCommittee
             );
             // Same for votes a consumer cannot accept.
-            T::VoteFilter::ensure_can_vote(proposal_id, &watchtower, in_favor)?;
+            T::VoteFilter::ensure_can_vote(proposal_id, &watchtower, &vote)?;
 
             let voter_signing_key = match T::Watchtowers::get_node_signing_key(&watchtower) {
                 Some(key) => key,
                 None => return Err(Error::<T>::VoterSigningKeyNotFound.into()),
             };
 
-            if !Self::offchain_signature_is_valid(
-                &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &watchtower),
-                &voter_signing_key,
-                &signature,
-            ) {
-                return Err(Error::<T>::UnauthorizedUnsignedTransaction.into())
-            }
+            // Binary votes keep their historic payload shape; answers sign the hash instead.
+            let valid = match vote {
+                VoteChoice::Binary(in_favor) => Self::offchain_signature_is_valid(
+                    &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &watchtower),
+                    &voter_signing_key,
+                    &signature,
+                ),
+                VoteChoice::Choice(choice) => Self::offchain_signature_is_valid(
+                    &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, &watchtower),
+                    &voter_signing_key,
+                    &signature,
+                ),
+            };
+            ensure!(valid, Error::<T>::UnauthorizedUnsignedTransaction);
 
             Ok(())
         }

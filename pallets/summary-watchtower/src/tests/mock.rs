@@ -50,6 +50,7 @@ impl pallet_watchtower::Config for TestRuntime {
     type Signature = Signature;
     type Watchtowers = TestNodeManager;
     type WatchtowerHooks = SummaryWatchtower;
+    type VoteFilter = ();
     type WeightInfo = ();
     type SignedTxLifetime = ConstU32<5>;
     type MaxTitleLen = ConstU32<512>;

@@ -21,6 +21,9 @@ pub trait WeightInfo {
 	fn request_checkpoint() -> Weight;
 	fn submit_checkpoint_vote(v: u32, ) -> Weight;
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight;
+	fn request_floor_price() -> Weight;
+	fn submit_floor_report() -> Weight;
+	fn set_floor_requester() -> Weight;
 }
 
 /// Weights for pallet_watchtower_floor_oracle using the Substrate node and recommended hardware.
@@ -41,7 +44,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
 	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:1)
-	/// Storage: `WatchtowerFloorOracle::NextRoundId` (r:1 w:1)
+	/// Storage: `WatchtowerFloorOracle::LastCheckpointRoundId` (r:1 w:1)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	fn request_checkpoint() -> Weight {
 		// Proof Size summary in bytes:
@@ -53,6 +56,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:1)
+	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
 	/// Storage: `Avn::Validators` (r:1 w:0)
 	/// The range of component `v` is `[3, 10]`.
 	fn submit_checkpoint_vote(v: u32, ) -> Weight {
@@ -63,13 +67,13 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(31_000_000, 10774)
 			// Standard Error: 10_000
 			.saturating_add(Weight::from_parts(500_000, 0).saturating_mul(v.into()))
-			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().reads(3_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:1)
+	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:1)
 	/// Storage: `Avn::Validators` (r:1 w:0)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
-	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:0 w:1)
 	/// The range of component `v` is `[3, 10]`.
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight {
 		// Proof Size summary in bytes:
@@ -79,8 +83,52 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(41_000_000, 10774)
 			// Standard Error: 10_000
 			.saturating_add(Weight::from_parts(500_000, 0).saturating_mul(v.into()))
-			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::ActiveFloorRound` (r:1 w:1)
+	/// Storage: `WatchtowerFloorOracle::LastFinalisedFloor` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::LastFloorRoundId` (r:1 w:1)
+	/// Storage: `Watchtower::ExternalRef` (r:2 w:1)
+	/// Storage: `Watchtower::Proposals` (r:1 w:1)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:0 w:1)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	fn request_floor_price() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `400`
+		//  Estimated: `12000`
+		// Minimum execution time: 80_000_000 picoseconds.
+		Weight::from_parts(82_000_000, 12000)
+			.saturating_add(T::DbWeight::get().reads(10_u64))
+			.saturating_add(T::DbWeight::get().writes(7_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::ActiveFloorRound` (r:1 w:1)
+	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
+	/// Storage: `Watchtower::ProposalCommitteeSize` (r:1 w:0)
+	/// Storage: `Watchtower::ProposalCommittee` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::FloorReports` (r:1 w:1)
+	fn submit_floor_report() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `300`
+		//  Estimated: `6000`
+		// Minimum execution time: 40_000_000 picoseconds.
+		Weight::from_parts(41_000_000, 6000)
+			.saturating_add(T::DbWeight::get().reads(5_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::FloorRequester` (r:0 w:1)
+	fn set_floor_requester() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `0`
+		//  Estimated: `0`
+		// Minimum execution time: 8_000_000 picoseconds.
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 }
 
@@ -99,13 +147,27 @@ impl WeightInfo for () {
 	fn submit_checkpoint_vote(v: u32, ) -> Weight {
 		Weight::from_parts(31_000_000, 10774)
 			.saturating_add(Weight::from_parts(500_000, 0).saturating_mul(v.into()))
-			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight {
 		Weight::from_parts(41_000_000, 10774)
 			.saturating_add(Weight::from_parts(500_000, 0).saturating_mul(v.into()))
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	fn request_floor_price() -> Weight {
+		Weight::from_parts(82_000_000, 12000)
+			.saturating_add(RocksDbWeight::get().reads(10_u64))
+			.saturating_add(RocksDbWeight::get().writes(7_u64))
+	}
+	fn submit_floor_report() -> Weight {
+		Weight::from_parts(41_000_000, 6000)
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	fn set_floor_requester() -> Weight {
+		Weight::from_parts(9_000_000, 0)
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }

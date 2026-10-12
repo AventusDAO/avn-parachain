@@ -27,14 +27,19 @@ frame-support = { workspace = true }
 frame-system = { workspace = true }
 
 pallet-avn = { workspace = true }
+pallet-watchtower = { workspace = true }
 sp-avn-common = { workspace = true }
 sp-watchtower = { workspace = true }
+sp-floor-oracle = { workspace = true }
 
 [dev-dependencies]
 sp-application-crypto = { workspace = true }
 sp-avn-common = { workspace = true, features=["test-utils"] }
+sp-keystore = { workspace = true, features = ["default"]}
 pallet-timestamp = { workspace = true }
 pallet-balances = { workspace = true, features = ["default", "insecure_zero_ed"] }
+pallet-node-manager = { workspace = true, features = ["default"] }
+parking_lot = { workspace = true }
 
 [features]
 default = ["std"]
@@ -50,14 +55,17 @@ std = [
     "frame-support/std",
     "frame-system/std",
     "pallet-avn/std",
+    "pallet-watchtower/std",
     "sp-avn-common/std",
     "sp-watchtower/std",
+    "sp-floor-oracle/std",
 ]
 runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
     "frame-support/runtime-benchmarks",
     "frame-system/runtime-benchmarks",
     "pallet-avn/runtime-benchmarks",
+    "pallet-watchtower/runtime-benchmarks",
     "sp-avn-common/runtime-benchmarks",
     "sp-watchtower/runtime-benchmarks",
 ]

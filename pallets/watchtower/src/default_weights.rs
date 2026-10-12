@@ -56,6 +56,9 @@ pub trait WeightInfo {
 	fn cleanup_finished_proposal() -> Weight;
 	fn cleanup_voters_page(n: u32, ) -> Weight;
 	fn cleanup_committee_page(n: u32, ) -> Weight;
+	fn unsigned_vote_choice() -> Weight;
+	fn unsigned_vote_choice_end_proposal() -> Weight;
+	fn cleanup_choice_tally_page(n: u32, ) -> Weight;
 }
 
 /// Weights for pallet_watchtower using the Substrate node and recommended hardware.
@@ -526,6 +529,24 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
 			.saturating_add(Weight::from_parts(0, 2570).saturating_mul(n.into()))
 	}
+	/// PLACEHOLDER until regenerated: `unsigned_vote` plus one `ChoiceTally` read/write and
+	/// one `VotingKindOf` read.
+	fn unsigned_vote_choice() -> Weight {
+		Self::unsigned_vote()
+			.saturating_add(T::DbWeight::get().reads(2_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	/// PLACEHOLDER until regenerated: `unsigned_vote_end_proposal` plus the tally scan
+	/// (bounded by the committee size) and the `WinningChoice` write.
+	fn unsigned_vote_choice_end_proposal() -> Weight {
+		Self::unsigned_vote_end_proposal()
+			.saturating_add(T::DbWeight::get().reads(3_u64))
+			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// PLACEHOLDER until regenerated: same shape as `cleanup_committee_page`.
+	fn cleanup_choice_tally_page(n: u32, ) -> Weight {
+		Self::cleanup_committee_page(n)
+	}
 }
 
 // For backwards compatibility and tests.
@@ -994,5 +1015,23 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(n.into())))
 			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(n.into())))
 			.saturating_add(Weight::from_parts(0, 2570).saturating_mul(n.into()))
+	}
+	/// PLACEHOLDER until regenerated: `unsigned_vote` plus one `ChoiceTally` read/write and
+	/// one `VotingKindOf` read.
+	fn unsigned_vote_choice() -> Weight {
+		Self::unsigned_vote()
+			.saturating_add(RocksDbWeight::get().reads(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	/// PLACEHOLDER until regenerated: `unsigned_vote_end_proposal` plus the tally scan
+	/// (bounded by the committee size) and the `WinningChoice` write.
+	fn unsigned_vote_choice_end_proposal() -> Weight {
+		Self::unsigned_vote_end_proposal()
+			.saturating_add(RocksDbWeight::get().reads(3_u64))
+			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	/// PLACEHOLDER until regenerated: same shape as `cleanup_committee_page`.
+	fn cleanup_choice_tally_page(n: u32, ) -> Weight {
+		Self::cleanup_committee_page(n)
 	}
 }

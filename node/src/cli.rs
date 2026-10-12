@@ -58,6 +58,12 @@ pub struct AvnRunCmd {
     #[arg(long = "ethereum-node-url", value_name = "ETH URL", num_args = 0..=32)]
     pub eth_node_urls: Vec<String>,
 
+    /// Ethereum mainnet RPC endpoints the floor oracle reads from, in failover order. Only
+    /// used by registered (watchtower) nodes, i.e. together with --registered-node-id; it
+    /// defaults to a built-in list of public endpoints. Ignored on collators.
+    #[arg(long = "floor-rpc-url", value_name = "FLOOR RPC URL", num_args = 0..=32, requires = "registered_node_id")]
+    pub floor_rpc_urls: Vec<String>,
+
     /// Flag to specify the Id of a registered Aventus cloud node
     #[arg(long = "registered-node-id", value_name = "Registered Node Id")]
     pub registered_node_id: Option<String>,

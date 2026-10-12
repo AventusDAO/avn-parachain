@@ -25,6 +25,9 @@ pub struct NodeDeps<Block: BlockT, ClientT> {
     pub keystore_path: PathBuf,
     pub avn_port: Option<String>,
     pub eth_node_urls: Vec<String>,
+    /// Ethereum mainnet endpoints for the floor oracle. `None` disables the oracle (collators);
+    /// `Some(empty)` means the built-in defaults (registered nodes).
+    pub floor_rpc_urls: Option<Vec<String>>,
     pub client: Arc<ClientT>,
     pub offchain_transaction_pool_factory: OffchainTransactionPoolFactory<Block>,
 }
@@ -57,12 +60,30 @@ where
         (None, None)
     };
 
+    let floor_rpc_urls = match &deps.floor_rpc_urls {
+        None => {
+            log::info!("external-service floor oracle disabled: not a registered node");
+            None
+        },
+        Some(urls) if urls.is_empty() => {
+            let defaults: Vec<String> =
+                crate::floor_oracle::DEFAULT_RPC_URLS.iter().map(|u| u.to_string()).collect();
+            log::info!("external-service floor oracle endpoints (defaults): {:?}", defaults);
+            Some(defaults)
+        },
+        Some(urls) => {
+            log::info!("external-service floor oracle endpoints: {:?}", urls);
+            Some(urls.clone())
+        },
+    };
+
     Ok(AppState::<Block, ClientT> {
         keystore: deps.keystore.clone(),
         keystore_path: deps.keystore_path.clone(),
         avn_port: deps.avn_port.clone(),
         chain,
         signer_provider,
+        floor_rpc_urls,
         client: deps.client.clone(),
         send_lock: Arc::new(Mutex::new(())),
         _block: Default::default(),

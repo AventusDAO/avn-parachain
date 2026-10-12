@@ -73,7 +73,7 @@ mod seed_chain {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             assert_noop!(
                 FloorOracle::seed_chain(
-                    RuntimeOrigin::signed(1),
+                    RuntimeOrigin::signed(acc(1)),
                     ETHEREUM,
                     SEED_BLOCK,
                     MAX_AGE_SECS
@@ -166,7 +166,7 @@ mod request_checkpoint {
                 FloorOracle::do_request_checkpoint(ETHEREUM),
                 Ok(CheckpointRequest::Ready(seeded.clone()))
             );
-            assert_eq!(FloorOracle::next_round_id(), 0);
+            assert_eq!(FloorOracle::last_checkpoint_round_id(), 0);
             assert!(FloorOracle::checkpoint_round(ETHEREUM).is_none());
 
             assert_ok!(FloorOracle::request_checkpoint(RuntimeOrigin::root(), ETHEREUM));
@@ -202,7 +202,7 @@ mod request_checkpoint {
             assert_eq!(round.round_id, 1);
             assert_eq!(round.started_at, System::block_number());
             assert!(round.votes.is_empty());
-            assert_eq!(FloorOracle::next_round_id(), 1);
+            assert_eq!(FloorOracle::last_checkpoint_round_id(), 1);
             // The stale checkpoint stays in place until the round agrees.
             assert_eq!(FloorOracle::checkpoints(ETHEREUM), Some(seeded));
         });
@@ -224,7 +224,7 @@ mod request_checkpoint {
                     stale: FloorOracle::checkpoints(ETHEREUM)
                 }
             );
-            assert_eq!(FloorOracle::next_round_id(), round_id);
+            assert_eq!(FloorOracle::last_checkpoint_round_id(), round_id);
 
             assert_ok!(FloorOracle::request_checkpoint(RuntimeOrigin::root(), ETHEREUM));
             assert_eq!(
@@ -309,9 +309,9 @@ mod submit_checkpoint_vote {
             assert_ok!(vote.submit());
 
             let round = FloorOracle::checkpoint_round(ETHEREUM).unwrap();
-            assert_eq!(round.votes.get(&1), Some(&500));
-            assert!(FloorOracle::author_has_voted(ETHEREUM, round_id, &1));
-            assert!(!FloorOracle::author_has_voted(ETHEREUM, round_id, &2));
+            assert_eq!(round.votes.get(&acc(1)), Some(&500));
+            assert!(FloorOracle::author_has_voted(ETHEREUM, round_id, &acc(1)));
+            assert!(!FloorOracle::author_has_voted(ETHEREUM, round_id, &acc(2)));
             assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().round_id, 0, "unchanged");
         });
     }
@@ -325,7 +325,7 @@ mod submit_checkpoint_vote {
             assert_eq!(supermajority, 4);
 
             // Validators 1..=4 vote 100, 200, 300, 400. No rounding is applied.
-            for account in 1..=supermajority as AccountId {
+            for account in 1..=supermajority as u64 {
                 let vote = VoteContext::new(ETHEREUM, round_id, account, account as u32 * 100);
                 assert_ok!(vote.submit());
             }
@@ -397,6 +397,44 @@ mod submit_checkpoint_vote {
     }
 
     #[test]
+    fn checkpoint_never_moves_backwards() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            // First round agrees on 1_000.
+            let first_round = seed_and_start_round(ETHEREUM);
+            for account in 1..=4 {
+                assert_ok!(VoteContext::new(ETHEREUM, first_round, account, 1_000).submit());
+            }
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, 1_000);
+
+            advance_secs(MAX_AGE_SECS + 1);
+            let second_round = match FloorOracle::do_request_checkpoint(ETHEREUM).unwrap() {
+                CheckpointRequest::Pending { round_id, .. } => round_id,
+                other => panic!("expected pending, got {:?}", other),
+            };
+
+            // A lagging RPC reports 990. Rejected in the pool and in a block.
+            let behind = VoteContext::new(ETHEREUM, second_round, 1, 990);
+            assert_eq!(
+                validate(&behind.call()),
+                Err(InvalidTransaction::Custom(VOTE_BEHIND_CHECKPOINT))
+            );
+            assert_noop!(behind.submit(), Error::<TestRuntime>::BlockBehindCheckpoint);
+
+            // Reconfirming the same height is allowed, as is moving forward.
+            assert_ok!(VoteContext::new(ETHEREUM, second_round, 1, 1_000).submit());
+            assert_ok!(VoteContext::new(ETHEREUM, second_round, 2, 1_000).submit());
+            assert_ok!(VoteContext::new(ETHEREUM, second_round, 3, 1_010).submit());
+            assert_ok!(VoteContext::new(ETHEREUM, second_round, 4, 1_020).submit());
+
+            let agreed = FloorOracle::checkpoints(ETHEREUM).unwrap();
+            assert_eq!(agreed.round_id, second_round);
+            assert!(agreed.block_number >= 1_000);
+            // Supermajority 4, quorum 2: buckets [1000 x2, 1010, 1020] -> remaining 2, 1 -> 1010.
+            assert_eq!(agreed.block_number, 1_010);
+        });
+    }
+
+    #[test]
     fn single_validator_resolves_on_first_vote() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             set_validators(&[1]);
@@ -424,7 +462,7 @@ mod submit_checkpoint_vote {
             assert_ok!(VoteContext::new(ETHEREUM, round_id, 3, 500).submit());
 
             let round = FloorOracle::checkpoint_round(ETHEREUM).expect("still open");
-            assert!(!round.votes.contains_key(&1));
+            assert!(!round.votes.contains_key(&acc(1)));
             assert_eq!(round.votes.len(), 2);
             assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().round_id, 0);
 
@@ -531,7 +569,7 @@ mod submit_checkpoint_vote {
                 let wrong_key = Call::<TestRuntime>::submit_checkpoint_vote {
                     chain_id: ETHEREUM,
                     round_id,
-                    author: Author::<TestRuntime> { account_id: 1, key: UintAuthorityId(2) },
+                    author: Author::<TestRuntime> { account_id: acc(1), key: UintAuthorityId(2) },
                     block_number: 500,
                     signature: vote.signature(),
                 };
@@ -546,7 +584,7 @@ mod submit_checkpoint_vote {
                 let vote = VoteContext::new(ETHEREUM, round_id, 1, 500);
                 assert_noop!(
                     FloorOracle::submit_checkpoint_vote(
-                        RuntimeOrigin::signed(1),
+                        RuntimeOrigin::signed(acc(1)),
                         ETHEREUM,
                         round_id,
                         vote.author.clone(),

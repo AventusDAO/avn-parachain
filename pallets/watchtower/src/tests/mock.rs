@@ -54,6 +54,7 @@ impl Config for TestRuntime {
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
     type Watchtowers = TestNodeManager;
     type WatchtowerHooks = TestHooks;
+    type VoteFilter = TestVoteFilter;
     type SignedTxLifetime = ConstU32<5>;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
@@ -384,8 +385,46 @@ pub fn set_hook_failure(fail: bool) {
     FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = fail);
 }
 
+/// Votes `TestVoteFilter` rejects, as `(voter, vote)`.
+thread_local! {
+    pub static REJECTED_VOTES: RefCell<Vec<(AccountId, VoteChoice)>> = RefCell::new(vec![]);
+    /// Every vote the filter was asked about, in order.
+    pub static FILTERED_VOTES: RefCell<Vec<(ProposalId, AccountId, VoteChoice)>> = RefCell::new(vec![]);
+}
+
+pub fn reject_vote(voter: AccountId, in_favor: bool) {
+    REJECTED_VOTES.with(|r| r.borrow_mut().push((voter, VoteChoice::Binary(in_favor))));
+}
+
+pub fn reject_choice_vote(voter: AccountId, choice: H256) {
+    REJECTED_VOTES.with(|r| r.borrow_mut().push((voter, VoteChoice::Choice(choice))));
+}
+
+pub fn filtered_votes() -> Vec<(ProposalId, AccountId, VoteChoice)> {
+    FILTERED_VOTES.with(|f| f.borrow().clone())
+}
+
+pub const VOTE_FILTER_REJECTED: DispatchError = DispatchError::Other("TestVoteFilter: rejected");
+
+pub struct TestVoteFilter;
+impl VoteFilter<AccountId> for TestVoteFilter {
+    fn ensure_can_vote(
+        proposal_id: ProposalId,
+        voter: &AccountId,
+        vote: &VoteChoice,
+    ) -> DispatchResult {
+        FILTERED_VOTES.with(|f| f.borrow_mut().push((proposal_id, *voter, *vote)));
+        if REJECTED_VOTES.with(|r| r.borrow().contains(&(*voter, *vote))) {
+            return Err(VOTE_FILTER_REJECTED)
+        }
+        Ok(())
+    }
+}
+
 pub fn reset_hook_state() {
     FAIL_ON_PROPOSAL_SUBMITTED.with(|f| *f.borrow_mut() = false);
+    REJECTED_VOTES.with(|r| r.borrow_mut().clear());
+    FILTERED_VOTES.with(|f| f.borrow_mut().clear());
     SUBMITTED_TO_HOOKS.with(|s| s.borrow_mut().clear());
     COMPLETED_VOTES.with(|c| c.borrow_mut().clear());
     AUTHORIZED_WATCHTOWERS.with(|w| *w.borrow_mut() = default_watchtowers());
@@ -527,6 +566,7 @@ pub struct Context {
     pub created_at: u32,
     pub vote_duration: Option<u32>,
     pub committee_size: Option<u32>,
+    pub voting: VotingKind,
 }
 
 impl Default for Context {
@@ -543,6 +583,7 @@ impl Default for Context {
             ),
             created_at: 1u32,
             committee_size: None,
+            voting: VotingKind::Binary,
         }
     }
 }
@@ -571,6 +612,7 @@ impl Context {
             created_at: self.created_at,
             vote_duration: self.vote_duration,
             committee_size: self.committee_size,
+            voting: self.voting,
         }
     }
 }

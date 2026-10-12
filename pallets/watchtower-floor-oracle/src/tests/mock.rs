@@ -3,29 +3,58 @@
 #![cfg(test)]
 
 use crate::{self as pallet_watchtower_floor_oracle, *};
-use frame_support::{derive_impl, parameter_types, WeakBoundedVec};
-use frame_system::{self as system};
-use sp_core::ConstU64;
-use sp_runtime::{
-    testing::{TestSignature, TestXt, UintAuthorityId},
-    BuildStorage,
+pub use codec::alloc::sync::Arc;
+use frame_support::{
+    assert_ok, derive_impl, parameter_types,
+    traits::{ConstU32, ConstU64, EnsureOrigin, Randomness},
+    weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
+    WeakBoundedVec,
 };
+use frame_system::{self as system, EnsureRoot, EnsureSigned, RawOrigin};
+use pallet_watchtower::NodesInterface;
+pub use parking_lot::RwLock;
+pub use sp_avn_common::avn_tests_helpers::utilities::{
+    get_test_account_from_mnemonic, TestAccount,
+};
+pub use sp_core::{
+    crypto::{KeyTypeId, DEV_PHRASE},
+    offchain::{
+        testing::{
+            OffchainState, PendingRequest, PoolState, TestOffchainExt, TestTransactionPoolExt,
+        },
+        OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
+    },
+    sr25519, Pair, H256,
+};
+use sp_keystore::{testing::MemoryKeystore, Keystore, KeystoreExt};
+pub use sp_runtime::{
+    testing::{TestSignature, TestXt, UintAuthorityId},
+    traits::{IdentityLookup, Verify},
+    BuildStorage, Perbill,
+};
+use std::cell::RefCell;
 
-pub type Block = frame_system::mocking::MockBlock<TestRuntime>;
+pub type Signature = sr25519::Signature;
+pub type AccountId = <Signature as Verify>::Signer;
 pub type Extrinsic = TestXt<RuntimeCall, ()>;
-pub type AccountId = u64;
 pub type BlockNumber = u64;
+pub type SignerId = pallet_node_manager::sr25519::AuthorityId;
+type Block = frame_system::mocking::MockBlock<TestRuntime>;
 
 pub const ROUND_TIMEOUT_BLOCKS: BlockNumber = 10;
-pub const VALIDATORS: [AccountId; 6] = [1, 2, 3, 4, 5, 6];
+pub const FLOOR_CHAIN: ExternalChainId = 1;
+pub const FLOOR_VOTE_DURATION: u32 = 100;
+pub const MAX_FLOOR_AGE_SECS: u64 = 300;
+pub const NODE_KEY_TYPE: KeyTypeId = KeyTypeId(*b"nodk");
 
 frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
-        Balances: pallet_balances,
-        Timestamp: pallet_timestamp,
-        Avn: pallet_avn::{Pallet, Storage, Event},
+        Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
+        Timestamp: pallet_timestamp::{Pallet, Call, Storage, Inherent},
+        Avn: pallet_avn::{Pallet, Storage, Event, Config<T>},
+        Watchtower: pallet_watchtower::{Pallet, Call, Storage, Event<T>, ValidateUnsigned},
         FloorOracle: pallet_watchtower_floor_oracle::{Pallet, Call, Storage, Event<T>, ValidateUnsigned},
     }
 );
@@ -48,28 +77,30 @@ where
 }
 
 parameter_types! {
+    pub BlockWeights: frame_system::limits::BlockWeights =
+        frame_system::limits::BlockWeights::simple_max(
+            Weight::from_parts(2u64 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
+        );
     pub const RoundTimeoutBlocks: BlockNumber = ROUND_TIMEOUT_BLOCKS;
-}
-
-impl Config for TestRuntime {
-    type RuntimeCall = RuntimeCall;
-    type TimeProvider = Timestamp;
-    type Quorum = Avn;
-    type RoundTimeoutBlocks = RoundTimeoutBlocks;
-    type WeightInfo = ();
+    pub const FloorRoundThreshold: Perbill = Perbill::from_percent(60);
+    pub static FloorCommitteeSize: Option<u32> = None;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
 impl system::Config for TestRuntime {
-    type Nonce = u64;
     type Block = Block;
-    type AccountData = pallet_balances::AccountData<u64>;
+    type AccountId = AccountId;
+    type Lookup = IdentityLookup<Self::AccountId>;
+    type AccountData = pallet_balances::AccountData<u128>;
 }
 
 #[derive_impl(pallet_balances::config_preludes::TestDefaultConfig as pallet_balances::DefaultConfig)]
 impl pallet_balances::Config for TestRuntime {
+    type Balance = u128;
+    type ExistentialDeposit = ConstU128<0>;
     type AccountStore = System;
 }
+use sp_core::ConstU128;
 
 impl pallet_timestamp::Config for TestRuntime {
     type Moment = u64;
@@ -83,19 +114,87 @@ impl pallet_avn::Config for TestRuntime {
     type AuthorityId = UintAuthorityId;
 }
 
-pub fn author(account_id: AccountId) -> Author<TestRuntime> {
-    Author::<TestRuntime> { account_id, key: UintAuthorityId(account_id) }
+impl pallet_watchtower::Config for TestRuntime {
+    type RuntimeCall = RuntimeCall;
+    type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
+    type SignerId = SignerId;
+    type Public = AccountId;
+    type Signature = Signature;
+    type Watchtowers = TestNodeManager;
+    type WatchtowerHooks = FloorOracle;
+    type VoteFilter = FloorOracle;
+    type WeightInfo = ();
+    type SignedTxLifetime = ConstU32<5>;
+    type MaxTitleLen = ConstU32<512>;
+    type MaxInlineLen = ConstU32<8192>;
+    type MaxUriLen = ConstU32<2040>;
+    type MaxInternalProposalLen = ConstU32<100>;
+    type MinCommitteeSize = ConstU32<2>;
+    type MaxCommitteeSize = ConstU32<5>;
+    type Randomness = TestRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
 }
 
-pub fn set_validators(accounts: &[AccountId]) {
-    let validators: Vec<Author<TestRuntime>> = accounts.iter().map(|a| author(*a)).collect();
+impl Config for TestRuntime {
+    type RuntimeCall = RuntimeCall;
+    type TimeProvider = Timestamp;
+    type Quorum = Avn;
+    type RoundTimeoutBlocks = RoundTimeoutBlocks;
+    type FloorChainId = ConstU64<FLOOR_CHAIN>;
+    type FloorRoundThreshold = FloorRoundThreshold;
+    type FloorVoteDuration = ConstU32<FLOOR_VOTE_DURATION>;
+    type FloorCommitteeSize = FloorCommitteeSize;
+    type MaxFloorAge = ConstU64<MAX_FLOOR_AGE_SECS>;
+    type WeightInfo = ();
+}
+
+pub struct TestRandomness;
+impl Randomness<H256, u64> for TestRandomness {
+    fn random(_subject: &[u8]) -> (H256, u64) {
+        (H256::repeat_byte(7), 0)
+    }
+}
+
+pub struct EnsureExternalProposerOrRoot;
+impl EnsureOrigin<RuntimeOrigin> for EnsureExternalProposerOrRoot {
+    type Success = Option<AccountId>;
+
+    fn try_origin(o: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
+        if EnsureRoot::<AccountId>::try_origin(o.clone()).is_ok() {
+            return Ok(None)
+        }
+        EnsureSigned::<AccountId>::try_origin(o).map(Some)
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin() -> Result<RuntimeOrigin, ()> {
+        Ok(RuntimeOrigin::root())
+    }
+}
+
+// ------------------------------------------------------------------ collators (checkpoints)
+
+/// Collator `i`: an sr25519 account with a `UintAuthorityId(i)` AVN key.
+pub fn validator(i: u64) -> Author<TestRuntime> {
+    Author::<TestRuntime> { account_id: acc(i), key: UintAuthorityId(i) }
+}
+
+pub fn acc(i: u64) -> AccountId {
+    TestAccount::new([100 + i as u8; 32]).account_id()
+}
+
+pub const VALIDATORS: [u64; 6] = [1, 2, 3, 4, 5, 6];
+
+pub fn set_validators(indices: &[u64]) {
+    let validators: Vec<Author<TestRuntime>> = indices.iter().map(|i| validator(*i)).collect();
     pallet_avn::Validators::<TestRuntime>::put(WeakBoundedVec::force_from(
         validators,
         Some("Too many validators"),
     ));
 }
 
-/// A vote as a collator would build it.
+/// A checkpoint vote as a collator would build it.
 #[derive(Clone)]
 pub struct VoteContext {
     pub chain_id: ExternalChainId,
@@ -108,10 +207,10 @@ impl VoteContext {
     pub fn new(
         chain_id: ExternalChainId,
         round_id: RoundId,
-        account_id: AccountId,
+        validator_index: u64,
         block_number: u32,
     ) -> Self {
-        Self { chain_id, round_id, author: author(account_id), block_number }
+        Self { chain_id, round_id, author: validator(validator_index), block_number }
     }
 
     pub fn signature(&self) -> TestSignature {
@@ -146,25 +245,308 @@ impl VoteContext {
     }
 }
 
+// ------------------------------------------------------------------ watchtowers (floor)
+
+pub fn get_default_voter() -> TestAccount {
+    get_test_account_from_mnemonic(DEV_PHRASE)
+}
+
+/// Watchtower `i` in 1..=10. Watchtower 1 is the node whose keys live in the test keystore.
+pub fn watchtower_account(i: u8) -> TestAccount {
+    if i == 1 {
+        get_default_voter()
+    } else {
+        TestAccount::new([10 + i; 32])
+    }
+}
+
+pub fn watchtower(i: u8) -> AccountId {
+    watchtower_account(i).account_id()
+}
+
+pub fn watchtower_signing_key(i: u8) -> SignerId {
+    watchtower_account(i).public_key().into()
+}
+
+pub fn watchtower_owner() -> AccountId {
+    TestAccount::new([31u8; 32]).account_id()
+}
+
+pub fn requester() -> AccountId {
+    TestAccount::new([77u8; 32]).account_id()
+}
+
+pub fn all_watchtowers() -> Vec<AccountId> {
+    (1..=10).map(watchtower).collect()
+}
+
+thread_local! {
+    pub static AUTHORIZED_WATCHTOWERS: RefCell<Vec<AccountId>> = RefCell::new(all_watchtowers());
+}
+
+pub fn set_authorized_watchtowers(list: Vec<AccountId>) {
+    AUTHORIZED_WATCHTOWERS.with(|w| *w.borrow_mut() = list);
+}
+
+pub struct TestNodeManager;
+impl NodesInterface<AccountId, SignerId> for TestNodeManager {
+    fn is_authorized_watchtower(node: &AccountId) -> bool {
+        AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().contains(node))
+    }
+
+    fn is_watchtower_owner(who: &AccountId) -> bool {
+        *who == watchtower_owner()
+    }
+
+    fn get_authorized_watchtowers_count() -> u32 {
+        AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().len() as u32)
+    }
+
+    fn get_watchtower_voting_weight(who: &AccountId) -> u32 {
+        if Self::is_watchtower_owner(who) {
+            Self::get_authorized_watchtowers_count()
+        } else {
+            0
+        }
+    }
+
+    fn get_node_signing_key(node: &AccountId) -> Option<SignerId> {
+        (1..=10u8).find(|i| watchtower(*i) == *node).map(watchtower_signing_key)
+    }
+
+    fn get_node_from_local_signing_keys() -> Option<(AccountId, SignerId)> {
+        Some((watchtower(1), watchtower_signing_key(1)))
+    }
+
+    fn get_node_at_index(index: u32) -> Option<AccountId> {
+        AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().get(index as usize).cloned())
+    }
+
+    fn get_indexed_nodes_count() -> u32 {
+        Self::get_authorized_watchtowers_count()
+    }
+}
+
+/// Activates the queued watchtower proposal at the head, as the collator OCW would.
+pub fn activate_head() -> ProposalId {
+    let head = Watchtower::peek_front_id().expect("queue not corrupt").expect("queue head");
+    assert_ok!(Watchtower::activate_next_proposal(RawOrigin::None.into(), head));
+    head
+}
+
+/// A floor report as watchtower `i` would build it.
+pub struct ReportContext {
+    pub round_id: u64,
+    pub observation: FloorObservation,
+    pub watchtower_index: u8,
+}
+
+impl ReportContext {
+    pub fn new(round_id: u64, observation: FloorObservation, watchtower_index: u8) -> Self {
+        Self { round_id, observation, watchtower_index }
+    }
+
+    pub fn account(&self) -> AccountId {
+        watchtower(self.watchtower_index)
+    }
+
+    pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
+        let payload =
+            FloorOracle::report_signing_payload(self.round_id, &self.observation, &self.account());
+        let signature: Signature =
+            watchtower_account(self.watchtower_index).key_pair().sign(&payload).into();
+        signature.into()
+    }
+
+    pub fn call(&self) -> Call<TestRuntime> {
+        Call::<TestRuntime>::submit_floor_report {
+            round_id: self.round_id,
+            observation: self.observation,
+            watchtower: self.account(),
+            signature: self.signature(),
+        }
+    }
+
+    pub fn submit(&self) -> DispatchResult {
+        FloorOracle::submit_floor_report(
+            RuntimeOrigin::none(),
+            self.round_id,
+            self.observation,
+            self.account(),
+            self.signature(),
+        )
+    }
+}
+
+/// A watchtower vote on the floor proposal, signed with the node key.
+pub fn vote_call(
+    proposal_id: ProposalId,
+    in_favor: bool,
+    watchtower_index: u8,
+) -> pallet_watchtower::Call<TestRuntime> {
+    let who = watchtower(watchtower_index);
+    let payload =
+        (pallet_watchtower::WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &who).encode();
+    let signature: Signature =
+        watchtower_account(watchtower_index).key_pair().sign(&payload).into();
+    pallet_watchtower::Call::<TestRuntime>::unsigned_vote {
+        proposal_id,
+        in_favor,
+        watchtower: who,
+        signature: signature.into(),
+    }
+}
+
+pub fn submit_vote(
+    proposal_id: ProposalId,
+    in_favor: bool,
+    watchtower_index: u8,
+) -> DispatchResultWithPostInfo {
+    match vote_call(proposal_id, in_favor, watchtower_index) {
+        pallet_watchtower::Call::unsigned_vote { proposal_id, in_favor, watchtower, signature } =>
+            Watchtower::unsigned_vote(
+                RawOrigin::None.into(),
+                proposal_id,
+                in_favor,
+                watchtower,
+                signature,
+            ),
+        _ => unreachable!(),
+    }
+}
+
+/// A watchtower answer on the floor proposal, signed with the node key.
+pub fn choice_vote_call(
+    proposal_id: ProposalId,
+    choice: H256,
+    watchtower_index: u8,
+) -> pallet_watchtower::Call<TestRuntime> {
+    let who = watchtower(watchtower_index);
+    let payload =
+        (pallet_watchtower::WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, &who).encode();
+    let signature: Signature =
+        watchtower_account(watchtower_index).key_pair().sign(&payload).into();
+    pallet_watchtower::Call::<TestRuntime>::unsigned_vote_choice {
+        proposal_id,
+        choice,
+        watchtower: who,
+        signature: signature.into(),
+    }
+}
+
+pub fn submit_choice_vote(
+    proposal_id: ProposalId,
+    choice: H256,
+    watchtower_index: u8,
+) -> DispatchResultWithPostInfo {
+    match choice_vote_call(proposal_id, choice, watchtower_index) {
+        pallet_watchtower::Call::unsigned_vote_choice {
+            proposal_id,
+            choice,
+            watchtower,
+            signature,
+        } => Watchtower::unsigned_vote_choice(
+            RawOrigin::None.into(),
+            proposal_id,
+            choice,
+            watchtower,
+            signature,
+        ),
+        _ => unreachable!(),
+    }
+}
+
+/// Mocks `GET /floor/punks/{pinned_ts}/{pinned_block}` on the local external service.
+pub fn mock_floor_service(
+    state: &mut OffchainState,
+    pinned_ts: u64,
+    pinned_block: u32,
+    response: Option<Vec<u8>>,
+) {
+    state.expect_request(PendingRequest {
+        method: "GET".into(),
+        uri: format!("http://127.0.0.1:2020/{}/{}/{}", FLOOR_SERVICE_PATH, pinned_ts, pinned_block),
+        response,
+        sent: true,
+        ..Default::default()
+    });
+}
+
+pub fn encoded_observation(observation: &FloorObservation) -> Vec<u8> {
+    sp_avn_common::http_data_codec::encode_to_http_data(observation).into_bytes()
+}
+
+// ------------------------------------------------------------------ externalities
+
 pub struct ExtBuilder {
     storage: sp_runtime::Storage,
+    pool_state: Option<Arc<RwLock<PoolState>>>,
+    offchain_state: Option<Arc<RwLock<OffchainState>>>,
+    txpool_extension: Option<TestTransactionPoolExt>,
+    offchain_extension: Option<TestOffchainExt>,
 }
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
         let storage =
             frame_system::GenesisConfig::<TestRuntime>::default().build_storage().unwrap();
-        Self { storage }
+        Self {
+            storage,
+            pool_state: None,
+            offchain_state: None,
+            txpool_extension: None,
+            offchain_extension: None,
+        }
     }
 
-    /// Externalities at block 1 with the six default validators and the clock at 1 second.
+    pub fn for_offchain_worker(mut self) -> Self {
+        let (offchain, offchain_state) = TestOffchainExt::new();
+        let (pool, pool_state) = TestTransactionPoolExt::new();
+        self.txpool_extension = Some(pool);
+        self.offchain_extension = Some(offchain);
+        self.pool_state = Some(pool_state);
+        self.offchain_state = Some(offchain_state);
+        self
+    }
+
+    fn keystore() -> MemoryKeystore {
+        let keystore = MemoryKeystore::new();
+        // Watchtower 1's node key, so the OCW can sign.
+        keystore
+            .sr25519_generate_new(NODE_KEY_TYPE, Some(DEV_PHRASE))
+            .expect("keystore insert works");
+        keystore
+    }
+
+    /// Externalities at block 1 with six collators, ten watchtowers and the clock at 1 second.
     pub fn as_externality(self) -> sp_io::TestExternalities {
+        let (offchain, _) = TestOffchainExt::new();
         let mut ext = sp_io::TestExternalities::from(self.storage);
+        ext.register_extension(KeystoreExt(Arc::new(Self::keystore())));
+        ext.register_extension(OffchainDbExt::new(offchain));
         ext.execute_with(|| {
             System::set_block_number(1);
             Timestamp::set_timestamp(1_000);
             set_validators(&VALIDATORS);
+            set_authorized_watchtowers(all_watchtowers());
         });
         ext
+    }
+
+    pub fn as_externality_with_state(
+        self,
+    ) -> (sp_io::TestExternalities, Arc<RwLock<PoolState>>, Arc<RwLock<OffchainState>>) {
+        let mut ext = sp_io::TestExternalities::from(self.storage);
+        ext.register_extension(KeystoreExt(Arc::new(Self::keystore())));
+        ext.register_extension(OffchainDbExt::new(self.offchain_extension.clone().unwrap()));
+        ext.register_extension(OffchainWorkerExt::new(self.offchain_extension.unwrap()));
+        ext.register_extension(TransactionPoolExt::new(self.txpool_extension.unwrap()));
+        ext.execute_with(|| {
+            System::set_block_number(1);
+            Timestamp::set_timestamp(1_000);
+            set_validators(&VALIDATORS);
+            set_authorized_watchtowers(all_watchtowers());
+        });
+        (ext, self.pool_state.unwrap(), self.offchain_state.unwrap())
     }
 }

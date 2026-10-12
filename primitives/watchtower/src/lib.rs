@@ -140,6 +140,47 @@ impl Default for ProposalStatusEnum {
     }
 }
 
+/// How a proposal is voted on.
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+    Default,
+)]
+pub enum VotingKind {
+    /// Yes / no. `threshold` of the eligible voters on either side decides.
+    #[default]
+    Binary,
+    /// Every voter names an answer (a hash). The first answer reaching `threshold` of the
+    /// eligible voters wins; the proposal passes and the answer is stored as its outcome.
+    Choice,
+}
+
+/// A single vote, in either kind.
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub enum VoteChoice {
+    Binary(bool),
+    Choice(H256),
+}
+
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub struct ProposalRequest {
     pub title: Vec<u8>,
@@ -154,6 +195,8 @@ pub struct ProposalRequest {
     /// Number of nodes to randomly select to vote on this proposal. `None` means every node
     /// votes. Only valid for internal proposals.
     pub committee_size: Option<u32>,
+    /// Yes/no, or pick-an-answer.
+    pub voting: VotingKind,
 }
 
 // Interface for other pallets to interact with the watchtower pallet
@@ -227,13 +270,13 @@ pub trait WatchtowerHooks<P> {
 }
 
 /// Consulted before a vote on an internal proposal is counted. Lets a consumer require that a
-/// vote be backed by data it holds and be consistent with it (the floor oracle: an observation
-/// from the voter, with `in_favor` meaning "equals the round's candidate").
+/// vote be backed by data it holds and be consistent with it (the floor oracle: a choice vote
+/// must equal the hash of the observation the voter reported).
 pub trait VoteFilter<AccountId> {
     fn ensure_can_vote(
         proposal_id: ProposalId,
         voter: &AccountId,
-        in_favor: bool,
+        vote: &VoteChoice,
     ) -> DispatchResult;
 }
 
@@ -241,8 +284,8 @@ pub trait VoteFilter<AccountId> {
 #[impl_trait_for_tuples::impl_for_tuples(8)]
 impl<A> VoteFilter<A> for Tuple {
     // Stops at the first member that rejects the vote.
-    fn ensure_can_vote(proposal_id: ProposalId, voter: &A, in_favor: bool) -> DispatchResult {
-        for_tuples!( #( Tuple::ensure_can_vote(proposal_id, voter, in_favor)?; )* );
+    fn ensure_can_vote(proposal_id: ProposalId, voter: &A, vote: &VoteChoice) -> DispatchResult {
+        for_tuples!( #( Tuple::ensure_can_vote(proposal_id, voter, vote)?; )* );
         Ok(())
     }
 }

@@ -84,9 +84,9 @@ use crate::{
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
     Scheduler, Session, SessionKeys, Signature, Summary, SummaryWatchtower, System, Timestamp,
     TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
-    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
-    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    WatchtowerFloorOracle, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
+    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -804,9 +804,8 @@ impl pallet_watchtower::Config for Runtime {
     type Watchtowers = RuntimeNodeManager;
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
-    type WatchtowerHooks = (Summary, SummaryWatchtower);
-    // The floor oracle pallet will take this slot once it implements `VoteFilter`.
-    type VoteFilter = ();
+    type WatchtowerHooks = (Summary, SummaryWatchtower, WatchtowerFloorOracle);
+    type VoteFilter = WatchtowerFloorOracle;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
@@ -814,7 +813,8 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
-    type MinCommitteeSize = ConstU32<10>;
+    // Dev networks register three watchtower nodes; raise again for production.
+    type MinCommitteeSize = ConstU32<3>;
     type MaxCommitteeSize = ConstU32<500>;
     type Randomness = RelayChainRandomness;
     #[cfg(feature = "runtime-benchmarks")]
@@ -830,6 +830,16 @@ parameter_types! {
     /// A checkpoint round that has not settled after this many blocks (about 10 minutes) is
     /// restarted by the next request.
     pub const CheckpointRoundTimeoutBlocks: BlockNumber = 50;
+    /// Punks live on Ethereum mainnet.
+    pub const FloorChainId: sp_watchtower::ExternalChainId = 1;
+    /// Share of the committee that must report the same observation.
+    pub const FloorRoundThreshold: Perbill = Perbill::from_percent(67);
+    /// Must be at least the watchtower pallet's minimum voting period (100 blocks).
+    pub const FloorVoteDuration: u32 = 100;
+    /// Watchtowers sampled per floor round; `None` lets every watchtower report.
+    pub const FloorCommitteeSize: Option<u32> = Some(3);
+    /// A finalised floor younger than this answers requests directly.
+    pub const MaxFloorAge: u64 = 10 * 60;
 }
 
 impl pallet_watchtower_floor_oracle::Config for Runtime {
@@ -837,6 +847,11 @@ impl pallet_watchtower_floor_oracle::Config for Runtime {
     type TimeProvider = Timestamp;
     type Quorum = Avn;
     type RoundTimeoutBlocks = CheckpointRoundTimeoutBlocks;
+    type FloorChainId = FloorChainId;
+    type FloorRoundThreshold = FloorRoundThreshold;
+    type FloorVoteDuration = FloorVoteDuration;
+    type FloorCommitteeSize = FloorCommitteeSize;
+    type MaxFloorAge = MaxFloorAge;
     type WeightInfo = pallet_watchtower_floor_oracle::default_weights::SubstrateWeight<Runtime>;
 }
 

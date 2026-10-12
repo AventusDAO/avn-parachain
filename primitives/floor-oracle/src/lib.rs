@@ -15,7 +15,8 @@ use sp_io::hashing::blake2_256;
 pub const FLOOR_ORACLE_REPORT_CONTEXT: &[u8] = b"wt_floor_oracle_report";
 
 /// External service path serving an observation. The full request is
-/// `floor/punks/{pinned_ts}`.
+/// `floor/punks/{pinned_ts}/{pinned_block}`: the unix time the floor is observed at and the
+/// Ethereum block on-chain data is read at.
 pub const FLOOR_SERVICE_PATH: &str = "floor/punks";
 
 /// `FloorObservation::flags` bits.

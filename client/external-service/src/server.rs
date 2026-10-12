@@ -15,10 +15,12 @@ use codec::{Decode, Encode};
 use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
-    http_data_codec::decode_from_http_data, short_hex, EthQueryRequest, EthQueryResponse,
-    EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
+    http_data_codec::{decode_from_http_data, encode_to_http_data},
+    short_hex, EthQueryRequest, EthQueryResponse, EthQueryResponseType, EthTransaction,
+    DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
 use sp_core::{sr25519, H160, H256};
+use sp_floor_oracle::FLOOR_SERVICE_PATH;
 use sp_io::hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
 use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
@@ -34,6 +36,9 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     pub avn_port: Option<String>,
     pub chain: Option<Arc<dyn ChainClient>>,
     pub signer_provider: Option<Arc<dyn SignerProvider>>,
+    /// Ethereum mainnet endpoints for the floor oracle, in failover order. `None` on nodes
+    /// that are not registered watchtowers, where the route is disabled.
+    pub floor_rpc_urls: Option<Vec<String>>,
     pub client: Arc<ClientT>,
     pub send_lock: Arc<Mutex<()>>,
     pub _block: PhantomData<Block>,
@@ -132,6 +137,10 @@ where
         .route("/eth/query", post(query::<Block, ClientT>))
         .route("/roothash/{from_block}/{to_block}", get(roothash::<Block, ClientT>))
         .route("/latest_finalised_block", get(latest_finalised_block::<Block, ClientT>))
+        .route(
+            &format!("/{FLOOR_SERVICE_PATH}/{{pinned_ts}}/{{pinned_block}}"),
+            get(floor_observation::<Block, ClientT>),
+        )
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
         .with_state(Arc::new(state));
 
@@ -371,6 +380,33 @@ where
     use client_extrinsic_utils::extrinsic_utils::get_latest_finalised_block;
     let n = get_latest_finalised_block(&state.client);
     Ok(hex::encode(n.encode()))
+}
+
+/// `GET /floor/punks/{pinned_ts}/{pinned_block}` for the watchtower floor oracle: the Punks
+/// floor and last sale as of `pinned_block`, read from the configured Ethereum endpoints with
+/// failover. The body is the http-data encoding of a `FloorObservation`.
+async fn floor_observation<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+    Path((pinned_ts, pinned_block)): Path<(u64, u64)>,
+) -> Result<String, (StatusCode, String)>
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    let _t = OperationTimer::new("floor/punks");
+    let Some(rpc_urls) = state.floor_rpc_urls.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "floor oracle is only served by registered watchtower nodes".to_string(),
+        ))
+    };
+    match crate::floor_oracle::observe(rpc_urls, pinned_ts, pinned_block).await {
+        Ok(observation) => Ok(encode_to_http_data(observation)),
+        Err(e) => {
+            let m = format!("floor observation unavailable: {e:#}");
+            log::error!("⛓️ 💔 external-service {}", m);
+            Err((StatusCode::SERVICE_UNAVAILABLE, m))
+        },
+    }
 }
 
 async fn sign_hashed_data<Block: BlockT, ClientT>(

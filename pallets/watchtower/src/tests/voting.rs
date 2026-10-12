@@ -284,6 +284,7 @@ mod proposal_lifecycle {
                     proposal_id,
                     external_ref: context.external_ref,
                     consensus_result: expected_status.clone(),
+                    winning_choice: None,
                 }
                 .into(),
             );
@@ -340,6 +341,7 @@ mod proposal_lifecycle {
                     proposal_id,
                     external_ref: context.external_ref,
                     consensus_result: expected_status.clone(),
+                    winning_choice: None,
                 }
                 .into(),
             );
@@ -417,6 +419,7 @@ mod proposal_lifecycle {
                     proposal_id,
                     external_ref: context.external_ref,
                     consensus_result: expected_status.clone(),
+                    winning_choice: None,
                 }
                 .into(),
             );
@@ -552,6 +555,7 @@ mod proposal_lifecycle {
                     proposal_id,
                     external_ref: context.external_ref,
                     consensus_result: expected_status.clone(),
+                    winning_choice: None,
                 }
                 .into(),
             );
@@ -563,6 +567,134 @@ mod proposal_lifecycle {
             // Proposal has been cleaned up
             assert_eq!(ProposalsToRemove::<TestRuntime>::contains_key(proposal_id), false);
             System::assert_last_event(Event::ProposalCleaned { proposal_id }.into());
+        });
+    }
+}
+
+mod vote_filter {
+    use super::*;
+    use sp_runtime::{
+        traits::ValidateUnsigned,
+        transaction_validity::{InvalidTransaction, TransactionSource},
+    };
+
+    fn unsigned_vote_call(proposal_id: ProposalId, in_favor: bool) -> crate::Call<TestRuntime> {
+        let voter = watchtower_1();
+        let signature = sign_vote(
+            get_default_voter(),
+            &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode(),
+        );
+        crate::Call::unsigned_vote {
+            proposal_id,
+            in_favor,
+            watchtower: voter,
+            signature: signature.into(),
+        }
+    }
+
+    fn internal_proposal() -> ProposalId {
+        create_and_submit_proposal(
+            RawPayload::Inline(b"test".to_vec()),
+            ProposalSource::Internal(ProposalType::Summary),
+        )
+        .0
+    }
+
+    #[test]
+    fn rejected_votes_never_reach_the_pool() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            reset_hook_state();
+            reject_vote(watchtower_1(), true);
+            let proposal_id = internal_proposal();
+
+            assert_eq!(
+                <Watchtower as ValidateUnsigned>::validate_unsigned(
+                    TransactionSource::External,
+                    &unsigned_vote_call(proposal_id, true)
+                ),
+                InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
+            );
+            // The same voter may still cast the vote the filter accepts.
+            assert_ok!(<Watchtower as ValidateUnsigned>::validate_unsigned(
+                TransactionSource::External,
+                &unsigned_vote_call(proposal_id, false)
+            ));
+        });
+    }
+
+    #[test]
+    fn rejected_votes_fail_on_unsigned_dispatch() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            reset_hook_state();
+            reject_vote(watchtower_1(), true);
+            let proposal_id = internal_proposal();
+
+            let signature = match unsigned_vote_call(proposal_id, true) {
+                crate::Call::unsigned_vote { signature, .. } => signature,
+                _ => unreachable!(),
+            };
+            assert_noop!(
+                Watchtower::unsigned_vote(
+                    RawOrigin::None.into(),
+                    proposal_id,
+                    true,
+                    watchtower_1(),
+                    signature
+                ),
+                VOTE_FILTER_REJECTED
+            );
+            assert!(!Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
+        });
+    }
+
+    #[test]
+    fn rejected_votes_fail_on_signed_vote() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            reset_hook_state();
+            reject_vote(watchtower_1(), true);
+            let proposal_id = internal_proposal();
+
+            assert_noop!(
+                Watchtower::vote(RawOrigin::Signed(watchtower_1()).into(), proposal_id, true),
+                VOTE_FILTER_REJECTED
+            );
+            assert!(!Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
+
+            // Other members, and the other direction, are unaffected.
+            assert_ok!(Watchtower::vote(
+                RawOrigin::Signed(watchtower_2()).into(),
+                proposal_id,
+                true
+            ));
+            assert_ok!(Watchtower::vote(
+                RawOrigin::Signed(watchtower_1()).into(),
+                proposal_id,
+                false
+            ));
+            assert!(Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
+        });
+    }
+
+    #[test]
+    fn external_proposals_are_not_filtered() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            reset_hook_state();
+            reject_vote(watchtower_owner_1(), true);
+            let (proposal_id, _) = create_and_submit_proposal(
+                RawPayload::Uri(b"test".to_vec()),
+                ProposalSource::External,
+            );
+
+            assert_ok!(Watchtower::vote(
+                RawOrigin::Signed(watchtower_owner_1()).into(),
+                proposal_id,
+                true
+            ));
+            assert!(Voters::<TestRuntime>::contains_key(proposal_id, watchtower_owner_1()));
         });
     }
 }

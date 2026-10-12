@@ -19,8 +19,21 @@
 //!
 //! There is no background polling, no block rounding and no height advancement. Freshness is
 //! measured as time since agreement, not time since the external chain last advanced.
+//!
+//! # Floor rounds
+//!
+//! On top of the checkpoints, the pallet runs **floor rounds**: a floor price request pins the
+//! current checkpoint, opens a watchtower proposal, and watchtower nodes report what they
+//! observed at that pinned point (see [`floor`]). A report equal to the round's first report
+//! (the candidate) is a vote in favour; anything else is a vote against. The watchtower pallet
+//! decides the proposal and the agreed observation is stored in `LastFinalisedFloor`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String};
 
 use codec::{Decode, Encode, MaxEncodedLen};
 use frame_support::{
@@ -30,8 +43,8 @@ use frame_support::{
     BoundedBTreeMap,
 };
 use frame_system::{
-    ensure_none, ensure_root,
-    offchain::{CreateBare, CreateTransactionBase},
+    ensure_none, ensure_root, ensure_signed,
+    offchain::{CreateBare, CreateTransactionBase, SubmitTransaction},
     pallet_prelude::*,
 };
 pub use pallet_avn::{self as avn, MAX_VALIDATOR_ACCOUNTS};
@@ -42,25 +55,35 @@ use sp_avn_common::{
     quorum::{select_with_quorum, QuorumSelection},
     QuorumPolicy,
 };
+use sp_core::H256;
+pub use sp_floor_oracle::{
+    FinalisedFloorRound, FloorObservation, FLOOR_ORACLE_REPORT_CONTEXT, FLOOR_SERVICE_PATH,
+};
 use sp_runtime::{
     traits::{Dispatchable, Saturating},
     transaction_validity::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, RuntimeAppPublic,
+    DispatchError, Perbill, RuntimeAppPublic,
 };
 use sp_std::prelude::*;
 pub use sp_watchtower::{
-    Checkpoint, CheckpointOracle, CheckpointRequest, ExternalChainId, RoundId,
+    Checkpoint, CheckpointOracle, CheckpointRequest, ExternalChainId, ProposalId,
+    ProposalStatusEnum, RoundId, VoteFilter, WatchtowerHooks,
 };
 
 pub mod default_weights;
 pub use default_weights::WeightInfo;
+pub mod floor;
+pub use floor::FloorRound;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+#[cfg(test)]
+#[path = "tests/floor_tests.rs"]
+mod floor_tests;
 #[cfg(test)]
 #[path = "tests/mock.rs"]
 mod mock;
@@ -81,6 +104,7 @@ pub const VOTE_NO_MATCHING_ROUND: u8 = 1;
 pub const VOTE_ALREADY_CAST: u8 = 2;
 pub const VOTE_BAD_SIGNATURE: u8 = 3;
 pub const VOTE_BEHIND_CHECKPOINT: u8 = 4;
+pub const FLOOR_REPORT_NOT_VALID: u8 = 10;
 
 /// State of the checkpoint voting round that is running for one chain.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
@@ -104,12 +128,33 @@ pub mod pallet {
     pub trait Config:
         frame_system::Config
         + avn::Config
+        + pallet_watchtower::Config
         + CreateTransactionBase<Call<Self>>
         + CreateBare<Call<Self>>
     {
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = <Self as frame_system::Config>::RuntimeOrigin>
             + From<Call<Self>>;
+
+        /// The external chain the floor is observed on (Punks live on Ethereum).
+        #[pallet::constant]
+        type FloorChainId: Get<ExternalChainId>;
+
+        /// Share of the committee that must report the same observation.
+        #[pallet::constant]
+        type FloorRoundThreshold: Get<Perbill>;
+
+        /// Voting period of a floor round, in blocks.
+        #[pallet::constant]
+        type FloorVoteDuration: Get<u32>;
+
+        /// Watchtowers sampled for a floor round. `None` lets every watchtower report.
+        #[pallet::constant]
+        type FloorCommitteeSize: Get<Option<u32>>;
+
+        /// A finalised floor younger than this, in seconds, answers a request directly.
+        #[pallet::constant]
+        type MaxFloorAge: Get<u64>;
 
         /// Source of the parachain timestamp stored in a checkpoint.
         type TimeProvider: UnixTime;
@@ -149,8 +194,54 @@ pub mod pallet {
 
     /// Last round id handed out. Round ids are unique across chains; 0 marks a seeded value.
     #[pallet::storage]
-    #[pallet::getter(fn next_round_id)]
-    pub type NextRoundId<T: Config> = StorageValue<_, RoundId, ValueQuery>;
+    #[pallet::getter(fn last_checkpoint_round_id)]
+    pub type LastCheckpointRoundId<T: Config> = StorageValue<_, RoundId, ValueQuery>;
+
+    /// The floor round collecting reports, if any. Only one runs at a time.
+    #[pallet::storage]
+    #[pallet::getter(fn active_floor_round)]
+    pub type ActiveFloorRound<T: Config> =
+        StorageValue<_, FloorRound<BlockNumberFor<T>>, OptionQuery>;
+
+    /// Hash of the observation each watchtower reported, per floor round.
+    #[pallet::storage]
+    #[pallet::getter(fn floor_reports)]
+    pub type FloorReports<T: Config> =
+        StorageDoubleMap<_, Twox64Concat, u64, Blake2_128Concat, T::AccountId, H256, OptionQuery>;
+
+    /// The distinct observations reported per floor round, by hash. The winning hash is looked
+    /// up here when the round settles.
+    #[pallet::storage]
+    #[pallet::getter(fn floor_observations)]
+    pub type FloorObservations<T: Config> = StorageDoubleMap<
+        _,
+        Twox64Concat,
+        u64,
+        Blake2_128Concat,
+        H256,
+        FloorObservation,
+        OptionQuery,
+    >;
+
+    /// Last floor round id handed out.
+    #[pallet::storage]
+    #[pallet::getter(fn last_floor_round_id)]
+    pub type LastFloorRoundId<T: Config> = StorageValue<_, u64, ValueQuery>;
+
+    /// A floor request is waiting for the checkpoint round on `FloorChainId` to settle.
+    #[pallet::storage]
+    #[pallet::getter(fn pending_floor_request)]
+    pub type PendingFloorRequest<T: Config> = StorageValue<_, bool, ValueQuery>;
+
+    /// The most recent floor the watchtowers agreed on.
+    #[pallet::storage]
+    #[pallet::getter(fn last_finalised_floor)]
+    pub type LastFinalisedFloor<T: Config> = StorageValue<_, FinalisedFloorRound, OptionQuery>;
+
+    /// The account allowed to request floor prices besides root. Set by root.
+    #[pallet::storage]
+    #[pallet::getter(fn floor_requester)]
+    pub type FloorRequester<T: Config> = StorageValue<_, T::AccountId, OptionQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -176,6 +267,35 @@ pub mod pallet {
         },
         /// Outcome of a root `request_checkpoint` call.
         CheckpointRequestServed { chain_id: ExternalChainId, ready: bool, round_id: RoundId },
+        /// A request was answered from a floor that is still within `MaxFloorAge`.
+        FloorPriceServed { round_id: u64, floor_wei: u128 },
+        /// A request joined the round already running.
+        FloorRoundInProgress { round_id: u64 },
+        /// No fresh checkpoint exists; the request waits for the checkpoint round to settle.
+        FloorRequestWaitingForCheckpoint { checkpoint_round_id: RoundId },
+        /// A floor round opened as a watchtower proposal.
+        FloorRoundStarted {
+            round_id: u64,
+            proposal_id: ProposalId,
+            pinned_ts: u64,
+            pinned_block: u32,
+        },
+        /// The watchtower pallet refused the proposal; the request was dropped.
+        FloorRoundStartFailed { error: DispatchError },
+        /// A watchtower reported its observation; `hash` is its answer on the proposal.
+        FloorReportSubmitted { round_id: u64, watchtower: T::AccountId, hash: H256 },
+        /// The watchtowers agreed on a floor.
+        FloorRoundFinalised {
+            round_id: u64,
+            floor_wei: u128,
+            agreeing: u32,
+            reports: u32,
+            required: u32,
+        },
+        /// The round ended without agreement.
+        FloorRoundFailed { round_id: u64, result: ProposalStatusEnum },
+        /// Root changed the privileged floor requester. `None` leaves root as the only requester.
+        FloorRequesterSet { who: Option<T::AccountId> },
     }
 
     #[pallet::error]
@@ -196,6 +316,30 @@ pub mod pallet {
         BlockBehindCheckpoint,
         /// The round cannot hold any more votes.
         TooManyVotes,
+        /// No floor round is collecting reports.
+        NoActiveFloorRound,
+        /// The report names a round that is not the running one.
+        FloorRoundMismatch,
+        /// The round's watchtower proposal is not active yet, so there is no committee.
+        FloorProposalNotActive,
+        /// The reporter is not an authorized watchtower in the round's committee.
+        NotInFloorCommittee,
+        /// The watchtower already reported in this round.
+        DuplicateFloorReport,
+        /// The observation fails the plausibility checks.
+        ImplausibleObservation,
+        /// The observation was not taken at the round's pinned block.
+        ObservationBlockMismatch,
+        /// The voter has not reported an observation for this round.
+        NoFloorReport,
+        /// A vote on a floor proposal that is not the hash the voter reported.
+        VoteContradictsReport,
+        /// Floor proposals are decided by reports; yes/no votes are not accepted.
+        FloorVotesAreReports,
+        /// The report signature does not verify against the watchtower's signing key.
+        FloorReportBadSignature,
+        /// Only root or the account set by `set_floor_requester` may request a floor price.
+        UnauthorizedFloorRequest,
     }
 
     #[pallet::call]
@@ -253,6 +397,48 @@ pub mod pallet {
             Self::deposit_event(Event::<T>::CheckpointRequestServed { chain_id, ready, round_id });
 
             Ok(())
+        }
+
+        /// Ask for the current Punks floor. Root or the privileged requester only. Answers from
+        /// the last finalised floor when it is fresh, joins the running round, or opens a new
+        /// one (waiting for a checkpoint first if needed). The outcome is reported as an event.
+        #[pallet::call_index(3)]
+        #[pallet::weight(<T as Config>::WeightInfo::request_floor_price())]
+        pub fn request_floor_price(origin: OriginFor<T>) -> DispatchResult {
+            Self::ensure_floor_requester(origin)?;
+            Self::do_request_floor_price()
+        }
+
+        /// Root sets (or with `None` clears) the account allowed to request floor prices.
+        #[pallet::call_index(5)]
+        #[pallet::weight(<T as Config>::WeightInfo::set_floor_requester())]
+        pub fn set_floor_requester(
+            origin: OriginFor<T>,
+            who: Option<T::AccountId>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            match &who {
+                Some(account) => FloorRequester::<T>::put(account),
+                None => FloorRequester::<T>::kill(),
+            }
+            Self::deposit_event(Event::<T>::FloorRequesterSet { who });
+            Ok(())
+        }
+
+        /// A watchtower's observation of the floor for the running round.
+        ///
+        /// Unsigned; the watchtower's node key signs [`Pallet::report_signing_payload`].
+        #[pallet::call_index(4)]
+        #[pallet::weight(<T as Config>::WeightInfo::submit_floor_report())]
+        pub fn submit_floor_report(
+            origin: OriginFor<T>,
+            round_id: u64,
+            observation: FloorObservation,
+            watchtower: T::AccountId,
+            _signature: <T::SignerId as RuntimeAppPublic>::Signature,
+        ) -> DispatchResult {
+            ensure_none(origin)?;
+            Self::do_submit_floor_report(round_id, observation, watchtower)
         }
 
         /// A collator's view of the finalised block number of `chain_id` for round `round_id`.
@@ -326,6 +512,10 @@ pub mod pallet {
                         block_number: agreed_block,
                         agreed_at,
                     });
+                    Self::on_checkpoint_agreed(
+                        chain_id,
+                        &Checkpoint { block_number: agreed_block, agreed_at, round_id },
+                    );
                     Ok(Some(<T as Config>::WeightInfo::submit_checkpoint_vote_with_quorum(
                         validators_count,
                     ))
@@ -390,12 +580,43 @@ pub mod pallet {
                         .propagate(true)
                         .build()
                 },
+                Call::submit_floor_report { round_id, observation, watchtower, signature } => {
+                    if Self::validate_floor_report(*round_id, observation, watchtower, signature)
+                        .is_err()
+                    {
+                        return InvalidTransaction::Custom(FLOOR_REPORT_NOT_VALID).into()
+                    }
+
+                    ValidTransaction::with_tag_prefix("WatchtowerFloorOracleReport")
+                        .and_provides((round_id, watchtower.clone()))
+                        .priority(TransactionPriority::max_value() - reduce_priority)
+                        .longevity(64_u64)
+                        .propagate(true)
+                        .build()
+                },
                 _ => InvalidTransaction::Call.into(),
             }
         }
     }
 
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn offchain_worker(now: BlockNumberFor<T>) {
+            Self::floor_offchain_worker(now);
+        }
+    }
+
     impl<T: Config> Pallet<T> {
+        /// Root, or a signed origin equal to the stored privileged requester.
+        fn ensure_floor_requester(origin: OriginFor<T>) -> DispatchResult {
+            if ensure_root(origin.clone()).is_ok() {
+                return Ok(())
+            }
+            let who = ensure_signed(origin)?;
+            ensure!(FloorRequester::<T>::get() == Some(who), Error::<T>::UnauthorizedFloorRequest);
+            Ok(())
+        }
+
         /// Bytes an author signs for a checkpoint vote. Shared by validation, tests and the
         /// offchain worker so they cannot drift apart.
         pub fn vote_signing_payload(
@@ -502,7 +723,7 @@ pub mod pallet {
             chain_id: ExternalChainId,
             now_block: BlockNumberFor<T>,
         ) -> CheckpointRoundState<T::AccountId, BlockNumberFor<T>> {
-            let round_id = NextRoundId::<T>::mutate(|id| {
+            let round_id = LastCheckpointRoundId::<T>::mutate(|id| {
                 *id = id.saturating_add(1);
                 *id
             });
@@ -512,7 +733,7 @@ pub mod pallet {
             round
         }
 
-        fn now_secs() -> u64 {
+        pub(crate) fn now_secs() -> u64 {
             T::TimeProvider::now().as_secs()
         }
     }

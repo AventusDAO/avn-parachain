@@ -6,6 +6,9 @@ use super::*;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_support::WeakBoundedVec;
 use frame_system::RawOrigin;
+#[cfg(feature = "runtime-benchmarks")]
+use pallet_watchtower::BenchmarkHelper;
+use pallet_watchtower::NodesInterface;
 
 const CHAIN_ID: ExternalChainId = 1;
 const MAX_AGE_SECS: u64 = 600;
@@ -44,7 +47,7 @@ fn open_round<T: Config>(round_id: RoundId, votes: Vec<(T::AccountId, u32)>) {
     for (account, block) in votes {
         bounded.try_insert(account, block).expect("fits in validator bound");
     }
-    NextRoundId::<T>::put(round_id);
+    LastCheckpointRoundId::<T>::put(round_id);
     CheckpointRound::<T>::insert(
         CHAIN_ID,
         CheckpointRoundState {
@@ -59,6 +62,35 @@ fn dummy_signature<T: Config>(
     author: &Author<T>,
 ) -> <T::AuthorityId as RuntimeAppPublic>::Signature {
     author.key.sign(&("DummyProof").encode()).expect("Error signing proof")
+}
+
+fn plausible_observation(block: u32) -> FloorObservation {
+    FloorObservation {
+        observed_eth_block: block as u64,
+        floor_wei: 50_000_000_000_000_000_000,
+        last_sale_ts: 1_700_000_000,
+        last_sale_wei: 49_000_000_000_000_000_000,
+        flags: 0,
+    }
+}
+
+/// Seeds the floor chain, opens a floor round and activates its proposal.
+fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
+    assert!(Pallet::<T>::seed_chain(
+        RawOrigin::Root.into(),
+        T::FloorChainId::get(),
+        SEED_BLOCK,
+        MAX_AGE_SECS
+    )
+    .is_ok());
+    assert!(Pallet::<T>::do_request_floor_price().is_ok());
+    let round = ActiveFloorRound::<T>::get().expect("round started");
+    assert!(pallet_watchtower::Pallet::<T>::activate_next_proposal(
+        RawOrigin::None.into(),
+        round.proposal_id
+    )
+    .is_ok());
+    round
 }
 
 benchmarks! {
@@ -117,6 +149,52 @@ benchmarks! {
         let checkpoint = Checkpoints::<T>::get(CHAIN_ID).expect("agreed");
         assert_eq!(checkpoint.round_id, 1);
         assert_eq!(checkpoint.block_number, VOTED_BLOCK);
+    }
+    // Worst path: no fresh floor and a fresh checkpoint, so a watchtower proposal is created.
+    request_floor_price {
+        assert!(Pallet::<T>::seed_chain(
+            RawOrigin::Root.into(),
+            T::FloorChainId::get(),
+            SEED_BLOCK,
+            MAX_AGE_SECS
+        )
+        .is_ok());
+    }: _(RawOrigin::Root)
+    verify {
+        let round = ActiveFloorRound::<T>::get().expect("round started");
+        assert_eq!(round.round_id, 1);
+        assert!(pallet_watchtower::Proposals::<T>::contains_key(round.proposal_id));
+    }
+
+    submit_floor_report {
+        // Watchtowers come from the runtime's benchmark helper, as in pallet-watchtower.
+        <T as pallet_watchtower::Config>::BenchmarkHelper::setup_nodes(
+            T::MinCommitteeSize::get().max(1)
+        );
+        let round = start_active_floor_round::<T>();
+        let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
+            .expect("a node is registered");
+        let observation = plausible_observation(round.pinned_block);
+        let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
+            .sign(&("DummyProof").encode())
+            .expect("Error signing proof");
+    }: _(RawOrigin::None, round.round_id, observation, watchtower.clone(), signature)
+    verify {
+        let round = ActiveFloorRound::<T>::get().expect("round still open");
+        assert_eq!(round.reports, 1);
+        assert_eq!(FloorObservations::<T>::get(round.round_id, observation.hash()), Some(observation));
+        assert!(FloorReports::<T>::contains_key(round.round_id, &watchtower));
+        assert_eq!(
+            pallet_watchtower::ChoiceTally::<T>::get(round.proposal_id, observation.hash()),
+            1
+        );
+    }
+
+    set_floor_requester {
+        let who: T::AccountId = account("requester", 0, 0);
+    }: _(RawOrigin::Root, Some(who.clone()))
+    verify {
+        assert_eq!(FloorRequester::<T>::get(), Some(who));
     }
 }
 

@@ -2153,7 +2153,6 @@ dependencies = [
  "pallet-summary",
  "pallet-token-manager",
  "pallet-validators-manager",
- "pallet-watchtower-floor-oracle",
  "parity-scale-codec",
  "polkadot-sdk",
  "scale-info",
@@ -5509,6 +5508,7 @@ dependencies = [
  "sp-block-builder",
  "sp-blockchain",
  "sp-core",
+ "sp-floor-oracle",
  "sp-io",
  "sp-keystore",
  "sp-runtime",
@@ -12311,13 +12311,18 @@ dependencies = [
  "log",
  "pallet-avn",
  "pallet-balances",
+ "pallet-node-manager",
  "pallet-timestamp",
+ "pallet-watchtower",
  "parity-scale-codec",
+ "parking_lot 0.12.3",
  "scale-info",
  "sp-application-crypto",
  "sp-avn-common",
  "sp-core",
+ "sp-floor-oracle",
  "sp-io",
+ "sp-keystore",
  "sp-runtime",
  "sp-std",
  "sp-watchtower",
@@ -18941,6 +18946,17 @@ dependencies = [
  "environmental",
  "parity-scale-codec",
  "sp-storage",
+]
+
+[[package]]
+name = "sp-floor-oracle"
+version = "10.0.1"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-std",
 ]
 
 [[package]]
