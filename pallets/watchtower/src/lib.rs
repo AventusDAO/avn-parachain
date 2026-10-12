@@ -125,6 +125,9 @@ pub mod pallet {
         /// Hooks for other pallets to implement custom logic on certain events
         type WatchtowerHooks: WatchtowerHooks<Proposal<Self>>;
 
+        /// Consulted before a vote on an internal proposal is counted. `()` accepts every vote.
+        type VoteFilter: VoteFilter<Self::AccountId>;
+
         /// Weight information for extrinsics in this pallet
         type WeightInfo: WeightInfo;
 
@@ -842,6 +845,7 @@ pub mod pallet {
                         Self::is_committee_member(proposal_id, voter),
                         Error::<T>::NotInCommittee
                     );
+                    T::VoteFilter::ensure_can_vote(proposal_id, voter, in_favor)?;
 
                     // This should not happen but just in case (defensive programming)
                     ensure!(
@@ -1034,6 +1038,8 @@ pub mod pallet {
                 Self::is_committee_member(proposal_id, &watchtower),
                 Error::<T>::NotInCommittee
             );
+            // Same for votes a consumer cannot accept.
+            T::VoteFilter::ensure_can_vote(proposal_id, &watchtower, in_favor)?;
 
             let voter_signing_key = match T::Watchtowers::get_node_signing_key(&watchtower) {
                 Some(key) => key,

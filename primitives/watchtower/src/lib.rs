@@ -88,6 +88,8 @@ pub enum ProposalType {
     Anchor,
     Governance,
     Other(u8),
+    /// A floor oracle round. Appended after `Other` so stored proposals keep decoding.
+    FloorOracle,
 }
 
 #[derive(
@@ -222,6 +224,27 @@ pub trait WatchtowerHooks<P> {
         result: &ProposalStatusEnum,
     );
     fn on_cancelled(proposal_id: ProposalId, external_ref: &H256);
+}
+
+/// Consulted before a vote on an internal proposal is counted. Lets a consumer require that a
+/// vote be backed by data it holds and be consistent with it (the floor oracle: an observation
+/// from the voter, with `in_favor` meaning "equals the round's candidate").
+pub trait VoteFilter<AccountId> {
+    fn ensure_can_vote(
+        proposal_id: ProposalId,
+        voter: &AccountId,
+        in_favor: bool,
+    ) -> DispatchResult;
+}
+
+// `()` accepts every vote: the tuple impl covers the empty tuple.
+#[impl_trait_for_tuples::impl_for_tuples(8)]
+impl<A> VoteFilter<A> for Tuple {
+    // Stops at the first member that rejects the vote.
+    fn ensure_can_vote(proposal_id: ProposalId, voter: &A, in_favor: bool) -> DispatchResult {
+        for_tuples!( #( Tuple::ensure_can_vote(proposal_id, voter, in_favor)?; )* );
+        Ok(())
+    }
 }
 
 #[impl_trait_for_tuples::impl_for_tuples(30)]

@@ -80,6 +80,7 @@ pub type Author<T> =
 pub const VOTE_NO_MATCHING_ROUND: u8 = 1;
 pub const VOTE_ALREADY_CAST: u8 = 2;
 pub const VOTE_BAD_SIGNATURE: u8 = 3;
+pub const VOTE_BEHIND_CHECKPOINT: u8 = 4;
 
 /// State of the checkpoint voting round that is running for one chain.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
@@ -191,6 +192,8 @@ pub mod pallet {
         DuplicateVote,
         /// The author is not a current validator.
         NotAValidator,
+        /// The voted height is below the current checkpoint. Checkpoints never move backwards.
+        BlockBehindCheckpoint,
         /// The round cannot hold any more votes.
         TooManyVotes,
     }
@@ -212,7 +215,10 @@ pub mod pallet {
             ensure!(max_checkpoint_age_secs > 0, Error::<T>::InvalidFreshnessLimit);
 
             MaxCheckpointAge::<T>::insert(chain_id, max_checkpoint_age_secs);
-            Self::deposit_event(Event::<T>::FreshnessLimitSet { chain_id, max_checkpoint_age_secs });
+            Self::deposit_event(Event::<T>::FreshnessLimitSet {
+                chain_id,
+                max_checkpoint_age_secs,
+            });
 
             if !Checkpoints::<T>::contains_key(chain_id) {
                 let agreed_at = Self::now_secs();
@@ -268,6 +274,10 @@ pub mod pallet {
 
             let mut round = CheckpointRound::<T>::get(chain_id).ok_or(Error::<T>::NoActiveRound)?;
             ensure!(round.round_id == round_id, Error::<T>::RoundMismatch);
+            ensure!(
+                Self::is_at_or_above_checkpoint(chain_id, block_number),
+                Error::<T>::BlockBehindCheckpoint
+            );
 
             let validators = AVN::<T>::validators();
             ensure!(
@@ -359,6 +369,9 @@ pub mod pallet {
                     if round.votes.contains_key(&author.account_id) {
                         return InvalidTransaction::Custom(VOTE_ALREADY_CAST).into()
                     }
+                    if !Self::is_at_or_above_checkpoint(*chain_id, *block_number) {
+                        return InvalidTransaction::Custom(VOTE_BEHIND_CHECKPOINT).into()
+                    }
 
                     let payload = Self::vote_signing_payload(
                         *chain_id,
@@ -404,6 +417,16 @@ pub mod pallet {
             match AVN::<T>::try_get_validator(&author.account_id) {
                 Some(validator) => validator.key.verify(&payload, signature),
                 None => false,
+            }
+        }
+
+        /// A vote may reconfirm the current checkpoint height but never go below it. Together
+        /// with the selection rule (smallest value with enough votes) this guarantees that an
+        /// agreed checkpoint never moves backwards.
+        pub fn is_at_or_above_checkpoint(chain_id: ExternalChainId, block_number: u32) -> bool {
+            match Checkpoints::<T>::get(chain_id) {
+                Some(checkpoint) => block_number >= checkpoint.block_number,
+                None => true,
             }
         }
 

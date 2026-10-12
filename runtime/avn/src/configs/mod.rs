@@ -805,6 +805,8 @@ impl pallet_watchtower::Config for Runtime {
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
     type WatchtowerHooks = (Summary, SummaryWatchtower);
+    // The floor oracle pallet will take this slot once it implements `VoteFilter`.
+    type VoteFilter = ();
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
