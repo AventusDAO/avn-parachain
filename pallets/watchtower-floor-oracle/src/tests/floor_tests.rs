@@ -22,7 +22,9 @@ fn advance_secs(secs: u64) {
     Timestamp::set_timestamp(Timestamp::get() + secs * 1_000);
 }
 
+/// Configures the market and seeds its chain.
 fn seed_floor_chain() -> Checkpoint {
+    assert_ok!(FloorOracle::set_floor_market(RuntimeOrigin::root(), Some(test_floor_market())));
     assert_ok!(FloorOracle::seed_chain(
         RuntimeOrigin::root(),
         FLOOR_CHAIN,
@@ -34,8 +36,8 @@ fn seed_floor_chain() -> Checkpoint {
 
 /// Requests as the privileged account, setting it first if needed.
 fn request() -> DispatchResult {
-    if FloorOracle::floor_requester().is_none() {
-        assert_ok!(FloorOracle::set_floor_requester(RuntimeOrigin::root(), Some(requester())));
+    if FloorOracle::oracle_requester().is_none() {
+        assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
     }
     FloorOracle::request_floor_price(RuntimeOrigin::signed(requester()))
 }
@@ -106,40 +108,78 @@ mod requests {
             );
             assert_noop!(
                 FloorOracle::request_floor_price(RuntimeOrigin::signed(requester())),
-                Error::<TestRuntime>::UnauthorizedFloorRequest
+                Error::<TestRuntime>::UnauthorizedOracleRequest
             );
             assert_ok!(FloorOracle::request_floor_price(RuntimeOrigin::root()));
             assert_eq!(FloorOracle::last_floor_round_id(), 1);
 
             assert_noop!(
-                FloorOracle::set_floor_requester(
+                FloorOracle::set_oracle_requester(
                     RuntimeOrigin::signed(requester()),
                     Some(requester())
                 ),
                 sp_runtime::DispatchError::BadOrigin
             );
-            assert_ok!(FloorOracle::set_floor_requester(RuntimeOrigin::root(), Some(requester())));
-            assert_event(Event::FloorRequesterSet { who: Some(requester()) });
+            assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
+            assert_event(Event::OracleRequesterSet { who: Some(requester()) });
             assert_ok!(FloorOracle::request_floor_price(RuntimeOrigin::signed(requester())));
             assert_noop!(
                 FloorOracle::request_floor_price(RuntimeOrigin::signed(watchtower(1))),
-                Error::<TestRuntime>::UnauthorizedFloorRequest
+                Error::<TestRuntime>::UnauthorizedOracleRequest
             );
 
-            assert_ok!(FloorOracle::set_floor_requester(RuntimeOrigin::root(), None));
-            assert_eq!(FloorOracle::floor_requester(), None);
+            assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), None));
+            assert_eq!(FloorOracle::oracle_requester(), None);
             assert_noop!(
                 FloorOracle::request_floor_price(RuntimeOrigin::signed(requester())),
-                Error::<TestRuntime>::UnauthorizedFloorRequest
+                Error::<TestRuntime>::UnauthorizedOracleRequest
             );
         });
     }
 
     #[test]
-    fn requires_a_seeded_chain() {
+    fn requires_a_market_and_a_seeded_chain() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            assert_ok!(FloorOracle::set_floor_requester(RuntimeOrigin::root(), Some(requester())));
+            assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
+            assert_noop!(request(), Error::<TestRuntime>::FloorMarketNotSet);
+
+            assert_noop!(
+                FloorOracle::set_floor_market(
+                    RuntimeOrigin::signed(requester()),
+                    Some(test_floor_market())
+                ),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_ok!(FloorOracle::set_floor_market(
+                RuntimeOrigin::root(),
+                Some(test_floor_market())
+            ));
+            assert_event(Event::FloorMarketSet { market: Some(test_floor_market()) });
+            assert_eq!(FloorOracle::floor_market(), Some(test_floor_market()));
             assert_noop!(request(), Error::<TestRuntime>::ChainNotRegistered);
+
+            assert_ok!(FloorOracle::set_floor_market(RuntimeOrigin::root(), None));
+            assert_eq!(FloorOracle::floor_market(), None);
+        });
+    }
+
+    #[test]
+    fn a_market_change_only_affects_the_next_round() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round = start_active_round();
+            let other =
+                FloorMarket { punks: sp_core::H160::repeat_byte(0xC5), ..test_floor_market() };
+            assert_ok!(FloorOracle::set_floor_market(RuntimeOrigin::root(), Some(other)));
+
+            assert_eq!(FloorOracle::active_floor_round().unwrap().market, test_floor_market());
+            for i in 1..=6 {
+                assert_ok!(report(round.round_id, 50, i));
+            }
+            assert_eq!(FloorOracle::last_finalised_floor().unwrap().market, test_floor_market());
+
+            advance_secs(MAX_FLOOR_AGE_SECS + 1);
+            assert_ok!(request());
+            assert_eq!(FloorOracle::active_floor_round().unwrap().market, other);
         });
     }
 
@@ -153,6 +193,7 @@ mod requests {
             assert_eq!(round.round_id, 1);
             assert_eq!(round.pinned_ts, checkpoint.agreed_at);
             assert_eq!(round.pinned_block, SEED_BLOCK);
+            assert_eq!(round.market, test_floor_market());
             assert_eq!(round.reports, 0);
             assert_eq!(round.started_at, System::block_number());
             assert_eq!(FloorOracle::last_floor_round_id(), 1);
@@ -164,7 +205,7 @@ mod requests {
             );
             assert_eq!(proposal.decision_rule, sp_watchtower::DecisionRule::RejectOnExpiry);
             assert_eq!(proposal.external_ref, FloorOracle::floor_round_external_ref(1));
-            assert_eq!(proposal.vote_duration, FLOOR_VOTE_DURATION);
+            assert_eq!(proposal.vote_duration, ORACLE_VOTE_DURATION);
             assert_eq!(
                 pallet_watchtower::VotingKindOf::<TestRuntime>::get(round.proposal_id),
                 sp_watchtower::VotingKind::Choice
@@ -175,6 +216,7 @@ mod requests {
                 proposal_id: round.proposal_id,
                 pinned_ts: checkpoint.agreed_at,
                 pinned_block: SEED_BLOCK,
+                market: test_floor_market(),
             });
         });
     }
@@ -266,6 +308,7 @@ mod reports {
                 round_id: 1,
                 watchtower: watchtower(1),
                 hash: fifty,
+                country: TEST_COUNTRY,
             });
             assert_ok!(report(round.round_id, 51, 2));
             assert_ok!(report(round.round_id, 50, 3));
@@ -341,10 +384,24 @@ mod reports {
             let forged = Call::<TestRuntime>::submit_floor_report {
                 round_id: round.round_id,
                 observation: observation(50),
+                country: TEST_COUNTRY,
                 watchtower: watchtower(2),
                 signature: ReportContext::new(round.round_id, observation(50), 3).signature(),
             };
             assert_eq!(validate(&forged), Err(InvalidTransaction::Custom(FLOOR_REPORT_NOT_VALID)));
+
+            // The country is signed too: changing it after signing invalidates the report.
+            let relabelled = Call::<TestRuntime>::submit_floor_report {
+                round_id: round.round_id,
+                observation: observation(50),
+                country: *b"FR",
+                watchtower: watchtower(2),
+                signature: ReportContext::new(round.round_id, observation(50), 2).signature(),
+            };
+            assert_eq!(
+                validate(&relabelled),
+                Err(InvalidTransaction::Custom(FLOOR_REPORT_NOT_VALID))
+            );
         });
     }
 }
@@ -353,11 +410,63 @@ mod committee {
     use super::*;
 
     #[test]
+    fn root_sets_a_bounded_committee_size_for_later_rounds() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            assert_noop!(
+                FloorOracle::set_oracle_committee_size(RuntimeOrigin::signed(requester()), Some(3)),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            // Mock limits: min 2, max 5, ten authorized watchtowers.
+            assert_noop!(
+                FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(1)),
+                Error::<TestRuntime>::CommitteeSizeOutOfBounds
+            );
+            assert_noop!(
+                FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(6)),
+                Error::<TestRuntime>::CommitteeSizeOutOfBounds
+            );
+            set_authorized_watchtowers(vec![watchtower(1), watchtower(2)]);
+            assert_noop!(
+                FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(3)),
+                Error::<TestRuntime>::CommitteeSizeExceedsWatchtowers
+            );
+            set_authorized_watchtowers(all_watchtowers());
+
+            // A running round keeps the committee it started with.
+            let round = start_active_round();
+            assert_ok!(FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(3)));
+            assert_event(Event::OracleCommitteeSizeSet { size: Some(3) });
+            assert_eq!(FloorOracle::oracle_committee_size(), Some(3));
+            assert_eq!(
+                pallet_watchtower::ProposalCommitteeSize::<TestRuntime>::get(round.proposal_id),
+                None,
+                "everyone was eligible when the round started"
+            );
+            for i in 1..=6 {
+                assert_ok!(report(round.round_id, 50, i));
+            }
+            assert!(FloorOracle::last_finalised_floor().is_some());
+
+            advance_secs(MAX_FLOOR_AGE_SECS + 1);
+            assert_ok!(request());
+            let next = FloorOracle::active_floor_round().unwrap();
+            // The committee is drawn when the proposal activates.
+            assert_eq!(activate_head(), next.proposal_id);
+            assert_eq!(
+                pallet_watchtower::ProposalCommitteeSize::<TestRuntime>::get(next.proposal_id),
+                Some(3)
+            );
+
+            assert_ok!(FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), None));
+            assert_eq!(FloorOracle::oracle_committee_size(), None);
+        });
+    }
+
+    #[test]
     fn only_committee_members_may_report() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            FloorCommitteeSize::set(Some(3));
+            assert_ok!(FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(3)));
             let round = start_active_round();
-            FloorCommitteeSize::set(None);
 
             assert_eq!(
                 pallet_watchtower::ProposalCommitteeSize::<TestRuntime>::get(round.proposal_id),
@@ -596,20 +705,27 @@ mod offchain_worker {
             let obs = observation(50);
             mock_floor_service(
                 &mut offchain.write(),
-                round.pinned_ts,
+                &round.market,
                 round.pinned_block,
                 Some(encoded_observation(&obs)),
             );
+            mock_country_service(&mut offchain.write(), Some(encoded_country(&TEST_COUNTRY)));
 
             FloorOracle::offchain_worker(System::block_number());
             let call = pop_call(&pool);
             match &call {
                 RuntimeCall::FloorOracle(
-                    inner @ Call::submit_floor_report { round_id, observation, watchtower, .. },
+                    inner @ Call::submit_floor_report {
+                        round_id,
+                        observation,
+                        country,
+                        watchtower,
+                        ..
+                    },
                 ) => {
                     assert_eq!(
-                        (*round_id, *observation, *watchtower),
-                        (round.round_id, obs, mock::watchtower(1))
+                        (*round_id, *observation, *country, *watchtower),
+                        (round.round_id, obs, TEST_COUNTRY, mock::watchtower(1))
                     );
                     assert_ok!(validate(inner));
                 },
@@ -646,7 +762,7 @@ mod offchain_worker {
             System::set_block_number(3);
             mock_floor_service(
                 &mut offchain.write(),
-                round.pinned_ts,
+                &round.market,
                 round.pinned_block,
                 Some(b"not an observation".to_vec()),
             );
@@ -657,7 +773,7 @@ mod offchain_worker {
             let wrong_block = FloorObservation { observed_eth_block: 1, ..observation(50) };
             mock_floor_service(
                 &mut offchain.write(),
-                round.pinned_ts,
+                &round.market,
                 round.pinned_block,
                 Some(encoded_observation(&wrong_block)),
             );

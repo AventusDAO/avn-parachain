@@ -24,7 +24,7 @@ pub use sp_core::{
         },
         OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
     },
-    sr25519, Pair, H256,
+    sr25519, Pair, H160, H256,
 };
 use sp_keystore::{testing::MemoryKeystore, Keystore, KeystoreExt};
 pub use sp_runtime::{
@@ -43,9 +43,13 @@ type Block = frame_system::mocking::MockBlock<TestRuntime>;
 
 pub const ROUND_TIMEOUT_BLOCKS: BlockNumber = 10;
 pub const FLOOR_CHAIN: ExternalChainId = 1;
-pub const FLOOR_VOTE_DURATION: u32 = 100;
+pub const ORACLE_VOTE_DURATION: u32 = 100;
 pub const MAX_FLOOR_AGE_SECS: u64 = 300;
+pub const VENUE_CHAIN: ExternalChainId = 8453;
+pub const MAX_VENUE_AGE_SECS: u64 = 60;
 pub const NODE_KEY_TYPE: KeyTypeId = KeyTypeId(*b"nodk");
+/// Country the test node reports with its observations.
+pub const TEST_COUNTRY: CountryCode = *b"GB";
 
 frame_support::construct_runtime!(
     pub enum TestRuntime
@@ -82,8 +86,7 @@ parameter_types! {
             Weight::from_parts(2u64 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
         );
     pub const RoundTimeoutBlocks: BlockNumber = ROUND_TIMEOUT_BLOCKS;
-    pub const FloorRoundThreshold: Perbill = Perbill::from_percent(60);
-    pub static FloorCommitteeSize: Option<u32> = None;
+    pub const OracleRoundThreshold: Perbill = Perbill::from_percent(60);
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
@@ -141,11 +144,10 @@ impl Config for TestRuntime {
     type TimeProvider = Timestamp;
     type Quorum = Avn;
     type RoundTimeoutBlocks = RoundTimeoutBlocks;
-    type FloorChainId = ConstU64<FLOOR_CHAIN>;
-    type FloorRoundThreshold = FloorRoundThreshold;
-    type FloorVoteDuration = ConstU32<FLOOR_VOTE_DURATION>;
-    type FloorCommitteeSize = FloorCommitteeSize;
+    type OracleRoundThreshold = OracleRoundThreshold;
+    type OracleVoteDuration = ConstU32<ORACLE_VOTE_DURATION>;
     type MaxFloorAge = ConstU64<MAX_FLOOR_AGE_SECS>;
+    type MaxVenueAge = ConstU64<MAX_VENUE_AGE_SECS>;
     type WeightInfo = ();
 }
 
@@ -338,12 +340,13 @@ pub fn activate_head() -> ProposalId {
 pub struct ReportContext {
     pub round_id: u64,
     pub observation: FloorObservation,
+    pub country: CountryCode,
     pub watchtower_index: u8,
 }
 
 impl ReportContext {
     pub fn new(round_id: u64, observation: FloorObservation, watchtower_index: u8) -> Self {
-        Self { round_id, observation, watchtower_index }
+        Self { round_id, observation, country: TEST_COUNTRY, watchtower_index }
     }
 
     pub fn account(&self) -> AccountId {
@@ -351,8 +354,12 @@ impl ReportContext {
     }
 
     pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
-        let payload =
-            FloorOracle::report_signing_payload(self.round_id, &self.observation, &self.account());
+        let payload = FloorOracle::report_signing_payload(
+            self.round_id,
+            &self.observation,
+            &self.country,
+            &self.account(),
+        );
         let signature: Signature =
             watchtower_account(self.watchtower_index).key_pair().sign(&payload).into();
         signature.into()
@@ -362,6 +369,7 @@ impl ReportContext {
         Call::<TestRuntime>::submit_floor_report {
             round_id: self.round_id,
             observation: self.observation,
+            country: self.country,
             watchtower: self.account(),
             signature: self.signature(),
         }
@@ -372,6 +380,7 @@ impl ReportContext {
             RuntimeOrigin::none(),
             self.round_id,
             self.observation,
+            self.country,
             self.account(),
             self.signature(),
         )
@@ -456,16 +465,25 @@ pub fn submit_choice_vote(
     }
 }
 
-/// Mocks `GET /floor/punks/{pinned_ts}/{pinned_block}` on the local external service.
+/// The Punks market floor tests configure unless they say otherwise.
+pub fn test_floor_market() -> FloorMarket {
+    FloorMarket { chain_id: FLOOR_CHAIN, punks: H160::repeat_byte(0xB4) }
+}
+
+/// Mocks `GET /floor/punks/{chain_id}/{pinned_block}/{punks}` on the local external service,
+/// with the path built exactly as the offchain worker builds it.
 pub fn mock_floor_service(
     state: &mut OffchainState,
-    pinned_ts: u64,
+    market: &FloorMarket,
     pinned_block: u32,
     response: Option<Vec<u8>>,
 ) {
     state.expect_request(PendingRequest {
         method: "GET".into(),
-        uri: format!("http://127.0.0.1:2020/{}/{}/{}", FLOOR_SERVICE_PATH, pinned_ts, pinned_block),
+        uri: format!(
+            "http://127.0.0.1:2020/{}",
+            FloorOracle::floor_service_path(market, pinned_block)
+        ),
         response,
         sent: true,
         ..Default::default()
@@ -474,6 +492,137 @@ pub fn mock_floor_service(
 
 pub fn encoded_observation(observation: &FloorObservation) -> Vec<u8> {
     sp_avn_common::http_data_codec::encode_to_http_data(observation).into_bytes()
+}
+
+// ------------------------------------------------------------------ watchtowers (venue)
+
+/// The market venue tests configure unless they say otherwise.
+pub fn test_market() -> VenueMarket {
+    VenueMarket {
+        chain_id: VENUE_CHAIN,
+        clearing_house: H160::repeat_byte(0x56),
+        amm: H160::repeat_byte(0xA1),
+    }
+}
+
+/// A venue report as watchtower `i` would build it.
+pub struct VenueReportContext {
+    pub round_id: u64,
+    pub observation: VenueObservation,
+    pub country: CountryCode,
+    pub watchtower_index: u8,
+}
+
+impl VenueReportContext {
+    pub fn new(round_id: u64, observation: VenueObservation, watchtower_index: u8) -> Self {
+        Self { round_id, observation, country: TEST_COUNTRY, watchtower_index }
+    }
+
+    pub fn account(&self) -> AccountId {
+        watchtower(self.watchtower_index)
+    }
+
+    pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
+        let payload = FloorOracle::venue_report_signing_payload(
+            self.round_id,
+            &self.observation,
+            &self.country,
+            &self.account(),
+        );
+        let signature: Signature =
+            watchtower_account(self.watchtower_index).key_pair().sign(&payload).into();
+        signature.into()
+    }
+
+    pub fn call(&self) -> Call<TestRuntime> {
+        Call::<TestRuntime>::submit_venue_report {
+            round_id: self.round_id,
+            observation: self.observation,
+            country: self.country,
+            watchtower: self.account(),
+            signature: self.signature(),
+        }
+    }
+
+    pub fn submit(&self) -> DispatchResult {
+        FloorOracle::submit_venue_report(
+            RuntimeOrigin::none(),
+            self.round_id,
+            self.observation,
+            self.country,
+            self.account(),
+            self.signature(),
+        )
+    }
+}
+
+/// Mocks `GET /venue/exotic/{chain_id}/{pinned_block}/{clearing_house}/{amm}` on the local
+/// external service, with the path built exactly as the offchain worker builds it.
+pub fn mock_venue_service(
+    state: &mut OffchainState,
+    market: &VenueMarket,
+    pinned_block: u32,
+    response: Option<Vec<u8>>,
+) {
+    state.expect_request(PendingRequest {
+        method: "GET".into(),
+        uri: format!(
+            "http://127.0.0.1:2020/{}",
+            FloorOracle::venue_service_path(market, pinned_block)
+        ),
+        response,
+        sent: true,
+        ..Default::default()
+    });
+}
+
+pub fn encoded_venue_observation(observation: &VenueObservation) -> Vec<u8> {
+    sp_avn_common::http_data_codec::encode_to_http_data(observation).into_bytes()
+}
+
+/// Mocks `GET /node/country` on the local external service.
+pub fn mock_country_service(state: &mut OffchainState, response: Option<Vec<u8>>) {
+    state.expect_request(PendingRequest {
+        method: "GET".into(),
+        uri: format!("http://127.0.0.1:2020/{}", NODE_COUNTRY_SERVICE_PATH),
+        response,
+        sent: true,
+        ..Default::default()
+    });
+}
+
+pub fn encoded_country(country: &CountryCode) -> Vec<u8> {
+    sp_avn_common::http_data_codec::encode_to_http_data(country).into_bytes()
+}
+
+// ------------------------------------------------------------------ collators (checkpoint OCW)
+
+/// Mocks `GET /checkpoint/block/{chain_id}` on the local external service.
+pub fn mock_checkpoint_service(
+    state: &mut OffchainState,
+    chain_id: ExternalChainId,
+    response: Option<Vec<u8>>,
+) {
+    state.expect_request(PendingRequest {
+        method: "GET".into(),
+        uri: format!("http://127.0.0.1:2020/{}", FloorOracle::checkpoint_service_path(chain_id)),
+        response,
+        sent: true,
+        ..Default::default()
+    });
+}
+
+pub fn encoded_block(block: u32) -> Vec<u8> {
+    sp_avn_common::http_data_codec::encode_to_http_data(block).into_bytes()
+}
+
+/// Makes this node hold the AVN key of collator `i`, so the checkpoint worker votes as it.
+pub fn set_local_validator(i: u64) {
+    UintAuthorityId::set_all_keys(vec![UintAuthorityId(i)]);
+}
+
+pub fn clear_local_validator() {
+    UintAuthorityId::set_all_keys(Vec::<UintAuthorityId>::new());
 }
 
 // ------------------------------------------------------------------ externalities

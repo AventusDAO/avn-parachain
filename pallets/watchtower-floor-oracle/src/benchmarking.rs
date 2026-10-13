@@ -11,6 +11,7 @@ use pallet_watchtower::BenchmarkHelper;
 use pallet_watchtower::NodesInterface;
 
 const CHAIN_ID: ExternalChainId = 1;
+const VENUE_CHAIN_ID: ExternalChainId = 8453;
 const MAX_AGE_SECS: u64 = 600;
 const SEED_BLOCK: u32 = 100;
 const VOTED_BLOCK: u32 = 1_000;
@@ -74,17 +75,62 @@ fn plausible_observation(block: u32) -> FloorObservation {
     }
 }
 
-/// Seeds the floor chain, opens a floor round and activates its proposal.
+fn floor_market() -> FloorMarket {
+    FloorMarket { chain_id: CHAIN_ID, punks: sp_core::H160::repeat_byte(0xB4) }
+}
+
+/// Configures the market, seeds its chain, opens a floor round and activates its proposal.
 fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
+    let market = floor_market();
+    assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(market)).is_ok());
     assert!(Pallet::<T>::seed_chain(
         RawOrigin::Root.into(),
-        T::FloorChainId::get(),
+        market.chain_id,
         SEED_BLOCK,
         MAX_AGE_SECS
     )
     .is_ok());
     assert!(Pallet::<T>::do_request_floor_price().is_ok());
     let round = ActiveFloorRound::<T>::get().expect("round started");
+    assert!(pallet_watchtower::Pallet::<T>::activate_next_proposal(
+        RawOrigin::None.into(),
+        round.proposal_id
+    )
+    .is_ok());
+    round
+}
+
+fn venue_market() -> VenueMarket {
+    VenueMarket {
+        chain_id: VENUE_CHAIN_ID,
+        clearing_house: sp_core::H160::repeat_byte(0x56),
+        amm: sp_core::H160::repeat_byte(0xA1),
+    }
+}
+
+fn plausible_venue_observation(block: u32) -> VenueObservation {
+    VenueObservation {
+        pinned_block: block as u64,
+        pinned_ts: 1_750_000_000,
+        spot_e18: 51_000_000_000_000_000_000,
+        oracle_e18: 50_000_000_000_000_000_000,
+        oi_notional_e18: 1_000_000_000_000_000_000_000,
+    }
+}
+
+/// Configures the market, seeds its chain, opens a venue round and activates its proposal.
+fn start_active_venue_round<T: Config>() -> VenueRound<BlockNumberFor<T>> {
+    let market = venue_market();
+    assert!(Pallet::<T>::set_venue_market(RawOrigin::Root.into(), Some(market)).is_ok());
+    assert!(Pallet::<T>::seed_chain(
+        RawOrigin::Root.into(),
+        market.chain_id,
+        SEED_BLOCK,
+        MAX_AGE_SECS
+    )
+    .is_ok());
+    assert!(Pallet::<T>::do_request_venue_state().is_ok());
+    let round = ActiveVenueRound::<T>::get().expect("round started");
     assert!(pallet_watchtower::Pallet::<T>::activate_next_proposal(
         RawOrigin::None.into(),
         round.proposal_id
@@ -152,9 +198,11 @@ benchmarks! {
     }
     // Worst path: no fresh floor and a fresh checkpoint, so a watchtower proposal is created.
     request_floor_price {
+        let market = floor_market();
+        assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(market)).is_ok());
         assert!(Pallet::<T>::seed_chain(
             RawOrigin::Root.into(),
-            T::FloorChainId::get(),
+            market.chain_id,
             SEED_BLOCK,
             MAX_AGE_SECS
         )
@@ -163,6 +211,7 @@ benchmarks! {
     verify {
         let round = ActiveFloorRound::<T>::get().expect("round started");
         assert_eq!(round.round_id, 1);
+        assert_eq!(round.market, market);
         assert!(pallet_watchtower::Proposals::<T>::contains_key(round.proposal_id));
     }
 
@@ -178,7 +227,7 @@ benchmarks! {
         let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
             .sign(&("DummyProof").encode())
             .expect("Error signing proof");
-    }: _(RawOrigin::None, round.round_id, observation, watchtower.clone(), signature)
+    }: _(RawOrigin::None, round.round_id, observation, UNKNOWN_COUNTRY, watchtower.clone(), signature)
     verify {
         let round = ActiveFloorRound::<T>::get().expect("round still open");
         assert_eq!(round.reports, 1);
@@ -190,11 +239,75 @@ benchmarks! {
         );
     }
 
-    set_floor_requester {
+    set_oracle_requester {
         let who: T::AccountId = account("requester", 0, 0);
     }: _(RawOrigin::Root, Some(who.clone()))
     verify {
-        assert_eq!(FloorRequester::<T>::get(), Some(who));
+        assert_eq!(OracleRequester::<T>::get(), Some(who));
+    }
+
+    // Worst path: no fresh state and a fresh checkpoint, so a watchtower proposal is created.
+    request_venue_state {
+        let market = venue_market();
+        assert!(Pallet::<T>::set_venue_market(RawOrigin::Root.into(), Some(market)).is_ok());
+        assert!(Pallet::<T>::seed_chain(
+            RawOrigin::Root.into(),
+            market.chain_id,
+            SEED_BLOCK,
+            MAX_AGE_SECS
+        )
+        .is_ok());
+    }: _(RawOrigin::Root)
+    verify {
+        let round = ActiveVenueRound::<T>::get().expect("round started");
+        assert_eq!(round.round_id, 1);
+        assert_eq!(round.market, market);
+        assert!(pallet_watchtower::Proposals::<T>::contains_key(round.proposal_id));
+    }
+
+    submit_venue_report {
+        <T as pallet_watchtower::Config>::BenchmarkHelper::setup_nodes(
+            T::MinCommitteeSize::get().max(1)
+        );
+        let round = start_active_venue_round::<T>();
+        let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
+            .expect("a node is registered");
+        let observation = plausible_venue_observation(round.pinned_block);
+        let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
+            .sign(&("DummyProof").encode())
+            .expect("Error signing proof");
+    }: _(RawOrigin::None, round.round_id, observation, UNKNOWN_COUNTRY, watchtower.clone(), signature)
+    verify {
+        let round = ActiveVenueRound::<T>::get().expect("round still open");
+        assert_eq!(round.reports, 1);
+        assert_eq!(VenueObservations::<T>::get(round.round_id, observation.hash()), Some(observation));
+        assert!(VenueReports::<T>::contains_key(round.round_id, &watchtower));
+        assert_eq!(
+            pallet_watchtower::ChoiceTally::<T>::get(round.proposal_id, observation.hash()),
+            1
+        );
+    }
+
+    set_venue_market {
+        let market = venue_market();
+    }: _(RawOrigin::Root, Some(market))
+    verify {
+        assert_eq!(VenueMarketConfig::<T>::get(), Some(market));
+    }
+
+    set_floor_market {
+        let market = floor_market();
+    }: _(RawOrigin::Root, Some(market))
+    verify {
+        assert_eq!(FloorMarketConfig::<T>::get(), Some(market));
+    }
+
+    set_oracle_committee_size {
+        let size = T::MinCommitteeSize::get().max(1);
+        <T as pallet_watchtower::Config>::BenchmarkHelper::setup_nodes(size);
+    }: _(RawOrigin::Root, Some(size))
+    verify {
+        assert_eq!(OracleCommitteeSize::<T>::get(), Some(size));
     }
 }
 

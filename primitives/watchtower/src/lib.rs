@@ -90,6 +90,8 @@ pub enum ProposalType {
     Other(u8),
     /// A floor oracle round. Appended after `Other` so stored proposals keep decoding.
     FloorOracle,
+    /// A venue oracle round (raw Exotic market state). Appended for the same reason.
+    VenueOracle,
 }
 
 #[derive(

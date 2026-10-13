@@ -4,45 +4,40 @@
 //! committee member report what it observed. The report is the vote.
 //!
 //! Life of a round:
-//! 1. `request_floor_price` finds no fresh floor and no running round. It asks the checkpoint side
-//!    for `FloorChainId`. With a fresh checkpoint the round starts at once; otherwise the request
-//!    is parked in `PendingFloorRequest` and the round starts when the checkpoint round settles
-//!    (`on_checkpoint_agreed`).
+//! 1. `request_floor_price` finds no fresh floor and no running round. It needs a configured
+//!    [`FloorMarket`] and asks the checkpoint side for that market's chain. With a fresh checkpoint
+//!    the round starts at once; otherwise the request is parked in `PendingFloorRequest` and the
+//!    round starts when the checkpoint round settles.
 //! 2. Starting a round submits an internal watchtower proposal of type `FloorOracle` with
 //!    `VotingKind::Choice`. The proposal queues and the collator OCW activates it, which fixes the
 //!    committee.
-//! 3. Watchtower nodes (their OCW, `floor_offchain_worker`) fetch an observation for the pinned
-//!    timestamp from their local external service and submit `submit_floor_report`. The pallet
-//!    stores the observation under its hash and counts the hash as the node's answer through
-//!    `pallet_watchtower::vote_choice_for`. The first answer reaching the proposal's threshold
-//!    wins; no single reporter can set a "candidate".
+//! 3. Watchtower nodes (their OCW, `floor_offchain_worker`) fetch
+//!    `floor/punks/{chain_id}/{pinned_block}/{punks}` from their local external service and submit
+//!    `submit_floor_report`. The pallet stores the observation under its hash and counts the hash
+//!    as the node's answer through `pallet_watchtower::vote_choice_for`. The first answer reaching
+//!    the proposal's threshold wins; no single reporter can set a "candidate".
 //! 4. The watchtower pallet decides the proposal and calls `on_voting_completed`. A passed proposal
 //!    stores the winning observation as `LastFinalisedFloor`; anything else fails the round. Both
 //!    clear the round, so the next request can open a new one.
 //!
-//! `VoteFilter` keeps the two paths consistent: a watchtower vote on a floor proposal must be
-//! the hash it reported, and yes/no votes are refused outright.
+//! The pallet's `VoteFilter` keeps the two paths consistent: a watchtower vote on a floor
+//! proposal must be the hash it reported, and yes/no votes are refused outright.
 
-use crate::*;
+use crate::{ocw::OcwChannel, *};
 use codec::DecodeWithMemTracking;
 use pallet_watchtower::NodesInterface;
-use sp_avn_common::{
-    http_data_codec::decode_from_http_data,
-    ocw_lock::{self as OcwLock, OcwStorageError},
-};
-use sp_runtime::{
-    offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef},
-    SaturatedConversion,
-};
+use sp_avn_common::http_data_codec::decode_from_http_data;
+use sp_runtime::SaturatedConversion;
 use sp_watchtower::{
     DecisionRule, ProposalRequest, ProposalSource, ProposalType, RawPayload, VoteChoice,
     VotingKind, WatchtowerInterface,
 };
 
-const OCW_ID: &[u8] = b"floor_oracle::ocw";
-const OCW_DB_PREFIX: &[u8] = b"floor_oracle::ocw::";
-/// Blocks an OCW submission is given to land before the node retries.
-const BLOCK_INCLUSION_PERIOD: u32 = 5;
+const FLOOR_OCW: OcwChannel = OcwChannel {
+    name: "Floor oracle",
+    id: b"floor_oracle::ocw",
+    db_prefix: b"floor_oracle::ocw::",
+};
 const FLOOR_ROUND_REF_CONTEXT: &[u8] = b"wt_floor_oracle_round";
 const FLOOR_PROPOSAL_TITLE: &[u8] = b"Punks floor oracle round";
 
@@ -58,6 +53,9 @@ pub struct FloorRound<BlockNumber> {
     pub pinned_ts: u64,
     /// External chain block every watchtower reads on-chain data at.
     pub pinned_block: u32,
+    /// The market as configured when the round started. Reports are validated against this
+    /// snapshot, so a later `set_floor_market` only affects the next round.
+    pub market: FloorMarket,
     pub started_at: BlockNumber,
     /// Reports received so far.
     pub reports: u32,
@@ -82,8 +80,9 @@ impl<T: Config> Pallet<T> {
             }
         }
 
-        match Self::do_request_checkpoint(T::FloorChainId::get())? {
-            CheckpointRequest::Ready(checkpoint) => Self::start_floor_round(&checkpoint),
+        let market = FloorMarketConfig::<T>::get().ok_or(Error::<T>::FloorMarketNotSet)?;
+        match Self::do_request_checkpoint(market.chain_id)? {
+            CheckpointRequest::Ready(checkpoint) => Self::start_floor_round(&checkpoint, market),
             CheckpointRequest::Pending { round_id, .. } => {
                 PendingFloorRequest::<T>::put(true);
                 Self::deposit_event(Event::<T>::FloorRequestWaitingForCheckpoint {
@@ -95,19 +94,23 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Called by the checkpoint side when a round on `chain_id` settles.
-    pub(crate) fn on_checkpoint_agreed(chain_id: ExternalChainId, checkpoint: &Checkpoint) {
-        if chain_id != T::FloorChainId::get() || !PendingFloorRequest::<T>::take() {
+    pub(crate) fn on_checkpoint_agreed_floor(chain_id: ExternalChainId, checkpoint: &Checkpoint) {
+        let market = match FloorMarketConfig::<T>::get() {
+            Some(market) => market,
+            None => return,
+        };
+        if chain_id != market.chain_id || !PendingFloorRequest::<T>::take() {
             return
         }
         if ActiveFloorRound::<T>::exists() {
             return
         }
-        if let Err(error) = Self::start_floor_round(checkpoint) {
+        if let Err(error) = Self::start_floor_round(checkpoint, market) {
             Self::deposit_event(Event::<T>::FloorRoundStartFailed { error });
         }
     }
 
-    fn start_floor_round(checkpoint: &Checkpoint) -> DispatchResult {
+    fn start_floor_round(checkpoint: &Checkpoint, market: FloorMarket) -> DispatchResult {
         let round_id = LastFloorRoundId::<T>::mutate(|id| {
             *id = id.saturating_add(1);
             *id
@@ -118,15 +121,15 @@ impl<T: Config> Pallet<T> {
         let request = ProposalRequest {
             title: FLOOR_PROPOSAL_TITLE.to_vec(),
             payload: RawPayload::Inline(
-                (round_id, checkpoint.agreed_at, checkpoint.block_number).encode(),
+                (round_id, checkpoint.agreed_at, checkpoint.block_number, market).encode(),
             ),
-            threshold: T::FloorRoundThreshold::get(),
+            threshold: T::OracleRoundThreshold::get(),
             source: ProposalSource::Internal(ProposalType::FloorOracle),
             decision_rule: DecisionRule::RejectOnExpiry,
             external_ref,
             created_at: now_block.saturated_into::<u32>(),
-            vote_duration: Some(T::FloorVoteDuration::get()),
-            committee_size: T::FloorCommitteeSize::get(),
+            vote_duration: Some(T::OracleVoteDuration::get()),
+            committee_size: OracleCommitteeSize::<T>::get(),
             voting: VotingKind::Choice,
         };
         <pallet_watchtower::Pallet<T> as WatchtowerInterface>::submit_proposal(None, request)?;
@@ -137,6 +140,7 @@ impl<T: Config> Pallet<T> {
             proposal_id,
             pinned_ts: checkpoint.agreed_at,
             pinned_block: checkpoint.block_number,
+            market,
             started_at: now_block,
             reports: 0,
         });
@@ -145,6 +149,7 @@ impl<T: Config> Pallet<T> {
             proposal_id,
             pinned_ts: checkpoint.agreed_at,
             pinned_block: checkpoint.block_number,
+            market,
         });
         Ok(())
     }
@@ -159,15 +164,17 @@ impl<T: Config> Pallet<T> {
     pub fn report_signing_payload(
         round_id: u64,
         observation: &FloorObservation,
+        country: &CountryCode,
         watchtower: &T::AccountId,
     ) -> Vec<u8> {
-        (FLOOR_ORACLE_REPORT_CONTEXT, round_id, observation, watchtower).encode()
+        (FLOOR_ORACLE_REPORT_CONTEXT, round_id, observation, country, watchtower).encode()
     }
 
     /// Everything a report must satisfy, including the signature. Used by the pool.
     pub fn validate_floor_report(
         round_id: u64,
         observation: &FloorObservation,
+        country: &CountryCode,
         watchtower: &T::AccountId,
         signature: &<T::SignerId as RuntimeAppPublic>::Signature,
     ) -> DispatchResult {
@@ -178,7 +185,7 @@ impl<T: Config> Pallet<T> {
         // The tuple is encoded inside the check; it must match `report_signing_payload`.
         ensure!(
             pallet_watchtower::Pallet::<T>::offchain_signature_is_valid(
-                &(FLOOR_ORACLE_REPORT_CONTEXT, round_id, observation, watchtower),
+                &(FLOOR_ORACLE_REPORT_CONTEXT, round_id, observation, country, watchtower),
                 &key,
                 signature,
             ),
@@ -199,7 +206,7 @@ impl<T: Config> Pallet<T> {
             Error::<T>::FloorProposalNotActive
         );
         ensure!(
-            Self::is_floor_committee_member(round.proposal_id, watchtower),
+            Self::is_oracle_committee_member(round.proposal_id, watchtower),
             Error::<T>::NotInFloorCommittee
         );
         ensure!(
@@ -214,7 +221,8 @@ impl<T: Config> Pallet<T> {
         Ok(round)
     }
 
-    fn is_floor_committee_member(proposal_id: ProposalId, who: &T::AccountId) -> bool {
+    /// An authorized watchtower that sits in the proposal's committee. Shared by both channels.
+    pub(crate) fn is_oracle_committee_member(proposal_id: ProposalId, who: &T::AccountId) -> bool {
         T::Watchtowers::is_authorized_watchtower(who) &&
             pallet_watchtower::Pallet::<T>::is_committee_member(proposal_id, who)
     }
@@ -225,6 +233,7 @@ impl<T: Config> Pallet<T> {
     pub(crate) fn do_submit_floor_report(
         round_id: u64,
         observation: FloorObservation,
+        country: CountryCode,
         watchtower: T::AccountId,
     ) -> DispatchResult {
         let mut round = Self::ensure_report_accepted(round_id, &observation, &watchtower)?;
@@ -241,6 +250,7 @@ impl<T: Config> Pallet<T> {
             round_id,
             watchtower: watchtower.clone(),
             hash,
+            country,
         });
 
         pallet_watchtower::Pallet::<T>::vote_choice_for(&watchtower, proposal_id, hash)?;
@@ -258,13 +268,14 @@ impl<T: Config> Pallet<T> {
         match (result, winner) {
             (ProposalStatusEnum::Resolved { passed: true }, Some((hash, observation))) => {
                 let eligible = pallet_watchtower::Pallet::<T>::eligible_voters(round.proposal_id);
-                let required = T::FloorRoundThreshold::get().mul_ceil(eligible);
+                let required = T::OracleRoundThreshold::get().mul_ceil(eligible);
                 let agreeing =
                     pallet_watchtower::Pallet::<T>::choice_tally(round.proposal_id, hash);
                 LastFinalisedFloor::<T>::put(FinalisedFloorRound {
                     round_id: round.round_id,
                     proposal_id: round.proposal_id,
                     pinned_ts: round.pinned_ts,
+                    market: round.market,
                     observation,
                     agreeing,
                     reports: round.reports,
@@ -307,7 +318,7 @@ impl<T: Config> Pallet<T> {
         if pallet_watchtower::ActiveInternalProposal::<T>::get() != Some(round.proposal_id) {
             return
         }
-        if Self::ocw_already_run(now).is_err() {
+        if Self::ocw_already_run(&FLOOR_OCW, now).is_err() {
             return
         }
 
@@ -323,11 +334,11 @@ impl<T: Config> Pallet<T> {
         }
 
         let key = (b"report", round.round_id, &watchtower).encode();
-        if Self::submission_in_progress(&key, now) {
+        if Self::submission_in_progress(&FLOOR_OCW, &key, now) {
             return
         }
 
-        let observation = match Self::fetch_observation(round.pinned_ts, round.pinned_block) {
+        let observation = match Self::fetch_observation(&round.market, round.pinned_block) {
             Ok(observation) => observation,
             Err(e) => {
                 log::error!("💔 Floor oracle: cannot fetch observation: {:?}", e);
@@ -344,7 +355,9 @@ impl<T: Config> Pallet<T> {
             return
         }
 
-        let payload = Self::report_signing_payload(round.round_id, &observation, &watchtower);
+        let country = Self::fetch_node_country();
+        let payload =
+            Self::report_signing_payload(round.round_id, &observation, &country, &watchtower);
         let signature = match signing_key.sign(&payload) {
             Some(signature) => signature,
             None => {
@@ -356,124 +369,83 @@ impl<T: Config> Pallet<T> {
             Call::<T>::submit_floor_report {
                 round_id: round.round_id,
                 observation,
+                country,
                 watchtower: watchtower.clone(),
                 signature,
             }
             .into(),
         );
         match SubmitTransaction::<T, Call<T>>::submit_transaction(call) {
-            Ok(()) => Self::record_submission(&key, now),
+            Ok(()) => Self::record_submission(&FLOOR_OCW, &key, now),
             Err(e) => log::error!("💔 Floor oracle: cannot submit report: {:?}", e),
         }
     }
 
-    /// `GET floor/punks/{pinned_ts}/{pinned_block}` on the local external service. The body is
-    /// the http-data encoding of a `FloorObservation`.
+    /// Path of the service request for `market` at `pinned_block`:
+    /// `floor/punks/{chain_id}/{pinned_block}/{punks}`, the address as 40 lower-case hex
+    /// characters without `0x`. Shared with the tests so they cannot drift.
+    pub fn floor_service_path(market: &FloorMarket, pinned_block: u32) -> String {
+        format!("{}/{}/{}/{:x}", FLOOR_SERVICE_PATH, market.chain_id, pinned_block, market.punks)
+    }
+
+    /// `GET` of [`Pallet::floor_service_path`] on the local external service. The body is the
+    /// http-data encoding of a `FloorObservation`.
     pub fn fetch_observation(
-        pinned_ts: u64,
+        market: &FloorMarket,
         pinned_block: u32,
     ) -> Result<FloorObservation, DispatchError> {
-        let path = format!("{}/{}/{}", FLOOR_SERVICE_PATH, pinned_ts, pinned_block);
-        let body = AVN::<T>::get_data_from_service(path)?;
+        let body = AVN::<T>::get_data_from_service(Self::floor_service_path(market, pinned_block))?;
         let text = core::str::from_utf8(&body)
             .map_err(|_| DispatchError::Other("floor observation is not utf8"))?;
         decode_from_http_data::<FloorObservation>(text)
             .map_err(|_| DispatchError::Other("floor observation does not decode"))
     }
-
-    fn ocw_already_run(now: BlockNumberFor<T>) -> Result<(), ()> {
-        OcwLock::record_block_run(now, OCW_ID.to_vec()).map_err(|e| match e {
-            OcwStorageError::OffchainWorkerAlreadyRun => {
-                log::debug!("Floor oracle OCW already ran for block {:?}", now)
-            },
-            OcwStorageError::ErrorRecordingOffchainWorkerRun => {
-                log::error!("💔 Floor oracle OCW cannot record its run for block {:?}", now)
-            },
-        })
-    }
-
-    fn ocw_storage_key(suffix: &[u8]) -> Vec<u8> {
-        let mut key = OCW_DB_PREFIX.to_vec();
-        key.extend_from_slice(suffix);
-        key
-    }
-
-    fn submission_in_progress(suffix: &[u8], now: BlockNumberFor<T>) -> bool {
-        match StorageValueRef::persistent(&Self::ocw_storage_key(suffix))
-            .get::<BlockNumberFor<T>>()
-            .ok()
-            .flatten()
-        {
-            Some(submitted_at) => now <= submitted_at.saturating_add(BLOCK_INCLUSION_PERIOD.into()),
-            None => false,
-        }
-    }
-
-    fn record_submission(suffix: &[u8], now: BlockNumberFor<T>) {
-        let result = StorageValueRef::persistent(&Self::ocw_storage_key(suffix))
-            .mutate(|_: Result<Option<BlockNumberFor<T>>, StorageRetrievalError>| Ok::<_, ()>(now));
-        if let Err(MutateStorageError::ConcurrentModification(_)) = result {
-            log::warn!("Floor oracle OCW: concurrent modification of submission record");
-        }
-    }
 }
 
 // ---------------------------------------------------------------------- watchtower traits
 
-impl<T: Config> VoteFilter<T::AccountId> for Pallet<T> {
-    /// On the active floor proposal a vote must be the hash the voter reported; yes/no votes
-    /// are refused. Other proposals are not filtered.
-    fn ensure_can_vote(
+impl<T: Config> Pallet<T> {
+    /// The floor channel's part of `VoteFilter`: `None` when `proposal_id` is not the active
+    /// floor proposal. On it, a vote must be the hash the voter reported; yes/no votes are
+    /// refused.
+    pub(crate) fn floor_vote_filter(
         proposal_id: ProposalId,
         voter: &T::AccountId,
         vote: &VoteChoice,
-    ) -> DispatchResult {
+    ) -> Option<DispatchResult> {
         let round = match ActiveFloorRound::<T>::get() {
             Some(round) if round.proposal_id == proposal_id => round,
-            _ => return Ok(()),
+            _ => return None,
         };
-        ensure!(
-            Self::is_floor_committee_member(proposal_id, voter),
-            Error::<T>::NotInFloorCommittee
-        );
-        let report =
-            FloorReports::<T>::get(round.round_id, voter).ok_or(Error::<T>::NoFloorReport)?;
-        match vote {
-            VoteChoice::Binary(_) => Err(Error::<T>::FloorVotesAreReports.into()),
-            VoteChoice::Choice(hash) => {
-                ensure!(*hash == report, Error::<T>::VoteContradictsReport);
-                Ok(())
-            },
-        }
-    }
-}
-
-impl<T: Config> WatchtowerHooks<pallet_watchtower::Proposal<T>> for Pallet<T> {
-    fn on_proposal_submitted(
-        _proposal_id: ProposalId,
-        _proposal: pallet_watchtower::Proposal<T>,
-    ) -> DispatchResult {
-        // Floor proposals are created by this pallet; nothing to prepare on activation.
-        Ok(())
+        Some((|| {
+            ensure!(
+                Self::is_oracle_committee_member(proposal_id, voter),
+                Error::<T>::NotInFloorCommittee
+            );
+            let report =
+                FloorReports::<T>::get(round.round_id, voter).ok_or(Error::<T>::NoFloorReport)?;
+            match vote {
+                VoteChoice::Binary(_) => Err(Error::<T>::FloorVotesAreReports.into()),
+                VoteChoice::Choice(hash) => {
+                    ensure!(*hash == report, Error::<T>::VoteContradictsReport);
+                    Ok(())
+                },
+            }
+        })())
     }
 
-    fn on_voting_completed(
+    /// Settles the floor round decided by `proposal_id`, if there is one. Returns whether the
+    /// proposal belonged to this channel.
+    pub(crate) fn finish_floor_if_matches(
         proposal_id: ProposalId,
-        _external_ref: &H256,
         result: &ProposalStatusEnum,
-    ) {
-        if let Some(round) = ActiveFloorRound::<T>::get() {
-            if round.proposal_id == proposal_id {
+    ) -> bool {
+        match ActiveFloorRound::<T>::get() {
+            Some(round) if round.proposal_id == proposal_id => {
                 Self::finish_round(round, result);
-            }
-        }
-    }
-
-    fn on_cancelled(proposal_id: ProposalId, _external_ref: &H256) {
-        if let Some(round) = ActiveFloorRound::<T>::get() {
-            if round.proposal_id == proposal_id {
-                Self::finish_round(round, &ProposalStatusEnum::Cancelled);
-            }
+                true
+            },
+            _ => false,
         }
     }
 }

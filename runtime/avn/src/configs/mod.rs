@@ -813,7 +813,12 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
-    // Dev networks register three watchtower nodes; raise again for production.
+    // Dev networks register three watchtower nodes; raise again for production.**
+    /// Smallest committee any internal proposal may have. The `dev-network` feature lowers it
+    /// for local networks with a handful of watchtowers; production builds keep 10.
+    #[cfg(not(feature = "dev-network"))]
+    type MinCommitteeSize = ConstU32<10>;
+    #[cfg(feature = "dev-network")]
     type MinCommitteeSize = ConstU32<3>;
     type MaxCommitteeSize = ConstU32<500>;
     type Randomness = RelayChainRandomness;
@@ -830,16 +835,15 @@ parameter_types! {
     /// A checkpoint round that has not settled after this many blocks (about 10 minutes) is
     /// restarted by the next request.
     pub const CheckpointRoundTimeoutBlocks: BlockNumber = 50;
-    /// Punks live on Ethereum mainnet.
-    pub const FloorChainId: sp_watchtower::ExternalChainId = 1;
     /// Share of the committee that must report the same observation.
-    pub const FloorRoundThreshold: Perbill = Perbill::from_percent(67);
+    pub const OracleRoundThreshold: Perbill = Perbill::from_percent(67);
     /// Must be at least the watchtower pallet's minimum voting period (100 blocks).
-    pub const FloorVoteDuration: u32 = 100;
-    /// Watchtowers sampled per floor round; `None` lets every watchtower report.
-    pub const FloorCommitteeSize: Option<u32> = Some(3);
+    pub const OracleVoteDuration: u32 = 100;
     /// A finalised floor younger than this answers requests directly.
     pub const MaxFloorAge: u64 = 10 * 60;
+    /// A finalised venue observation whose pinned block is younger than this answers requests
+    /// directly. Venue state moves every few seconds; the consumer can always ask again.
+    pub const MaxVenueAge: u64 = 60;
 }
 
 impl pallet_watchtower_floor_oracle::Config for Runtime {
@@ -847,11 +851,10 @@ impl pallet_watchtower_floor_oracle::Config for Runtime {
     type TimeProvider = Timestamp;
     type Quorum = Avn;
     type RoundTimeoutBlocks = CheckpointRoundTimeoutBlocks;
-    type FloorChainId = FloorChainId;
-    type FloorRoundThreshold = FloorRoundThreshold;
-    type FloorVoteDuration = FloorVoteDuration;
-    type FloorCommitteeSize = FloorCommitteeSize;
+    type OracleRoundThreshold = OracleRoundThreshold;
+    type OracleVoteDuration = OracleVoteDuration;
     type MaxFloorAge = MaxFloorAge;
+    type MaxVenueAge = MaxVenueAge;
     type WeightInfo = pallet_watchtower_floor_oracle::default_weights::SubstrateWeight<Runtime>;
 }
 
