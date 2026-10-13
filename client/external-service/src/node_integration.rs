@@ -25,9 +25,13 @@ pub struct NodeDeps<Block: BlockT, ClientT> {
     pub keystore_path: PathBuf,
     pub avn_port: Option<String>,
     pub eth_node_urls: Vec<String>,
-    /// Ethereum mainnet endpoints for the floor oracle. `None` disables the oracle (collators);
-    /// `Some(empty)` means the built-in defaults (registered nodes).
-    pub floor_rpc_urls: Option<Vec<String>>,
+    /// Ethereum endpoints for the floor channel; empty means the built-in mainnet defaults.
+    /// Watchtowers read floor observations from them; every node uses them for checkpoints.
+    pub floor_rpc_urls: Vec<String>,
+    /// Venue chain endpoints for the venue channel; empty means the built-in Base defaults.
+    pub venue_rpc_urls: Vec<String>,
+    /// Whether this node is a registered watchtower. Only those serve observation routes.
+    pub registered_node: bool,
     pub client: Arc<ClientT>,
     pub offchain_transaction_pool_factory: OffchainTransactionPoolFactory<Block>,
 }
@@ -60,21 +64,26 @@ where
         (None, None)
     };
 
-    let floor_rpc_urls = match &deps.floor_rpc_urls {
-        None => {
-            log::info!("external-service floor oracle disabled: not a registered node");
-            None
-        },
-        Some(urls) if urls.is_empty() => {
-            let defaults: Vec<String> =
-                crate::floor_oracle::DEFAULT_RPC_URLS.iter().map(|u| u.to_string()).collect();
-            log::info!("external-service floor oracle endpoints (defaults): {:?}", defaults);
-            Some(defaults)
-        },
-        Some(urls) => {
-            log::info!("external-service floor oracle endpoints: {:?}", urls);
-            Some(urls.clone())
-        },
+    let floor_urls = oracle_endpoints(
+        "floor",
+        &deps.floor_rpc_urls,
+        &deps.eth_node_urls,
+        &crate::floor_oracle::DEFAULT_RPC_URLS,
+    );
+    let venue_urls = oracle_endpoints(
+        "venue",
+        &deps.venue_rpc_urls,
+        &deps.eth_node_urls,
+        &crate::venue_oracle::DEFAULT_RPC_URLS,
+    );
+    // Both channel lists already carry the bridge endpoints.
+    let checkpoint_endpoints =
+        Arc::new(crate::checkpoint::Endpoints::new(vec![floor_urls.clone(), venue_urls.clone()]));
+    let (floor_rpc_urls, venue_rpc_urls) = if deps.registered_node {
+        (Some(floor_urls), Some(venue_urls))
+    } else {
+        log::info!("external-service observation routes disabled: not a registered node");
+        (None, None)
     };
 
     Ok(AppState::<Block, ClientT> {
@@ -84,10 +93,57 @@ where
         chain,
         signer_provider,
         floor_rpc_urls,
+        venue_rpc_urls,
+        checkpoint_endpoints,
+        node_country: Arc::new(crate::node_country::NodeCountry::default()),
         client: deps.client.clone(),
         send_lock: Arc::new(Mutex::new(())),
         _block: Default::default(),
     })
+}
+
+/// Endpoints of one oracle channel, in failover order: the channel's own flag, then the
+/// bridge endpoints (`--ethereum-node-url`), then the built-in public defaults. Every endpoint
+/// is checked against the requested chain id before use, so one on another chain is only a
+/// skipped probe. Duplicates are dropped, first occurrence wins.
+fn oracle_endpoints(
+    channel: &str,
+    configured: &[String],
+    bridge: &[String],
+    defaults: &[&str],
+) -> Vec<String> {
+    let mut urls: Vec<String> = Vec::new();
+    for url in configured
+        .iter()
+        .chain(bridge.iter())
+        .map(String::as_str)
+        .chain(defaults.iter().copied())
+    {
+        if !urls.iter().any(|known| known == url) {
+            urls.push(url.to_string());
+        }
+    }
+    log::info!("external-service {channel} endpoints: {urls:?}");
+    urls
+}
+
+#[cfg(test)]
+mod tests {
+    use super::oracle_endpoints;
+
+    #[test]
+    fn channel_flag_then_bridge_then_defaults_without_duplicates() {
+        let own = vec!["https://own".to_string(), "https://bridge".to_string()];
+        let bridge = vec!["https://bridge".to_string()];
+        let urls = oracle_endpoints("floor", &own, &bridge, &["https://public", "https://own"]);
+        assert_eq!(urls, vec!["https://own", "https://bridge", "https://public"]);
+
+        let urls = oracle_endpoints("floor", &[], &bridge, &["https://public"]);
+        assert_eq!(urls, vec!["https://bridge", "https://public"]);
+
+        let urls = oracle_endpoints("venue", &[], &[], &["https://public"]);
+        assert_eq!(urls, vec!["https://public"]);
+    }
 }
 
 pub fn build_eth_event_handler_config<Block, ClientT>(

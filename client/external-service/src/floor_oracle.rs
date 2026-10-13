@@ -2,20 +2,24 @@
 
 //! Punks floor observation for the watchtower floor oracle.
 //!
-//! Serves `GET /floor/punks/{pinned_ts}/{pinned_block}`. Every watchtower reads the same
-//! Ethereum block, so the answer is deterministic and nodes agree when their RPCs are honest.
+//! Serves `GET /floor/punks/{chain_id}/{pinned_block}/{punks}`. Every watchtower reads the
+//! same block of the same contract, so the answer is deterministic and nodes agree when their
+//! RPCs are honest. Chain and contract come from the pallet's root-set floor market, so
+//! mainnet and a test network differ only in what the pallet sends.
 //!
 //! What is read, at `pinned_block`:
 //! - **floor**: `punksOfferedForSale(i)` for all 10,000 punks through Multicall3, in chunks. The
 //!   floor is the lowest public ask (`isForSale`, no `onlySellTo`, non-zero `minValue`).
 //! - **last sale**: the latest `PunkBought` log with a non-zero price in the `SALES_WINDOW_BLOCKS`
-//!   before the pinned block, with its block timestamp.
+//!   before the pinned block, with its block timestamp. The window is scanned newest first in
+//!   `SALES_CHUNK_BLOCKS` pieces, because public endpoints cap `eth_getLogs` ranges.
 //!
 //! RPC policy is failover: the configured endpoints (or `DEFAULT_RPC_URLS`) are tried in order
-//! and the first one that serves the whole observation wins. An endpoint must be Ethereum
-//! mainnet and must already consider the pinned block final.
+//! and the first one that serves the whole observation wins. An endpoint must report the
+//! requested chain id and must already consider the pinned block safe (see
+//! `evm::client::ensure_safe`).
 
-use crate::{evm::client::EvmClient, ETH_FINALITY};
+use crate::evm::client::{ensure_safe, EvmClient};
 use alloy::{
     primitives::{address, Address, B256, U256},
     providers::{CallItem, MulticallBuilder, Provider},
@@ -28,22 +32,30 @@ use sp_floor_oracle::{FloorObservation, FLAG_FLOOR_FAR_BELOW_SALES, FLAG_SALES_U
 
 /// Reputable public Ethereum mainnet endpoints, tried in this order unless overridden with
 /// `--floor-rpc-url`.
-pub const DEFAULT_RPC_URLS: [&str; 5] = [
-    "https://ethereum-rpc.publicnode.com",
-    "https://cloudflare-eth.com",
-    "https://rpc.ankr.com/eth",
-    "https://eth.llamarpc.com",
+///
+/// Reads at a pinned block need archive state once the block is more than a few minutes old.
+/// dRPC serves it without a key; PublicNode and 1RPC only for recent blocks; LlamaRPC has been
+/// intermittently down. Ankr and Cloudflare are not listed: Ankr requires a key and Cloudflare
+/// fails on basic calls.
+pub const DEFAULT_RPC_URLS: [&str; 4] = [
     "https://eth.drpc.org",
+    "https://eth.llamarpc.com",
+    "https://ethereum-rpc.publicnode.com",
+    "https://1rpc.io/eth",
 ];
 
-pub const ETHEREUM_MAINNET_CHAIN_ID: u64 = 1;
-pub const CRYPTOPUNKS_MARKET: Address = address!("0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB");
+/// The CryptoPunksMarket contract on Ethereum mainnet, for reference; the pallet sends the
+/// address it was configured with.
+pub const CRYPTOPUNKS_MARKET_MAINNET: Address =
+    address!("0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB");
 pub const TOTAL_PUNKS: u64 = 10_000;
 /// Offers read per Multicall3 call. 500 reads stay well inside public RPC gas caps.
 pub const MULTICALL_CHUNK: u64 = 500;
 /// Blocks before the pinned block scanned for sales (about one day). Public RPCs cap
 /// `eth_getLogs` ranges around 10,000 blocks.
 pub const SALES_WINDOW_BLOCKS: u64 = 7_000;
+/// Blocks per `eth_getLogs` call when scanning for sales. Free tiers reject wide ranges.
+pub const SALES_CHUNK_BLOCKS: u64 = 2_000;
 /// A floor below this share of the last sale is flagged.
 pub const FAR_BELOW_SALES_BPS: u128 = 5_000;
 
@@ -88,52 +100,66 @@ pub fn flags_for(floor_wei: u128, last_sale_wei: Option<u128>) -> u32 {
     }
 }
 
+/// What the pallet asks for: the market, as configured on chain, and the pinned block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloorRequest {
+    pub chain_id: u64,
+    pub pinned_block: u64,
+    /// The CryptoPunksMarket contract.
+    pub punks: Address,
+}
+
 /// Tries each endpoint in order; the first complete observation wins.
-pub async fn observe(
-    rpc_urls: &[String],
-    pinned_ts: u64,
-    pinned_block: u64,
-) -> Result<FloorObservation> {
+pub async fn observe(rpc_urls: &[String], request: &FloorRequest) -> Result<FloorObservation> {
     let mut errors = Vec::new();
     for url in rpc_urls {
-        match observe_with(url, pinned_block).await {
+        match observe_with(url, request).await {
             Ok(observation) => {
                 log::info!(
-                    "floor oracle: observation from {} at block {} (pinned_ts={}): floor_wei={}, flags={}",
+                    "floor oracle: observation from {} for chain {} at block {}: floor_wei={}, flags={}",
                     url,
-                    pinned_block,
-                    pinned_ts,
+                    request.chain_id,
+                    request.pinned_block,
                     observation.floor_wei,
                     observation.flags
                 );
                 return Ok(observation)
             },
             Err(e) => {
-                log::warn!("floor oracle: {} failed for block {}: {:#}", url, pinned_block, e);
+                log::warn!(
+                    "floor oracle: {} failed for chain {} block {}: {:#}",
+                    url,
+                    request.chain_id,
+                    request.pinned_block,
+                    e
+                );
                 errors.push(format!("{url}: {e:#}"));
             },
         }
     }
-    bail!("no endpoint could serve block {pinned_block}: {}", errors.join(" | "))
+    bail!(
+        "no endpoint could serve chain {} block {}: {}",
+        request.chain_id,
+        request.pinned_block,
+        errors.join(" | ")
+    )
 }
 
-async fn observe_with(url: &str, pinned_block: u64) -> Result<FloorObservation> {
+async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservation> {
     let client = EvmClient::new_http(url)?;
     let provider = client.provider.clone();
+    let pinned_block = request.pinned_block;
 
     let chain_id = client.chain_id().await.context("chain id")?;
-    if chain_id != ETHEREUM_MAINNET_CHAIN_ID {
-        bail!("endpoint is chain {chain_id}, expected Ethereum mainnet");
+    if chain_id != request.chain_id {
+        bail!("endpoint is chain {chain_id}, expected {}", request.chain_id);
     }
-    let latest = client.block_number().await.context("latest block")?;
-    if latest < pinned_block.saturating_add(ETH_FINALITY) {
-        bail!("block {pinned_block} is not final yet on this endpoint (latest {latest})");
-    }
+    ensure_safe(&provider, pinned_block).await?;
 
-    let offers = read_offers(&provider, pinned_block).await?;
+    let offers = read_offers(&provider, request.punks, pinned_block).await?;
     let floor_wei = floor_of(offers).ok_or_else(|| anyhow!("no punk is publicly for sale"))?;
 
-    let last_sale = last_sale(&provider, pinned_block).await.context("last sale")?;
+    let last_sale = last_sale(&provider, request.punks, pinned_block).await.context("last sale")?;
     let (last_sale_ts, last_sale_wei) = last_sale.unwrap_or((0, 0));
 
     Ok(FloorObservation {
@@ -146,7 +172,11 @@ async fn observe_with(url: &str, pinned_block: u64) -> Result<FloorObservation> 
 }
 
 /// All 10,000 offers at `block`, read through Multicall3 in chunks.
-async fn read_offers<P: Provider + Clone>(provider: &P, block: u64) -> Result<Vec<Offer>> {
+async fn read_offers<P: Provider + Clone>(
+    provider: &P,
+    punks: Address,
+    block: u64,
+) -> Result<Vec<Offer>> {
     let mut offers = Vec::with_capacity(TOTAL_PUNKS as usize);
     let mut start = 0u64;
     while start < TOTAL_PUNKS {
@@ -155,10 +185,8 @@ async fn read_offers<P: Provider + Clone>(provider: &P, block: u64) -> Result<Ve
             MulticallBuilder::new_dynamic(provider.clone()).block(BlockId::number(block));
         for index in start..end {
             let input = punksOfferedForSaleCall { punkIndex: U256::from(index) }.abi_encode();
-            multicall = multicall.add_call_dynamic(CallItem::<punksOfferedForSaleCall>::new(
-                CRYPTOPUNKS_MARKET,
-                input.into(),
-            ));
+            multicall = multicall
+                .add_call_dynamic(CallItem::<punksOfferedForSaleCall>::new(punks, input.into()));
         }
         let results = multicall
             .aggregate3()
@@ -179,26 +207,39 @@ async fn read_offers<P: Provider + Clone>(provider: &P, block: u64) -> Result<Ve
 }
 
 /// Latest `PunkBought` with a non-zero price in the window before `block`, as
-/// `(block timestamp, price in wei)`.
-async fn last_sale<P: Provider>(provider: &P, block: u64) -> Result<Option<(u64, u128)>> {
-    let from_block = block.saturating_sub(SALES_WINDOW_BLOCKS);
-    let filter = Filter::new()
-        .address(CRYPTOPUNKS_MARKET)
-        .event_signature(B256::from(PunkBought::SIGNATURE_HASH))
-        .from_block(from_block)
-        .to_block(block);
-    let logs = provider.get_logs(&filter).await.context("PunkBought logs")?;
-
-    let latest = logs
-        .into_iter()
-        .filter_map(|log| {
-            let price = u128::try_from(U256::from_be_slice(log.data().data.get(..32)?)).ok()?;
-            if price == 0 {
-                return None
-            }
-            Some((log.block_number?, log.log_index.unwrap_or_default(), price))
-        })
-        .max_by_key(|(block_number, log_index, _)| (*block_number, *log_index));
+/// `(block timestamp, price in wei)`. The window is scanned newest chunk first and the scan
+/// stops at the first chunk holding a sale, so the result is the same as one wide query.
+async fn last_sale<P: Provider>(
+    provider: &P,
+    punks: Address,
+    block: u64,
+) -> Result<Option<(u64, u128)>> {
+    let window_start = block.saturating_sub(SALES_WINDOW_BLOCKS);
+    let mut latest = None;
+    for (from_block, to_block) in sales_chunks(window_start, block) {
+        let filter = Filter::new()
+            .address(punks)
+            .event_signature(B256::from(PunkBought::SIGNATURE_HASH))
+            .from_block(from_block)
+            .to_block(block.min(to_block));
+        let logs = provider
+            .get_logs(&filter)
+            .await
+            .with_context(|| format!("PunkBought logs {from_block}..={to_block}"))?;
+        latest = logs
+            .into_iter()
+            .filter_map(|log| {
+                let price = u128::try_from(U256::from_be_slice(log.data().data.get(..32)?)).ok()?;
+                if price == 0 {
+                    return None
+                }
+                Some((log.block_number?, log.log_index.unwrap_or_default(), price))
+            })
+            .max_by_key(|(block_number, log_index, _)| (*block_number, *log_index));
+        if latest.is_some() {
+            break
+        }
+    }
 
     let Some((sale_block, _, price)) = latest else { return Ok(None) };
     let header = provider
@@ -209,9 +250,45 @@ async fn last_sale<P: Provider>(provider: &P, block: u64) -> Result<Option<(u64,
     Ok(Some((header.header.timestamp, price)))
 }
 
+/// Inclusive `(from, to)` block ranges covering `window_start..=block`, newest first, each at
+/// most `SALES_CHUNK_BLOCKS` wide.
+pub fn sales_chunks(window_start: u64, block: u64) -> Vec<(u64, u64)> {
+    let mut chunks = Vec::new();
+    let mut to = block;
+    while to >= window_start {
+        let from = to.saturating_sub(SALES_CHUNK_BLOCKS - 1).max(window_start);
+        chunks.push((from, to));
+        if from == 0 || from == window_start {
+            break
+        }
+        to = from - 1;
+    }
+    chunks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sales_chunks_cover_the_window_newest_first_without_overlap() {
+        let block = 26_178_045;
+        let start = block - SALES_WINDOW_BLOCKS;
+        let chunks = sales_chunks(start, block);
+        assert_eq!(chunks.first().unwrap().1, block);
+        assert_eq!(chunks.last().unwrap().0, start);
+        for pair in chunks.windows(2) {
+            assert_eq!(pair[0].0, pair[1].1 + 1, "contiguous, newest first");
+        }
+        for (from, to) in &chunks {
+            assert!(to - from < SALES_CHUNK_BLOCKS, "chunk {from}..={to} too wide");
+        }
+        let covered: u64 = chunks.iter().map(|(f, t)| t - f + 1).sum();
+        assert_eq!(covered, SALES_WINDOW_BLOCKS + 1);
+
+        assert_eq!(sales_chunks(100, 100), vec![(100, 100)]);
+        assert_eq!(sales_chunks(0, 10), vec![(0, 10)]);
+    }
 
     fn offer(is_for_sale: bool, min_value: u128, only_sell_to: Address) -> Offer {
         Offer { is_for_sale, min_value: U256::from(min_value), only_sell_to }

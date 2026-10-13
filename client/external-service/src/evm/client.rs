@@ -4,10 +4,10 @@ use alloy::{
     consensus::Transaction,
     primitives::{Address, Bytes, B256, U256},
     providers::{DynProvider, Provider, ProviderBuilder},
-    rpc::types::{Filter, Log, TransactionReceipt, TransactionRequest},
+    rpc::types::{BlockNumberOrTag, Filter, Log, TransactionReceipt, TransactionRequest},
     signers::local::PrivateKeySigner,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::sync::Arc;
 use url::Url;
 
@@ -90,6 +90,31 @@ impl EvmClient {
 
     pub async fn logs(&self, filter: Filter) -> Result<Vec<Log>> {
         Ok(self.provider.get_logs(&filter).await?)
+    }
+}
+
+/// The pinned block must be at or below the endpoint's `safe` block. Endpoints that do not
+/// serve the `safe` tag fall back to a fixed confirmation depth.
+pub async fn ensure_safe<P: Provider>(provider: &P, block: u64) -> Result<()> {
+    match provider.get_block_by_number(BlockNumberOrTag::Safe).await {
+        Ok(Some(safe)) =>
+            if safe.header.number >= block {
+                Ok(())
+            } else {
+                bail!(
+                    "block {block} is not safe yet on this endpoint (safe {})",
+                    safe.header.number
+                )
+            },
+        Ok(None) | Err(_) => {
+            let latest = provider.get_block_number().await.context("latest block")?;
+            if latest >= block.saturating_add(crate::ETH_FINALITY) {
+                Ok(())
+            } else {
+                let depth = crate::ETH_FINALITY;
+                bail!("block {block} is not {depth} deep yet on this endpoint (latest {latest})")
+            }
+        },
     }
 }
 
