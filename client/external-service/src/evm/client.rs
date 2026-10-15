@@ -56,6 +56,9 @@ impl EvmClient {
         Ok(tx.map(|t| t.inner.input().clone()))
     }
 
+    /// True when `target_block` is at least `confirmations` blocks below this endpoint's head.
+    /// Only a depth check: whether that depth counts as final is the caller's call (the bridge
+    /// uses `ETH_FINALITY`, the floor oracle a shallower checkpoint depth that is not finality).
     pub async fn is_block_finalised(&self, target_block: u64, confirmations: u64) -> Result<bool> {
         let latest = self.block_number().await?;
         Ok(latest >= target_block.saturating_add(confirmations))

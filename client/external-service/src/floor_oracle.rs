@@ -166,7 +166,9 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
     }
     let depth = crate::checkpoint::params_for(chain_id).confirmations;
     if !client.is_block_finalised(pinned_block, depth).await.context("latest block")? {
-        bail!("block {pinned_block} is not {depth} deep yet on this endpoint");
+        // The head is only fetched again for the message, on this failure path.
+        let latest = client.block_number().await.context("latest block")?;
+        bail!("block {pinned_block} is not {depth} deep yet on this endpoint (latest {latest})");
     }
 
     let offers = read_offers(&provider, request.punks, pinned_block).await?;

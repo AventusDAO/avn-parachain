@@ -29,8 +29,10 @@ pub struct ChainParams {
 }
 
 /// Depth of Ethereum checkpoints, about two minutes. Not finality: post-Merge reorgs are one or
-/// two blocks, and a deeper one would only make floor reports disagree and the round fail. Kept
-/// apart from `ETH_FINALITY`, which the bridge uses for its own, stricter purpose.
+/// two blocks. A deeper one makes floor reports disagree and the round fail if it lands while
+/// watchtowers are reading, but a floor read from the orphaned block can finalise if most of them
+/// read before it (see `floor_oracle`). Kept apart from `ETH_FINALITY`, which the bridge uses for
+/// its own, stricter purpose.
 pub const ETHEREUM_CHECKPOINT_CONFIRMATIONS: u64 = 10;
 
 /// The floor read requires the same depth, so a floor round can read at its checkpoint as soon
@@ -202,8 +204,16 @@ mod tests {
                     "{params:?} head {latest} voted {vote}"
                 );
             }
-            // At or below the depth the vote is block 1, short of it.
-            assert_eq!(vote_block(params.confirmations, &params), 1);
+            // At or below the depth the vote is block 1, and that is short of the depth: the
+            // floor read waits.
+            for latest in 1..=params.confirmations {
+                let vote = vote_block(latest, &params) as u64;
+                assert_eq!(vote, 1, "{params:?} head {latest}");
+                assert!(
+                    latest - vote < params.confirmations,
+                    "{params:?} head {latest}: block 1 would already be deep enough"
+                );
+            }
         }
         assert_eq!(vote_block(2, &HARDHAT), 1, "head 2: one block deep, the read waits");
         assert_eq!(vote_block(5, &ETHEREUM), 1, "head 5: four blocks deep, the read waits");
