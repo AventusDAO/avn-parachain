@@ -47,6 +47,9 @@ pub const ORACLE_VOTE_DURATION: u32 = 100;
 pub const MAX_FLOOR_AGE_SECS: u64 = 300;
 pub const VENUE_CHAIN: ExternalChainId = 8453;
 pub const MAX_VENUE_AGE_SECS: u64 = 60;
+pub const VENUE_TARGET_LAG_SECS: u64 = 6;
+pub const VENUE_TARGET_TOLERANCE_SECS: u64 = 6;
+pub const MAX_FLOOR_CHECKPOINT_AGE_SECS: u64 = 150;
 pub const NODE_KEY_TYPE: KeyTypeId = KeyTypeId(*b"nodk");
 /// Country the test node reports with its observations.
 pub const TEST_COUNTRY: CountryCode = *b"GB";
@@ -147,7 +150,9 @@ impl Config for TestRuntime {
     type OracleRoundThreshold = OracleRoundThreshold;
     type OracleVoteDuration = ConstU32<ORACLE_VOTE_DURATION>;
     type MaxFloorAge = ConstU64<MAX_FLOOR_AGE_SECS>;
+    type MaxFloorCheckpointAge = ConstU64<MAX_FLOOR_CHECKPOINT_AGE_SECS>;
     type MaxVenueAge = ConstU64<MAX_VENUE_AGE_SECS>;
+    type VenueTargetLag = ConstU64<VENUE_TARGET_LAG_SECS>;
     type WeightInfo = ();
 }
 
@@ -284,10 +289,17 @@ pub fn all_watchtowers() -> Vec<AccountId> {
 
 thread_local! {
     pub static AUTHORIZED_WATCHTOWERS: RefCell<Vec<AccountId>> = RefCell::new(all_watchtowers());
+    /// Indexed node count while the node index is backfilling; `None` when it is complete.
+    pub static INDEXED_NODES: RefCell<Option<u32>> = RefCell::new(None);
 }
 
 pub fn set_authorized_watchtowers(list: Vec<AccountId>) {
     AUTHORIZED_WATCHTOWERS.with(|w| *w.borrow_mut() = list);
+}
+
+/// Simulates a node index backfill that has reached `count` nodes, or with `None` a complete one.
+pub fn set_indexed_nodes(count: Option<u32>) {
+    INDEXED_NODES.with(|n| *n.borrow_mut() = count);
 }
 
 pub struct TestNodeManager;
@@ -325,7 +337,9 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     }
 
     fn get_indexed_nodes_count() -> u32 {
-        Self::get_authorized_watchtowers_count()
+        INDEXED_NODES
+            .with(|n| *n.borrow())
+            .unwrap_or_else(Self::get_authorized_watchtowers_count)
     }
 }
 
@@ -394,13 +408,18 @@ pub fn vote_call(
     watchtower_index: u8,
 ) -> pallet_watchtower::Call<TestRuntime> {
     let who = watchtower(watchtower_index);
-    let payload =
-        (pallet_watchtower::WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &who).encode();
+    let payload = Watchtower::unsigned_vote_signing_payload(
+        proposal_id,
+        &sp_watchtower::VoteChoice::Binary(in_favor),
+        &TEST_COUNTRY,
+        &who,
+    );
     let signature: Signature =
         watchtower_account(watchtower_index).key_pair().sign(&payload).into();
     pallet_watchtower::Call::<TestRuntime>::unsigned_vote {
         proposal_id,
         in_favor,
+        country: TEST_COUNTRY,
         watchtower: who,
         signature: signature.into(),
     }
@@ -412,14 +431,20 @@ pub fn submit_vote(
     watchtower_index: u8,
 ) -> DispatchResultWithPostInfo {
     match vote_call(proposal_id, in_favor, watchtower_index) {
-        pallet_watchtower::Call::unsigned_vote { proposal_id, in_favor, watchtower, signature } =>
-            Watchtower::unsigned_vote(
-                RawOrigin::None.into(),
-                proposal_id,
-                in_favor,
-                watchtower,
-                signature,
-            ),
+        pallet_watchtower::Call::unsigned_vote {
+            proposal_id,
+            in_favor,
+            country,
+            watchtower,
+            signature,
+        } => Watchtower::unsigned_vote(
+            RawOrigin::None.into(),
+            proposal_id,
+            in_favor,
+            country,
+            watchtower,
+            signature,
+        ),
         _ => unreachable!(),
     }
 }
@@ -431,13 +456,18 @@ pub fn choice_vote_call(
     watchtower_index: u8,
 ) -> pallet_watchtower::Call<TestRuntime> {
     let who = watchtower(watchtower_index);
-    let payload =
-        (pallet_watchtower::WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, &who).encode();
+    let payload = Watchtower::unsigned_vote_signing_payload(
+        proposal_id,
+        &sp_watchtower::VoteChoice::Choice(choice),
+        &TEST_COUNTRY,
+        &who,
+    );
     let signature: Signature =
         watchtower_account(watchtower_index).key_pair().sign(&payload).into();
     pallet_watchtower::Call::<TestRuntime>::unsigned_vote_choice {
         proposal_id,
         choice,
+        country: TEST_COUNTRY,
         watchtower: who,
         signature: signature.into(),
     }
@@ -452,12 +482,14 @@ pub fn submit_choice_vote(
         pallet_watchtower::Call::unsigned_vote_choice {
             proposal_id,
             choice,
+            country,
             watchtower,
             signature,
         } => Watchtower::unsigned_vote_choice(
             RawOrigin::None.into(),
             proposal_id,
             choice,
+            country,
             watchtower,
             signature,
         ),
@@ -502,6 +534,7 @@ pub fn test_market() -> VenueMarket {
         chain_id: VENUE_CHAIN,
         clearing_house: H160::repeat_byte(0x56),
         amm: H160::repeat_byte(0xA1),
+        target_tolerance_secs: VENUE_TARGET_TOLERANCE_SECS,
     }
 }
 
@@ -556,19 +589,19 @@ impl VenueReportContext {
     }
 }
 
-/// Mocks `GET /venue/exotic/{chain_id}/{pinned_block}/{clearing_house}/{amm}` on the local
+/// Mocks `GET /venue/exotic/{chain_id}/{target_ts}/{clearing_house}/{amm}` on the local
 /// external service, with the path built exactly as the offchain worker builds it.
 pub fn mock_venue_service(
     state: &mut OffchainState,
     market: &VenueMarket,
-    pinned_block: u32,
+    target_ts: u64,
     response: Option<Vec<u8>>,
 ) {
     state.expect_request(PendingRequest {
         method: "GET".into(),
         uri: format!(
             "http://127.0.0.1:2020/{}",
-            FloorOracle::venue_service_path(market, pinned_block)
+            FloorOracle::venue_service_path(market, target_ts)
         ),
         response,
         sent: true,
@@ -576,8 +609,14 @@ pub fn mock_venue_service(
     });
 }
 
+/// The service's answer carrying `observation`.
 pub fn encoded_venue_observation(observation: &VenueObservation) -> Vec<u8> {
-    sp_avn_common::http_data_codec::encode_to_http_data(observation).into_bytes()
+    sp_avn_common::http_data_codec::encode_to_http_data(Some(*observation)).into_bytes()
+}
+
+/// The service's answer while the venue chain has not passed the target.
+pub fn encoded_venue_not_ready() -> Vec<u8> {
+    sp_avn_common::http_data_codec::encode_to_http_data(None::<VenueObservation>).into_bytes()
 }
 
 /// Mocks `GET /node/country` on the local external service.

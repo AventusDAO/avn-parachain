@@ -105,30 +105,28 @@ fn venue_market() -> VenueMarket {
         chain_id: VENUE_CHAIN_ID,
         clearing_house: sp_core::H160::repeat_byte(0x56),
         amm: sp_core::H160::repeat_byte(0xA1),
+        target_tolerance_secs: 6,
     }
 }
 
-fn plausible_venue_observation(block: u32) -> VenueObservation {
+/// Target timestamp benchmarks give venue rounds, since the benchmark clock may be at zero.
+const VENUE_TARGET_TS: u64 = 1_750_000_000;
+
+fn plausible_venue_observation() -> VenueObservation {
     VenueObservation {
-        pinned_block: block as u64,
-        pinned_ts: 1_750_000_000,
+        pinned_block: SEED_BLOCK as u64,
+        pinned_ts: VENUE_TARGET_TS,
         spot_e18: 51_000_000_000_000_000_000,
         oracle_e18: 50_000_000_000_000_000_000,
         oi_notional_e18: 1_000_000_000_000_000_000_000,
     }
 }
 
-/// Configures the market, seeds its chain, opens a venue round and activates its proposal.
+/// Configures the market, opens a venue round and activates its proposal. The target set on
+/// activation is replaced by [`VENUE_TARGET_TS`].
 fn start_active_venue_round<T: Config>() -> VenueRound<BlockNumberFor<T>> {
     let market = venue_market();
     assert!(Pallet::<T>::set_venue_market(RawOrigin::Root.into(), Some(market)).is_ok());
-    assert!(Pallet::<T>::seed_chain(
-        RawOrigin::Root.into(),
-        market.chain_id,
-        SEED_BLOCK,
-        MAX_AGE_SECS
-    )
-    .is_ok());
     assert!(Pallet::<T>::do_request_venue_state().is_ok());
     let round = ActiveVenueRound::<T>::get().expect("round started");
     assert!(pallet_watchtower::Pallet::<T>::activate_next_proposal(
@@ -136,7 +134,10 @@ fn start_active_venue_round<T: Config>() -> VenueRound<BlockNumberFor<T>> {
         round.proposal_id
     )
     .is_ok());
-    round
+    ActiveVenueRound::<T>::mutate(|round| {
+        round.as_mut().expect("round started").target_ts = Some(VENUE_TARGET_TS)
+    });
+    ActiveVenueRound::<T>::get().expect("round started")
 }
 
 benchmarks! {
@@ -246,17 +247,10 @@ benchmarks! {
         assert_eq!(OracleRequester::<T>::get(), Some(who));
     }
 
-    // Worst path: no fresh state and a fresh checkpoint, so a watchtower proposal is created.
+    // Worst path: no fresh state, so a watchtower proposal is created.
     request_venue_state {
         let market = venue_market();
         assert!(Pallet::<T>::set_venue_market(RawOrigin::Root.into(), Some(market)).is_ok());
-        assert!(Pallet::<T>::seed_chain(
-            RawOrigin::Root.into(),
-            market.chain_id,
-            SEED_BLOCK,
-            MAX_AGE_SECS
-        )
-        .is_ok());
     }: _(RawOrigin::Root)
     verify {
         let round = ActiveVenueRound::<T>::get().expect("round started");
@@ -272,7 +266,7 @@ benchmarks! {
         let round = start_active_venue_round::<T>();
         let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
             .expect("a node is registered");
-        let observation = plausible_venue_observation(round.pinned_block);
+        let observation = plausible_venue_observation();
         let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
             .sign(&("DummyProof").encode())
             .expect("Error signing proof");

@@ -404,6 +404,9 @@ pub fn filtered_votes() -> Vec<(ProposalId, AccountId, VoteChoice)> {
     FILTERED_VOTES.with(|f| f.borrow().clone())
 }
 
+/// Country the mock watchtower nodes vote from.
+pub const TEST_COUNTRY: CountryCode = *b"GB";
+
 pub const VOTE_FILTER_REJECTED: DispatchError = DispatchError::Other("TestVoteFilter: rejected");
 
 pub struct TestVoteFilter;

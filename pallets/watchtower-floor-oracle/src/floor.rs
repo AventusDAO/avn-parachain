@@ -81,7 +81,12 @@ impl<T: Config> Pallet<T> {
         }
 
         let market = FloorMarketConfig::<T>::get().ok_or(Error::<T>::FloorMarketNotSet)?;
-        match Self::do_request_checkpoint(market.chain_id)? {
+        // A floor is as old as the checkpoint it pins, so pin only a young one; otherwise the
+        // new floor could be past `MaxFloorAge` by the time it finalises.
+        match Self::do_request_checkpoint_within(
+            market.chain_id,
+            Some(T::MaxFloorCheckpointAge::get()),
+        )? {
             CheckpointRequest::Ready(checkpoint) => Self::start_floor_round(&checkpoint, market),
             CheckpointRequest::Pending { round_id, .. } => {
                 PendingFloorRequest::<T>::put(true);
@@ -182,15 +187,9 @@ impl<T: Config> Pallet<T> {
 
         let key = T::Watchtowers::get_node_signing_key(watchtower)
             .ok_or(Error::<T>::FloorReportBadSignature)?;
-        // The tuple is encoded inside the check; it must match `report_signing_payload`.
-        ensure!(
-            pallet_watchtower::Pallet::<T>::offchain_signature_is_valid(
-                &(FLOOR_ORACLE_REPORT_CONTEXT, round_id, observation, country, watchtower),
-                &key,
-                signature,
-            ),
-            Error::<T>::FloorReportBadSignature
-        );
+        // Checked against the bytes the offchain worker signs, so the two cannot drift apart.
+        let payload = Self::report_signing_payload(round_id, observation, country, watchtower);
+        ensure!(key.verify(&payload, signature), Error::<T>::FloorReportBadSignature);
         Ok(())
     }
 
@@ -201,10 +200,7 @@ impl<T: Config> Pallet<T> {
     ) -> Result<FloorRound<BlockNumberFor<T>>, DispatchError> {
         let round = ActiveFloorRound::<T>::get().ok_or(Error::<T>::NoActiveFloorRound)?;
         ensure!(round.round_id == round_id, Error::<T>::FloorRoundMismatch);
-        ensure!(
-            pallet_watchtower::ActiveInternalProposal::<T>::get() == Some(round.proposal_id),
-            Error::<T>::FloorProposalNotActive
-        );
+        ensure!(Self::oracle_proposal_open(round.proposal_id), Error::<T>::FloorProposalNotActive);
         ensure!(
             Self::is_oracle_committee_member(round.proposal_id, watchtower),
             Error::<T>::NotInFloorCommittee
@@ -250,10 +246,10 @@ impl<T: Config> Pallet<T> {
             round_id,
             watchtower: watchtower.clone(),
             hash,
-            country,
+            country: sanitise_country(country),
         });
 
-        pallet_watchtower::Pallet::<T>::vote_choice_for(&watchtower, proposal_id, hash)?;
+        pallet_watchtower::Pallet::<T>::vote_choice_for(&watchtower, proposal_id, hash, country)?;
         Ok(())
     }
 
@@ -300,10 +296,10 @@ impl<T: Config> Pallet<T> {
         }
 
         ActiveFloorRound::<T>::kill();
-        let limit =
-            T::MaxCommitteeSize::get().max(T::Watchtowers::get_authorized_watchtowers_count());
-        let _ = FloorReports::<T>::clear_prefix(round.round_id, limit, None);
-        let _ = FloorObservations::<T>::clear_prefix(round.round_id, limit, None);
+        // `reports` counts the rows this round wrote, and there is at most one observation per
+        // report, so this removes every row of the round however many nodes are registered now.
+        let _ = FloorReports::<T>::clear_prefix(round.round_id, round.reports, None);
+        let _ = FloorObservations::<T>::clear_prefix(round.round_id, round.reports, None);
     }
 
     // ------------------------------------------------------------------ offchain worker
@@ -315,7 +311,7 @@ impl<T: Config> Pallet<T> {
             Some(round) => round,
             None => return,
         };
-        if pallet_watchtower::ActiveInternalProposal::<T>::get() != Some(round.proposal_id) {
+        if !Self::oracle_proposal_open(round.proposal_id) {
             return
         }
         if Self::ocw_already_run(&FLOOR_OCW, now).is_err() {
@@ -355,7 +351,7 @@ impl<T: Config> Pallet<T> {
             return
         }
 
-        let country = Self::fetch_node_country();
+        let country = pallet_watchtower::fetch_node_country::<T>();
         let payload =
             Self::report_signing_payload(round.round_id, &observation, &country, &watchtower);
         let signature = match signing_key.sign(&payload) {

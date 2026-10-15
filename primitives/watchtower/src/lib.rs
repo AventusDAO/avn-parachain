@@ -13,6 +13,39 @@ use sp_runtime::{traits::Member, Debug, DispatchError, DispatchResult, Perbill};
 
 pub type ProposalId = H256;
 
+/// ISO 3166-1 alpha-2 code of the country a watchtower node votes or reports from, as resolved
+/// by its own external service. Display only: it is self-reported, signed with the vote and
+/// shown in events, and never part of what nodes must agree on.
+pub type CountryCode = [u8; 2];
+/// Reported when the node could not resolve its country.
+pub const UNKNOWN_COUNTRY: CountryCode = *b"??";
+/// External service path answering the node's own country code.
+pub const NODE_COUNTRY_SERVICE_PATH: &str = "node/country";
+
+/// The country as shown in events: two letters, upper-cased, or [`UNKNOWN_COUNTRY`] for
+/// anything else. A node signs whatever bytes it likes; this keeps garbage out of UIs.
+pub fn sanitise_country(country: CountryCode) -> CountryCode {
+    if country.iter().all(u8::is_ascii_alphabetic) {
+        [country[0].to_ascii_uppercase(), country[1].to_ascii_uppercase()]
+    } else {
+        UNKNOWN_COUNTRY
+    }
+}
+
+#[cfg(test)]
+mod country_tests {
+    use super::*;
+
+    #[test]
+    fn only_letters_reach_events() {
+        assert_eq!(sanitise_country(*b"GB"), *b"GB");
+        assert_eq!(sanitise_country(*b"de"), *b"DE");
+        assert_eq!(sanitise_country(UNKNOWN_COUNTRY), UNKNOWN_COUNTRY);
+        assert_eq!(sanitise_country([0xFF, 0x00]), UNKNOWN_COUNTRY);
+        assert_eq!(sanitise_country(*b"G1"), UNKNOWN_COUNTRY);
+    }
+}
+
 // External chain checkpoints
 /// EVM chain id of an external chain (Ethereum = 1, Base = 8453, Sepolia = 11155111).
 pub type ExternalChainId = u64;

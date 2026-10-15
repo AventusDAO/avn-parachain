@@ -70,8 +70,14 @@ mod voting_on_proposals {
             assert_eq!(votes.againsts, 0);
 
             System::assert_last_event(
-                Event::VoteSubmitted { proposal_id, voter: voter.clone(), in_favor, vote_weight }
-                    .into(),
+                Event::VoteSubmitted {
+                    proposal_id,
+                    voter: voter.clone(),
+                    in_favor,
+                    vote_weight,
+                    country: None,
+                }
+                .into(),
             );
         });
     }
@@ -91,12 +97,18 @@ mod voting_on_proposals {
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
             let signature = sign_vote(
                 get_default_voter(),
-                &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode(),
+                &Watchtower::unsigned_vote_signing_payload(
+                    proposal_id,
+                    &VoteChoice::Binary(in_favor),
+                    &TEST_COUNTRY,
+                    &voter,
+                ),
             );
             assert_ok!(Watchtower::unsigned_vote(
                 RawOrigin::None.into(),
                 proposal_id,
                 in_favor,
+                TEST_COUNTRY,
                 voter.clone(),
                 signature.into()
             ));
@@ -110,8 +122,14 @@ mod voting_on_proposals {
             assert_eq!(votes.againsts, 0);
 
             System::assert_last_event(
-                Event::VoteSubmitted { proposal_id, voter: voter.clone(), in_favor, vote_weight }
-                    .into(),
+                Event::VoteSubmitted {
+                    proposal_id,
+                    voter: voter.clone(),
+                    in_favor,
+                    vote_weight,
+                    country: Some(TEST_COUNTRY),
+                }
+                .into(),
             );
         });
     }
@@ -582,11 +600,17 @@ mod vote_filter {
         let voter = watchtower_1();
         let signature = sign_vote(
             get_default_voter(),
-            &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode(),
+            &Watchtower::unsigned_vote_signing_payload(
+                proposal_id,
+                &VoteChoice::Binary(in_favor),
+                &TEST_COUNTRY,
+                &voter,
+            ),
         );
         crate::Call::unsigned_vote {
             proposal_id,
             in_favor,
+            country: TEST_COUNTRY,
             watchtower: voter,
             signature: signature.into(),
         }
@@ -640,12 +664,119 @@ mod vote_filter {
                     RawOrigin::None.into(),
                     proposal_id,
                     true,
+                    TEST_COUNTRY,
                     watchtower_1(),
                     signature
                 ),
                 VOTE_FILTER_REJECTED
             );
             assert!(!Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
+        });
+    }
+
+    /// A vote that was already counted is refused by the pool, so re-gossiping its signed
+    /// bytes cannot get it included again.
+    #[test]
+    fn a_counted_vote_cannot_be_replayed() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let proposal_id = internal_proposal();
+            let call = unsigned_vote_call(proposal_id, true);
+            assert_ok!(<Watchtower as ValidateUnsigned>::validate_unsigned(
+                TransactionSource::External,
+                &call
+            ));
+            let signature = match &call {
+                crate::Call::unsigned_vote { signature, .. } => signature.clone(),
+                _ => unreachable!(),
+            };
+            assert_ok!(Watchtower::unsigned_vote(
+                RawOrigin::None.into(),
+                proposal_id,
+                true,
+                TEST_COUNTRY,
+                watchtower_1(),
+                signature
+            ));
+            assert!(Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
+
+            assert_eq!(
+                <Watchtower as ValidateUnsigned>::validate_unsigned(
+                    TransactionSource::External,
+                    &call
+                ),
+                InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
+            );
+        });
+    }
+
+    /// A node may sign any two bytes as its country; events only ever show letters or `??`.
+    #[test]
+    fn a_junk_country_is_shown_as_unknown() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let proposal_id = internal_proposal();
+            let voter = watchtower_1();
+            let junk: CountryCode = [0xFF, 0x00];
+            let signature = sign_vote(
+                get_default_voter(),
+                &Watchtower::unsigned_vote_signing_payload(
+                    proposal_id,
+                    &VoteChoice::Binary(true),
+                    &junk,
+                    &voter,
+                ),
+            );
+            assert_ok!(Watchtower::unsigned_vote(
+                RawOrigin::None.into(),
+                proposal_id,
+                true,
+                junk,
+                voter,
+                signature.into()
+            ));
+            System::assert_has_event(
+                Event::VoteSubmitted {
+                    proposal_id,
+                    voter,
+                    in_favor: true,
+                    vote_weight: 1,
+                    country: Some(UNKNOWN_COUNTRY),
+                }
+                .into(),
+            );
+        });
+    }
+
+    /// The country is signed with the vote, so whoever relays it cannot change it.
+    #[test]
+    fn a_relayed_vote_with_another_country_is_rejected() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let proposal_id = internal_proposal();
+            let tampered = match unsigned_vote_call(proposal_id, true) {
+                crate::Call::unsigned_vote {
+                    proposal_id, in_favor, watchtower, signature, ..
+                } => crate::Call::unsigned_vote {
+                    proposal_id,
+                    in_favor,
+                    country: *b"US",
+                    watchtower,
+                    signature,
+                },
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                <Watchtower as ValidateUnsigned>::validate_unsigned(
+                    TransactionSource::External,
+                    &tampered
+                ),
+                InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
+            );
+            assert_ok!(<Watchtower as ValidateUnsigned>::validate_unsigned(
+                TransactionSource::External,
+                &unsigned_vote_call(proposal_id, true)
+            ));
         });
     }
 

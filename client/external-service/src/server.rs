@@ -20,9 +20,10 @@ use sp_avn_common::{
     DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
 use sp_core::{sr25519, H160, H256};
-use sp_floor_oracle::{FLOOR_SERVICE_PATH, NODE_COUNTRY_SERVICE_PATH, VENUE_SERVICE_PATH};
+use sp_floor_oracle::{FLOOR_SERVICE_PATH, VENUE_SERVICE_PATH};
 use sp_io::hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
+use sp_watchtower::NODE_COUNTRY_SERVICE_PATH;
 use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -45,7 +46,7 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     /// Every endpoint list the node has (floor, venue, bridge), for the checkpoint route on
     /// collators, with the per-chain choice cached.
     pub checkpoint_endpoints: Arc<crate::checkpoint::Endpoints>,
-    /// The node's self-reported country, for the oracle report events.
+    /// The node's self-reported country, for watchtower votes and oracle reports.
     pub node_country: Arc<crate::node_country::NodeCountry>,
     pub client: Arc<ClientT>,
     pub send_lock: Arc<Mutex<()>>,
@@ -150,9 +151,7 @@ where
             get(floor_observation::<Block, ClientT>),
         )
         .route(
-            &format!(
-                "/{VENUE_SERVICE_PATH}/{{chain_id}}/{{pinned_block}}/{{clearing_house}}/{{amm}}"
-            ),
+            &format!("/{VENUE_SERVICE_PATH}/{{chain_id}}/{{target_ts}}/{{clearing_house}}/{{amm}}"),
             get(venue_observation::<Block, ClientT>),
         )
         .route("/checkpoint/block/{chain_id}", get(checkpoint_block::<Block, ClientT>))
@@ -429,13 +428,14 @@ where
     }
 }
 
-/// `GET /venue/exotic/{chain_id}/{pinned_block}/{clearing_house}/{amm}` for the watchtower
-/// venue oracle: the raw Exotic market state as of `pinned_block`, read from the configured
-/// venue chain endpoints with failover. The body is the http-data encoding of a
-/// `VenueObservation`.
+/// `GET /venue/exotic/{chain_id}/{target_ts}/{clearing_house}/{amm}` for the watchtower
+/// venue oracle: the raw Exotic market state at the latest block whose timestamp is at most
+/// `target_ts`, read from the configured venue chain endpoints with failover. The body is the
+/// http-data encoding of an `Option<VenueObservation>`: `None` while the venue chain has no
+/// block after the target yet, which the watchtower treats as "retry next block".
 async fn venue_observation<Block: BlockT, ClientT>(
     State(state): State<Arc<AppState<Block, ClientT>>>,
-    Path((chain_id, pinned_block, clearing_house, amm)): Path<(u64, u64, String, String)>,
+    Path((chain_id, target_ts, clearing_house, amm)): Path<(u64, u64, String, String)>,
 ) -> Result<String, (StatusCode, String)>
 where
     ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
@@ -453,12 +453,18 @@ where
     };
     let request = crate::venue_oracle::VenueRequest {
         chain_id,
-        pinned_block,
+        target_ts,
         clearing_house: parse("clearing_house", &clearing_house)?,
         amm: parse("amm", &amm)?,
     };
     match crate::venue_oracle::observe(rpc_urls, &request).await {
-        Ok(observation) => Ok(encode_to_http_data(observation)),
+        Ok(observation) => Ok(encode_to_http_data(Some(observation))),
+        // Expected on a round's first attempts. Answered as a success with no observation, so
+        // the watchtower retries next block without logging an error.
+        Err(e) if crate::venue_oracle::is_target_not_reached(&e) => {
+            log::info!("⛓️ external-service venue observation not ready: {e:#}");
+            Ok(encode_to_http_data(None::<sp_floor_oracle::VenueObservation>))
+        },
         Err(e) => {
             let m = format!("venue observation unavailable: {e:#}");
             log::error!("⛓️ 💔 external-service {}", m);

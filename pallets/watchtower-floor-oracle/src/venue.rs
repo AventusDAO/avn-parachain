@@ -1,18 +1,23 @@
 // Copyright 2026 Aventus DAO Ltd
 
-//! Venue rounds: the raw state of the Exotic perpetuals market for PUNKS, read at a pinned
-//! block of the venue chain (Base). The channel mirrors the floor channel in [`floor`]:
+//! Venue rounds: the raw state of the Exotic perpetuals market for PUNKS, read at a block of the
+//! venue chain (Base) picked by timestamp. The channel mirrors the floor channel in [`floor`],
+//! except that it does not wait for a checkpoint: venue state must be as fresh as possible, and
+//! a checkpoint round plus its block rounding would add minutes.
 //!
 //! 1. `request_venue_state` finds no fresh state and no running round. It needs a configured
-//!    [`VenueMarket`] and asks the checkpoint side for that market's chain. With a fresh checkpoint
-//!    the round starts at once; otherwise the request is parked in `PendingVenueRequest` and the
-//!    round starts when the checkpoint round settles.
+//!    [`VenueMarket`] and starts a round at once.
 //! 2. Starting a round snapshots the market into the round and submits an internal watchtower
 //!    proposal of type `VenueOracle` with `VotingKind::Choice`.
-//! 3. Watchtower nodes fetch `venue/exotic/{chain_id}/{pinned_block}/{clearing_house}/{amm}` from
-//!    their local external service and submit `submit_venue_report`. The report is the vote,
+//! 3. When the proposal activates, the round gets its target timestamp: the parachain time minus
+//!    `VenueTargetLag`. Setting it at activation keeps time spent in the queue from aging the
+//!    state.
+//! 4. Watchtower nodes fetch `venue/exotic/{chain_id}/{target_ts}/{clearing_house}/{amm}` from
+//!    their local external service, which reads at the latest venue block whose timestamp is at
+//!    most `target_ts`. Every honest node resolves the same block, so their observations match
+//!    without voting on a block first. They submit `submit_venue_report`; the report is the vote,
 //!    exactly as on the floor channel.
-//! 4. A passed proposal stores the winning observation as `LastFinalisedVenue`; anything else fails
+//! 5. A passed proposal stores the winning observation as `LastFinalisedVenue`; anything else fails
 //!    the round.
 //!
 //! Observations carry raw contract return values only. Nothing here interprets them.
@@ -43,8 +48,9 @@ pub struct VenueRound<BlockNumber> {
     pub round_id: u64,
     /// The watchtower proposal deciding this round.
     pub proposal_id: ProposalId,
-    /// Venue chain block every watchtower reads the contracts at.
-    pub pinned_block: u32,
+    /// Watchtowers read the venue chain at the latest block whose timestamp is at most this, in
+    /// unix seconds. `None` until the proposal activates.
+    pub target_ts: Option<u64>,
     /// The market as configured when the round started. Reports are validated against this
     /// snapshot, so a later `set_venue_market` only affects the next round.
     pub market: VenueMarket,
@@ -74,36 +80,10 @@ impl<T: Config> Pallet<T> {
         }
 
         let market = VenueMarketConfig::<T>::get().ok_or(Error::<T>::VenueMarketNotSet)?;
-        match Self::do_request_checkpoint(market.chain_id)? {
-            CheckpointRequest::Ready(checkpoint) => Self::start_venue_round(&checkpoint, market),
-            CheckpointRequest::Pending { round_id, .. } => {
-                PendingVenueRequest::<T>::put(true);
-                Self::deposit_event(Event::<T>::VenueRequestWaitingForCheckpoint {
-                    checkpoint_round_id: round_id,
-                });
-                Ok(())
-            },
-        }
+        Self::start_venue_round(market)
     }
 
-    /// Called by the checkpoint side when a round on `chain_id` settles.
-    pub(crate) fn on_checkpoint_agreed_venue(chain_id: ExternalChainId, checkpoint: &Checkpoint) {
-        let market = match VenueMarketConfig::<T>::get() {
-            Some(market) => market,
-            None => return,
-        };
-        if chain_id != market.chain_id || !PendingVenueRequest::<T>::take() {
-            return
-        }
-        if ActiveVenueRound::<T>::exists() {
-            return
-        }
-        if let Err(error) = Self::start_venue_round(checkpoint, market) {
-            Self::deposit_event(Event::<T>::VenueRoundStartFailed { error });
-        }
-    }
-
-    fn start_venue_round(checkpoint: &Checkpoint, market: VenueMarket) -> DispatchResult {
+    fn start_venue_round(market: VenueMarket) -> DispatchResult {
         let round_id = LastVenueRoundId::<T>::mutate(|id| {
             *id = id.saturating_add(1);
             *id
@@ -113,7 +93,7 @@ impl<T: Config> Pallet<T> {
 
         let request = ProposalRequest {
             title: VENUE_PROPOSAL_TITLE.to_vec(),
-            payload: RawPayload::Inline((round_id, checkpoint.block_number, market).encode()),
+            payload: RawPayload::Inline((round_id, market).encode()),
             threshold: T::OracleRoundThreshold::get(),
             source: ProposalSource::Internal(ProposalType::VenueOracle),
             decision_rule: DecisionRule::RejectOnExpiry,
@@ -129,18 +109,40 @@ impl<T: Config> Pallet<T> {
         ActiveVenueRound::<T>::put(VenueRound {
             round_id,
             proposal_id,
-            pinned_block: checkpoint.block_number,
+            target_ts: None,
             market,
             started_at: now_block,
             reports: 0,
         });
-        Self::deposit_event(Event::<T>::VenueRoundStarted {
-            round_id,
-            proposal_id,
-            pinned_block: checkpoint.block_number,
-            market,
-        });
+        Self::deposit_event(Event::<T>::VenueRoundStarted { round_id, proposal_id, market });
         Ok(())
+    }
+
+    /// Sets the running round's target timestamp when its proposal activates. Other proposals
+    /// are ignored.
+    /// Runs on every proposal activation, so it only writes when the proposal is the venue one.
+    pub(crate) fn on_venue_proposal_activated(proposal_id: ProposalId) {
+        let Some(mut round) = ActiveVenueRound::<T>::get() else { return };
+        if round.proposal_id != proposal_id {
+            return
+        }
+        let target_ts = Self::now_secs().saturating_sub(T::VenueTargetLag::get());
+        round.target_ts = Some(target_ts);
+        let round_id = round.round_id;
+        ActiveVenueRound::<T>::put(round);
+        Self::deposit_event(Event::<T>::VenueRoundActivated { round_id, target_ts });
+    }
+
+    /// True when `observation` was taken at the latest venue block at or before `target_ts`, as
+    /// far as the pallet can tell: its timestamp is at most the target and within the market's
+    /// `target_tolerance_secs` of it. Agreement on the exact block comes from matching reports.
+    pub fn venue_observation_on_target(
+        observation: &VenueObservation,
+        target_ts: u64,
+        market: &VenueMarket,
+    ) -> bool {
+        observation.pinned_ts <= target_ts &&
+            target_ts - observation.pinned_ts < market.target_tolerance_secs
     }
 
     pub fn venue_round_external_ref(round_id: u64) -> H256 {
@@ -171,15 +173,10 @@ impl<T: Config> Pallet<T> {
 
         let key = T::Watchtowers::get_node_signing_key(watchtower)
             .ok_or(Error::<T>::VenueReportBadSignature)?;
-        // The tuple is encoded inside the check; it must match `venue_report_signing_payload`.
-        ensure!(
-            pallet_watchtower::Pallet::<T>::offchain_signature_is_valid(
-                &(VENUE_ORACLE_REPORT_CONTEXT, round_id, observation, country, watchtower),
-                &key,
-                signature,
-            ),
-            Error::<T>::VenueReportBadSignature
-        );
+        // Checked against the bytes the offchain worker signs, so the two cannot drift apart.
+        let payload =
+            Self::venue_report_signing_payload(round_id, observation, country, watchtower);
+        ensure!(key.verify(&payload, signature), Error::<T>::VenueReportBadSignature);
         Ok(())
     }
 
@@ -190,10 +187,7 @@ impl<T: Config> Pallet<T> {
     ) -> Result<VenueRound<BlockNumberFor<T>>, DispatchError> {
         let round = ActiveVenueRound::<T>::get().ok_or(Error::<T>::NoActiveVenueRound)?;
         ensure!(round.round_id == round_id, Error::<T>::VenueRoundMismatch);
-        ensure!(
-            pallet_watchtower::ActiveInternalProposal::<T>::get() == Some(round.proposal_id),
-            Error::<T>::VenueProposalNotActive
-        );
+        ensure!(Self::oracle_proposal_open(round.proposal_id), Error::<T>::VenueProposalNotActive);
         ensure!(
             Self::is_oracle_committee_member(round.proposal_id, watchtower),
             Error::<T>::NotInVenueCommittee
@@ -202,10 +196,12 @@ impl<T: Config> Pallet<T> {
             !VenueReports::<T>::contains_key(round_id, watchtower),
             Error::<T>::DuplicateVenueReport
         );
+        // Set when the proposal activates, which the check above guarantees.
+        let target_ts = round.target_ts.ok_or(Error::<T>::VenueProposalNotActive)?;
         ensure!(observation.is_plausible(), Error::<T>::ImplausibleVenueObservation);
         ensure!(
-            observation.pinned_block == round.pinned_block as u64,
-            Error::<T>::VenueObservationBlockMismatch
+            Self::venue_observation_on_target(observation, target_ts, &round.market),
+            Error::<T>::VenueObservationOffTarget
         );
         Ok(round)
     }
@@ -233,10 +229,10 @@ impl<T: Config> Pallet<T> {
             round_id,
             watchtower: watchtower.clone(),
             hash,
-            country,
+            country: sanitise_country(country),
         });
 
-        pallet_watchtower::Pallet::<T>::vote_choice_for(&watchtower, proposal_id, hash)?;
+        pallet_watchtower::Pallet::<T>::vote_choice_for(&watchtower, proposal_id, hash, country)?;
         Ok(())
     }
 
@@ -285,10 +281,10 @@ impl<T: Config> Pallet<T> {
         }
 
         ActiveVenueRound::<T>::kill();
-        let limit =
-            T::MaxCommitteeSize::get().max(T::Watchtowers::get_authorized_watchtowers_count());
-        let _ = VenueReports::<T>::clear_prefix(round.round_id, limit, None);
-        let _ = VenueObservations::<T>::clear_prefix(round.round_id, limit, None);
+        // `reports` counts the rows this round wrote, and there is at most one observation per
+        // report, so this removes every row of the round however many nodes are registered now.
+        let _ = VenueReports::<T>::clear_prefix(round.round_id, round.reports, None);
+        let _ = VenueObservations::<T>::clear_prefix(round.round_id, round.reports, None);
     }
 
     // ------------------------------------------------------------------ offchain worker
@@ -300,9 +296,10 @@ impl<T: Config> Pallet<T> {
             Some(round) => round,
             None => return,
         };
-        if pallet_watchtower::ActiveInternalProposal::<T>::get() != Some(round.proposal_id) {
+        if !Self::oracle_proposal_open(round.proposal_id) {
             return
         }
+        let Some(target_ts) = round.target_ts else { return };
         if Self::ocw_already_run(&VENUE_OCW, now).is_err() {
             return
         }
@@ -323,14 +320,21 @@ impl<T: Config> Pallet<T> {
             return
         }
 
-        let observation = match Self::fetch_venue_observation(&round.market, round.pinned_block) {
-            Ok(observation) => observation,
+        let observation = match Self::fetch_venue_observation(&round.market, target_ts) {
+            Ok(Some(observation)) => observation,
+            // Normal on a round's first attempts: the venue chain has not passed the target.
+            Ok(None) => {
+                log::debug!("Venue oracle: venue chain not past target {} yet", target_ts);
+                return
+            },
             Err(e) => {
                 log::error!("💔 Venue oracle: cannot fetch observation: {:?}", e);
                 return
             },
         };
-        if !observation.is_plausible() || observation.pinned_block != round.pinned_block as u64 {
+        if !observation.is_plausible() ||
+            !Self::venue_observation_on_target(&observation, target_ts, &round.market)
+        {
             log::error!(
                 "💔 Venue oracle: service returned an unusable observation {:?}",
                 observation
@@ -338,7 +342,7 @@ impl<T: Config> Pallet<T> {
             return
         }
 
-        let country = Self::fetch_node_country();
+        let country = pallet_watchtower::fetch_node_country::<T>();
         let payload =
             Self::venue_report_signing_payload(round.round_id, &observation, &country, &watchtower);
         let signature = match signing_key.sign(&payload) {
@@ -364,26 +368,27 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    /// Path of the service request for `market` at `pinned_block`:
-    /// `venue/exotic/{chain_id}/{pinned_block}/{clearing_house}/{amm}`, addresses as 40
+    /// Path of the service request for `market` at `target_ts`:
+    /// `venue/exotic/{chain_id}/{target_ts}/{clearing_house}/{amm}`, addresses as 40
     /// lower-case hex characters without `0x`. Shared with the tests so they cannot drift.
-    pub fn venue_service_path(market: &VenueMarket, pinned_block: u32) -> String {
+    pub fn venue_service_path(market: &VenueMarket, target_ts: u64) -> String {
         format!(
             "{}/{}/{}/{:x}/{:x}",
-            VENUE_SERVICE_PATH, market.chain_id, pinned_block, market.clearing_house, market.amm
+            VENUE_SERVICE_PATH, market.chain_id, target_ts, market.clearing_house, market.amm
         )
     }
 
     /// `GET` of [`Pallet::venue_service_path`] on the local external service. The body is the
-    /// http-data encoding of a `VenueObservation`.
+    /// http-data encoding of an `Option<VenueObservation>`; `None` means the venue chain has no
+    /// block after the target yet.
     pub fn fetch_venue_observation(
         market: &VenueMarket,
-        pinned_block: u32,
-    ) -> Result<VenueObservation, DispatchError> {
-        let body = AVN::<T>::get_data_from_service(Self::venue_service_path(market, pinned_block))?;
+        target_ts: u64,
+    ) -> Result<Option<VenueObservation>, DispatchError> {
+        let body = AVN::<T>::get_data_from_service(Self::venue_service_path(market, target_ts))?;
         let text = core::str::from_utf8(&body)
             .map_err(|_| DispatchError::Other("venue observation is not utf8"))?;
-        decode_from_http_data::<VenueObservation>(text)
+        decode_from_http_data::<Option<VenueObservation>>(text)
             .map_err(|_| DispatchError::Other("venue observation does not decode"))
     }
 

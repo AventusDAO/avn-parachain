@@ -39,11 +39,17 @@ fn choice_call(
     voter: &AccountId,
     choice: H256,
 ) -> crate::Call<TestRuntime> {
-    let payload = (WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, voter).encode();
+    let payload = Watchtower::unsigned_vote_signing_payload(
+        proposal_id,
+        &VoteChoice::Choice(choice),
+        &TEST_COUNTRY,
+        voter,
+    );
     let signature: Signature = signer_for(voter).key_pair().sign(&payload).into();
     crate::Call::unsigned_vote_choice {
         proposal_id,
         choice,
+        country: TEST_COUNTRY,
         watchtower: *voter,
         signature: signature.into(),
     }
@@ -55,14 +61,20 @@ fn vote_choice(
     choice: H256,
 ) -> DispatchResultWithPostInfo {
     match choice_call(proposal_id, voter, choice) {
-        crate::Call::unsigned_vote_choice { proposal_id, choice, watchtower, signature } =>
-            Watchtower::unsigned_vote_choice(
-                RawOrigin::None.into(),
-                proposal_id,
-                choice,
-                watchtower,
-                signature,
-            ),
+        crate::Call::unsigned_vote_choice {
+            proposal_id,
+            choice,
+            country,
+            watchtower,
+            signature,
+        } => Watchtower::unsigned_vote_choice(
+            RawOrigin::None.into(),
+            proposal_id,
+            choice,
+            country,
+            watchtower,
+            signature,
+        ),
         _ => unreachable!(),
     }
 }
@@ -102,11 +114,17 @@ mod kinds {
                 Watchtower::vote(RawOrigin::Signed(wt[0]).into(), id, true),
                 Error::<TestRuntime>::WrongVoteKind
             );
-            let payload = (WATCHTOWER_UNSIGNED_VOTE_CONTEXT, id, true, &wt[0]).encode();
+            let payload = Watchtower::unsigned_vote_signing_payload(
+                id,
+                &VoteChoice::Binary(true),
+                &TEST_COUNTRY,
+                &wt[0],
+            );
             let signature: Signature = signer_for(&wt[0]).key_pair().sign(&payload).into();
             let call = crate::Call::unsigned_vote {
                 proposal_id: id,
                 in_favor: true,
+                country: TEST_COUNTRY,
                 watchtower: wt[0],
                 signature: signature.into(),
             };
@@ -116,6 +134,7 @@ mod kinds {
                     RawOrigin::None.into(),
                     id,
                     true,
+                    TEST_COUNTRY,
                     wt[0],
                     match call {
                         crate::Call::unsigned_vote { signature, .. } => signature,
@@ -161,8 +180,13 @@ mod tally {
                 assert_ok!(vote_choice(&wt[i], id, *choice));
                 assert!(Voters::<TestRuntime>::contains_key(id, wt[i]));
                 System::assert_last_event(
-                    Event::ChoiceVoteSubmitted { voter: wt[i], proposal_id: id, choice: *choice }
-                        .into(),
+                    Event::ChoiceVoteSubmitted {
+                        voter: wt[i],
+                        proposal_id: id,
+                        choice: *choice,
+                        country: Some(TEST_COUNTRY),
+                    }
+                    .into(),
                 );
             }
             assert_eq!(Watchtower::choice_tally(id, A), 4);
@@ -393,6 +417,7 @@ mod filter {
                     crate::Call::unsigned_vote_choice {
                         proposal_id: id,
                         choice: B,
+                        country: TEST_COUNTRY,
                         watchtower: wt[0],
                         signature,
                     },

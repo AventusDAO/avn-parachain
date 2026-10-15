@@ -51,6 +51,17 @@ fn start_active_round() -> FloorRound<BlockNumber> {
     round
 }
 
+/// Requests once the checkpoint is too old for a floor, then agrees the checkpoint round the
+/// request opened, as the collators would, so the floor round starts.
+fn request_with_new_checkpoint() {
+    assert_ok!(request());
+    let round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("checkpoint round started");
+    let block = FloorOracle::checkpoints(FLOOR_CHAIN).unwrap().block_number + 50;
+    for i in 1..=4 {
+        assert_ok!(VoteContext::new(FLOOR_CHAIN, round.round_id, i, block).submit());
+    }
+}
+
 fn observation(floor_wei: u128) -> FloorObservation {
     FloorObservation {
         observed_eth_block: SEED_BLOCK as u64,
@@ -178,7 +189,7 @@ mod requests {
             assert_eq!(FloorOracle::last_finalised_floor().unwrap().market, test_floor_market());
 
             advance_secs(MAX_FLOOR_AGE_SECS + 1);
-            assert_ok!(request());
+            request_with_new_checkpoint();
             assert_eq!(FloorOracle::active_floor_round().unwrap().market, other);
         });
     }
@@ -262,6 +273,36 @@ mod requests {
             let round = FloorOracle::active_floor_round().expect("round started");
             assert_eq!(round.pinned_block, SEED_BLOCK + 50);
             assert_eq!(round.pinned_ts, checkpoint.agreed_at);
+        });
+    }
+
+    /// The chain still accepts the checkpoint, but it is too old for a floor: a floor pinned to
+    /// it would be close to `MaxFloorAge` before it even finalised. A new checkpoint round runs.
+    #[test]
+    fn a_checkpoint_too_old_for_a_floor_starts_a_checkpoint_round() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            seed_floor_chain();
+            advance_secs(MAX_FLOOR_CHECKPOINT_AGE_SECS);
+            assert_ok!(request());
+            assert!(FloorOracle::active_floor_round().is_some(), "exactly at the limit is fine");
+        });
+
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let seeded = seed_floor_chain();
+            advance_secs(MAX_FLOOR_CHECKPOINT_AGE_SECS + 1);
+            assert!(MAX_FLOOR_CHECKPOINT_AGE_SECS + 1 < CHECKPOINT_MAX_AGE);
+            assert!(matches!(
+                FloorOracle::do_request_checkpoint(FLOOR_CHAIN),
+                Ok(CheckpointRequest::Ready(checkpoint)) if checkpoint == seeded
+            ));
+
+            assert_ok!(request());
+            assert!(FloorOracle::active_floor_round().is_none());
+            assert!(FloorOracle::pending_floor_request());
+            let checkpoint_round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("started");
+            assert_event(Event::FloorRequestWaitingForCheckpoint {
+                checkpoint_round_id: checkpoint_round.round_id,
+            });
         });
     }
 
@@ -432,6 +473,15 @@ mod committee {
             );
             set_authorized_watchtowers(all_watchtowers());
 
+            // While the node index is backfilling no committee can be drawn, so the size is
+            // refused rather than left to block the watchtower queue.
+            set_indexed_nodes(Some(7));
+            assert_noop!(
+                FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(3)),
+                pallet_watchtower::Error::<TestRuntime>::NodeIndexNotReady
+            );
+            set_indexed_nodes(None);
+
             // A running round keeps the committee it started with.
             let round = start_active_round();
             assert_ok!(FloorOracle::set_oracle_committee_size(RuntimeOrigin::root(), Some(3)));
@@ -448,7 +498,7 @@ mod committee {
             assert!(FloorOracle::last_finalised_floor().is_some());
 
             advance_secs(MAX_FLOOR_AGE_SECS + 1);
-            assert_ok!(request());
+            request_with_new_checkpoint();
             let next = FloorOracle::active_floor_round().unwrap();
             // The committee is drawn when the proposal activates.
             assert_eq!(activate_head(), next.proposal_id);
@@ -597,7 +647,7 @@ mod voting {
             assert_event(Event::FloorPriceServed { round_id: round.round_id, floor_wei: 51 });
             assert!(FloorOracle::active_floor_round().is_none());
             advance_secs(MAX_FLOOR_AGE_SECS + 1);
-            assert_ok!(request());
+            request_with_new_checkpoint();
             assert_eq!(FloorOracle::active_floor_round().unwrap().round_id, round.round_id + 1);
         });
     }
@@ -682,6 +732,36 @@ mod voting {
                 round_id: round.round_id,
                 result: ProposalStatusEnum::Cancelled,
             });
+        });
+    }
+
+    /// Nodes that reported and then deregistered must not leave rows behind: the cleanup is
+    /// bounded by the reports the round stored, not by who is registered when it ends.
+    #[test]
+    fn rows_of_deregistered_reporters_are_cleared() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        let round = ext.execute_with(|| {
+            let round = start_active_round();
+            // Two answers of three reports each: still undecided.
+            for i in 1..=6 {
+                assert_ok!(report(round.round_id, if i <= 3 { 50 } else { 51 }, i));
+            }
+            assert!(FloorOracle::active_floor_round().is_some());
+            round
+        });
+        // Reports land in earlier blocks on a real chain. `clear_prefix` only applies its limit
+        // to committed keys, so commit them or the test cannot see a limit that is too low.
+        ext.commit_all().unwrap();
+
+        ext.execute_with(|| {
+            // Three nodes left: below the 6 stored reports and the mock's max committee of 5.
+            set_authorized_watchtowers(vec![watchtower(1), watchtower(2), watchtower(3)]);
+            <FloorOracle as WatchtowerHooks<pallet_watchtower::Proposal<TestRuntime>>>::on_cancelled(
+                round.proposal_id,
+                &H256::zero(),
+            );
+
+            assert_round_cleared(&round);
         });
     }
 }

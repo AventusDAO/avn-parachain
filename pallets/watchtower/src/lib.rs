@@ -90,6 +90,57 @@ pub use pallet::*;
 /// Most `Voters` (and, separately, `ProposalCommittee`) entries of one proposal that `on_idle`
 /// removes per block.
 pub const CLEANUP_PAGE_SIZE: u32 = 250;
+/// Offchain local storage key caching the node's country, with when it was fetched.
+const NODE_COUNTRY_CACHE_KEY: &[u8] = b"watchtower::node_country";
+/// How long a cached country is used before it is fetched again, in milliseconds.
+const NODE_COUNTRY_CACHE_MS: u64 = 60 * 60 * 1000;
+
+/// The node's own country as its external service reports it, for the country carried by its
+/// votes. Best effort: any failure yields [`UNKNOWN_COUNTRY`] and never blocks a vote. For the
+/// offchain workers of pallets built on the watchtower, which hold the AVN service access.
+///
+/// A known country is cached in offchain local storage and reused for an hour, so votes do not
+/// each call the service. After that it is fetched again; if that fails, the last known country
+/// is kept for another hour rather than asked for on every vote. Unknown is never cached: the
+/// service already backs off failed lookups, and the next vote picks the country up as soon as it
+/// resolves. A node that changes its country (e.g. `AVN_NODE_COUNTRY`) shows the new one within the
+/// hour.
+pub fn fetch_node_country<T: pallet_avn::Config>() -> CountryCode {
+    let now = sp_io::offchain::timestamp().unix_millis();
+    let cache = sp_runtime::offchain::storage::StorageValueRef::persistent(NODE_COUNTRY_CACHE_KEY);
+    let cached = cache.get::<(CountryCode, u64)>().ok().flatten();
+    if let Some((country, fetched_at)) = cached {
+        // A clock that went backwards counts as expired rather than fresh.
+        if fetched_at <= now && now - fetched_at < NODE_COUNTRY_CACHE_MS {
+            return country
+        }
+    }
+
+    let fetched =
+        pallet_avn::Pallet::<T>::get_data_from_service(String::from(NODE_COUNTRY_SERVICE_PATH))
+            .ok()
+            .and_then(|body| String::from_utf8(body).ok())
+            .and_then(|text| {
+                sp_avn_common::http_data_codec::decode_from_http_data::<CountryCode>(&text).ok()
+            })
+            .map(sanitise_country);
+    match (fetched, cached) {
+        (Some(country), _) if country != UNKNOWN_COUNTRY => {
+            cache.set(&(country, now));
+            country
+        },
+        (_, Some((country, _))) => {
+            log::debug!("Watchtower OCW: node country refresh failed, keeping the last known");
+            cache.set(&(country, now));
+            country
+        },
+        _ => {
+            log::debug!("Watchtower OCW: node country unavailable, reporting unknown");
+            UNKNOWN_COUNTRY
+        },
+    }
+}
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
@@ -278,15 +329,24 @@ pub mod pallet {
             external_ref: H256,
             status: ProposalStatusEnum,
         },
-        /// A vote has been cast on a proposal
+        /// A vote has been cast on a proposal. `country` is the self-reported location of the
+        /// node that voted, for display; `None` for votes by watchtower owners, which are
+        /// accounts rather than nodes.
         VoteSubmitted {
             voter: T::AccountId,
             proposal_id: ProposalId,
             in_favor: bool,
             vote_weight: u32,
+            country: Option<CountryCode>,
         },
-        /// A vote naming an answer was counted on a `Choice` proposal.
-        ChoiceVoteSubmitted { voter: T::AccountId, proposal_id: ProposalId, choice: H256 },
+        /// A vote naming an answer was counted on a `Choice` proposal. `country` as in
+        /// `VoteSubmitted`.
+        ChoiceVoteSubmitted {
+            voter: T::AccountId,
+            proposal_id: ProposalId,
+            choice: H256,
+            country: Option<CountryCode>,
+        },
         /// Consensus has been reached on a proposal
         VotingEnded {
             proposal_id: ProposalId,
@@ -510,23 +570,30 @@ pub mod pallet {
             <T as Config>::WeightInfo::unsigned_vote()
             .max(<T as Config>::WeightInfo::unsigned_vote_end_proposal())
         )]
+        /// A watchtower node votes yes or no on the active internal proposal. `country` is the
+        /// node's self-reported location, shown in `VoteSubmitted`. Signed by the node key over
+        /// [`Pallet::unsigned_vote_signing_payload`].
         pub fn unsigned_vote(
             origin: OriginFor<T>,
             proposal_id: ProposalId,
             in_favor: bool,
+            country: CountryCode,
             watchtower: T::AccountId,
             signature: <T::SignerId as RuntimeAppPublic>::Signature,
         ) -> DispatchResultWithPostInfo {
             ensure_none(origin)?;
 
+            let vote = VoteChoice::Binary(in_favor);
             Self::validate_unsigned_vote(
                 proposal_id,
+                &vote,
+                &country,
                 watchtower.clone(),
                 signature,
-                VoteChoice::Binary(in_favor),
             )?;
 
-            let finalised = Self::process_vote(&watchtower, proposal_id, in_favor)?;
+            let finalised =
+                Self::process_vote_choice(&watchtower, proposal_id, vote, Some(country))?;
 
             if finalised {
                 Ok(Some(<T as Config>::WeightInfo::unsigned_vote_end_proposal()).into())
@@ -535,8 +602,8 @@ pub mod pallet {
             }
         }
 
-        /// A watchtower names its answer on a `Choice` proposal. Signed by the node key over
-        /// `(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, watchtower)`.
+        /// A watchtower names its answer on a `Choice` proposal. `country` as in
+        /// `unsigned_vote`. Signed by the node key over [`Pallet::unsigned_vote_signing_payload`].
         #[pallet::call_index(10)]
         #[pallet::weight(
             <T as Config>::WeightInfo::unsigned_vote_choice()
@@ -546,6 +613,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             proposal_id: ProposalId,
             choice: H256,
+            country: CountryCode,
             watchtower: T::AccountId,
             signature: <T::SignerId as RuntimeAppPublic>::Signature,
         ) -> DispatchResultWithPostInfo {
@@ -553,12 +621,13 @@ pub mod pallet {
 
             Self::validate_unsigned_vote(
                 proposal_id,
+                &VoteChoice::Choice(choice),
+                &country,
                 watchtower.clone(),
                 signature,
-                VoteChoice::Choice(choice),
             )?;
 
-            let finalised = Self::vote_choice_for(&watchtower, proposal_id, choice)?;
+            let finalised = Self::vote_choice_for(&watchtower, proposal_id, choice, country)?;
 
             if finalised {
                 Ok(Some(<T as Config>::WeightInfo::unsigned_vote_choice_end_proposal()).into())
@@ -727,13 +796,14 @@ pub mod pallet {
                         .propagate(false)
                         .build()
                 },
-                Call::unsigned_vote { proposal_id, in_favor, watchtower, signature } => {
+                Call::unsigned_vote { proposal_id, in_favor, country, watchtower, signature } => {
                     // Fail early if vote is invalid. This avoids DDos attacks with invalid votes
                     if let Err(_) = Self::validate_unsigned_vote(
                         *proposal_id,
+                        &VoteChoice::Binary(*in_favor),
+                        country,
                         watchtower.clone(),
                         signature.clone(),
-                        VoteChoice::Binary(*in_favor),
                     ) {
                         return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
                     }
@@ -745,12 +815,19 @@ pub mod pallet {
                         .propagate(true)
                         .build()
                 },
-                Call::unsigned_vote_choice { proposal_id, choice, watchtower, signature } => {
+                Call::unsigned_vote_choice {
+                    proposal_id,
+                    choice,
+                    country,
+                    watchtower,
+                    signature,
+                } => {
                     if let Err(_) = Self::validate_unsigned_vote(
                         *proposal_id,
+                        &VoteChoice::Choice(*choice),
+                        country,
                         watchtower.clone(),
                         signature.clone(),
-                        VoteChoice::Choice(*choice),
                     ) {
                         return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
                     }
@@ -903,18 +980,20 @@ pub mod pallet {
             proposal_id: ProposalId,
             in_favor: bool,
         ) -> Result<bool, DispatchError> {
-            Self::process_vote_choice(voter, proposal_id, VoteChoice::Binary(in_favor))
+            Self::process_vote_choice(voter, proposal_id, VoteChoice::Binary(in_favor), None)
         }
 
         /// Counts an answer from an already authenticated voter on a `Choice` proposal. For
-        /// consumer pallets whose own extrinsic carries the vote (the floor oracle's report).
-        /// Returns whether the proposal was finalised by this vote.
+        /// consumer pallets whose own extrinsic carries the vote (the floor oracle's report),
+        /// with the country the node reported in it. Returns whether the proposal was
+        /// finalised by this vote.
         pub fn vote_choice_for(
             voter: &T::AccountId,
             proposal_id: ProposalId,
             choice: H256,
+            country: CountryCode,
         ) -> Result<bool, DispatchError> {
-            Self::process_vote_choice(voter, proposal_id, VoteChoice::Choice(choice))
+            Self::process_vote_choice(voter, proposal_id, VoteChoice::Choice(choice), Some(country))
         }
 
         fn kind_of(vote: &VoteChoice) -> VotingKind {
@@ -928,6 +1007,7 @@ pub mod pallet {
             voter: &T::AccountId,
             proposal_id: ProposalId,
             vote: VoteChoice,
+            country: Option<CountryCode>,
         ) -> Result<bool, DispatchError> {
             let proposal = Proposals::<T>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
             ensure!(
@@ -939,7 +1019,9 @@ pub mod pallet {
                 Error::<T>::ProposalNotActive
             );
 
-            // Do this before validating vote uniqueness
+            // Do this before validating vote uniqueness. Unsigned votes from a node that already
+            // voted never get here (`validate_unsigned_vote` refuses them), so for those the
+            // expired proposal is finalised by `finalise_proposal` or `on_idle` instead.
             let current_block = <frame_system::Pallet<T>>::block_number();
             if Self::proposal_expired(current_block, &proposal) {
                 // Voting ended but we haven't finalised it yet
@@ -997,6 +1079,7 @@ pub mod pallet {
                         proposal_id,
                         in_favor,
                         vote_weight,
+                        country: country.map(sanitise_country),
                     });
                 },
                 VoteChoice::Choice(choice) => {
@@ -1008,6 +1091,7 @@ pub mod pallet {
                         voter: voter.clone(),
                         proposal_id,
                         choice,
+                        country: country.map(sanitise_country),
                     });
                 },
             }
@@ -1172,11 +1256,25 @@ pub mod pallet {
             true
         }
 
+        /// Bytes a watchtower node signs for an unsigned vote. Shared by validation and every
+        /// offchain worker that votes, so they cannot drift apart. The country is signed so
+        /// a relayer cannot change it.
+        pub fn unsigned_vote_signing_payload(
+            proposal_id: ProposalId,
+            vote: &VoteChoice,
+            country: &CountryCode,
+            watchtower: &T::AccountId,
+        ) -> Vec<u8> {
+            // The enum's tag keeps a yes/no vote and an answer apart.
+            (WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, vote, country, watchtower).encode()
+        }
+
         fn validate_unsigned_vote(
             proposal_id: ProposalId,
+            vote: &VoteChoice,
+            country: &CountryCode,
             watchtower: T::AccountId,
             signature: <T::SignerId as RuntimeAppPublic>::Signature,
-            vote: VoteChoice,
         ) -> Result<(), DispatchError> {
             // Only Active internal proposals can be voted on with unsigned txs
             ensure!(
@@ -1184,37 +1282,35 @@ pub mod pallet {
                 Error::<T>::InvalidProposalForUnsignedVote
             );
             ensure!(
-                VotingKindOf::<T>::get(proposal_id) == Self::kind_of(&vote),
+                VotingKindOf::<T>::get(proposal_id) == Self::kind_of(vote),
                 Error::<T>::WrongVoteKind
             );
-
             // Reject non-members before the signature check so they never reach the pool.
             ensure!(
                 Self::is_committee_member(proposal_id, &watchtower),
                 Error::<T>::NotInCommittee
             );
-            // Same for votes a consumer cannot accept.
-            T::VoteFilter::ensure_can_vote(proposal_id, &watchtower, &vote)?;
+            // Same for votes a consumer cannot accept. Before the uniqueness check, so a vote
+            // the consumer refuses gets the consumer's reason.
+            T::VoteFilter::ensure_can_vote(proposal_id, &watchtower, vote)?;
+            // A vote already counted must not re-enter the pool: once the pool forgets the
+            // included copy, anyone could re-gossip the signed bytes and have them included
+            // for free, only to fail in dispatch. This also means a node that already voted
+            // cannot finalise an expired proposal by voting again; `finalise_proposal` and
+            // `on_idle` do that.
+            ensure!(!Voters::<T>::contains_key(proposal_id, &watchtower), Error::<T>::AlreadyVoted);
 
             let voter_signing_key = match T::Watchtowers::get_node_signing_key(&watchtower) {
                 Some(key) => key,
                 None => return Err(Error::<T>::VoterSigningKeyNotFound.into()),
             };
 
-            // Binary votes keep their historic payload shape; answers sign the hash instead.
-            let valid = match vote {
-                VoteChoice::Binary(in_favor) => Self::offchain_signature_is_valid(
-                    &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &watchtower),
-                    &voter_signing_key,
-                    &signature,
-                ),
-                VoteChoice::Choice(choice) => Self::offchain_signature_is_valid(
-                    &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, &watchtower),
-                    &voter_signing_key,
-                    &signature,
-                ),
-            };
-            ensure!(valid, Error::<T>::UnauthorizedUnsignedTransaction);
+            let payload =
+                Self::unsigned_vote_signing_payload(proposal_id, vote, country, &watchtower);
+            ensure!(
+                voter_signing_key.verify(&payload, &signature),
+                Error::<T>::UnauthorizedUnsignedTransaction
+            );
 
             Ok(())
         }

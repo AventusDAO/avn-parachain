@@ -43,15 +43,6 @@ pub struct FloorMarket {
     pub punks: H160,
 }
 
-/// ISO 3166-1 alpha-2 code of the country a watchtower reports from, as resolved by its own
-/// external service. Display only: it is self-reported, carried in the report events and never
-/// part of what nodes must agree on.
-pub type CountryCode = [u8; 2];
-/// Reported when the node could not resolve its country.
-pub const UNKNOWN_COUNTRY: CountryCode = *b"??";
-/// External service path answering the node's own country code.
-pub const NODE_COUNTRY_SERVICE_PATH: &str = "node/country";
-
 /// `FloorObservation::flags` bits.
 pub const FLAG_FLOOR_FAR_BELOW_SALES: u32 = 1 << 0;
 pub const FLAG_SALES_UNAVAILABLE: u32 = 1 << 1;
@@ -125,8 +116,9 @@ pub struct FinalisedFloorRound {
 pub const VENUE_ORACLE_REPORT_CONTEXT: &[u8] = b"wt_venue_oracle_report";
 
 /// External service path serving a venue observation. The full request is
-/// `venue/exotic/{chain_id}/{pinned_block}/{clearing_house}/{amm}`, both addresses as 40
-/// lower-case hex characters without `0x`. The pallet builds it in `venue_service_path`.
+/// `venue/exotic/{chain_id}/{target_ts}/{clearing_house}/{amm}`, both addresses as 40
+/// lower-case hex characters without `0x`. The service reads at the latest block whose
+/// timestamp is at most `target_ts`. The pallet builds it in `venue_service_path`.
 pub const VENUE_SERVICE_PATH: &str = "venue/exotic";
 
 /// The Exotic perpetuals market a venue round reads: the EVM chain it is deployed on and the
@@ -150,10 +142,15 @@ pub struct VenueMarket {
     pub chain_id: u64,
     pub clearing_house: H160,
     pub amm: H160,
+    /// An observation must come from a block less than this many seconds before the round's
+    /// target timestamp. Keep it just above the chain's block time: below it the right block
+    /// can fall outside the window, and every extra second makes the finalised state older.
+    /// 6 for Base (2s blocks), 15 for Ethereum or a chain mined every 12s.
+    pub target_tolerance_secs: u64,
 }
 
-/// One watchtower's view of the Exotic market at a pinned block. Raw contract return values
-/// only; the consumer derives anything else off-chain.
+/// One watchtower's view of the Exotic market at the block it resolved for a round's target
+/// timestamp. Raw contract return values only; the consumer derives anything else off-chain.
 #[derive(
     Encode,
     Decode,
@@ -168,7 +165,8 @@ pub struct VenueMarket {
     Default,
 )]
 pub struct VenueObservation {
-    /// The venue chain block every value was read at.
+    /// The venue chain block every value was read at: the latest one whose timestamp is at most
+    /// the round's target timestamp.
     pub pinned_block: u64,
     /// That block's timestamp, in unix seconds, from `eth_getBlockByNumber`.
     pub pinned_ts: u64,
@@ -316,7 +314,7 @@ mod tests {
         assert_eq!(venue().encode().len(), 64);
         assert_eq!(VenueObservation::max_encoded_len(), 64);
         // u64 + H160 + H160
-        assert_eq!(VenueMarket::max_encoded_len(), 48);
+        assert_eq!(VenueMarket::max_encoded_len(), 56);
         assert_eq!(FloorMarket::max_encoded_len(), 28);
         assert_eq!(VenueObservation::decode(&mut &venue().encode()[..]).unwrap(), venue());
     }

@@ -221,6 +221,9 @@ fn setup_votes<T: Config>(proposal_id: ProposalId, vote_count: u32) {
     }
 }
 
+/// Country the benchmarked node votes from.
+const BENCH_COUNTRY: CountryCode = *b"GB";
+
 benchmarks! {
     submit_external_proposal {
         let signer: T::AccountId = account("signer", 0, 0);
@@ -273,7 +276,7 @@ benchmarks! {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: None }.into()
         );
     }
 
@@ -321,7 +324,7 @@ benchmarks! {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: None }.into()
         );
     }
 
@@ -365,14 +368,16 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
 
-        let proof =  &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
-    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, voter.clone(), signature.into())
+    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: Some(BENCH_COUNTRY) }.into()
         );
     }
 
@@ -382,11 +387,13 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
 
-        let proof =  &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
         // Add some votes to be above the threshold
         setup_votes::<T>(proposal_id, 9u32);
-    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, voter.clone(), signature.into())
+    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
@@ -407,14 +414,16 @@ benchmarks! {
         let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
         VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
 
-        let proof = &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
-    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, voter.clone(), signature.into())
+    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert_eq!(ChoiceTally::<T>::get(proposal_id, choice), 1);
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::ChoiceVoteSubmitted { proposal_id, voter, choice }.into()
+            Event::ChoiceVoteSubmitted { proposal_id, voter, choice, country: Some(BENCH_COUNTRY) }.into()
         );
     }
 
@@ -433,9 +442,11 @@ benchmarks! {
             ChoiceTally::<T>::insert(proposal_id, H256::repeat_byte(100 + i as u8), 1u32);
         }
 
-        let proof = &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, choice, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
-    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, voter.clone(), signature.into())
+    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert_eq!(WinningChoice::<T>::get(proposal_id), Some(choice));
         assert_last_event::<T>(

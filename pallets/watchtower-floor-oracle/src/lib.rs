@@ -27,13 +27,15 @@
 //! # Oracle rounds
 //!
 //! On top of the checkpoints, the pallet runs two independent request channels with the same
-//! shape: a request pins the current checkpoint of the channel's chain, opens a watchtower
-//! `Choice` proposal, and watchtower nodes report what they observed at that pinned point. The
-//! report is the vote; the first observation reaching the proposal's threshold wins.
+//! shape: a request pins a point on the channel's chain, opens a watchtower `Choice` proposal,
+//! and watchtower nodes report what they observed at that pinned point. The report is the vote;
+//! the first observation reaching the proposal's threshold wins.
 //!
-//! - **Floor** ([`floor`]): the Punks floor on Ethereum, stored in `LastFinalisedFloor`.
+//! - **Floor** ([`floor`]): the Punks floor on Ethereum, stored in `LastFinalisedFloor`. Pinned to
+//!   the chain's checkpoint.
 //! - **Venue** ([`venue`]): the raw state of the Exotic perpetuals market for Punks on the venue
-//!   chain (Base), stored in `LastFinalisedVenue`.
+//!   chain (Base), stored in `LastFinalisedVenue`. Pinned to a target timestamp set when the
+//!   round's proposal activates, not to a checkpoint, so the state is as fresh as possible.
 //!
 //! The contracts each channel reads, and the chain they live on, are root configured
 //! (`FloorMarketConfig`, `VenueMarketConfig`) so mainnet and test networks differ only in
@@ -73,9 +75,9 @@ use sp_avn_common::{
 };
 use sp_core::H256;
 pub use sp_floor_oracle::{
-    CountryCode, FinalisedFloorRound, FinalisedVenueRound, FloorMarket, FloorObservation,
-    VenueMarket, VenueObservation, FLOOR_ORACLE_REPORT_CONTEXT, FLOOR_SERVICE_PATH,
-    NODE_COUNTRY_SERVICE_PATH, UNKNOWN_COUNTRY, VENUE_ORACLE_REPORT_CONTEXT, VENUE_SERVICE_PATH,
+    FinalisedFloorRound, FinalisedVenueRound, FloorMarket, FloorObservation, VenueMarket,
+    VenueObservation, FLOOR_ORACLE_REPORT_CONTEXT, FLOOR_SERVICE_PATH, VENUE_ORACLE_REPORT_CONTEXT,
+    VENUE_SERVICE_PATH,
 };
 use sp_runtime::{
     traits::{Dispatchable, Saturating},
@@ -86,9 +88,11 @@ use sp_runtime::{
     DispatchError, Perbill, RuntimeAppPublic,
 };
 use sp_std::prelude::*;
+use sp_watchtower::sanitise_country;
 pub use sp_watchtower::{
-    Checkpoint, CheckpointOracle, CheckpointRequest, ExternalChainId, ProposalId,
-    ProposalStatusEnum, RoundId, VoteFilter, WatchtowerHooks,
+    Checkpoint, CheckpointOracle, CheckpointRequest, CountryCode, ExternalChainId, ProposalId,
+    ProposalStatusEnum, RoundId, VoteFilter, WatchtowerHooks, NODE_COUNTRY_SERVICE_PATH,
+    UNKNOWN_COUNTRY,
 };
 
 pub mod default_weights;
@@ -177,10 +181,23 @@ pub mod pallet {
         #[pallet::constant]
         type MaxFloorAge: Get<u64>;
 
+        /// Oldest checkpoint, in seconds, a floor round pins. An older one starts a new
+        /// checkpoint round, even if the chain's own freshness limit still accepts it. A floor
+        /// is as old as its checkpoint, so this must be well below `MaxFloorAge`, or a new floor
+        /// could already be stale when it finalises.
+        #[pallet::constant]
+        type MaxFloorCheckpointAge: Get<u64>;
+
         /// A finalised venue observation whose pinned block is younger than this, in seconds,
         /// answers a request directly.
         #[pallet::constant]
         type MaxVenueAge: Get<u64>;
+
+        /// How far behind the parachain time a venue round reads, in seconds. The target
+        /// timestamp is set when the round's proposal activates, this far back, so that by the
+        /// time watchtowers read it the target block is a few venue chain blocks deep.
+        #[pallet::constant]
+        type VenueTargetLag: Get<u64>;
 
         /// Source of the parachain timestamp stored in a checkpoint.
         type TimeProvider: UnixTime;
@@ -317,11 +334,6 @@ pub mod pallet {
     #[pallet::getter(fn last_venue_round_id)]
     pub type LastVenueRoundId<T: Config> = StorageValue<_, u64, ValueQuery>;
 
-    /// A venue request is waiting for the checkpoint round on the market's chain to settle.
-    #[pallet::storage]
-    #[pallet::getter(fn pending_venue_request)]
-    pub type PendingVenueRequest<T: Config> = StorageValue<_, bool, ValueQuery>;
-
     /// The most recent venue state the watchtowers agreed on.
     #[pallet::storage]
     #[pallet::getter(fn last_finalised_venue)]
@@ -398,17 +410,12 @@ pub mod pallet {
         VenueStateServed { round_id: u64, pinned_block: u64 },
         /// A request joined the venue round already running.
         VenueRoundInProgress { round_id: u64 },
-        /// No fresh checkpoint exists for the venue chain; the request waits for the round.
-        VenueRequestWaitingForCheckpoint { checkpoint_round_id: RoundId },
-        /// A venue round opened as a watchtower proposal.
-        VenueRoundStarted {
-            round_id: u64,
-            proposal_id: ProposalId,
-            pinned_block: u32,
-            market: VenueMarket,
-        },
-        /// The watchtower pallet refused the venue proposal; the request was dropped.
-        VenueRoundStartFailed { error: DispatchError },
+        /// A venue round opened as a watchtower proposal. It reads nothing until the proposal
+        /// activates.
+        VenueRoundStarted { round_id: u64, proposal_id: ProposalId, market: VenueMarket },
+        /// The venue round's proposal activated; watchtowers read the venue chain at the latest
+        /// block whose timestamp is at most `target_ts`.
+        VenueRoundActivated { round_id: u64, target_ts: u64 },
         /// A watchtower reported its venue observation; `hash` is its answer on the proposal
         /// and `country` the self-reported location of the node, for display.
         VenueReportSubmitted {
@@ -454,7 +461,8 @@ pub mod pallet {
         NoActiveFloorRound,
         /// The report names a round that is not the running one.
         FloorRoundMismatch,
-        /// The round's watchtower proposal is not active yet, so there is no committee.
+        /// The round's watchtower proposal is not active yet (no committee), or its voting
+        /// period has ended and it awaits finalisation.
         FloorProposalNotActive,
         /// The reporter is not an authorized watchtower in the round's committee.
         NotInFloorCommittee,
@@ -487,7 +495,8 @@ pub mod pallet {
         NoActiveVenueRound,
         /// The report names a venue round that is not the running one.
         VenueRoundMismatch,
-        /// The venue round's watchtower proposal is not active yet, so there is no committee.
+        /// The venue round's watchtower proposal is not active yet (no committee), or its voting
+        /// period has ended and it awaits finalisation.
         VenueProposalNotActive,
         /// The reporter is not an authorized watchtower in the venue round's committee.
         NotInVenueCommittee,
@@ -495,8 +504,11 @@ pub mod pallet {
         DuplicateVenueReport,
         /// The venue observation fails the plausibility checks.
         ImplausibleVenueObservation,
-        /// The venue observation was not taken at the round's pinned block.
-        VenueObservationBlockMismatch,
+        /// The venue observation was not taken at the round's target timestamp.
+        VenueObservationOffTarget,
+        /// A venue market's target tolerance must be above zero, and with `VenueTargetLag` at
+        /// most `MaxVenueAge`.
+        InvalidVenueTargetTolerance,
         /// The voter has not reported a venue observation for this round.
         NoVenueReport,
         /// A vote on a venue proposal that is not the hash the voter reported.
@@ -610,8 +622,7 @@ pub mod pallet {
 
         /// Ask for the current state of the Exotic venue. Root or the privileged requester
         /// only. Answers from the last finalised state when it is fresh, joins the running
-        /// round, or opens a new one (waiting for a checkpoint first if needed). The outcome is
-        /// reported as an event.
+        /// round, or opens a new one. The outcome is reported as an event.
         #[pallet::call_index(6)]
         #[pallet::weight(<T as Config>::WeightInfo::request_venue_state())]
         pub fn request_venue_state(origin: OriginFor<T>) -> DispatchResult {
@@ -647,7 +658,23 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_root(origin)?;
             match market {
-                Some(market) => VenueMarketConfig::<T>::put(market),
+                Some(market) => {
+                    // A sanity bound only. Root picks the tolerance: just above the venue
+                    // chain's block time (6 for Base). An observation can be `VenueTargetLag +
+                    // tolerance` older than activation, and voting adds a block or two on top,
+                    // so a tolerance near this bound yields state that is already past
+                    // `MaxVenueAge` when it finalises. The bound only rules out settings that
+                    // could never produce fresh state.
+                    ensure!(
+                        market.target_tolerance_secs > 0 &&
+                            market
+                                .target_tolerance_secs
+                                .saturating_add(T::VenueTargetLag::get()) <=
+                                T::MaxVenueAge::get(),
+                        Error::<T>::InvalidVenueTargetTolerance
+                    );
+                    VenueMarketConfig::<T>::put(market)
+                },
                 None => VenueMarketConfig::<T>::kill(),
             }
             Self::deposit_event(Event::<T>::VenueMarketSet { market });
@@ -673,7 +700,8 @@ pub mod pallet {
 
         /// Root sets how many watchtowers are sampled per oracle round, or with `None` lets
         /// every watchtower report. Bounded by the watchtower pallet's committee limits and
-        /// by the number of authorized watchtowers. Rounds already started are unaffected.
+        /// by the number of authorized watchtowers, and refused while the watchtower cannot
+        /// build such a committee yet. Rounds already started are unaffected.
         #[pallet::call_index(10)]
         #[pallet::weight(<T as Config>::WeightInfo::set_oracle_committee_size())]
         pub fn set_oracle_committee_size(
@@ -691,6 +719,11 @@ pub mod pallet {
                         size <= T::Watchtowers::get_authorized_watchtowers_count(),
                         Error::<T>::CommitteeSizeExceedsWatchtowers
                     );
+                    // Refuse a size the watchtower cannot serve yet (node index still
+                    // backfilling): the next oracle proposal would sit at the head of the
+                    // internal queue, holding back every summary and anchor proposal behind it.
+                    // Surfaces the watchtower's own error, as the summary pallet does.
+                    <pallet_watchtower::Pallet<T> as sp_watchtower::WatchtowerInterface>::ensure_committee_ready(size)?;
                     OracleCommitteeSize::<T>::put(size)
                 },
                 None => OracleCommitteeSize::<T>::kill(),
@@ -896,6 +929,17 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn integrity_test() {
+            assert!(
+                T::MaxFloorCheckpointAge::get() < T::MaxFloorAge::get(),
+                "MaxFloorCheckpointAge must be below MaxFloorAge, or new floors start out stale"
+            );
+            assert!(
+                T::VenueTargetLag::get() < T::MaxVenueAge::get(),
+                "VenueTargetLag must be below MaxVenueAge, or no venue state is ever fresh"
+            );
+        }
+
         fn offchain_worker(now: BlockNumberFor<T>) {
             // Checkpoint votes first: a vote in this block can unblock a channel next block.
             Self::checkpoint_offchain_worker(now);
@@ -974,8 +1018,19 @@ pub mod pallet {
         pub fn do_request_checkpoint(
             chain_id: ExternalChainId,
         ) -> Result<CheckpointRequest<BlockNumberFor<T>>, DispatchError> {
-            let max_age =
+            Self::do_request_checkpoint_within(chain_id, None)
+        }
+
+        /// As [`Pallet::do_request_checkpoint`], but a stored checkpoint only counts as ready
+        /// when it is also no older than `max_age`, if given. Lets a channel ask for a fresher
+        /// checkpoint than the chain's own limit.
+        pub(crate) fn do_request_checkpoint_within(
+            chain_id: ExternalChainId,
+            max_age: Option<u64>,
+        ) -> Result<CheckpointRequest<BlockNumberFor<T>>, DispatchError> {
+            let chain_max_age =
                 MaxCheckpointAge::<T>::get(chain_id).ok_or(Error::<T>::ChainNotRegistered)?;
+            let max_age = max_age.map_or(chain_max_age, |max_age| max_age.min(chain_max_age));
             let now_block = <frame_system::Pallet<T>>::block_number();
             let stale = Checkpoints::<T>::get(chain_id);
 
@@ -1034,15 +1089,27 @@ pub mod pallet {
             round
         }
 
+        /// The oracle proposal is the active one and still within its voting period. A report
+        /// after `end_at` would be stored and announced, but the watchtower would only finalise
+        /// the proposal and never count it; `finalise_proposal` and `on_idle` close it instead.
+        pub(crate) fn oracle_proposal_open(proposal_id: ProposalId) -> bool {
+            if pallet_watchtower::ActiveInternalProposal::<T>::get() != Some(proposal_id) {
+                return false
+            }
+            let now = <frame_system::Pallet<T>>::block_number();
+            pallet_watchtower::Proposals::<T>::get(proposal_id).map_or(false, |proposal| {
+                !pallet_watchtower::Pallet::<T>::proposal_expired(now, &proposal)
+            })
+        }
+
         pub(crate) fn now_secs() -> u64 {
             T::TimeProvider::now().as_secs()
         }
 
-        /// Fan-out to every channel waiting for a checkpoint on `chain_id`. Each channel checks
-        /// its own chain and pending flag, so both may start a round on one agreement.
+        /// Hands an agreed checkpoint to the channels pinned to checkpoints (only the floor;
+        /// the venue channel pins a timestamp instead).
         pub(crate) fn on_checkpoint_agreed(chain_id: ExternalChainId, checkpoint: &Checkpoint) {
             Self::on_checkpoint_agreed_floor(chain_id, checkpoint);
-            Self::on_checkpoint_agreed_venue(chain_id, checkpoint);
         }
     }
 
@@ -1065,11 +1132,14 @@ pub mod pallet {
     }
 
     impl<T: Config> WatchtowerHooks<pallet_watchtower::Proposal<T>> for Pallet<T> {
+        /// Called when an internal proposal activates. A venue round fixes its target
+        /// timestamp here rather than when it was requested, so time spent in the queue does
+        /// not age the state it reads.
         fn on_proposal_submitted(
-            _proposal_id: ProposalId,
+            proposal_id: ProposalId,
             _proposal: pallet_watchtower::Proposal<T>,
         ) -> DispatchResult {
-            // Oracle proposals are created by this pallet; nothing to prepare on activation.
+            Self::on_venue_proposal_activated(proposal_id);
             Ok(())
         }
 

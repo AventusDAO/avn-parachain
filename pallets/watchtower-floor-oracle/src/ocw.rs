@@ -5,10 +5,7 @@
 //! and the submission records must never be shared, or one channel would silence the other.
 
 use crate::*;
-use sp_avn_common::{
-    http_data_codec::decode_from_http_data,
-    ocw_lock::{self as OcwLock, OcwStorageError},
-};
+use sp_avn_common::ocw_lock::{self as OcwLock, OcwStorageError};
 use sp_runtime::offchain::storage::{MutateStorageError, StorageRetrievalError, StorageValueRef};
 
 /// Blocks an OCW submission is given to land before the node retries.
@@ -25,22 +22,6 @@ pub(crate) struct OcwChannel {
 }
 
 impl<T: Config> Pallet<T> {
-    /// The node's own country as its external service reports it, for the report events.
-    /// Best effort: any failure yields [`UNKNOWN_COUNTRY`] and never blocks a report.
-    pub(crate) fn fetch_node_country() -> CountryCode {
-        let fetched = AVN::<T>::get_data_from_service(String::from(NODE_COUNTRY_SERVICE_PATH))
-            .ok()
-            .and_then(|body| String::from_utf8(body).ok())
-            .and_then(|text| decode_from_http_data::<CountryCode>(&text).ok());
-        match fetched {
-            Some(country) => country,
-            None => {
-                log::debug!("Oracle OCW: node country unavailable, reporting unknown");
-                UNKNOWN_COUNTRY
-            },
-        }
-    }
-
     pub(crate) fn ocw_already_run(channel: &OcwChannel, now: BlockNumberFor<T>) -> Result<(), ()> {
         OcwLock::record_block_run(now, channel.id.to_vec()).map_err(|e| match e {
             OcwStorageError::OffchainWorkerAlreadyRun => {
