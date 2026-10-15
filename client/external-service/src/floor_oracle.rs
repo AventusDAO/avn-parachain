@@ -16,10 +16,12 @@
 //!
 //! RPC policy is failover: the configured endpoints (or `DEFAULT_RPC_URLS`) are tried in order
 //! and the first one that serves the whole observation wins. An endpoint must report the
-//! requested chain id and must already consider the pinned block safe (see
-//! `evm::client::ensure_safe`).
+//! requested chain id and have the pinned block at least as deep as the checkpoint rule puts
+//! it (`checkpoint::params_for(chain).confirmations`, 10 on Ethereum). The checkpoint is
+//! already that deep when it is agreed, so the read normally goes ahead at once; only an
+//! endpoint lagging the collators' view waits a block.
 
-use crate::evm::client::{ensure_safe, EvmClient};
+use crate::evm::client::{ensure_depth, EvmClient};
 use alloy::{
     primitives::{address, Address, B256, U256},
     providers::{CallItem, MulticallBuilder, Provider},
@@ -154,7 +156,8 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
     if chain_id != request.chain_id {
         bail!("endpoint is chain {chain_id}, expected {}", request.chain_id);
     }
-    ensure_safe(&provider, pinned_block).await?;
+    let depth = crate::checkpoint::params_for(chain_id).confirmations;
+    ensure_depth(&provider, pinned_block, depth).await?;
 
     let offers = read_offers(&provider, request.punks, pinned_block).await?;
     let floor_wei = floor_of(offers).ok_or_else(|| anyhow!("no punk is publicly for sale"))?;

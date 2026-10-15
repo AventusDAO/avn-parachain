@@ -28,7 +28,15 @@ pub struct ChainParams {
     pub pin_interval: u64,
 }
 
-pub const ETHEREUM: ChainParams = ChainParams { confirmations: 12, pin_interval: 50 };
+/// Depth of Ethereum checkpoints, about two minutes. Not finality: post-Merge reorgs are one or
+/// two blocks, and a deeper one would only make floor reports disagree and the round fail. Kept
+/// apart from `ETH_FINALITY`, which the bridge uses for its own, stricter purpose.
+pub const ETHEREUM_CHECKPOINT_CONFIRMATIONS: u64 = 10;
+
+/// The floor read requires the same depth, so a floor round can read at its checkpoint as soon
+/// as it starts.
+pub const ETHEREUM: ChainParams =
+    ChainParams { confirmations: ETHEREUM_CHECKPOINT_CONFIRMATIONS, pin_interval: 50 };
 pub const BASE: ChainParams = ChainParams { confirmations: 10, pin_interval: 150 };
 pub const HARDHAT: ChainParams = ChainParams { confirmations: 2, pin_interval: 10 };
 pub const DEFAULT: ChainParams = ETHEREUM;
@@ -166,10 +174,10 @@ mod tests {
 
     #[test]
     fn votes_are_rounded_down_after_confirmations() {
-        // Ethereum: 12 confirmations, interval 50.
+        // Ethereum: 10 confirmations, interval 50.
         assert_eq!(vote_block(26_178_045, &ETHEREUM), 26_178_000);
-        assert_eq!(vote_block(26_178_062, &ETHEREUM), 26_178_050, "boundary crossed");
-        assert_eq!(vote_block(26_178_061, &ETHEREUM), 26_178_000, "just before the boundary");
+        assert_eq!(vote_block(26_178_060, &ETHEREUM), 26_178_050, "boundary crossed");
+        assert_eq!(vote_block(26_178_059, &ETHEREUM), 26_178_000, "just before the boundary");
         // Base: 10 confirmations, interval 150.
         assert_eq!(vote_block(40_000_210, &BASE), 40_000_200);
         assert_eq!(vote_block(40_000_209, &BASE), 40_000_050, "just before the boundary");
@@ -177,6 +185,22 @@ mod tests {
         assert_eq!(vote_block(57, &HARDHAT), 50);
         assert_eq!(params_for(31337), HARDHAT);
         assert_eq!(params_for(424242), DEFAULT);
+    }
+
+    /// The floor read requires the pinned block to be `confirmations` deep. Every vote already
+    /// is, so the read never waits on a checkpoint the collators agreed.
+    #[test]
+    fn votes_are_always_as_deep_as_the_floor_read_requires() {
+        for params in [ETHEREUM, BASE, HARDHAT] {
+            let start = params.confirmations + 1;
+            for latest in start..start + 3 * params.pin_interval {
+                let vote = vote_block(latest, &params) as u64;
+                assert!(
+                    latest - vote >= params.confirmations,
+                    "{params:?} head {latest} voted {vote}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -187,7 +211,7 @@ mod tests {
         assert_eq!(vote_block(5, &HARDHAT), 3, "latest - confirmations below one interval");
         assert_eq!(vote_block(11, &HARDHAT), 9);
         assert_eq!(vote_block(12, &HARDHAT), 10, "first full interval");
-        assert_eq!(vote_block(30, &ETHEREUM), 18);
+        assert_eq!(vote_block(30, &ETHEREUM), 20);
         assert_eq!(vote_block(u64::MAX, &ETHEREUM), u32::MAX);
     }
 

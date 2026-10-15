@@ -18,9 +18,9 @@
 //! are tried in order and the first that serves the whole observation wins. An endpoint must
 //! report the requested chain id.
 //!
-//! Unlike the floor, the block is not required to be `safe`: on Base that lags by minutes, and
-//! the venue oracle wants state seconds old. A reorg around the target splits the reports, and
-//! the round fails instead of finalising a wrong value.
+//! Unlike the floor, the block has no confirmation depth beyond `VenueTargetLag`: the venue
+//! oracle wants state seconds old. A reorg around the target splits the reports, and the round
+//! fails instead of finalising a wrong value.
 
 use crate::evm::client::EvmClient;
 use alloy::{

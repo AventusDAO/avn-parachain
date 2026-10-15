@@ -4,7 +4,7 @@ use alloy::{
     consensus::Transaction,
     primitives::{Address, Bytes, B256, U256},
     providers::{DynProvider, Provider, ProviderBuilder},
-    rpc::types::{BlockNumberOrTag, Filter, Log, TransactionReceipt, TransactionRequest},
+    rpc::types::{Filter, Log, TransactionReceipt, TransactionRequest},
     signers::local::PrivateKeySigner,
 };
 use anyhow::{bail, Context, Result};
@@ -93,28 +93,16 @@ impl EvmClient {
     }
 }
 
-/// The pinned block must be at or below the endpoint's `safe` block. Endpoints that do not
-/// serve the `safe` tag fall back to a fixed confirmation depth.
-pub async fn ensure_safe<P: Provider>(provider: &P, block: u64) -> Result<()> {
-    match provider.get_block_by_number(BlockNumberOrTag::Safe).await {
-        Ok(Some(safe)) =>
-            if safe.header.number >= block {
-                Ok(())
-            } else {
-                bail!(
-                    "block {block} is not safe yet on this endpoint (safe {})",
-                    safe.header.number
-                )
-            },
-        Ok(None) | Err(_) => {
-            let latest = provider.get_block_number().await.context("latest block")?;
-            if latest >= block.saturating_add(crate::ETH_FINALITY) {
-                Ok(())
-            } else {
-                let depth = crate::ETH_FINALITY;
-                bail!("block {block} is not {depth} deep yet on this endpoint (latest {latest})")
-            }
-        },
+/// The pinned block must be at least `depth` blocks below the endpoint's head. A fixed depth
+/// rather than the `safe` tag: on Ethereum `safe` trails the head by 64 to 96 blocks, which
+/// would hold every read back for 13 to 19 minutes. A reorg deeper than `depth` makes nodes
+/// read different data; their reports then disagree and the round fails rather than finalise it.
+pub async fn ensure_depth<P: Provider>(provider: &P, block: u64, depth: u64) -> Result<()> {
+    let latest = provider.get_block_number().await.context("latest block")?;
+    if latest >= block.saturating_add(depth) {
+        Ok(())
+    } else {
+        bail!("block {block} is not {depth} deep yet on this endpoint (latest {latest})")
     }
 }
 
