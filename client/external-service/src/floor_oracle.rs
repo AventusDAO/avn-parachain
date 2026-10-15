@@ -18,10 +18,18 @@
 //! and the first one that serves the whole observation wins. An endpoint must report the
 //! requested chain id and have the pinned block at least as deep as the checkpoint rule puts
 //! it (`checkpoint::params_for(chain).confirmations`, 10 on Ethereum). The checkpoint is
-//! already that deep when it is agreed, so the read normally goes ahead at once; only an
-//! endpoint lagging the collators' view waits a block.
+//! already that deep when it is agreed, so the read normally goes ahead at once. An endpoint
+//! lagging the collators' view fails that check and the next endpoint is tried; if none passes,
+//! the watchtower asks again next parachain block.
+//!
+//! A fixed depth rather than the `safe` tag: on Ethereum `safe` trails the head by about 32 to
+//! 64 blocks, which would hold every read back for 6 to 13 minutes. The depth is not finality.
+//! If a reorg deeper than it lands while watchtowers are reading, their reports disagree and the
+//! round fails; if it lands after most of them have read, they agree on the orphaned block and
+//! that floor finalises. Post-Merge Ethereum has not seen reorgs anywhere near this deep. The
+//! reasoning is about Ethereum L1: a floor market on an L2 would need its own depth.
 
-use crate::evm::client::{ensure_depth, EvmClient};
+use crate::evm::client::EvmClient;
 use alloy::{
     primitives::{address, Address, B256, U256},
     providers::{CallItem, MulticallBuilder, Provider},
@@ -157,7 +165,9 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
         bail!("endpoint is chain {chain_id}, expected {}", request.chain_id);
     }
     let depth = crate::checkpoint::params_for(chain_id).confirmations;
-    ensure_depth(&provider, pinned_block, depth).await?;
+    if !client.is_block_finalised(pinned_block, depth).await.context("latest block")? {
+        bail!("block {pinned_block} is not {depth} deep yet on this endpoint");
+    }
 
     let offers = read_offers(&provider, request.punks, pinned_block).await?;
     let floor_wei = floor_of(offers).ok_or_else(|| anyhow!("no punk is publicly for sale"))?;

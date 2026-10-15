@@ -7,7 +7,7 @@ use alloy::{
     rpc::types::{Filter, Log, TransactionReceipt, TransactionRequest},
     signers::local::PrivateKeySigner,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use url::Url;
 
@@ -90,19 +90,6 @@ impl EvmClient {
 
     pub async fn logs(&self, filter: Filter) -> Result<Vec<Log>> {
         Ok(self.provider.get_logs(&filter).await?)
-    }
-}
-
-/// The pinned block must be at least `depth` blocks below the endpoint's head. A fixed depth
-/// rather than the `safe` tag: on Ethereum `safe` trails the head by 64 to 96 blocks, which
-/// would hold every read back for 13 to 19 minutes. A reorg deeper than `depth` makes nodes
-/// read different data; their reports then disagree and the round fails rather than finalise it.
-pub async fn ensure_depth<P: Provider>(provider: &P, block: u64, depth: u64) -> Result<()> {
-    let latest = provider.get_block_number().await.context("latest block")?;
-    if latest >= block.saturating_add(depth) {
-        Ok(())
-    } else {
-        bail!("block {block} is not {depth} deep yet on this endpoint (latest {latest})")
     }
 }
 

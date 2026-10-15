@@ -187,10 +187,12 @@ mod tests {
         assert_eq!(params_for(424242), DEFAULT);
     }
 
-    /// The floor read requires the pinned block to be `confirmations` deep. Every vote already
-    /// is, so the read never waits on a checkpoint the collators agreed.
+    /// The floor read requires the pinned block to be `confirmations` deep. Once the head is
+    /// past that depth every vote already is, so the read does not wait on an agreed checkpoint.
+    /// A chain no longer than `confirmations` still votes block 1, which is not deep enough: the
+    /// floor read waits until the chain grows (a local Hardhat chain needs interval mining).
     #[test]
-    fn votes_are_always_as_deep_as_the_floor_read_requires() {
+    fn votes_are_as_deep_as_the_floor_read_requires_once_the_chain_is() {
         for params in [ETHEREUM, BASE, HARDHAT] {
             let start = params.confirmations + 1;
             for latest in start..start + 3 * params.pin_interval {
@@ -200,7 +202,11 @@ mod tests {
                     "{params:?} head {latest} voted {vote}"
                 );
             }
+            // At or below the depth the vote is block 1, short of it.
+            assert_eq!(vote_block(params.confirmations, &params), 1);
         }
+        assert_eq!(vote_block(2, &HARDHAT), 1, "head 2: one block deep, the read waits");
+        assert_eq!(vote_block(5, &ETHEREUM), 1, "head 5: four blocks deep, the read waits");
     }
 
     #[test]
