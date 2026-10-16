@@ -43,28 +43,33 @@ jobs:
           if [[ -z "$PR_NUMBER" ]]; then
             echo "No merged PR found for $GITHUB_SHA; treating this push as a non-release."
             description=""
-            AUTHOR_ASSOCIATION="NONE"
+            AUTHOR_PERMISSION="none"
           else
             PR_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
             description=$(jq -r '.body // ""' <<< "$PR_JSON")
-            AUTHOR_ASSOCIATION=$(jq -r '.author_association' <<< "$PR_JSON")
+            AUTHOR_LOGIN=$(jq -r '.user.login' <<< "$PR_JSON")
+            # author_association reports private org members as CONTRIBUTOR to GITHUB_TOKEN,
+            # so check the author's permission on this repository instead.
+            AUTHOR_PERMISSION=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${AUTHOR_LOGIN}/permission" --jq '.permission') \
+              || AUTHOR_PERMISSION="none"
             echo "PR_URL=$(jq -r '.html_url' <<< "$PR_JSON")" >> "$GITHUB_ENV"
+            echo "AUTHOR_LOGIN=$AUTHOR_LOGIN" >> "$GITHUB_ENV"
           fi
-          echo "AUTHOR_ASSOCIATION=$AUTHOR_ASSOCIATION" >> "$GITHUB_ENV"
+          echo "AUTHOR_PERMISSION=$AUTHOR_PERMISSION" >> "$GITHUB_ENV"
 
           ./.github/ci-scripts/verify_pr_type.sh "$description" "$EVENT_NAME"
 
       # The release flags live in the PR description, which anyone can write. Only honour
-      # them when the PR was authored by an organisation member or owner.
+      # them when the PR was authored by someone with write access to this repository.
       - name: Require a maintainer-authored PR for releases
         if: env.RELEASE == 'true'
         run: |
-          case "$AUTHOR_ASSOCIATION" in
-            MEMBER|OWNER)
-              echo "Release requested by a PR author with association '$AUTHOR_ASSOCIATION'."
+          case "$AUTHOR_PERMISSION" in
+            admin|write)
+              echo "Release requested by '$AUTHOR_LOGIN' with '$AUTHOR_PERMISSION' permission."
               ;;
             *)
-              echo "::error::Release flags found in a PR whose author association is '$AUTHOR_ASSOCIATION'. Only organisation members and owners may trigger a release."
+              echo "::error::Release flags found in a PR whose author '$AUTHOR_LOGIN' has '$AUTHOR_PERMISSION' permission. Only authors with write or admin access may trigger a release."
               exit 1
               ;;
           esac
