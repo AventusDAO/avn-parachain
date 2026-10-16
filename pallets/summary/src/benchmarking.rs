@@ -836,6 +836,29 @@ mod benchmarks {
     }
 
     #[benchmark]
+    fn set_external_validation_committee_size() {
+        let new_size = T::ExternalValidator::min_committee_size().max(1);
+        // The call refuses a size the watchtower cannot serve, so give it real nodes.
+        T::ExternalValidator::setup_nodes_for_benchmark(new_size);
+        let config = AdminConfig::ExternalValidationCommitteeSize(Some(new_size));
+
+        #[extrinsic_call]
+        set_admin_config(RawOrigin::Root, config);
+
+        assert!(<ExternalValidationCommitteeSize<T, I>>::get() == Some(new_size));
+    }
+
+    #[benchmark]
+    fn set_external_validation_decision_rule() {
+        let config = AdminConfig::ExternalValidationDecisionRule(DecisionRule::RejectOnExpiry);
+
+        #[extrinsic_call]
+        set_admin_config(RawOrigin::Root, config);
+
+        assert!(<ExternalValidationDecisionRule<T, I>>::get() == DecisionRule::RejectOnExpiry);
+    }
+
+    #[benchmark]
     fn set_schedule_period() {
         let new_period: BlockNumberFor<T> = 106u32.into();
         let config = AdminConfig::SchedulePeriod(new_period);
