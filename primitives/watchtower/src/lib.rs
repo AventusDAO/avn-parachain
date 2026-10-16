@@ -9,9 +9,90 @@ use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use core::marker::PhantomData;
 use scale_info::TypeInfo;
 use sp_core::H256;
-use sp_runtime::{traits::Member, Debug, DispatchResult, Perbill};
+use sp_runtime::{traits::Member, Debug, DispatchError, DispatchResult, Perbill};
 
 pub type ProposalId = H256;
+
+/// ISO 3166-1 alpha-2 code of the country a watchtower node votes or reports from, as resolved
+/// by its own external service. Display only: it is self-reported, signed with the vote and
+/// shown in events, and never part of what nodes must agree on.
+pub type CountryCode = [u8; 2];
+/// Reported when the node could not resolve its country.
+pub const UNKNOWN_COUNTRY: CountryCode = *b"??";
+/// External service path answering the node's own country code.
+pub const NODE_COUNTRY_SERVICE_PATH: &str = "node/country";
+
+/// The country as shown in events: two letters, upper-cased, or [`UNKNOWN_COUNTRY`] for
+/// anything else. A node signs whatever bytes it likes; this keeps garbage out of UIs.
+pub fn sanitise_country(country: CountryCode) -> CountryCode {
+    if country.iter().all(u8::is_ascii_alphabetic) {
+        [country[0].to_ascii_uppercase(), country[1].to_ascii_uppercase()]
+    } else {
+        UNKNOWN_COUNTRY
+    }
+}
+
+#[cfg(test)]
+mod country_tests {
+    use super::*;
+
+    #[test]
+    fn only_letters_reach_events() {
+        assert_eq!(sanitise_country(*b"GB"), *b"GB");
+        assert_eq!(sanitise_country(*b"de"), *b"DE");
+        assert_eq!(sanitise_country(UNKNOWN_COUNTRY), UNKNOWN_COUNTRY);
+        assert_eq!(sanitise_country([0xFF, 0x00]), UNKNOWN_COUNTRY);
+        assert_eq!(sanitise_country(*b"G1"), UNKNOWN_COUNTRY);
+    }
+}
+
+// External chain checkpoints
+/// EVM chain id of an external chain (Ethereum = 1, Base = 8453, Sepolia = 11155111).
+pub type ExternalChainId = u64;
+/// Identifier of one checkpoint voting round. `0` marks a root seeded checkpoint.
+pub type RoundId = u64;
+
+/// A point in time on an external chain that every node agrees to observe it at.
+#[derive(
+    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+)]
+pub struct Checkpoint {
+    /// Finalised block number on the external chain.
+    pub block_number: u32,
+    /// Parachain unix timestamp, in seconds, when agreement completed.
+    pub agreed_at: u64,
+    /// The round that produced this checkpoint.
+    pub round_id: RoundId,
+}
+
+/// Result of asking the oracle for a checkpoint.
+#[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
+pub enum CheckpointRequest<BlockNumber> {
+    /// The stored checkpoint is within the freshness limit and can be used as is.
+    Ready(Checkpoint),
+    /// A voting round is in progress. Its result will be written to storage under `round_id`.
+    Pending {
+        round_id: RoundId,
+        /// Parachain block the round started at.
+        started_at: BlockNumber,
+        /// The previous checkpoint, if any, for callers that can tolerate a stale value.
+        stale: Option<Checkpoint>,
+    },
+}
+
+/// Interface for other pallets to obtain an agreed checkpoint for an external chain.
+pub trait CheckpointOracle<BlockNumber> {
+    /// Reuse the stored checkpoint if it is younger than the chain's freshness limit. Otherwise
+    /// start a voting round, or join the one already running, and return `Pending`.
+    ///
+    /// This MUTATES storage. Never call it from a runtime API or a view function.
+    fn request_checkpoint(
+        chain_id: ExternalChainId,
+    ) -> Result<CheckpointRequest<BlockNumber>, DispatchError>;
+
+    /// Read the latest agreed checkpoint without touching storage.
+    fn checkpoint(chain_id: ExternalChainId) -> Option<Checkpoint>;
+}
 
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum RawPayload {
@@ -40,6 +121,10 @@ pub enum ProposalType {
     Anchor,
     Governance,
     Other(u8),
+    /// A floor oracle round. Appended after `Other` so stored proposals keep decoding.
+    FloorOracle,
+    /// A venue oracle round (raw Exotic market state). Appended for the same reason.
+    VenueOracle,
 }
 
 #[derive(
@@ -90,6 +175,47 @@ impl Default for ProposalStatusEnum {
     }
 }
 
+/// How a proposal is voted on.
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+    Default,
+)]
+pub enum VotingKind {
+    /// Yes / no. `threshold` of the eligible voters on either side decides.
+    #[default]
+    Binary,
+    /// Every voter names an answer (a hash). The first answer reaching `threshold` of the
+    /// eligible voters wins; the proposal passes and the answer is stored as its outcome.
+    Choice,
+}
+
+/// A single vote, in either kind.
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub enum VoteChoice {
+    Binary(bool),
+    Choice(H256),
+}
+
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub struct ProposalRequest {
     pub title: Vec<u8>,
@@ -104,6 +230,8 @@ pub struct ProposalRequest {
     /// Number of nodes to randomly select to vote on this proposal. `None` means every node
     /// votes. Only valid for internal proposals.
     pub committee_size: Option<u32>,
+    /// Yes/no, or pick-an-answer.
+    pub voting: VotingKind,
 }
 
 // Interface for other pallets to interact with the watchtower pallet
@@ -174,6 +302,27 @@ pub trait WatchtowerHooks<P> {
         result: &ProposalStatusEnum,
     );
     fn on_cancelled(proposal_id: ProposalId, external_ref: &H256);
+}
+
+/// Consulted before a vote on an internal proposal is counted. Lets a consumer require that a
+/// vote be backed by data it holds and be consistent with it (the floor oracle: a choice vote
+/// must equal the hash of the observation the voter reported).
+pub trait VoteFilter<AccountId> {
+    fn ensure_can_vote(
+        proposal_id: ProposalId,
+        voter: &AccountId,
+        vote: &VoteChoice,
+    ) -> DispatchResult;
+}
+
+// `()` accepts every vote: the tuple impl covers the empty tuple.
+#[impl_trait_for_tuples::impl_for_tuples(8)]
+impl<A> VoteFilter<A> for Tuple {
+    // Stops at the first member that rejects the vote.
+    fn ensure_can_vote(proposal_id: ProposalId, voter: &A, vote: &VoteChoice) -> DispatchResult {
+        for_tuples!( #( Tuple::ensure_can_vote(proposal_id, voter, vote)?; )* );
+        Ok(())
+    }
 }
 
 #[impl_trait_for_tuples::impl_for_tuples(30)]

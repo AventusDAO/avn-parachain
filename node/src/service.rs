@@ -554,6 +554,11 @@ pub async fn start_parachain_node(
             keystore_path: keystore_path.clone(),
             avn_port: avn_port.clone(),
             eth_node_urls: avn_cli_config.ethereum_node_urls.clone(),
+            // Every node carries the endpoint lists: collators vote checkpoint blocks with
+            // them, registered (watchtower) nodes also serve observations from them.
+            floor_rpc_urls: avn_cli_config.floor_rpc_urls.clone(),
+            venue_rpc_urls: avn_cli_config.venue_rpc_urls.clone(),
+            registered_node: avn_cli_config.registered_node_id.is_some(),
             client: client.clone(),
             offchain_transaction_pool_factory: OffchainTransactionPoolFactory::new(
                 transaction_pool.clone(),

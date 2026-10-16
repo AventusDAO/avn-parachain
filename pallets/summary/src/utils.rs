@@ -5,6 +5,7 @@ pub use sp_runtime::{
     traits::{AtLeast32Bit, Hash},
     Perbill, SaturatedConversion,
 };
+use sp_watchtower::VotingKind;
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
     pub fn set_summary_status(root_id: &RootId<BlockNumberFor<T>>, status: ExternalValidationEnum) {
@@ -73,6 +74,7 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
             created_at: current_block.saturated_into::<u32>(),
             vote_duration: None,
             committee_size: <ExternalValidationCommitteeSize<T, I>>::get(),
+            voting: VotingKind::Binary,
         };
 
         T::ExternalValidator::submit_proposal(None, request)?;

@@ -65,11 +65,17 @@ fn unsigned_vote_call(
     voter: &AccountId,
     in_favor: bool,
 ) -> crate::Call<TestRuntime> {
-    let payload = (WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, voter).encode();
+    let payload = Watchtower::unsigned_vote_signing_payload(
+        proposal_id,
+        &VoteChoice::Binary(in_favor),
+        &TEST_COUNTRY,
+        voter,
+    );
     let signature: Signature = signer_for(voter).key_pair().sign(&payload).into();
     crate::Call::unsigned_vote {
         proposal_id,
         in_favor,
+        country: TEST_COUNTRY,
         watchtower: *voter,
         signature: signature.into(),
     }
@@ -447,6 +453,7 @@ mod voting {
                     RawOrigin::None.into(),
                     id,
                     true,
+                    TEST_COUNTRY,
                     non_members[0],
                     match unsigned_vote_call(id, &non_members[0], true) {
                         crate::Call::unsigned_vote { signature, .. } => signature,
@@ -467,6 +474,7 @@ mod voting {
                     RawOrigin::None.into(),
                     id,
                     true,
+                    TEST_COUNTRY,
                     selected[0],
                     signature
                 ));

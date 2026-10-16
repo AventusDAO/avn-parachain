@@ -128,6 +128,7 @@ runtime-benchmarks = [
     "avn-test-runtime?/runtime-benchmarks",
 ]
 
+dev-network = ["avn-parachain-runtime/dev-network"]
 try-runtime = [
     "polkadot-cli/try-runtime",
     "avn-parachain-runtime/try-runtime",

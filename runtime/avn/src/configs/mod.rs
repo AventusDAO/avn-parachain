@@ -84,9 +84,9 @@ use crate::{
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
     Scheduler, Session, SessionKeys, Signature, Summary, SummaryWatchtower, System, Timestamp,
     TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
-    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
-    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    WatchtowerFloorOracle, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
+    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -805,7 +805,8 @@ impl pallet_watchtower::Config for Runtime {
     type Watchtowers = RuntimeNodeManager;
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
-    type WatchtowerHooks = (Summary, SummaryWatchtower);
+    type WatchtowerHooks = (Summary, SummaryWatchtower, WatchtowerFloorOracle);
+    type VoteFilter = WatchtowerFloorOracle;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
@@ -813,7 +814,13 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
+    // Dev networks register three watchtower nodes; raise again for production.**
+    /// Smallest committee any internal proposal may have. The `dev-network` feature lowers it
+    /// for local networks with a handful of watchtowers; production builds keep 10.
+    #[cfg(not(feature = "dev-network"))]
     type MinCommitteeSize = ConstU32<10>;
+    #[cfg(feature = "dev-network")]
+    type MinCommitteeSize = ConstU32<3>;
     type MaxCommitteeSize = ConstU32<500>;
     type Randomness = RelayChainRandomness;
     #[cfg(feature = "runtime-benchmarks")]
@@ -823,6 +830,44 @@ impl pallet_watchtower::Config for Runtime {
 impl pallet_summary_watchtower::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
+}
+
+parameter_types! {
+    /// A checkpoint round that has not settled after this many blocks (about 10 minutes) is
+    /// restarted by the next request.
+    pub const CheckpointRoundTimeoutBlocks: BlockNumber = 50;
+    /// Share of the committee that must report the same observation.
+    pub const OracleRoundThreshold: Perbill = Perbill::from_percent(67);
+    /// Must be at least the watchtower pallet's minimum voting period (100 blocks).
+    pub const OracleVoteDuration: u32 = 100;
+    /// A finalised floor younger than this answers requests directly.
+    pub const MaxFloorAge: u64 = 10 * 60;
+    /// A floor round pins a checkpoint at most this old. A floor is as old as its checkpoint,
+    /// so this leaves the round about five minutes, queue time included, to finalise while still
+    /// fresh. A round that takes longer (voting may last `OracleVoteDuration`) finalises stale and
+    /// the next request starts a new one.
+    pub const MaxFloorCheckpointAge: u64 = 5 * 60;
+    /// A finalised venue observation whose pinned block is younger than this answers requests
+    /// directly. Venue state moves every few seconds; the consumer can always ask again.
+    pub const MaxVenueAge: u64 = 45;
+    /// A venue round reads Base this far behind the parachain time at activation: three Base
+    /// blocks, so the target block exists on every watchtower's endpoint when it reads.
+    pub const VenueTargetLag: u64 = 6;
+
+}
+
+impl pallet_watchtower_floor_oracle::Config for Runtime {
+    type RuntimeCall = RuntimeCall;
+    type TimeProvider = Timestamp;
+    type Quorum = Avn;
+    type RoundTimeoutBlocks = CheckpointRoundTimeoutBlocks;
+    type OracleRoundThreshold = OracleRoundThreshold;
+    type OracleVoteDuration = OracleVoteDuration;
+    type MaxFloorAge = MaxFloorAge;
+    type MaxFloorCheckpointAge = MaxFloorCheckpointAge;
+    type MaxVenueAge = MaxVenueAge;
+    type VenueTargetLag = VenueTargetLag;
+    type WeightInfo = pallet_watchtower_floor_oracle::default_weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
