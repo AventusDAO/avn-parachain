@@ -995,8 +995,22 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
+    /// The params of a lower in any stage: ready to claim, waiting for a proof or with a failed
+    /// proof. A lower is waiting for a proof while `regenerate_lower_proof` is in progress.
+    fn lower_params(lower_id: LowerId) -> Option<LowerParams> {
+        LowersReadyToClaim::<T>::get(lower_id)
+            .map(|lower| lower.params)
+            .or_else(|| LowersPendingProof::<T>::get(lower_id))
+            .or_else(|| FailedLowerProofs::<T>::get(lower_id))
+    }
+
+    /// Removes a lower from every stage. A proof still being generated for it is ignored when it
+    /// completes, because `process_lower_proof_result` requires a `LowersPendingProof` entry.
     fn remove_used_lower(lower_id: LowerId) -> DispatchResult {
-        ensure!(LowersReadyToClaim::<T>::take(lower_id).is_some(), Error::<T>::InvalidLowerId);
+        ensure!(Self::lower_params(lower_id).is_some(), Error::<T>::InvalidLowerId);
+        LowersReadyToClaim::<T>::remove(lower_id);
+        LowersPendingProof::<T>::remove(lower_id);
+        FailedLowerProofs::<T>::remove(lower_id);
         Ok(())
     }
 
@@ -1007,11 +1021,10 @@ impl<T: Config> Pallet<T> {
         ensure!(data.amount != 0, Error::<T>::AmountIsZero);
 
         // Only refund what was lowered, to the account it was lowered from
-        let lower =
-            LowersReadyToClaim::<T>::get(data.lower_id).ok_or(Error::<T>::InvalidLowerId)?;
+        let lower_params = Self::lower_params(data.lower_id).ok_or(Error::<T>::InvalidLowerId)?;
         ensure!(
             lower_params_match(
-                &lower.params,
+                &lower_params,
                 &data.token_contract,
                 data.amount,
                 &data.t1_recipient,
@@ -1023,7 +1036,7 @@ impl<T: Config> Pallet<T> {
         let t2_refunded_sender = Self::decode_recipient(&data.receiver_address)?;
         let token_id: T::TokenId = data.token_contract.into();
 
-        LowersReadyToClaim::<T>::remove(data.lower_id);
+        Self::remove_used_lower(data.lower_id)?;
         let amount = Self::credit_user_balance(token_id, &t2_refunded_sender, data.amount)?;
 
         if Self::is_native_token(token_id) {
