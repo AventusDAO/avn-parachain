@@ -333,6 +333,339 @@ fn avn_test_reverted_avt_lower_refunds_sender_removes_claim_and_emits_event() {
     });
 }
 
+fn lower_reverted_event(
+    token_contract: H160,
+    receiver_address: H256,
+    amount: u128,
+    lower_id: u32,
+    t1_recipient: H160,
+) -> sp_avn_common::event_types::EthEvent {
+    sp_avn_common::event_types::EthEvent {
+        event_id: sp_avn_common::event_types::EthEventId {
+            signature: sp_avn_common::event_types::ValidEvents::LowerReverted.signature(),
+            transaction_hash: H256::random(),
+        },
+        event_data: sp_avn_common::event_types::EventData::LogLowerReverted(
+            sp_avn_common::event_types::LowerRevertedData {
+                token_contract,
+                receiver_address,
+                amount,
+                lower_id,
+                t1_recipient,
+            },
+        ),
+    }
+}
+
+fn lower_cancelled_event(lower_id: u32) -> sp_avn_common::event_types::EthEvent {
+    sp_avn_common::event_types::EthEvent {
+        event_id: sp_avn_common::event_types::EthEventId {
+            signature: sp_avn_common::event_types::ValidEvents::LowerCancelled.signature(),
+            transaction_hash: H256::random(),
+        },
+        event_data: sp_avn_common::event_types::EventData::LogLowerCancelled(
+            sp_avn_common::event_types::LowerCancelledData { lower_id },
+        ),
+    }
+}
+
+#[test]
+fn avn_test_reverted_avt_lower_fails_when_event_data_does_not_match_the_lower() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let (_, from, _burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
+
+        perform_lower_setup(lower_id);
+
+        let receiver_address = H256::from_slice(&receiver_topic_with_100_avt());
+        let mismatched_events = vec![
+            lower_reverted_event(
+                AVT_TOKEN_CONTRACT,
+                receiver_address,
+                amount + 1,
+                lower_id,
+                t1_recipient,
+            ),
+            lower_reverted_event(
+                AVT_TOKEN_CONTRACT,
+                H256::random(),
+                amount,
+                lower_id,
+                t1_recipient,
+            ),
+            lower_reverted_event(
+                NON_AVT_TOKEN_ID,
+                receiver_address,
+                amount,
+                lower_id,
+                t1_recipient,
+            ),
+            lower_reverted_event(
+                AVT_TOKEN_CONTRACT,
+                receiver_address,
+                amount,
+                lower_id,
+                H160::random(),
+            ),
+        ];
+
+        for mock_event in mismatched_events {
+            insert_to_mock_processed_events(&mock_event.event_id);
+            assert_noop!(
+                TokenManager::on_event_processed(&mock_event),
+                Error::<TestRuntime>::LowerRevertedDataMismatch
+            );
+        }
+
+        assert!(LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+    });
+}
+
+#[test]
+fn avn_test_reverted_avt_lower_fails_for_an_unknown_lower() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let (_, from, _burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
+        let receiver_address = H256::from_slice(&receiver_topic_with_100_avt());
+        let mock_event =
+            lower_reverted_event(AVT_TOKEN_CONTRACT, receiver_address, amount, 99, t1_recipient);
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_noop!(
+            TokenManager::on_event_processed(&mock_event),
+            Error::<TestRuntime>::InvalidLowerId
+        );
+    });
+}
+
+#[test]
+fn avn_test_cancelled_lower_removes_claim_without_refunding_and_emits_event() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let (_, from, _burn_acc, _t1_recipient) = MockData::setup_lower_request_data();
+
+        perform_lower_setup(lower_id);
+        let balance_before = Balances::free_balance(from);
+
+        let mock_event = lower_cancelled_event(lower_id);
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert_eq!(Balances::free_balance(from), balance_before);
+        assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+        assert!(System::events().iter().any(|a| a.event ==
+            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerCancelled {
+                lower_id,
+                eth_tx_hash: mock_event.event_id.transaction_hash,
+            })));
+    });
+}
+
+#[test]
+fn avn_test_cancelled_lower_fails_for_an_unknown_lower() {
+    let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+    ext.execute_with(|| {
+        let mock_event = lower_cancelled_event(99);
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_noop!(
+            TokenManager::on_event_processed(&mock_event),
+            Error::<TestRuntime>::InvalidLowerId
+        );
+    });
+}
+
+#[test]
+fn avn_test_cancelled_lower_fails_when_the_t1_event_is_not_processed() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        perform_lower_setup(lower_id);
+
+        assert_noop!(
+            TokenManager::on_event_processed(&lower_cancelled_event(lower_id)),
+            Error::<TestRuntime>::NoTier1EventForLogLowerCancelled
+        );
+        assert!(LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+    });
+}
+
+fn start_proof_regeneration(
+    lower_id: u32,
+    requester: <TestRuntime as frame_system::Config>::AccountId,
+) {
+    assert_ok!(TokenManager::regenerate_lower_proof(RuntimeOrigin::signed(requester), lower_id));
+    assert!(LowersPendingProof::<TestRuntime>::contains_key(lower_id));
+    assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+}
+
+fn assert_lower_removed_and_late_proof_ignored(lower_id: u32) {
+    let ready_events = || {
+        System::events()
+            .iter()
+            .filter(|a| {
+                a.event ==
+                    RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerReadyToClaim {
+                        lower_id,
+                    })
+            })
+            .count()
+    };
+    let ready_events_before = ready_events();
+
+    assert!(!LowersPendingProof::<TestRuntime>::contains_key(lower_id));
+    assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+    assert!(!FailedLowerProofs::<TestRuntime>::contains_key(lower_id));
+
+    // The regenerated proof arrives from eth-bridge after the lower was removed
+    assert_ok!(TokenManager::process_lower_proof_result(
+        lower_id,
+        PALLET_ID.to_vec(),
+        Ok("regeneratedProof".to_string().into())
+    ));
+
+    assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+    assert!(!FailedLowerProofs::<TestRuntime>::contains_key(lower_id));
+    assert_eq!(ready_events(), ready_events_before);
+}
+
+#[test]
+fn avn_test_cancelled_lower_while_proof_is_regenerating_removes_lower_and_ignores_late_proof() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let (_, from, _burn_acc, _t1_recipient) = MockData::setup_lower_request_data();
+
+        perform_lower_setup(lower_id);
+        start_proof_regeneration(lower_id, from);
+        let balance_before = Balances::free_balance(from);
+
+        let mock_event = lower_cancelled_event(lower_id);
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert_eq!(Balances::free_balance(from), balance_before);
+        assert!(System::events().iter().any(|a| a.event ==
+            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerCancelled {
+                lower_id,
+                eth_tx_hash: mock_event.event_id.transaction_hash,
+            })));
+        assert_lower_removed_and_late_proof_ignored(lower_id);
+    });
+}
+
+#[test]
+fn avn_test_cancelled_lower_with_a_failed_proof_removes_lower() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let (_, from, burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
+
+        schedule_lower(from, amount, t1_recipient, lower_id, burn_acc);
+        assert_ok!(TokenManager::process_lower_proof_result(lower_id, PALLET_ID.to_vec(), Err(())));
+        assert!(FailedLowerProofs::<TestRuntime>::contains_key(lower_id));
+
+        let mock_event = lower_cancelled_event(lower_id);
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert!(!FailedLowerProofs::<TestRuntime>::contains_key(lower_id));
+        assert_noop!(
+            TokenManager::regenerate_lower_proof(RuntimeOrigin::signed(from), lower_id),
+            Error::<TestRuntime>::InvalidLowerId
+        );
+    });
+}
+
+#[test]
+fn avn_test_claimed_lower_while_proof_is_regenerating_removes_lower_and_ignores_late_proof() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let mock_data = MockData::setup(AMOUNT_123_TOKEN, USE_RECEIVER_WITH_0_AMOUNT);
+        let (_, from, _burn_acc, _t1_recipient) = MockData::setup_lower_request_data();
+
+        perform_lower_setup(lower_id);
+        start_proof_regeneration(lower_id, from);
+
+        let mock_event = &mock_data.lower_claimed_event;
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(mock_event));
+        assert!(System::events().iter().any(|a| a.event ==
+            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::AvtLowerClaimed {
+                lower_id
+            })));
+        assert_lower_removed_and_late_proof_ignored(lower_id);
+    });
+}
+
+#[test]
+fn avn_test_reverted_lower_while_proof_is_regenerating_refunds_sender_and_ignores_late_proof() {
+    let mut ext = ExtBuilder::build_default()
+        .with_genesis_config()
+        .with_balances()
+        .as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 0;
+        let (_, from, _burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
+
+        perform_lower_setup(lower_id);
+        start_proof_regeneration(lower_id, from);
+        let balance_before = Balances::free_balance(from);
+
+        let receiver_address = H256::from_slice(&receiver_topic_with_100_avt());
+        let mock_event = lower_reverted_event(
+            AVT_TOKEN_CONTRACT,
+            receiver_address,
+            amount,
+            lower_id,
+            t1_recipient,
+        );
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert_eq!(Balances::free_balance(from), balance_before + amount);
+        assert_lower_removed_and_late_proof_ignored(lower_id);
+    });
+}
+
 #[test]
 fn avn_test_lower_avt_token_should_fail_when_sender_does_not_have_enough_avt_token() {
     let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();

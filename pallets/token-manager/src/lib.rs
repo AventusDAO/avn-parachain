@@ -48,10 +48,10 @@ use orml_traits::{
     MultiCurrency, NamedMultiReservableCurrency,
 };
 use sp_avn_common::{
-    eth::{concat_lower_data, LowerParams},
+    eth::{concat_lower_data, lower_params_match, LowerParams},
     event_types::{
         AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
-        LowerRevertedData, ProcessedEventHandler, TokenInterface,
+        LowerCancelledData, LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
     verify_signature, CallDecoder, InnerCallValidator, OnIdleHandler, PaymentHandler, Proof,
@@ -292,6 +292,11 @@ pub mod pallet {
             old_address: H160,
             new_address: H160,
         },
+        /// Event emitted when a lower is cancelled on T1. The lowered funds remain on T1.
+        LowerCancelled {
+            lower_id: LowerId,
+            eth_tx_hash: H256,
+        },
     }
 
     #[pallet::error]
@@ -324,6 +329,8 @@ pub mod pallet {
         InvalidToken,
         NativeTokenNotRegistered,
         WithdrawFailed,
+        NoTier1EventForLogLowerCancelled,
+        LowerRevertedDataMismatch,
     }
 
     #[pallet::storage]
@@ -988,8 +995,27 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
+    /// The params of a lower in any stage: ready to claim, waiting for a proof or with a failed
+    /// proof. A lower is waiting for a proof while `regenerate_lower_proof` is in progress.
+    fn lower_params(lower_id: LowerId) -> Option<LowerParams> {
+        LowersReadyToClaim::<T>::get(lower_id)
+            .map(|lower| lower.params)
+            .or_else(|| LowersPendingProof::<T>::get(lower_id))
+            .or_else(|| FailedLowerProofs::<T>::get(lower_id))
+    }
+
+    /// Removes a lower from every stage. A proof still being generated for it is ignored when it
+    /// completes, because `process_lower_proof_result` requires a `LowersPendingProof` entry.
     fn remove_used_lower(lower_id: LowerId) -> DispatchResult {
-        ensure!(LowersReadyToClaim::<T>::take(lower_id).is_some(), Error::<T>::InvalidLowerId);
+        ensure!(
+            LowersReadyToClaim::<T>::contains_key(lower_id) ||
+                LowersPendingProof::<T>::contains_key(lower_id) ||
+                FailedLowerProofs::<T>::contains_key(lower_id),
+            Error::<T>::InvalidLowerId
+        );
+        LowersReadyToClaim::<T>::remove(lower_id);
+        LowersPendingProof::<T>::remove(lower_id);
+        FailedLowerProofs::<T>::remove(lower_id);
         Ok(())
     }
 
@@ -999,11 +1025,25 @@ impl<T: Config> Pallet<T> {
         ensure!(event_validity, Error::<T>::NoTier1EventForLogLowerReverted);
         ensure!(data.amount != 0, Error::<T>::AmountIsZero);
 
+        // Only refund what was lowered, to the account it was lowered from
+        let lower_params = Self::lower_params(data.lower_id).ok_or(Error::<T>::InvalidLowerId)?;
+        ensure!(
+            lower_params_match(
+                &lower_params,
+                &data.token_contract,
+                data.amount,
+                &data.t1_recipient,
+                &data.receiver_address
+            ),
+            Error::<T>::LowerRevertedDataMismatch
+        );
+
         let t2_refunded_sender = Self::decode_recipient(&data.receiver_address)?;
         let token_id: T::TokenId = data.token_contract.into();
 
-        Self::remove_used_lower(data.lower_id)?;
+        // Credit before removing the lower
         let amount = Self::credit_user_balance(token_id, &t2_refunded_sender, data.amount)?;
+        Self::remove_used_lower(data.lower_id)?;
 
         if Self::is_native_token(token_id) {
             Self::deposit_event(Event::<T>::AVTLowerReverted {
@@ -1023,6 +1063,20 @@ impl<T: Config> Pallet<T> {
                 t1_reverted_recipient: data.t1_recipient,
             });
         }
+
+        Ok(())
+    }
+
+    fn process_lower_cancelled(event: &EthEvent, data: &LowerCancelledData) -> DispatchResult {
+        let event_id = &event.event_id;
+        let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
+        ensure!(event_validity, Error::<T>::NoTier1EventForLogLowerCancelled);
+
+        Self::remove_used_lower(data.lower_id)?;
+        Self::deposit_event(Event::<T>::LowerCancelled {
+            lower_id: data.lower_id,
+            eth_tx_hash: event_id.transaction_hash,
+        });
 
         Ok(())
     }
@@ -1078,6 +1132,7 @@ impl<T: Config> Pallet<T> {
             EventData::LogAvtGrowthLifted(d) => return Self::process_avt_growth_lift(event, d),
             EventData::LogLowerClaimed(d) => return Self::process_lower_claim(event, d),
             EventData::LogLowerReverted(d) => return Self::process_lower_reverted(event, d),
+            EventData::LogLowerCancelled(d) => return Self::process_lower_cancelled(event, d),
 
             // Event handled or it is not for us, in which case ignore it.
             _ => Ok(()),
