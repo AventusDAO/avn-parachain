@@ -44,6 +44,14 @@ mod lower_cancelled {
         assert!(ValidEvents::LowerCancelled.is_primary());
     }
 
+    #[test]
+    fn lower_event_data_is_valid_for_any_lower_id() {
+        for lower_id in [0, 1, u32::MAX] {
+            assert!(EventData::LogLowerCancelled(LowerCancelledData { lower_id }).is_valid());
+            assert!(EventData::LogLowerClaimed(AvtLowerClaimedData { lower_id }).is_valid());
+        }
+    }
+
     mod can_successfully_be_parsed {
         use super::*;
 

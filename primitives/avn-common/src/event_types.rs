@@ -1086,10 +1086,8 @@ pub enum EventData {
 }
 
 impl EventData {
-    #[allow(unreachable_patterns)]
     pub fn is_valid(&self) -> bool {
         return match self {
-            // LogLowerClaimed missing. TODO add and remove unreachable patterns.
             EventData::LogAddedValidator(d) => d.is_valid(),
             EventData::LogLifted(d) => d.is_valid(),
             EventData::LogNftMinted(d) => d.is_valid(),
@@ -1101,8 +1099,11 @@ impl EventData {
             EventData::LogErc20Transfer(d) => d.is_valid(),
             EventData::LogLowerReverted(d) => d.is_valid(),
             EventData::LogRewardsMinted(d) => d.is_valid(),
+            // The lower id is the only field and 0 is a valid lower id, so there is nothing to
+            // check
+            EventData::LogLowerClaimed(_) => true,
+            EventData::LogLowerCancelled(_) => true,
             EventData::EmptyEvent => true,
-            _ => false,
         }
     }
 }
