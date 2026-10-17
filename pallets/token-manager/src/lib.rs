@@ -1007,7 +1007,12 @@ impl<T: Config> Pallet<T> {
     /// Removes a lower from every stage. A proof still being generated for it is ignored when it
     /// completes, because `process_lower_proof_result` requires a `LowersPendingProof` entry.
     fn remove_used_lower(lower_id: LowerId) -> DispatchResult {
-        ensure!(Self::lower_params(lower_id).is_some(), Error::<T>::InvalidLowerId);
+        ensure!(
+            LowersReadyToClaim::<T>::contains_key(lower_id) ||
+                LowersPendingProof::<T>::contains_key(lower_id) ||
+                FailedLowerProofs::<T>::contains_key(lower_id),
+            Error::<T>::InvalidLowerId
+        );
         LowersReadyToClaim::<T>::remove(lower_id);
         LowersPendingProof::<T>::remove(lower_id);
         FailedLowerProofs::<T>::remove(lower_id);
@@ -1036,8 +1041,9 @@ impl<T: Config> Pallet<T> {
         let t2_refunded_sender = Self::decode_recipient(&data.receiver_address)?;
         let token_id: T::TokenId = data.token_contract.into();
 
-        Self::remove_used_lower(data.lower_id)?;
+        // Credit before removing the lower
         let amount = Self::credit_user_balance(token_id, &t2_refunded_sender, data.amount)?;
+        Self::remove_used_lower(data.lower_id)?;
 
         if Self::is_native_token(token_id) {
             Self::deposit_event(Event::<T>::AVTLowerReverted {
