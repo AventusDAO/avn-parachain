@@ -48,7 +48,7 @@ use orml_traits::{
     MultiCurrency, NamedMultiReservableCurrency,
 };
 use sp_avn_common::{
-    eth::{concat_lower_data, lower_params_match, LowerParams},
+    eth::{concat_lower_data, lower_params_match, lower_params_token_amount_sender, LowerParams},
     event_types::{
         AvtGrowthLiftedData, AvtLowerClaimedData, EthEvent, EventData, LiftedData,
         LowerCancelledData, LowerRevertedData, ProcessedEventHandler, TokenInterface,
@@ -295,6 +295,10 @@ pub mod pallet {
         /// Event emitted when a lower is cancelled on T1. The lowered funds remain on T1.
         LowerCancelled {
             lower_id: LowerId,
+            token_id: T::TokenId,
+            /// `None` for lowers created before the T2 sender was recorded in the lower params.
+            sender: Option<T::AccountId>,
+            amount: u128,
             eth_tx_hash: H256,
         },
     }
@@ -1072,9 +1076,17 @@ impl<T: Config> Pallet<T> {
         let event_validity = T::ProcessedEventsChecker::processed_event_exists(event_id);
         ensure!(event_validity, Error::<T>::NoTier1EventForLogLowerCancelled);
 
+        let lower_params = Self::lower_params(data.lower_id).ok_or(Error::<T>::InvalidLowerId)?;
+        let (token, amount, t2_sender) = lower_params_token_amount_sender(&lower_params);
+        let sender =
+            if t2_sender.is_zero() { None } else { Self::decode_recipient(&t2_sender).ok() };
+
         Self::remove_used_lower(data.lower_id)?;
         Self::deposit_event(Event::<T>::LowerCancelled {
             lower_id: data.lower_id,
+            token_id: token.into(),
+            sender,
+            amount,
             eth_tx_hash: event_id.transaction_hash,
         });
 

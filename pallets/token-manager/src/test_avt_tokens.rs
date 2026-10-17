@@ -459,6 +459,7 @@ fn avn_test_cancelled_lower_removes_claim_without_refunding_and_emits_event() {
     ext.execute_with(|| {
         let lower_id: u32 = 0;
         let (_, from, _burn_acc, _t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
 
         perform_lower_setup(lower_id);
         let balance_before = Balances::free_balance(from);
@@ -472,6 +473,9 @@ fn avn_test_cancelled_lower_removes_claim_without_refunding_and_emits_event() {
         assert!(System::events().iter().any(|a| a.event ==
             RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerCancelled {
                 lower_id,
+                token_id: AVT_TOKEN_CONTRACT,
+                sender: Some(from),
+                amount,
                 eth_tx_hash: mock_event.event_id.transaction_hash,
             })));
     });
@@ -560,6 +564,7 @@ fn avn_test_cancelled_lower_while_proof_is_regenerating_removes_lower_and_ignore
     ext.execute_with(|| {
         let lower_id: u32 = 0;
         let (_, from, _burn_acc, _t1_recipient) = MockData::setup_lower_request_data();
+        let amount = Balances::free_balance(from);
 
         perform_lower_setup(lower_id);
         start_proof_regeneration(lower_id, from);
@@ -573,6 +578,9 @@ fn avn_test_cancelled_lower_while_proof_is_regenerating_removes_lower_and_ignore
         assert!(System::events().iter().any(|a| a.event ==
             RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerCancelled {
                 lower_id,
+                token_id: AVT_TOKEN_CONTRACT,
+                sender: Some(from),
+                amount,
                 eth_tx_hash: mock_event.event_id.transaction_hash,
             })));
         assert_lower_removed_and_late_proof_ignored(lower_id);
@@ -604,6 +612,44 @@ fn avn_test_cancelled_lower_with_a_failed_proof_removes_lower() {
             TokenManager::regenerate_lower_proof(RuntimeOrigin::signed(from), lower_id),
             Error::<TestRuntime>::InvalidLowerId
         );
+    });
+}
+
+#[test]
+fn avn_test_cancelled_lower_without_a_recorded_sender_emits_event_with_no_sender() {
+    let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+    ext.execute_with(|| {
+        let lower_id: u32 = 7;
+        let amount = 1_000u128;
+        let t1_recipient = H160::repeat_byte(2);
+        // Lowers migrated from the V1 params layout have no T2 sender
+        let params = concat_lower_data(
+            lower_id,
+            AVT_TOKEN_CONTRACT,
+            &amount,
+            &t1_recipient,
+            H256::zero(),
+            0,
+        );
+        LowersReadyToClaim::<TestRuntime>::insert(
+            lower_id,
+            LowerProofData { params, encoded_lower_data: BoundedVec::default() },
+        );
+
+        let mock_event = lower_cancelled_event(lower_id);
+        insert_to_mock_processed_events(&mock_event.event_id);
+
+        assert_ok!(TokenManager::on_event_processed(&mock_event));
+        assert!(!LowersReadyToClaim::<TestRuntime>::contains_key(lower_id));
+        assert!(System::events().iter().any(|a| a.event ==
+            RuntimeEvent::TokenManager(crate::Event::<TestRuntime>::LowerCancelled {
+                lower_id,
+                token_id: AVT_TOKEN_CONTRACT,
+                sender: None,
+                amount,
+                eth_tx_hash: mock_event.event_id.transaction_hash,
+            })));
     });
 }
 
