@@ -328,6 +328,7 @@ parameter_types! {
     // The accountId that will hold the reward for the staking pallet
     pub const RewardPotId: PalletId = PalletId(*b"av/vamgr");
 }
+// This pallet is deprecated and should not be used in new development.
 impl pallet_parachain_staking::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;
