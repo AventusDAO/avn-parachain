@@ -140,6 +140,17 @@ pub mod pallet {
                     None => return,
                 };
 
+                // Only committee members may vote; the pool would reject the vote anyway, so
+                // skip the root validation work on nodes that were not selected.
+                if !pallet_watchtower::Pallet::<T>::is_committee_member(proposal_id, &watchtower) {
+                    log::debug!(
+                        "🛠️  Node {:?} is not in the committee for proposal {:?}, skipping validation.",
+                        watchtower,
+                        proposal_id
+                    );
+                    return
+                }
+
                 Self::process_pending_validation(
                     proposal_id,
                     root_data,

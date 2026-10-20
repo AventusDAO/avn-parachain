@@ -157,6 +157,8 @@ pub type Migrations = (
     migrations::register_avt_token::RegisterAvtToken<Runtime>,
     pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
     pallet_avn_anchor::migration::AvnAnchorMigrations<Runtime>,
+    // v0 -> v1: `Proposal` gained `committee_size` and `DecisionRule` was widened.
+    pallet_watchtower::migration::WatchtowerMigrations<Runtime>,
     pallet_session::migrations::v1::MigrateV0ToV1<
         Runtime,
         pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,

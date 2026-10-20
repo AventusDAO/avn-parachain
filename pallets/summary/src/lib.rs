@@ -221,6 +221,11 @@ pub mod pallet {
         VotingPeriodSet { new_period: BlockNumberFor<T> },
         /// A new external validation threshold has been set
         ExternalValidationThresholdSet { new_threshold: u32 },
+        /// Number of randomly selected nodes that vote on each root; `None` means every node
+        ExternalValidationCommitteeSizeSet { new_size: Option<u32> },
+        /// How a root's proposal is decided when its voting period ends without reaching the
+        /// threshold
+        ExternalValidationDecisionRuleSet { new_rule: DecisionRule },
     }
 
     #[pallet::error]
@@ -267,6 +272,8 @@ pub mod pallet {
         ExternalValidationRequestNotFound,
         /// There is no external validation status for the given rootId
         ExternalValidationStatusMissing,
+        /// Committee size is zero or outside the watchtower's `[Min, Max]CommitteeSize` bounds
+        InvalidExternalValidationCommitteeSize,
     }
 
     // Note for SYS-152 (see notes in fn end_voting)):
@@ -393,6 +400,19 @@ pub mod pallet {
     pub type ExternalValidationThreshold<T: Config<I>, I: 'static = ()> =
         StorageValue<_, u32, OptionQuery>;
 
+    /// Number of randomly selected nodes that vote on each root submitted for external
+    /// validation. `None` (the default) means every node votes.
+    #[pallet::storage]
+    pub type ExternalValidationCommitteeSize<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, u32, OptionQuery>;
+
+    /// How a root's proposal is decided when its voting period ends without reaching the
+    /// threshold. The default, `ExpireUnresolved`, keeps the legacy behaviour: no objection in
+    /// time means accepted.
+    #[pallet::storage]
+    pub type ExternalValidationDecisionRule<T: Config<I>, I: 'static = ()> =
+        StorageValue<_, DecisionRule, ValueQuery>;
+
     #[pallet::genesis_config]
     pub struct GenesisConfig<T: Config<I>, I: 'static = ()> {
         /// Dummy marker.
@@ -440,13 +460,16 @@ pub mod pallet {
             );
             <VotingPeriod<T, I>>::put(voting_period_in_blocks);
 
-            let maybe_first_validator =
-                AVN::<T>::validators().into_iter().map(|v| v.account_id).nth(0);
-            assert!(maybe_first_validator.is_some(), "You must add validators to run the AvN");
-
-            <CurrentSlotsValidator<T, I>>::put(
-                maybe_first_validator.expect("Validator is checked for none"),
-            );
+            // Validators are populated by the session pallet's genesis, which runs before this
+            // one in the runtime. A default genesis (e.g. `test_genesis_config_builds`) has none,
+            // so do not panic: `CurrentSlotsValidator` is an `OptionQuery` and every reader
+            // handles `None`.
+            match AVN::<T>::validators().into_iter().map(|v| v.account_id).nth(0) {
+                Some(first_validator) => <CurrentSlotsValidator<T, I>>::put(first_validator),
+                None => log::warn!(
+                    "💔 No validators found at genesis; the summary slot validator is unset."
+                ),
+            }
 
             STORAGE_VERSION.put::<Pallet<T, I>>();
         }
@@ -689,6 +712,8 @@ pub mod pallet {
              <T as pallet::Config<I>>::WeightInfo::set_external_validation_threshold()
             .max(<T as pallet::Config<I>>::WeightInfo::set_schedule_period())
             .max(<T as pallet::Config<I>>::WeightInfo::set_voting_period())
+            .max(<T as pallet::Config<I>>::WeightInfo::set_external_validation_committee_size())
+            .max(<T as pallet::Config<I>>::WeightInfo::set_external_validation_decision_rule())
         )]
         pub fn set_admin_config(
             origin: OriginFor<T>,
@@ -709,6 +734,38 @@ pub mod pallet {
                     });
                     return Ok(Some(
                         <T as Config<I>>::WeightInfo::set_external_validation_threshold(),
+                    )
+                    .into())
+                },
+                AdminConfig::ExternalValidationCommitteeSize(size) => {
+                    if let Some(size) = size {
+                        ensure!(
+                            size >= T::ExternalValidator::min_committee_size() &&
+                                size <= T::ExternalValidator::max_committee_size(),
+                            Error::<T, I>::InvalidExternalValidationCommitteeSize
+                        );
+                        // Refuse a size the watchtower cannot serve yet (node index still
+                        // backfilling, too few nodes): every root submitted afterwards would
+                        // otherwise sit in the queue until it can. Surfaces the watchtower's
+                        // own error.
+                        T::ExternalValidator::ensure_committee_ready(size)?;
+                    }
+                    <ExternalValidationCommitteeSize<T, I>>::set(size);
+                    Self::deposit_event(Event::ExternalValidationCommitteeSizeSet {
+                        new_size: size,
+                    });
+                    return Ok(Some(
+                        <T as Config<I>>::WeightInfo::set_external_validation_committee_size(),
+                    )
+                    .into())
+                },
+                AdminConfig::ExternalValidationDecisionRule(rule) => {
+                    <ExternalValidationDecisionRule<T, I>>::put(rule);
+                    Self::deposit_event(Event::ExternalValidationDecisionRuleSet {
+                        new_rule: rule,
+                    });
+                    return Ok(Some(
+                        <T as Config<I>>::WeightInfo::set_external_validation_decision_rule(),
                     )
                     .into())
                 },
