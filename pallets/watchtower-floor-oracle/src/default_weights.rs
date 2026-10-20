@@ -42,6 +42,7 @@ pub trait WeightInfo {
 	fn submit_checkpoint_vote(v: u32, ) -> Weight;
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight;
 	fn request_floor_price() -> Weight;
+	fn force_floor_round() -> Weight;
 	fn submit_floor_report() -> Weight;
 	fn set_oracle_requester() -> Weight;
 	fn request_venue_state() -> Weight;
@@ -161,6 +162,49 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Storage: `Watchtower::VotingKindOf` (r:0 w:1)
 	/// Proof: `Watchtower::VotingKindOf` (`max_values`: None, `max_size`: Some(49), added: 2524, mode: `MaxEncodedLen`)
 	fn request_floor_price() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `292`
+		//  Estimated: `12719`
+		// Minimum execution time: 69_230_000 picoseconds.
+		Weight::from_parts(89_424_000, 12719)
+			.saturating_add(T::DbWeight::get().reads(15_u64))
+			.saturating_add(T::DbWeight::get().writes(8_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::ActiveFloorRound` (r:1 w:1)
+	/// Proof: `WatchtowerFloorOracle::ActiveFloorRound` (`max_values`: Some(1), `max_size`: Some(88), added: 583, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::LastFinalisedFloor` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::LastFinalisedFloor` (`max_values`: Some(1), `max_size`: Some(144), added: 639, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::FloorMarketConfig` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::FloorMarketConfig` (`max_values`: Some(1), `max_size`: Some(28), added: 523, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::LastFloorRoundId` (r:1 w:1)
+	/// Proof: `WatchtowerFloorOracle::LastFloorRoundId` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::OracleCommitteeSize` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::OracleCommitteeSize` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
+	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ExternalRef` (r:1 w:1)
+	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:1 w:1)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:1 w:1)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::VotingKindOf` (r:0 w:1)
+	/// Proof: `Watchtower::VotingKindOf` (`max_values`: None, `max_size`: Some(49), added: 2524, mode: `MaxEncodedLen`)
+	fn force_floor_round() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `292`
 		//  Estimated: `12719`
@@ -424,6 +468,49 @@ impl WeightInfo for () {
 	/// Storage: `Watchtower::VotingKindOf` (r:0 w:1)
 	/// Proof: `Watchtower::VotingKindOf` (`max_values`: None, `max_size`: Some(49), added: 2524, mode: `MaxEncodedLen`)
 	fn request_floor_price() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `292`
+		//  Estimated: `12719`
+		// Minimum execution time: 69_230_000 picoseconds.
+		Weight::from_parts(89_424_000, 12719)
+			.saturating_add(RocksDbWeight::get().reads(15_u64))
+			.saturating_add(RocksDbWeight::get().writes(8_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::ActiveFloorRound` (r:1 w:1)
+	/// Proof: `WatchtowerFloorOracle::ActiveFloorRound` (`max_values`: Some(1), `max_size`: Some(88), added: 583, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::LastFinalisedFloor` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::LastFinalisedFloor` (`max_values`: Some(1), `max_size`: Some(144), added: 639, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::FloorMarketConfig` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::FloorMarketConfig` (`max_values`: Some(1), `max_size`: Some(28), added: 523, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::LastFloorRoundId` (r:1 w:1)
+	/// Proof: `WatchtowerFloorOracle::LastFloorRoundId` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::OracleCommitteeSize` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::OracleCommitteeSize` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
+	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ExternalRef` (r:1 w:1)
+	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:1 w:1)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:1 w:1)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:1)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::VotingKindOf` (r:0 w:1)
+	/// Proof: `Watchtower::VotingKindOf` (`max_values`: None, `max_size`: Some(49), added: 2524, mode: `MaxEncodedLen`)
+	fn force_floor_round() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `292`
 		//  Estimated: `12719`

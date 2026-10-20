@@ -216,6 +216,25 @@ benchmarks! {
         assert!(pallet_watchtower::Proposals::<T>::contains_key(round.proposal_id));
     }
 
+    // Same worst path as `request_floor_price`: a round is started at once.
+    force_floor_round {
+        let market = floor_market();
+        assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(market)).is_ok());
+        assert!(Pallet::<T>::seed_chain(
+            RawOrigin::Root.into(),
+            market.chain_id,
+            SEED_BLOCK,
+            MAX_AGE_SECS
+        )
+        .is_ok());
+    }: _(RawOrigin::Root, 0u64)
+    verify {
+        let round = ActiveFloorRound::<T>::get().expect("round started");
+        assert_eq!(round.round_id, 1);
+        assert_eq!(round.market, market);
+        assert!(pallet_watchtower::Proposals::<T>::contains_key(round.proposal_id));
+    }
+
     submit_floor_report {
         // Watchtowers come from the runtime's benchmark helper, as in pallet-watchtower.
         <T as pallet_watchtower::Config>::BenchmarkHelper::setup_nodes(

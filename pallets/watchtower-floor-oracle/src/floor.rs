@@ -65,35 +65,56 @@ impl<T: Config> Pallet<T> {
     // ------------------------------------------------------------------ requests
 
     pub fn do_request_floor_price() -> DispatchResult {
+        Self::request_floor(T::MaxFloorAge::get(), T::MaxFloorCheckpointAge::get()).map(|_| ())
+    }
+
+    /// As [`Pallet::do_request_floor_price`] with `max_age_secs`, raised to `MinForcedFloorAge`
+    /// and capped at `MaxFloorAge`, as the oldest floor that answers. A new round also pins a
+    /// checkpoint no older than that: the suspect floor usually pins the current checkpoint, and
+    /// a round on the same block would read the same floor again.
+    pub fn do_force_floor_round(max_age_secs: u64) -> DispatchResult {
+        let max_age = max_age_secs.max(T::MinForcedFloorAge::get()).min(T::MaxFloorAge::get());
+        let max_checkpoint_age = max_age.min(T::MaxFloorCheckpointAge::get());
+        if let Some(round_id) = Self::request_floor(max_age, max_checkpoint_age)? {
+            Self::deposit_event(Event::<T>::FloorRoundForced {
+                round_id,
+                requested_max_age: max_age,
+            });
+        }
+        Ok(())
+    }
+
+    /// Joins the running round, answers from a floor at most `max_age` old, or starts a round
+    /// pinned to a checkpoint at most `max_checkpoint_age` old, waiting for one if needed.
+    /// Returns the id of the round it started, if any.
+    fn request_floor(max_age: u64, max_checkpoint_age: u64) -> Result<Option<u64>, DispatchError> {
         if let Some(round) = ActiveFloorRound::<T>::get() {
             Self::deposit_event(Event::<T>::FloorRoundInProgress { round_id: round.round_id });
-            return Ok(())
+            return Ok(None)
         }
 
         if let Some(floor) = LastFinalisedFloor::<T>::get() {
-            if Self::now_secs().saturating_sub(floor.pinned_ts) <= T::MaxFloorAge::get() {
+            if Self::now_secs().saturating_sub(floor.pinned_ts) <= max_age {
                 Self::deposit_event(Event::<T>::FloorPriceServed {
                     round_id: floor.round_id,
                     floor_wei: floor.observation.floor_wei,
                 });
-                return Ok(())
+                return Ok(None)
             }
         }
 
         let market = FloorMarketConfig::<T>::get().ok_or(Error::<T>::FloorMarketNotSet)?;
         // A floor is as old as the checkpoint it pins, so pin only a young one; otherwise the
         // new floor could be past `MaxFloorAge` by the time it finalises.
-        match Self::do_request_checkpoint_within(
-            market.chain_id,
-            Some(T::MaxFloorCheckpointAge::get()),
-        )? {
-            CheckpointRequest::Ready(checkpoint) => Self::start_floor_round(&checkpoint, market),
+        match Self::do_request_checkpoint_within(market.chain_id, Some(max_checkpoint_age))? {
+            CheckpointRequest::Ready(checkpoint) =>
+                Self::start_floor_round(&checkpoint, market).map(Some),
             CheckpointRequest::Pending { round_id, .. } => {
                 PendingFloorRequest::<T>::put(true);
                 Self::deposit_event(Event::<T>::FloorRequestWaitingForCheckpoint {
                     checkpoint_round_id: round_id,
                 });
-                Ok(())
+                Ok(None)
             },
         }
     }
@@ -115,7 +136,10 @@ impl<T: Config> Pallet<T> {
         }
     }
 
-    fn start_floor_round(checkpoint: &Checkpoint, market: FloorMarket) -> DispatchResult {
+    fn start_floor_round(
+        checkpoint: &Checkpoint,
+        market: FloorMarket,
+    ) -> Result<u64, DispatchError> {
         let round_id = LastFloorRoundId::<T>::mutate(|id| {
             *id = id.saturating_add(1);
             *id
@@ -156,7 +180,7 @@ impl<T: Config> Pallet<T> {
             pinned_block: checkpoint.block_number,
             market,
         });
-        Ok(())
+        Ok(round_id)
     }
 
     pub fn floor_round_external_ref(round_id: u64) -> H256 {

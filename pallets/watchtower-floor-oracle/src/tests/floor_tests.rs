@@ -55,6 +55,11 @@ fn start_active_round() -> FloorRound<BlockNumber> {
 /// request opened, as the collators would, so the floor round starts.
 fn request_with_new_checkpoint() {
     assert_ok!(request());
+    agree_checkpoint_round();
+}
+
+/// Agrees the running checkpoint round 50 blocks past the current checkpoint.
+fn agree_checkpoint_round() {
     let round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("checkpoint round started");
     let block = FloorOracle::checkpoints(FLOOR_CHAIN).unwrap().block_number + 50;
     for i in 1..=4 {
@@ -315,6 +320,181 @@ mod requests {
             assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), 8453, 5, CHECKPOINT_MAX_AGE));
             assert!(FloorOracle::pending_floor_request());
             assert!(FloorOracle::active_floor_round().is_none());
+        });
+    }
+}
+
+mod forced_rounds {
+    use super::*;
+
+    /// Forces as the privileged account, setting it first if needed.
+    fn force(max_age_secs: u64) -> DispatchResult {
+        if FloorOracle::oracle_requester().is_none() {
+            assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
+        }
+        FloorOracle::force_floor_round(RuntimeOrigin::signed(requester()), max_age_secs)
+    }
+
+    /// Runs a round to agreement on a floor of 50. Returns the finalised floor.
+    fn finalise_floor() -> FinalisedFloorRound {
+        let round = start_active_round();
+        for i in 1..=6 {
+            assert_ok!(report(round.round_id, 50, i));
+        }
+        FloorOracle::last_finalised_floor().expect("finalised")
+    }
+
+    fn forced_events() -> usize {
+        System::events()
+            .iter()
+            .filter(|r| {
+                matches!(r.event, RuntimeEvent::FloorOracle(Event::FloorRoundForced { .. }))
+            })
+            .count()
+    }
+
+    #[test]
+    fn only_root_or_the_privileged_requester_may_force() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            seed_floor_chain();
+            assert_noop!(
+                FloorOracle::force_floor_round(RuntimeOrigin::none(), 60),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                FloorOracle::force_floor_round(RuntimeOrigin::signed(requester()), 60),
+                Error::<TestRuntime>::UnauthorizedOracleRequest
+            );
+            assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
+            assert_noop!(
+                FloorOracle::force_floor_round(RuntimeOrigin::signed(watchtower(1)), 60),
+                Error::<TestRuntime>::UnauthorizedOracleRequest
+            );
+
+            assert_ok!(FloorOracle::force_floor_round(RuntimeOrigin::root(), 60));
+            assert_eq!(FloorOracle::last_floor_round_id(), 1);
+            assert_event(Event::FloorRoundForced { round_id: 1, requested_max_age: 60 });
+        });
+    }
+
+    #[test]
+    fn a_floor_within_max_age_is_served() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let floor = finalise_floor();
+            advance_secs(60);
+
+            assert_ok!(force(60));
+            assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 50 });
+            assert!(FloorOracle::active_floor_round().is_none());
+            assert!(FloorOracle::checkpoint_round(FLOOR_CHAIN).is_none());
+            assert_eq!(FloorOracle::last_floor_round_id(), floor.round_id);
+            assert_eq!(forced_events(), 0);
+        });
+    }
+
+    /// `request_floor_price` still serves the floor, but it is past the requested age. The
+    /// checkpoint the floor pinned is just as old, so the round waits for a new one rather than
+    /// read the same block again.
+    #[test]
+    fn a_floor_older_than_max_age_starts_a_round_inside_max_floor_age() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let floor = finalise_floor();
+            advance_secs(61);
+            assert!(61 < MAX_FLOOR_AGE_SECS);
+
+            assert_ok!(request());
+            assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 50 });
+            assert!(FloorOracle::active_floor_round().is_none());
+
+            assert_ok!(force(60));
+            assert!(FloorOracle::pending_floor_request());
+            let checkpoint_round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("started");
+            assert_event(Event::FloorRequestWaitingForCheckpoint {
+                checkpoint_round_id: checkpoint_round.round_id,
+            });
+
+            agree_checkpoint_round();
+            let checkpoint = FloorOracle::checkpoints(FLOOR_CHAIN).unwrap();
+            let round = FloorOracle::active_floor_round().expect("round started");
+            assert_eq!(round.round_id, floor.round_id + 1);
+            assert_eq!(round.pinned_block, SEED_BLOCK + 50);
+            assert_eq!(round.pinned_ts, checkpoint.agreed_at);
+            assert!(round.pinned_ts > floor.pinned_ts);
+            assert_eq!(forced_events(), 0, "the checkpoint round started it, not the call");
+        });
+    }
+
+    /// With a checkpoint younger than the requested age, the call starts the round itself.
+    #[test]
+    fn a_round_started_by_the_call_is_reported_as_forced() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let floor = finalise_floor();
+            advance_secs(61);
+            assert_ok!(force(60));
+            agree_checkpoint_round();
+
+            // The round on the new checkpoint fails, so the stale floor stays the latest.
+            let failed = FloorOracle::active_floor_round().expect("round started");
+            assert_eq!(activate_head(), failed.proposal_id);
+            for i in 1..=6 {
+                let observation = FloorObservation {
+                    observed_eth_block: failed.pinned_block as u64,
+                    ..observation(50 + i as u128)
+                };
+                assert_ok!(ReportContext::new(failed.round_id, observation, i).submit());
+            }
+            assert!(FloorOracle::active_floor_round().is_none());
+            assert_eq!(FloorOracle::last_finalised_floor(), Some(floor));
+
+            assert_ok!(force(60));
+            let round = FloorOracle::active_floor_round().expect("round started");
+            assert_eq!(round.round_id, failed.round_id + 1);
+            assert_eq!(round.pinned_block, failed.pinned_block);
+            assert!(!FloorOracle::pending_floor_request());
+            assert_event(Event::FloorRoundForced {
+                round_id: round.round_id,
+                requested_max_age: 60,
+            });
+        });
+    }
+
+    #[test]
+    fn a_running_round_is_joined() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round = start_active_round();
+            assert_ok!(force(0));
+            assert_event(Event::FloorRoundInProgress { round_id: round.round_id });
+            assert_eq!(FloorOracle::last_floor_round_id(), round.round_id);
+            assert_eq!(forced_events(), 0);
+        });
+    }
+
+    #[test]
+    fn max_age_is_clamped_to_min_forced_floor_age() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let floor = finalise_floor();
+            advance_secs(MIN_FORCED_FLOOR_AGE_SECS);
+
+            assert_ok!(force(0));
+            assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 50 });
+            assert!(FloorOracle::checkpoint_round(FLOOR_CHAIN).is_none());
+
+            advance_secs(1);
+            assert_ok!(force(0));
+            assert!(FloorOracle::pending_floor_request(), "past the minimum a round is needed");
+        });
+    }
+
+    /// An age above `MaxFloorAge` never serves a floor `request_floor_price` would refuse.
+    #[test]
+    fn max_age_is_capped_at_max_floor_age() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let floor = finalise_floor();
+            advance_secs(MAX_FLOOR_AGE_SECS + 1);
+
+            assert_ok!(force(u64::MAX));
+            assert!(FloorOracle::pending_floor_request());
+            assert_eq!(FloorOracle::last_floor_round_id(), floor.round_id);
         });
     }
 }
