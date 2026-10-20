@@ -72,6 +72,11 @@ pub enum Error {
     LowerRevertedEventAmountOverflow,
     LowerRevertedEventLowerIdConversion,
 
+    LowerCancelledEventShouldOnlyContainTopics,
+    LowerCancelledEventWrongTopicCount,
+    LowerCancelledEventBadTopicLength,
+    LowerCancelledEventIdConversion,
+
     LiftedToPredictionMarketEventMissingData,
     LiftedToPredictionMarketEventDataOverflow,
     LiftedToPredictionMarketEventBadDataLength,
@@ -136,6 +141,8 @@ pub enum ValidEvents {
     LowerReverted,
     /// AVT rewards were minted by either the validators or the T1 owner.
     AvtRewardsMinted,
+    /// A frozen lower was cancelled by the T1 owner. The funds remain on T1.
+    LowerCancelled,
 }
 
 impl ValidEvents {
@@ -193,6 +200,10 @@ impl ValidEvents {
             // hex string of Keccak-256 for LogRewardsMinted(uint256,uint256,uint32)
             ValidEvents::AvtRewardsMinted =>
                 H256(hex!("8780503b6efc49186826d97ab83686b74d0c76aa1052e08a81fa36a349472545")),
+
+            // hex string of Keccak-256 for LogLowerCancelled(uint32)
+            ValidEvents::LowerCancelled =>
+                H256(hex!("59829ae26d7f0135ce724b36fe58f03580eafbd239c97946ed348086cbfe5660")),
         }
     }
 
@@ -842,6 +853,50 @@ impl AvtLowerClaimedData {
     }
 }
 
+// T1 Event definition:
+// event LogLowerCancelled(uint32 indexed lowerId);
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub struct LowerCancelledData {
+    pub lower_id: u32,
+}
+
+impl LowerCancelledData {
+    const TOPIC_LOWER_ID: usize = 1;
+
+    pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
+        if data.is_some() {
+            return Err(Error::LowerCancelledEventShouldOnlyContainTopics)
+        }
+
+        if topics.len() != 2 {
+            return Err(Error::LowerCancelledEventWrongTopicCount)
+        }
+
+        if topics[Self::TOPIC_LOWER_ID].len() != WORD_LENGTH {
+            return Err(Error::LowerCancelledEventBadTopicLength)
+        }
+
+        let lower_id: u32 = u32::from_be_bytes(
+            topics[Self::TOPIC_LOWER_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
+                .try_into()
+                .map_err(|_| Error::LowerCancelledEventIdConversion)?,
+        );
+
+        return Ok(LowerCancelledData { lower_id })
+    }
+}
+
 #[derive(
     Encode,
     Decode,
@@ -1027,13 +1082,12 @@ pub enum EventData {
     LogLiftedToPredictionMarket(LiftedData),
     LogErc20Transfer(LiftedData),
     LogRewardsMinted(TotalSupplyUpdatedData),
+    LogLowerCancelled(LowerCancelledData),
 }
 
 impl EventData {
-    #[allow(unreachable_patterns)]
     pub fn is_valid(&self) -> bool {
         return match self {
-            // LogLowerClaimed missing. TODO add and remove unreachable patterns.
             EventData::LogAddedValidator(d) => d.is_valid(),
             EventData::LogLifted(d) => d.is_valid(),
             EventData::LogNftMinted(d) => d.is_valid(),
@@ -1045,8 +1099,11 @@ impl EventData {
             EventData::LogErc20Transfer(d) => d.is_valid(),
             EventData::LogLowerReverted(d) => d.is_valid(),
             EventData::LogRewardsMinted(d) => d.is_valid(),
+            // The lower id is the only field and 0 is a valid lower id, so there is nothing to
+            // check
+            EventData::LogLowerClaimed(_) => true,
+            EventData::LogLowerCancelled(_) => true,
             EventData::EmptyEvent => true,
-            _ => false,
         }
     }
 }
@@ -1282,3 +1339,7 @@ mod test_avt_growth_event_parsing;
 #[cfg(test)]
 #[path = "tests/test_lower_claim.rs"]
 mod test_lower_claim;
+
+#[cfg(test)]
+#[path = "tests/test_lower_cancelled.rs"]
+mod test_lower_cancelled;

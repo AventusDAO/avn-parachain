@@ -375,6 +375,38 @@ mod test {
     use hex_literal::hex;
 
     #[test]
+    fn lower_params_token_amount_sender_returns_the_packed_fields() {
+        let token = H160::repeat_byte(1);
+        let amount = 123u128;
+        let t2_sender = H256::repeat_byte(3);
+        let params =
+            concat_lower_data(7, token, &amount, &H160::repeat_byte(2), t2_sender, 1_700_000_000);
+
+        assert_eq!(lower_params_token_amount_sender(&params), (token, amount, t2_sender));
+    }
+
+    #[test]
+    fn lower_params_match_only_when_every_checked_field_matches() {
+        let token = H160::repeat_byte(1);
+        let amount = 123u128;
+        let t1_recipient = H160::repeat_byte(2);
+        let t2_sender = H256::repeat_byte(3);
+        let params = concat_lower_data(7, token, &amount, &t1_recipient, t2_sender, 1_700_000_000);
+
+        assert!(lower_params_match(&params, &token, amount, &t1_recipient, &t2_sender));
+        assert!(!lower_params_match(
+            &params,
+            &H160::repeat_byte(9),
+            amount,
+            &t1_recipient,
+            &t2_sender
+        ));
+        assert!(!lower_params_match(&params, &token, amount + 1, &t1_recipient, &t2_sender));
+        assert!(!lower_params_match(&params, &token, amount, &H160::repeat_byte(9), &t2_sender));
+        assert!(!lower_params_match(&params, &token, amount, &t1_recipient, &H256::repeat_byte(9)));
+    }
+
+    #[test]
     fn test_conversion_endianess() {
         let value_in_u32: u32 = 123456;
         let value_in_u64: u64 = 123456;
@@ -516,6 +548,35 @@ mod test {
             H256(hex!("e5bf20ae6173912260d45213e1fc29b9d68f7ddc72f2922779a4f040f373f50e"))
         );
     }
+}
+
+/// Returns true if the packed lower params hold the given token, amount, T1 recipient and T2
+/// sender.
+pub fn lower_params_match(
+    lower_params: &LowerParams,
+    token_id: &H160,
+    amount: u128,
+    t1_recipient: &H160,
+    t2_sender: &H256,
+) -> bool {
+    lower_params[TOKEN_SPAN] == *token_id.as_bytes() &&
+        lower_params[AMOUNT_PADDING_SPAN].iter().all(|byte| *byte == 0) &&
+        lower_params[AMOUNT_SPAN] == amount.to_be_bytes() &&
+        lower_params[RECIPIENT_SPAN] == *t1_recipient.as_bytes() &&
+        lower_params[T2_SENDER_SPAN] == *t2_sender.as_bytes()
+}
+
+/// Returns the token, amount and T2 sender held in packed lower params. The T2 sender is zero for
+/// lowers created before the V2 params layout.
+pub fn lower_params_token_amount_sender(lower_params: &LowerParams) -> (H160, u128, H256) {
+    let mut amount = [0u8; 16];
+    amount.copy_from_slice(&lower_params[AMOUNT_SPAN]);
+
+    (
+        H160::from_slice(&lower_params[TOKEN_SPAN]),
+        u128::from_be_bytes(amount),
+        H256::from_slice(&lower_params[T2_SENDER_SPAN]),
+    )
 }
 
 pub fn concat_lower_data(
