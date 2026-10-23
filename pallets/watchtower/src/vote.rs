@@ -11,18 +11,16 @@ impl<T: Config> Pallet<T> {
         proposal: &Proposal<T>,
         expired: bool,
     ) -> Option<ProposalStatusEnum> {
+        if VotingKindOf::<T>::get(proposal_id) == VotingKind::Choice {
+            return Self::decide_choice(proposal_id, proposal, expired)
+        }
+
         let votes = Votes::<T>::get(proposal_id);
 
         if !expired {
             // A committee fixes the denominator at activation; otherwise every node may vote
             // and the live node count is used.
-            let eligible = ProposalCommitteeSize::<T>::get(proposal_id)
-                .unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count);
-            if eligible == 0 {
-                return None
-            }
-
-            let needed = proposal.threshold.mul_ceil(eligible);
+            let Some(needed) = Self::votes_needed(proposal_id, proposal) else { return None };
             if votes.in_favors >= needed {
                 return Some(ProposalStatusEnum::Resolved { passed: true })
             }
@@ -37,6 +35,76 @@ impl<T: Config> Pallet<T> {
             DecisionRule::SimpleMajorityOnExpiry =>
                 ProposalStatusEnum::Resolved { passed: votes.in_favors > votes.againsts },
             DecisionRule::RejectOnExpiry => ProposalStatusEnum::Resolved { passed: false },
+        })
+    }
+
+    /// Voters eligible for a proposal: the committee fixed at activation, else every node.
+    pub fn eligible_voters(proposal_id: ProposalId) -> u32 {
+        ProposalCommitteeSize::<T>::get(proposal_id)
+            .unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count)
+    }
+
+    /// Votes one side (or one answer) needs to decide the proposal early. `None` while nobody
+    /// is eligible.
+    pub fn votes_needed(proposal_id: ProposalId, proposal: &Proposal<T>) -> Option<u32> {
+        let eligible = Self::eligible_voters(proposal_id);
+        if eligible == 0 {
+            return None
+        }
+        Some(proposal.threshold.mul_ceil(eligible))
+    }
+
+    /// Decision for `Choice` proposals. The first answer whose tally reaches the threshold
+    /// wins and is stored in `WinningChoice`. If no answer can still get there with the votes
+    /// left, the proposal fails early. On expiry the decision rule applies, where "majority"
+    /// means the single answer with the most votes.
+    fn decide_choice(
+        proposal_id: ProposalId,
+        proposal: &Proposal<T>,
+        expired: bool,
+    ) -> Option<ProposalStatusEnum> {
+        let mut best: Option<(H256, u32)> = None;
+        let mut tie_at_best = false;
+        let mut cast: u32 = 0;
+        for (answer, tally) in ChoiceTally::<T>::iter_prefix(proposal_id) {
+            cast = cast.saturating_add(tally);
+            match best {
+                Some((_, best_tally)) if tally < best_tally => {},
+                Some((_, best_tally)) if tally == best_tally => tie_at_best = true,
+                _ => {
+                    best = Some((answer, tally));
+                    tie_at_best = false;
+                },
+            }
+        }
+
+        if !expired {
+            let Some(needed) = Self::votes_needed(proposal_id, proposal) else { return None };
+            let eligible = Self::eligible_voters(proposal_id);
+            if let Some((answer, tally)) = best {
+                if tally >= needed {
+                    WinningChoice::<T>::insert(proposal_id, answer);
+                    return Some(ProposalStatusEnum::Resolved { passed: true })
+                }
+                // Even if every remaining voter backed the leader it would fall short.
+                let remaining = eligible.saturating_sub(cast);
+                if tally.saturating_add(remaining) < needed {
+                    return Some(ProposalStatusEnum::Resolved { passed: false })
+                }
+            }
+            return None
+        }
+
+        Some(match proposal.decision_rule {
+            DecisionRule::ExpireUnresolved => ProposalStatusEnum::Expired,
+            DecisionRule::RejectOnExpiry => ProposalStatusEnum::Resolved { passed: false },
+            DecisionRule::SimpleMajorityOnExpiry => match best {
+                Some((answer, _)) if !tie_at_best => {
+                    WinningChoice::<T>::insert(proposal_id, answer);
+                    ProposalStatusEnum::Resolved { passed: true }
+                },
+                _ => ProposalStatusEnum::Resolved { passed: false },
+            },
         })
     }
 
@@ -76,6 +144,7 @@ impl<T: Config> Pallet<T> {
             proposal_id,
             external_ref: proposal.external_ref,
             consensus_result,
+            winning_choice: WinningChoice::<T>::get(proposal_id),
         });
 
         // A queued proposal can be cancelled while another one is active; only clear the slot

@@ -15,12 +15,15 @@ use codec::{Decode, Encode};
 use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
-    http_data_codec::decode_from_http_data, short_hex, EthQueryRequest, EthQueryResponse,
-    EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
+    http_data_codec::{decode_from_http_data, encode_to_http_data},
+    short_hex, EthQueryRequest, EthQueryResponse, EthQueryResponseType, EthTransaction,
+    DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
 use sp_core::{sr25519, H160, H256};
+use sp_floor_oracle::{FLOOR_SERVICE_PATH, VENUE_SERVICE_PATH};
 use sp_io::hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
+use sp_watchtower::NODE_COUNTRY_SERVICE_PATH;
 use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -34,6 +37,17 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     pub avn_port: Option<String>,
     pub chain: Option<Arc<dyn ChainClient>>,
     pub signer_provider: Option<Arc<dyn SignerProvider>>,
+    /// Ethereum mainnet endpoints for the floor oracle, in failover order. `None` on nodes
+    /// that are not registered watchtowers, where the route is disabled.
+    pub floor_rpc_urls: Option<Vec<String>>,
+    /// Venue chain (Base) endpoints for the venue oracle, in failover order. `None` on nodes
+    /// that are not registered watchtowers, where the route is disabled.
+    pub venue_rpc_urls: Option<Vec<String>>,
+    /// Every endpoint list the node has (floor, venue, bridge), for the checkpoint route on
+    /// collators, with the per-chain choice cached.
+    pub checkpoint_endpoints: Arc<crate::checkpoint::Endpoints>,
+    /// The node's self-reported country, for watchtower votes and oracle reports.
+    pub node_country: Arc<crate::node_country::NodeCountry>,
     pub client: Arc<ClientT>,
     pub send_lock: Arc<Mutex<()>>,
     pub _block: PhantomData<Block>,
@@ -132,6 +146,16 @@ where
         .route("/eth/query", post(query::<Block, ClientT>))
         .route("/roothash/{from_block}/{to_block}", get(roothash::<Block, ClientT>))
         .route("/latest_finalised_block", get(latest_finalised_block::<Block, ClientT>))
+        .route(
+            &format!("/{FLOOR_SERVICE_PATH}/{{chain_id}}/{{pinned_block}}/{{punks}}"),
+            get(floor_observation::<Block, ClientT>),
+        )
+        .route(
+            &format!("/{VENUE_SERVICE_PATH}/{{chain_id}}/{{target_ts}}/{{clearing_house}}/{{amm}}"),
+            get(venue_observation::<Block, ClientT>),
+        )
+        .route("/checkpoint/block/{chain_id}", get(checkpoint_block::<Block, ClientT>))
+        .route(&format!("/{NODE_COUNTRY_SERVICE_PATH}"), get(node_country::<Block, ClientT>))
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
         .with_state(Arc::new(state));
 
@@ -371,6 +395,118 @@ where
     use client_extrinsic_utils::extrinsic_utils::get_latest_finalised_block;
     let n = get_latest_finalised_block(&state.client);
     Ok(hex::encode(n.encode()))
+}
+
+/// `GET /floor/punks/{chain_id}/{pinned_block}/{punks}` for the watchtower floor oracle: the
+/// Punks floor and last sale as of `pinned_block`, read from the configured Ethereum endpoints
+/// with failover. The body is the http-data encoding of a `FloorObservation`.
+async fn floor_observation<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+    Path((chain_id, pinned_block, punks)): Path<(u64, u64, String)>,
+) -> Result<String, (StatusCode, String)>
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    let _t = OperationTimer::new("floor/punks");
+    let Some(rpc_urls) = state.floor_rpc_urls.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "floor oracle is only served by registered watchtower nodes".to_string(),
+        ))
+    };
+    let punks = punks
+        .parse::<alloy::primitives::Address>()
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid punks address {punks}: {e}")))?;
+    let request = crate::floor_oracle::FloorRequest { chain_id, pinned_block, punks };
+    match crate::floor_oracle::observe(rpc_urls, &request).await {
+        Ok(observation) => Ok(encode_to_http_data(observation)),
+        Err(e) => {
+            let m = format!("floor observation unavailable: {e:#}");
+            log::error!("⛓️ 💔 external-service {}", m);
+            Err((StatusCode::SERVICE_UNAVAILABLE, m))
+        },
+    }
+}
+
+/// `GET /venue/exotic/{chain_id}/{target_ts}/{clearing_house}/{amm}` for the watchtower
+/// venue oracle: the raw Exotic market state at the latest block whose timestamp is at most
+/// `target_ts`, read from the configured venue chain endpoints with failover. The body is the
+/// http-data encoding of an `Option<VenueObservation>`: `None` while the venue chain has no
+/// block after the target yet, which the watchtower treats as "retry next block".
+async fn venue_observation<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+    Path((chain_id, target_ts, clearing_house, amm)): Path<(u64, u64, String, String)>,
+) -> Result<String, (StatusCode, String)>
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    let _t = OperationTimer::new("venue/exotic");
+    let Some(rpc_urls) = state.venue_rpc_urls.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "venue oracle is only served by registered watchtower nodes".to_string(),
+        ))
+    };
+    let parse = |name: &str, hex: &str| {
+        hex.parse::<alloy::primitives::Address>()
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid {name} address {hex}: {e}")))
+    };
+    let request = crate::venue_oracle::VenueRequest {
+        chain_id,
+        target_ts,
+        clearing_house: parse("clearing_house", &clearing_house)?,
+        amm: parse("amm", &amm)?,
+    };
+    match crate::venue_oracle::observe(rpc_urls, &request).await {
+        Ok(observation) => Ok(encode_to_http_data(Some(observation))),
+        // Expected on a round's first attempts. Answered as a success with no observation, so
+        // the watchtower retries next block without logging an error.
+        Err(e) if crate::venue_oracle::is_target_not_reached(&e) => {
+            log::info!("⛓️ external-service venue observation not ready: {e:#}");
+            Ok(encode_to_http_data(None::<sp_floor_oracle::VenueObservation>))
+        },
+        Err(e) => {
+            let m = format!("venue observation unavailable: {e:#}");
+            log::error!("⛓️ 💔 external-service {}", m);
+            Err((StatusCode::SERVICE_UNAVAILABLE, m))
+        },
+    }
+}
+
+/// `GET /checkpoint/block/{chain_id}` for the collator checkpoint worker: the block every
+/// collator should vote for `chain_id` now. The body is the http-data encoding of a `u32`.
+async fn checkpoint_block<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+    Path(chain_id): Path<u64>,
+) -> Result<String, (StatusCode, String)>
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    let _t = OperationTimer::new("checkpoint/block");
+    match crate::checkpoint::block(&state.checkpoint_endpoints, chain_id).await {
+        Ok(block) => Ok(encode_to_http_data(block)),
+        Err(e @ crate::checkpoint::BlockError::NoEndpoint(_)) => {
+            let m = e.to_string();
+            log::warn!("external-service checkpoint: {}", m);
+            Err((StatusCode::NOT_FOUND, m))
+        },
+        Err(e) => {
+            let m = format!("checkpoint block unavailable: {e}");
+            log::error!("⛓️ 💔 external-service {}", m);
+            Err((StatusCode::SERVICE_UNAVAILABLE, m))
+        },
+    }
+}
+
+/// `GET /node/country`: the node's self-reported two letter country code, `??` when unknown.
+/// The body is the http-data encoding of a `[u8; 2]`.
+async fn node_country<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+) -> String
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    encode_to_http_data(state.node_country.get().await)
 }
 
 async fn sign_hashed_data<Block: BlockT, ClientT>(

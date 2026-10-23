@@ -106,6 +106,7 @@ fn create_proposal_request<T: Config>(
         created_at,
         vote_duration: Some(MinVotingPeriod::<T>::get().saturated_into::<u32>() + 1u32),
         committee_size: None,
+        voting: VotingKind::Binary,
     }
 }
 
@@ -220,6 +221,9 @@ fn setup_votes<T: Config>(proposal_id: ProposalId, vote_count: u32) {
     }
 }
 
+/// Country the benchmarked node votes from.
+const BENCH_COUNTRY: CountryCode = *b"GB";
+
 benchmarks! {
     submit_external_proposal {
         let signer: T::AccountId = account("signer", 0, 0);
@@ -272,7 +276,7 @@ benchmarks! {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: None }.into()
         );
     }
 
@@ -292,7 +296,9 @@ benchmarks! {
             Event::VotingEnded {
                 proposal_id,
                 external_ref: proposal.external_ref,
-                consensus_result: ProposalStatusEnum::Resolved { passed: true }}.into()
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: None,
+            }.into()
         );
     }
 
@@ -318,7 +324,7 @@ benchmarks! {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: None }.into()
         );
     }
 
@@ -350,7 +356,9 @@ benchmarks! {
             Event::VotingEnded {
                 proposal_id,
                 external_ref: proposal.external_ref,
-                consensus_result: ProposalStatusEnum::Resolved { passed: true }}.into()
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: None,
+            }.into()
         );
     }
 
@@ -360,14 +368,16 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
 
-        let proof =  &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
-    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, voter.clone(), signature.into())
+    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: Some(BENCH_COUNTRY) }.into()
         );
     }
 
@@ -377,11 +387,13 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
 
-        let proof =  &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
         // Add some votes to be above the threshold
         setup_votes::<T>(proposal_id, 9u32);
-    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, voter.clone(), signature.into())
+    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
@@ -389,7 +401,61 @@ benchmarks! {
             Event::VotingEnded {
                 proposal_id,
                 external_ref: proposal.external_ref,
-                consensus_result: ProposalStatusEnum::Resolved { passed: true }}.into()
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: None,
+            }.into()
+        );
+    }
+
+    unsigned_vote_choice {
+        let (voter_key, voter) = get_voter::<T>();
+        let choice = H256::repeat_byte(7);
+        let proposal_id = H256::repeat_byte(3);
+        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
+        );
+        let signature = voter_key.sign(&proof).unwrap();
+    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, BENCH_COUNTRY, voter.clone(), signature.into())
+    verify {
+        assert_eq!(ChoiceTally::<T>::get(proposal_id, choice), 1);
+        assert!(Voters::<T>::contains_key(proposal_id, &voter));
+        assert_last_event::<T>(
+            Event::ChoiceVoteSubmitted { proposal_id, voter, choice, country: Some(BENCH_COUNTRY) }.into()
+        );
+    }
+
+    unsigned_vote_choice_end_proposal {
+        let (voter_key, voter) = get_voter::<T>();
+        let choice = H256::repeat_byte(7);
+        let proposal_id = H256::repeat_byte(3);
+        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+        // Committee of 10 at 50%: 4 answers already in, this one decides. Scatter a few other
+        // answers so the decision scans several tallies.
+        ChoiceTally::<T>::insert(proposal_id, choice, 4u32);
+        for i in 0..4u32 {
+            let other: T::AccountId = account("voter", i, 0);
+            Voters::<T>::insert(proposal_id, &other, true);
+            ChoiceTally::<T>::insert(proposal_id, H256::repeat_byte(100 + i as u8), 1u32);
+        }
+
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
+        );
+        let signature = voter_key.sign(&proof).unwrap();
+    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, BENCH_COUNTRY, voter.clone(), signature.into())
+    verify {
+        assert_eq!(WinningChoice::<T>::get(proposal_id), Some(choice));
+        assert_last_event::<T>(
+            Event::VotingEnded {
+                proposal_id,
+                external_ref: proposal.external_ref,
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: Some(choice),
+            }.into()
         );
     }
 
@@ -554,6 +620,23 @@ benchmarks! {
         assert!(!Proposals::<T>::contains_key(proposal_id));
         assert!(!ProposalsToRemove::<T>::contains_key(proposal_id));
         assert_last_event::<T>(Event::ProposalCleaned { proposal_id }.into());
+    }
+
+    cleanup_choice_tally_page {
+        let n in 0 .. CLEANUP_PAGE_SIZE;
+        let proposal_id = H256::repeat_byte(3);
+        for i in 0..n {
+            let mut answer = [0u8; 32];
+            answer[..4].copy_from_slice(&(i + 1).to_be_bytes());
+            ChoiceTally::<T>::insert(proposal_id, H256(answer), 1u32);
+        }
+        let mut removed = 0u32;
+    }: {
+        removed = Pallet::<T>::remove_choice_tally_page(proposal_id, CLEANUP_PAGE_SIZE);
+    }
+    verify {
+        assert!(removed == n);
+        assert!(ChoiceTally::<T>::iter_prefix(proposal_id).next().is_none());
     }
 
     cleanup_voters_page {

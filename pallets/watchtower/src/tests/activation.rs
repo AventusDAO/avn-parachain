@@ -179,6 +179,7 @@ mod activate_next_proposal {
                     proposal_id: p2,
                     external_ref: H256::repeat_byte(2),
                     consensus_result: ProposalStatusEnum::Cancelled,
+                    winning_choice: None,
                 }
                 .into(),
             );
@@ -519,6 +520,7 @@ mod cancel_queue_head {
                     proposal_id: p1,
                     external_ref: H256::repeat_byte(1),
                     consensus_result: ProposalStatusEnum::Cancelled,
+                    winning_choice: None,
                 }
                 .into(),
             );
