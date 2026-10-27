@@ -67,7 +67,7 @@ fn dummy_signature<T: Config>(
 
 fn plausible_observation(block: u32) -> FloorObservation {
     FloorObservation {
-        observed_eth_block: block as u64,
+        external_block: block as u64,
         floor_wei: 50_000_000_000_000_000_000,
         last_sale_ts: 1_700_000_000,
         last_sale_wei: 49_000_000_000_000_000_000,
@@ -114,8 +114,8 @@ const VENUE_TARGET_TS: u64 = 1_750_000_000;
 
 fn plausible_venue_observation() -> VenueObservation {
     VenueObservation {
-        pinned_block: SEED_BLOCK as u64,
-        pinned_ts: VENUE_TARGET_TS,
+        external_block: SEED_BLOCK as u64,
+        external_block_time_sec: VENUE_TARGET_TS,
         spot_e18: 51_000_000_000_000_000_000,
         oracle_e18: 50_000_000_000_000_000_000,
         oi_notional_e18: 1_000_000_000_000_000_000_000,
@@ -135,7 +135,8 @@ fn start_active_venue_round<T: Config>() -> VenueRound<BlockNumberFor<T>> {
     )
     .is_ok());
     ActiveVenueRound::<T>::mutate(|round| {
-        round.as_mut().expect("round started").target_ts = Some(VENUE_TARGET_TS)
+        round.as_mut().expect("round started").target_external_block_time_sec =
+            Some(VENUE_TARGET_TS)
     });
     ActiveVenueRound::<T>::get().expect("round started")
 }
@@ -243,7 +244,7 @@ benchmarks! {
         let round = start_active_floor_round::<T>();
         let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
             .expect("a node is registered");
-        let observation = plausible_observation(round.pinned_block);
+        let observation = plausible_observation(round.external_block);
         let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
             .sign(&("DummyProof").encode())
             .expect("Error signing proof");

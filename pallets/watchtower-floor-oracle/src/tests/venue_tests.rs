@@ -47,14 +47,14 @@ fn start_active_round() -> VenueRound<BlockNumber> {
     let round = FloorOracle::active_venue_round().expect("round started");
     assert_eq!(activate_head(), round.proposal_id);
     let round = FloorOracle::active_venue_round().expect("round still open");
-    assert_eq!(round.target_ts, Some(TARGET_TS));
+    assert_eq!(round.target_external_block_time_sec, Some(TARGET_TS));
     round
 }
 
 fn observation(spot_e18: u128) -> VenueObservation {
     VenueObservation {
-        pinned_block: SEED_BLOCK as u64,
-        pinned_ts: PINNED_TS,
+        external_block: SEED_BLOCK as u64,
+        external_block_time_sec: PINNED_TS,
         spot_e18,
         oracle_e18: spot_e18 - 1,
         oi_notional_e18: 1_000,
@@ -172,7 +172,7 @@ mod requests {
             let round = FloorOracle::active_venue_round().expect("round started");
             assert!(FloorOracle::checkpoint_round(VENUE_CHAIN).is_none());
             assert_eq!(round.round_id, 1);
-            assert_eq!(round.target_ts, None, "set on activation");
+            assert_eq!(round.target_external_block_time_sec, None, "set on activation");
             assert_eq!(round.market, test_market());
             assert_eq!(round.reports, 0);
             assert_eq!(round.started_at, System::block_number());
@@ -211,8 +211,14 @@ mod requests {
             assert_eq!(activate_head(), round.proposal_id);
 
             let target_ts = CLOCK_START + 30 - VENUE_TARGET_LAG_SECS;
-            assert_eq!(FloorOracle::active_venue_round().unwrap().target_ts, Some(target_ts));
-            assert_event(Event::VenueRoundActivated { round_id: round.round_id, target_ts });
+            assert_eq!(
+                FloorOracle::active_venue_round().unwrap().target_external_block_time_sec,
+                Some(target_ts)
+            );
+            assert_event(Event::VenueRoundActivated {
+                round_id: round.round_id,
+                target_external_block_time_sec: target_ts,
+            });
         });
     }
 
@@ -331,7 +337,7 @@ mod reports {
                 (
                     VenueReportContext::new(
                         round.round_id,
-                        VenueObservation { pinned_ts: 0, ..observation(50) },
+                        VenueObservation { external_block_time_sec: 0, ..observation(50) },
                         2,
                     ),
                     Error::ImplausibleVenueObservation,
@@ -339,7 +345,10 @@ mod reports {
                 (
                     VenueReportContext::new(
                         round.round_id,
-                        VenueObservation { pinned_ts: TARGET_TS + 1, ..observation(50) },
+                        VenueObservation {
+                            external_block_time_sec: TARGET_TS + 1,
+                            ..observation(50)
+                        },
                         2,
                     ),
                     Error::VenueObservationOffTarget,
@@ -348,7 +357,7 @@ mod reports {
                     VenueReportContext::new(
                         round.round_id,
                         VenueObservation {
-                            pinned_ts: TARGET_TS - VENUE_TARGET_TOLERANCE_SECS,
+                            external_block_time_sec: TARGET_TS - VENUE_TARGET_TOLERANCE_SECS,
                             ..observation(50)
                         },
                         2,
@@ -367,10 +376,11 @@ mod reports {
             }
 
             // Both ends of the target window are accepted.
-            let at_target = VenueObservation { pinned_ts: TARGET_TS, ..observation(50) };
+            let at_target =
+                VenueObservation { external_block_time_sec: TARGET_TS, ..observation(50) };
             assert_ok!(validate(&VenueReportContext::new(round.round_id, at_target, 2).call()));
             let oldest = VenueObservation {
-                pinned_ts: TARGET_TS - VENUE_TARGET_TOLERANCE_SECS + 1,
+                external_block_time_sec: TARGET_TS - VENUE_TARGET_TOLERANCE_SECS + 1,
                 ..observation(50)
             };
             assert_ok!(validate(&VenueReportContext::new(round.round_id, oldest, 2).call()));
@@ -405,7 +415,7 @@ mod reports {
                 watchtower: watchtower(3),
                 signature: ReportContext::new(
                     round.round_id,
-                    FloorObservation { observed_eth_block: 1, floor_wei: 50, ..Default::default() },
+                    FloorObservation { external_block: 1, floor_wei: 50, ..Default::default() },
                     3,
                 )
                 .signature(),
@@ -434,9 +444,11 @@ mod tolerance {
             assert_eq!(activate_head(), round.proposal_id);
 
             // 12s before the target: outside the default 6s, inside this market's 15s.
-            let older = VenueObservation { pinned_ts: TARGET_TS - 12, ..observation(50) };
+            let older =
+                VenueObservation { external_block_time_sec: TARGET_TS - 12, ..observation(50) };
             assert_ok!(validate(&VenueReportContext::new(round.round_id, older, 1).call()));
-            let too_old = VenueObservation { pinned_ts: TARGET_TS - 15, ..observation(50) };
+            let too_old =
+                VenueObservation { external_block_time_sec: TARGET_TS - 15, ..observation(50) };
             assert_noop!(
                 VenueReportContext::new(round.round_id, too_old, 1).submit(),
                 Error::<TestRuntime>::VenueObservationOffTarget
@@ -559,7 +571,7 @@ mod voting {
             assert_eq!(venue.finalised_at_block, System::block_number() as u32);
             assert_event(Event::VenueRoundFinalised {
                 round_id: round.round_id,
-                pinned_block: SEED_BLOCK as u64,
+                external_block: SEED_BLOCK as u64,
                 spot_e18: 51,
                 oracle_e18: 50,
                 oi_notional_e18: 1_000,
@@ -578,7 +590,7 @@ mod voting {
             assert_ok!(request());
             assert_event(Event::VenueStateServed {
                 round_id: round.round_id,
-                pinned_block: SEED_BLOCK as u64,
+                external_block: SEED_BLOCK as u64,
             });
             assert!(FloorOracle::active_venue_round().is_none());
             advance_secs(MAX_VENUE_AGE_SECS + 1);
@@ -716,7 +728,7 @@ mod cross_channel {
 
     pub(super) fn floor_obs(floor_wei: u128) -> FloorObservation {
         FloorObservation {
-            observed_eth_block: SEED_BLOCK as u64,
+            external_block: SEED_BLOCK as u64,
             floor_wei,
             last_sale_ts: 1_700_000_000,
             last_sale_wei: floor_wei,
@@ -762,10 +774,16 @@ mod cross_channel {
             assert!(FloorOracle::last_finalised_floor().is_some());
             assert!(FloorOracle::active_floor_round().is_none());
             assert_eq!(FloorOracle::active_venue_round(), Some(venue_round.clone()));
-            assert_eq!(venue_round.target_ts, None, "the floor activation set no venue target");
+            assert_eq!(
+                venue_round.target_external_block_time_sec, None,
+                "the floor activation set no venue target"
+            );
 
             assert_eq!(activate_head(), venue_round.proposal_id);
-            assert_eq!(FloorOracle::active_venue_round().unwrap().target_ts, Some(TARGET_TS));
+            assert_eq!(
+                FloorOracle::active_venue_round().unwrap().target_external_block_time_sec,
+                Some(TARGET_TS)
+            );
             for i in 1..=6 {
                 assert_ok!(report(venue_round.round_id, 50, i));
             }
@@ -788,7 +806,7 @@ mod cross_channel {
 
             assert_ok!(FloorOracle::request_floor_price(RuntimeOrigin::root()));
             assert_ok!(request());
-            assert!(FloorOracle::pending_floor_request());
+            assert_eq!(FloorOracle::pending_floor_request(), Some(FloorRoundKind::Requested));
             let venue_round = FloorOracle::active_venue_round().expect("venue round");
             assert_eq!(venue_round.market, market);
             let checkpoint_round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("started");
@@ -803,9 +821,9 @@ mod cross_channel {
                 .submit());
             }
 
-            assert!(!FloorOracle::pending_floor_request());
+            assert_eq!(FloorOracle::pending_floor_request(), None);
             let floor_round = FloorOracle::active_floor_round().expect("floor round");
-            assert_eq!(floor_round.pinned_block, SEED_BLOCK + 50);
+            assert_eq!(floor_round.external_block, SEED_BLOCK + 50);
             assert_eq!(FloorOracle::active_venue_round(), Some(venue_round));
         });
     }
@@ -954,7 +972,8 @@ mod offchain_worker {
             assert!(pool.read().transactions.is_empty(), "venue chain not past the target yet");
 
             System::set_block_number(5);
-            let after_target = VenueObservation { pinned_ts: TARGET_TS + 1, ..observation(50) };
+            let after_target =
+                VenueObservation { external_block_time_sec: TARGET_TS + 1, ..observation(50) };
             mock_venue_service(
                 &mut offchain.write(),
                 &round.market,
@@ -980,7 +999,7 @@ mod offchain_worker {
             mock_floor_service(
                 &mut offchain.write(),
                 &floor_round.market,
-                floor_round.pinned_block,
+                floor_round.external_block,
                 Some(encoded_observation(&cross_channel::floor_obs(50))),
             );
             // An unusable country answer never blocks the report; it is reported as unknown.

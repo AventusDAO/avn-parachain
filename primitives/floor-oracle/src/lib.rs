@@ -48,7 +48,7 @@ pub const FLAG_FLOOR_FAR_BELOW_SALES: u32 = 1 << 0;
 pub const FLAG_SALES_UNAVAILABLE: u32 = 1 << 1;
 pub const FLAG_OFFCHAIN_UNAVAILABLE: u32 = 1 << 2;
 
-/// One watchtower's view of the Punks floor at a pinned point in time.
+/// One watchtower's view of the Punks floor at the round's external block.
 #[derive(
     Encode,
     Decode,
@@ -64,7 +64,7 @@ pub const FLAG_OFFCHAIN_UNAVAILABLE: u32 = 1 << 2;
 )]
 pub struct FloorObservation {
     /// Ethereum block the on-chain data was read at.
-    pub observed_eth_block: u64,
+    pub external_block: u64,
     /// Lowest ask, in wei.
     pub floor_wei: u128,
     /// Unix timestamp of the last sale. Zero when unavailable.
@@ -83,7 +83,7 @@ impl FloorObservation {
 
     /// Sanity checks an observation must pass before it can take part in a round.
     pub fn is_plausible(&self) -> bool {
-        self.floor_wei > 0 && self.observed_eth_block > 0
+        self.floor_wei > 0 && self.external_block > 0
     }
 }
 
@@ -97,7 +97,7 @@ pub struct FinalisedFloorRound {
     pub proposal_id: H256,
     /// Unix time, in seconds, of the checkpoint every watchtower observed the floor at. The
     /// floor's data is as old as this.
-    pub checkpoint_time_sec: u64,
+    pub checkpoint_agreed_at_sec: u64,
     /// The market the round read.
     pub market: FloorMarket,
     /// The observation the round settled on.
@@ -170,9 +170,9 @@ pub struct VenueMarket {
 pub struct VenueObservation {
     /// The venue chain block every value was read at: the latest one whose timestamp is at most
     /// the round's target timestamp.
-    pub pinned_block: u64,
+    pub external_block: u64,
     /// That block's timestamp, in unix seconds, from `eth_getBlockByNumber`.
-    pub pinned_ts: u64,
+    pub external_block_time_sec: u64,
     /// `Amm.getSpotPrice()`, 18 decimals.
     pub spot_e18: u128,
     /// `Amm.getUnderlyingPrice()`, 18 decimals.
@@ -191,7 +191,7 @@ impl VenueObservation {
     /// price is never zero on the contract side (it reverts instead); the oracle price and the
     /// open interest are raw values and may legitimately be zero.
     pub fn is_plausible(&self) -> bool {
-        self.pinned_block > 0 && self.pinned_ts > 0 && self.spot_e18 > 0
+        self.external_block > 0 && self.external_block_time_sec > 0 && self.spot_e18 > 0
     }
 }
 
@@ -222,7 +222,7 @@ mod tests {
 
     fn plausible() -> FloorObservation {
         FloorObservation {
-            observed_eth_block: 20_000_000,
+            external_block: 20_000_000,
             floor_wei: 50_000_000_000_000_000_000,
             last_sale_ts: 1_700_000_000,
             last_sale_wei: 49_000_000_000_000_000_000,
@@ -248,7 +248,7 @@ mod tests {
         assert!(!obs.is_plausible(), "zero floor");
 
         let mut obs = plausible();
-        obs.observed_eth_block = 0;
+        obs.external_block = 0;
         assert!(!obs.is_plausible(), "no block");
 
         assert!(!FloorObservation::default().is_plausible());
@@ -293,8 +293,8 @@ mod tests {
 
     fn venue() -> VenueObservation {
         VenueObservation {
-            pinned_block: 40_000_000,
-            pinned_ts: 1_750_000_000,
+            external_block: 40_000_000,
+            external_block_time_sec: 1_750_000_000,
             spot_e18: 51_000_000_000_000_000_000,
             oracle_e18: 50_000_000_000_000_000_000,
             oi_notional_e18: 1_000_000_000_000_000_000_000,
@@ -305,8 +305,8 @@ mod tests {
     fn venue_plausibility() {
         assert!(venue().is_plausible());
         assert!(VenueObservation { oracle_e18: 0, oi_notional_e18: 0, ..venue() }.is_plausible());
-        assert!(!VenueObservation { pinned_block: 0, ..venue() }.is_plausible());
-        assert!(!VenueObservation { pinned_ts: 0, ..venue() }.is_plausible());
+        assert!(!VenueObservation { external_block: 0, ..venue() }.is_plausible());
+        assert!(!VenueObservation { external_block_time_sec: 0, ..venue() }.is_plausible());
         assert!(!VenueObservation { spot_e18: 0, ..venue() }.is_plausible());
         assert!(!VenueObservation::default().is_plausible());
     }
@@ -326,7 +326,10 @@ mod tests {
     fn venue_hash_is_stable_and_sensitive() {
         assert_eq!(venue().hash(), H256(blake2_256(&venue().encode())));
         assert_ne!(venue().hash(), VenueObservation { spot_e18: 1, ..venue() }.hash());
-        assert_ne!(venue().hash(), VenueObservation { pinned_ts: 1, ..venue() }.hash());
+        assert_ne!(
+            venue().hash(),
+            VenueObservation { external_block_time_sec: 1, ..venue() }.hash()
+        );
         assert_eq!(VENUE_SERVICE_PATH, "venue/exotic");
     }
 }
