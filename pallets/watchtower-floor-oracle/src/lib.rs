@@ -99,7 +99,7 @@ pub mod default_weights;
 pub use default_weights::WeightInfo;
 pub mod checkpoint;
 pub mod floor;
-pub use floor::FloorRound;
+pub use floor::{FloorRound, FloorRoundKind};
 pub mod ocw;
 pub mod venue;
 pub use venue::VenueRound;
@@ -188,8 +188,14 @@ pub mod pallet {
         #[pallet::constant]
         type MaxFloorCheckpointAge: Get<u64>;
 
-        /// A finalised venue observation whose pinned block is younger than this, in seconds,
-        /// answers a request directly.
+        /// For this many seconds after a forced round ends, finalised or failed,
+        /// `force_floor_round` behaves as `request_floor_price`. Bounds how often the requester
+        /// can open forced rounds. A forced round also pins a checkpoint no older than this.
+        #[pallet::constant]
+        type MinForcedFloorAge: Get<u64>;
+
+        /// A finalised venue observation whose external block timestamp is younger than this, in
+        /// seconds, answers a request directly.
         #[pallet::constant]
         type MaxVenueAge: Get<u64>;
 
@@ -276,10 +282,16 @@ pub mod pallet {
     #[pallet::getter(fn last_floor_round_id)]
     pub type LastFloorRoundId<T: Config> = StorageValue<_, u64, ValueQuery>;
 
-    /// A floor request is waiting for the checkpoint round on `FloorChainId` to settle.
+    /// A floor request is waiting for the checkpoint round on the market's chain to settle, and
+    /// the kind of round it starts then.
     #[pallet::storage]
     #[pallet::getter(fn pending_floor_request)]
-    pub type PendingFloorRequest<T: Config> = StorageValue<_, bool, ValueQuery>;
+    pub type PendingFloorRequest<T: Config> = StorageValue<_, FloorRoundKind, OptionQuery>;
+
+    /// Parachain time, in seconds, the last forced floor round ended, finalised or failed.
+    #[pallet::storage]
+    #[pallet::getter(fn last_forced_round_ended_at)]
+    pub type LastForcedRoundEndedAt<T: Config> = StorageValue<_, u64, OptionQuery>;
 
     /// The most recent floor the watchtowers agreed on.
     #[pallet::storage]
@@ -373,10 +385,13 @@ pub mod pallet {
         FloorRoundStarted {
             round_id: u64,
             proposal_id: ProposalId,
-            pinned_ts: u64,
-            pinned_block: u32,
+            checkpoint_agreed_at_sec: u64,
+            external_block: u32,
             market: FloorMarket,
         },
+        /// The round that just started is forced: `force_floor_round` asked for it, directly or
+        /// through a request that waited for a checkpoint. Follows its `FloorRoundStarted`.
+        FloorRoundForced { round_id: u64 },
         /// Root changed the floor market. `None` disables floor requests.
         FloorMarketSet { market: Option<FloorMarket> },
         /// Root changed the committee size of oracle rounds. `None` lets every watchtower
@@ -406,16 +421,17 @@ pub mod pallet {
         OracleRequesterSet { who: Option<T::AccountId> },
         /// Root changed the venue market. `None` disables venue requests.
         VenueMarketSet { market: Option<VenueMarket> },
-        /// A request was answered from a venue state whose pinned block is within `MaxVenueAge`.
-        VenueStateServed { round_id: u64, pinned_block: u64 },
+        /// A request was answered from a venue state whose external block timestamp is within
+        /// `MaxVenueAge`.
+        VenueStateServed { round_id: u64, external_block: u64 },
         /// A request joined the venue round already running.
         VenueRoundInProgress { round_id: u64 },
         /// A venue round opened as a watchtower proposal. It reads nothing until the proposal
         /// activates.
         VenueRoundStarted { round_id: u64, proposal_id: ProposalId, market: VenueMarket },
         /// The venue round's proposal activated; watchtowers read the venue chain at the latest
-        /// block whose timestamp is at most `target_ts`.
-        VenueRoundActivated { round_id: u64, target_ts: u64 },
+        /// block whose timestamp is at most `target_external_block_time_sec`.
+        VenueRoundActivated { round_id: u64, target_external_block_time_sec: u64 },
         /// A watchtower reported its venue observation; `hash` is its answer on the proposal
         /// and `country` the self-reported location of the node, for display.
         VenueReportSubmitted {
@@ -427,7 +443,7 @@ pub mod pallet {
         /// The watchtowers agreed on the venue state. Raw contract values, 18 decimals.
         VenueRoundFinalised {
             round_id: u64,
-            pinned_block: u64,
+            external_block: u64,
             spot_e18: u128,
             oracle_e18: u128,
             oi_notional_e18: u128,
@@ -470,7 +486,7 @@ pub mod pallet {
         DuplicateFloorReport,
         /// The observation fails the plausibility checks.
         ImplausibleObservation,
-        /// The observation was not taken at the round's pinned block.
+        /// The observation was not taken at the round's external block.
         ObservationBlockMismatch,
         /// The voter has not reported an observation for this round.
         NoFloorReport,
@@ -584,6 +600,17 @@ pub mod pallet {
         pub fn request_floor_price(origin: OriginFor<T>) -> DispatchResult {
             Self::ensure_oracle_requester(origin)?;
             Self::do_request_floor_price()
+        }
+
+        /// Ask for a new Punks floor, whatever the cache holds. For a requester that suspects
+        /// the cached floor is stale. Root or the privileged requester only. Joins the running
+        /// round if there is one. Within `MinForcedFloorAge` of the last forced round ending it
+        /// behaves as `request_floor_price`.
+        #[pallet::call_index(11)]
+        #[pallet::weight(<T as Config>::WeightInfo::force_floor_round())]
+        pub fn force_floor_round(origin: OriginFor<T>) -> DispatchResult {
+            Self::ensure_oracle_requester(origin)?;
+            Self::do_force_floor_round()
         }
 
         /// Root sets (or with `None` clears) the account allowed to request floor prices.
@@ -935,6 +962,10 @@ pub mod pallet {
                 "MaxFloorCheckpointAge must be below MaxFloorAge, or new floors start out stale"
             );
             assert!(
+                T::MinForcedFloorAge::get() > 0,
+                "MinForcedFloorAge must be above zero, or forced rounds can run back to back"
+            );
+            assert!(
                 T::VenueTargetLag::get() < T::MaxVenueAge::get(),
                 "VenueTargetLag must be below MaxVenueAge, or no venue state is ever fresh"
             );
@@ -1018,15 +1049,17 @@ pub mod pallet {
         pub fn do_request_checkpoint(
             chain_id: ExternalChainId,
         ) -> Result<CheckpointRequest<BlockNumberFor<T>>, DispatchError> {
-            Self::do_request_checkpoint_within(chain_id, None)
+            Self::do_request_checkpoint_within(chain_id, None, None)
         }
 
         /// As [`Pallet::do_request_checkpoint`], but a stored checkpoint only counts as ready
-        /// when it is also no older than `max_age`, if given. Lets a channel ask for a fresher
-        /// checkpoint than the chain's own limit.
+        /// when it is also no older than `max_age` and agreed after `agreed_after`, if given.
+        /// Lets a channel ask for a fresher checkpoint than the chain's own limit, or for one
+        /// newer than a checkpoint it already read.
         pub(crate) fn do_request_checkpoint_within(
             chain_id: ExternalChainId,
             max_age: Option<u64>,
+            agreed_after: Option<u64>,
         ) -> Result<CheckpointRequest<BlockNumberFor<T>>, DispatchError> {
             let chain_max_age =
                 MaxCheckpointAge::<T>::get(chain_id).ok_or(Error::<T>::ChainNotRegistered)?;
@@ -1058,7 +1091,9 @@ pub mod pallet {
             }
 
             if let Some(checkpoint) = &stale {
-                if Self::now_secs().saturating_sub(checkpoint.agreed_at) <= max_age {
+                if Self::now_secs().saturating_sub(checkpoint.agreed_at) <= max_age &&
+                    agreed_after.map_or(true, |after| checkpoint.agreed_at > after)
+                {
                     return Ok(CheckpointRequest::Ready(checkpoint.clone()))
                 }
             }

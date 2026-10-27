@@ -102,8 +102,8 @@ pub async fn observe(rpc_urls: &[String], request: &VenueRequest) -> Result<Venu
                     url,
                     request.chain_id,
                     request.target_ts,
-                    observation.pinned_block,
-                    observation.pinned_ts,
+                    observation.external_block,
+                    observation.external_block_time_sec,
                     observation.spot_e18,
                     observation.oracle_e18,
                     observation.oi_notional_e18
@@ -172,7 +172,13 @@ async fn observe_with(url: &str, request: &VenueRequest) -> Result<VenueObservat
     )
     .await?;
 
-    Ok(VenueObservation { pinned_block: block, pinned_ts, spot_e18, oracle_e18, oi_notional_e18 })
+    Ok(VenueObservation {
+        external_block: block,
+        external_block_time_sec: pinned_ts,
+        spot_e18,
+        oracle_e18,
+        oi_notional_e18,
+    })
 }
 
 /// How far an endpoint's head may trail the target and still count as "not reached yet". The

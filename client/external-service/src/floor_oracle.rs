@@ -178,7 +178,7 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
     let (last_sale_ts, last_sale_wei) = last_sale.unwrap_or((0, 0));
 
     Ok(FloorObservation {
-        observed_eth_block: pinned_block,
+        external_block: pinned_block,
         floor_wei,
         last_sale_ts,
         last_sale_wei,

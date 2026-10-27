@@ -847,8 +847,11 @@ parameter_types! {
     /// fresh. A round that takes longer (voting may last `OracleVoteDuration`) finalises stale and
     /// the next request starts a new one.
     pub const MaxFloorCheckpointAge: u64 = 5 * 60;
-    /// A finalised venue observation whose pinned block is younger than this answers requests
-    /// directly. Venue state moves every few seconds; the consumer can always ask again.
+    /// For this long after a forced floor round ends, `force_floor_round` behaves as
+    /// `request_floor_price`. A forced round pins a checkpoint at most this old.
+    pub const MinForcedFloorAge: u64 = 60;
+    /// A finalised venue observation whose external block timestamp is younger than this answers
+    /// requests directly. Venue state moves every few seconds; the consumer can always ask again.
     pub const MaxVenueAge: u64 = 45;
     /// A venue round reads Base this far behind the parachain time at activation: three Base
     /// blocks, so the target block exists on every watchtower's endpoint when it reads.
@@ -865,6 +868,7 @@ impl pallet_watchtower_floor_oracle::Config for Runtime {
     type OracleVoteDuration = OracleVoteDuration;
     type MaxFloorAge = MaxFloorAge;
     type MaxFloorCheckpointAge = MaxFloorCheckpointAge;
+    type MinForcedFloorAge = MinForcedFloorAge;
     type MaxVenueAge = MaxVenueAge;
     type VenueTargetLag = VenueTargetLag;
     type WeightInfo = pallet_watchtower_floor_oracle::default_weights::SubstrateWeight<Runtime>;

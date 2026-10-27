@@ -50,7 +50,7 @@ pub struct VenueRound<BlockNumber> {
     pub proposal_id: ProposalId,
     /// Watchtowers read the venue chain at the latest block whose timestamp is at most this, in
     /// unix seconds. `None` until the proposal activates.
-    pub target_ts: Option<u64>,
+    pub target_external_block_time_sec: Option<u64>,
     /// The market as configured when the round started. Reports are validated against this
     /// snapshot, so a later `set_venue_market` only affects the next round.
     pub market: VenueMarket,
@@ -69,11 +69,12 @@ impl<T: Config> Pallet<T> {
         }
 
         if let Some(venue) = LastFinalisedVenue::<T>::get() {
-            if Self::now_secs().saturating_sub(venue.observation.pinned_ts) <= T::MaxVenueAge::get()
+            if Self::now_secs().saturating_sub(venue.observation.external_block_time_sec) <=
+                T::MaxVenueAge::get()
             {
                 Self::deposit_event(Event::<T>::VenueStateServed {
                     round_id: venue.round_id,
-                    pinned_block: venue.observation.pinned_block,
+                    external_block: venue.observation.external_block,
                 });
                 return Ok(())
             }
@@ -109,7 +110,7 @@ impl<T: Config> Pallet<T> {
         ActiveVenueRound::<T>::put(VenueRound {
             round_id,
             proposal_id,
-            target_ts: None,
+            target_external_block_time_sec: None,
             market,
             started_at: now_block,
             reports: 0,
@@ -127,10 +128,13 @@ impl<T: Config> Pallet<T> {
             return
         }
         let target_ts = Self::now_secs().saturating_sub(T::VenueTargetLag::get());
-        round.target_ts = Some(target_ts);
+        round.target_external_block_time_sec = Some(target_ts);
         let round_id = round.round_id;
         ActiveVenueRound::<T>::put(round);
-        Self::deposit_event(Event::<T>::VenueRoundActivated { round_id, target_ts });
+        Self::deposit_event(Event::<T>::VenueRoundActivated {
+            round_id,
+            target_external_block_time_sec: target_ts,
+        });
     }
 
     /// True when `observation` was taken at the latest venue block at or before `target_ts`, as
@@ -141,8 +145,8 @@ impl<T: Config> Pallet<T> {
         target_ts: u64,
         market: &VenueMarket,
     ) -> bool {
-        observation.pinned_ts <= target_ts &&
-            target_ts - observation.pinned_ts < market.target_tolerance_secs
+        observation.external_block_time_sec <= target_ts &&
+            target_ts - observation.external_block_time_sec < market.target_tolerance_secs
     }
 
     pub fn venue_round_external_ref(round_id: u64) -> H256 {
@@ -197,7 +201,8 @@ impl<T: Config> Pallet<T> {
             Error::<T>::DuplicateVenueReport
         );
         // Set when the proposal activates, which the check above guarantees.
-        let target_ts = round.target_ts.ok_or(Error::<T>::VenueProposalNotActive)?;
+        let target_ts =
+            round.target_external_block_time_sec.ok_or(Error::<T>::VenueProposalNotActive)?;
         ensure!(observation.is_plausible(), Error::<T>::ImplausibleVenueObservation);
         ensure!(
             Self::venue_observation_on_target(observation, target_ts, &round.market),
@@ -263,7 +268,7 @@ impl<T: Config> Pallet<T> {
                 });
                 Self::deposit_event(Event::<T>::VenueRoundFinalised {
                     round_id: round.round_id,
-                    pinned_block: observation.pinned_block,
+                    external_block: observation.external_block,
                     spot_e18: observation.spot_e18,
                     oracle_e18: observation.oracle_e18,
                     oi_notional_e18: observation.oi_notional_e18,
@@ -299,7 +304,7 @@ impl<T: Config> Pallet<T> {
         if !Self::oracle_proposal_open(round.proposal_id) {
             return
         }
-        let Some(target_ts) = round.target_ts else { return };
+        let Some(target_ts) = round.target_external_block_time_sec else { return };
         if Self::ocw_already_run(&VENUE_OCW, now).is_err() {
             return
         }
