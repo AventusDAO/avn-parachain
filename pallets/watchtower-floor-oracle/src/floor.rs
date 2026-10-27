@@ -65,36 +65,45 @@ impl<T: Config> Pallet<T> {
     // ------------------------------------------------------------------ requests
 
     pub fn do_request_floor_price() -> DispatchResult {
-        Self::request_floor(T::MaxFloorAge::get(), T::MaxFloorCheckpointAge::get()).map(|_| ())
+        Self::request_floor(Self::floor_data_is_fresh, T::MaxFloorCheckpointAge::get()).map(|_| ())
     }
 
-    /// As [`Pallet::do_request_floor_price`] with `max_age_secs`, raised to `MinForcedFloorAge`
-    /// and capped at `MaxFloorAge`, as the oldest floor that answers. A new round also pins a
-    /// checkpoint no older than that: the suspect floor usually pins the current checkpoint, and
-    /// a round on the same block would read the same floor again.
-    pub fn do_force_floor_round(max_age_secs: u64) -> DispatchResult {
-        let max_age = max_age_secs.max(T::MinForcedFloorAge::get()).min(T::MaxFloorAge::get());
-        let max_checkpoint_age = max_age.min(T::MaxFloorCheckpointAge::get());
-        if let Some(round_id) = Self::request_floor(max_age, max_checkpoint_age)? {
-            Self::deposit_event(Event::<T>::FloorRoundForced {
-                round_id,
-                requested_max_age: max_age,
-            });
+    /// As [`Pallet::do_request_floor_price`], but the last floor only answers when it also
+    /// finalised at most `MinForcedFloorAge` ago, so the requester cannot open rounds back to
+    /// back. A new round pins a checkpoint no older than that: the suspect floor usually pins
+    /// the current checkpoint, and a round on the same block would read the same floor again.
+    pub fn do_force_floor_round() -> DispatchResult {
+        let min_age = T::MinForcedFloorAge::get();
+        let finalised_recently = |floor: &FinalisedFloorRound| {
+            Self::floor_data_is_fresh(floor) &&
+                Self::now_secs().saturating_sub(floor.finalised_at_sec) <= min_age
+        };
+        let max_checkpoint_age = min_age.min(T::MaxFloorCheckpointAge::get());
+        if let Some(round_id) = Self::request_floor(finalised_recently, max_checkpoint_age)? {
+            Self::deposit_event(Event::<T>::FloorRoundForced { round_id });
         }
         Ok(())
     }
 
-    /// Joins the running round, answers from a floor at most `max_age` old, or starts a round
-    /// pinned to a checkpoint at most `max_checkpoint_age` old, waiting for one if needed.
-    /// Returns the id of the round it started, if any.
-    fn request_floor(max_age: u64, max_checkpoint_age: u64) -> Result<Option<u64>, DispatchError> {
+    /// The floor's data, as old as its checkpoint, is within `MaxFloorAge`.
+    fn floor_data_is_fresh(floor: &FinalisedFloorRound) -> bool {
+        Self::now_secs().saturating_sub(floor.checkpoint_time_sec) <= T::MaxFloorAge::get()
+    }
+
+    /// Joins the running round, answers from the last floor when `answers` accepts it, or starts
+    /// a round pinned to a checkpoint at most `max_checkpoint_age` old, waiting for one if
+    /// needed. Returns the id of the round it started, if any.
+    fn request_floor(
+        answers: impl Fn(&FinalisedFloorRound) -> bool,
+        max_checkpoint_age: u64,
+    ) -> Result<Option<u64>, DispatchError> {
         if let Some(round) = ActiveFloorRound::<T>::get() {
             Self::deposit_event(Event::<T>::FloorRoundInProgress { round_id: round.round_id });
             return Ok(None)
         }
 
         if let Some(floor) = LastFinalisedFloor::<T>::get() {
-            if Self::now_secs().saturating_sub(floor.pinned_ts) <= max_age {
+            if answers(&floor) {
                 Self::deposit_event(Event::<T>::FloorPriceServed {
                     round_id: floor.round_id,
                     floor_wei: floor.observation.floor_wei,
@@ -294,7 +303,7 @@ impl<T: Config> Pallet<T> {
                 LastFinalisedFloor::<T>::put(FinalisedFloorRound {
                     round_id: round.round_id,
                     proposal_id: round.proposal_id,
-                    pinned_ts: round.pinned_ts,
+                    checkpoint_time_sec: round.pinned_ts,
                     market: round.market,
                     observation,
                     agreeing,
@@ -302,6 +311,7 @@ impl<T: Config> Pallet<T> {
                     required,
                     finalised_at_block: <frame_system::Pallet<T>>::block_number()
                         .saturated_into::<u32>(),
+                    finalised_at_sec: Self::now_secs(),
                 });
                 Self::deposit_event(Event::<T>::FloorRoundFinalised {
                     round_id: round.round_id,

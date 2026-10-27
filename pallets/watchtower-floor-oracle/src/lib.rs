@@ -188,8 +188,9 @@ pub mod pallet {
         #[pallet::constant]
         type MaxFloorCheckpointAge: Get<u64>;
 
-        /// Smallest age, in seconds, `force_floor_round` accepts. A smaller one is raised to this,
-        /// so the requester cannot open a round on every request.
+        /// `force_floor_round` answers from the last floor, instead of starting a round, when
+        /// that floor finalised at most this many seconds ago. Bounds how often the requester can
+        /// open rounds. A forced round also pins a checkpoint no older than this.
         #[pallet::constant]
         type MinForcedFloorAge: Get<u64>;
 
@@ -378,14 +379,14 @@ pub mod pallet {
         FloorRoundStarted {
             round_id: u64,
             proposal_id: ProposalId,
-            pinned_ts: u64,
+            checkpoint_time_sec: u64,
             pinned_block: u32,
             market: FloorMarket,
         },
-        /// `force_floor_round` started a round because the last floor was older than
-        /// `requested_max_age`, the age it applied after clamping. Not emitted when the request
-        /// waits for a checkpoint; that round starts later with `FloorRoundStarted` only.
-        FloorRoundForced { round_id: u64, requested_max_age: u64 },
+        /// `force_floor_round` started a round because the last floor finalised more than
+        /// `MinForcedFloorAge` ago. Not emitted when the request waits for a checkpoint; that
+        /// round starts later with `FloorRoundStarted` only.
+        FloorRoundForced { round_id: u64 },
         /// Root changed the floor market. `None` disables floor requests.
         FloorMarketSet { market: Option<FloorMarket> },
         /// Root changed the committee size of oracle rounds. `None` lets every watchtower
@@ -595,14 +596,14 @@ pub mod pallet {
             Self::do_request_floor_price()
         }
 
-        /// As `request_floor_price`, but the last finalised floor only answers when it is at
-        /// most `max_age_secs` old. For a requester that suspects the cached floor is stale.
-        /// `max_age_secs` is raised to `MinForcedFloorAge` and capped at `MaxFloorAge`.
+        /// As `request_floor_price`, but the last finalised floor only answers when it also
+        /// finalised at most `MinForcedFloorAge` ago. For a requester that suspects the cached
+        /// floor is stale.
         #[pallet::call_index(11)]
         #[pallet::weight(<T as Config>::WeightInfo::force_floor_round())]
-        pub fn force_floor_round(origin: OriginFor<T>, max_age_secs: u64) -> DispatchResult {
+        pub fn force_floor_round(origin: OriginFor<T>) -> DispatchResult {
             Self::ensure_oracle_requester(origin)?;
-            Self::do_force_floor_round(max_age_secs)
+            Self::do_force_floor_round()
         }
 
         /// Root sets (or with `None` clears) the account allowed to request floor prices.
@@ -954,8 +955,8 @@ pub mod pallet {
                 "MaxFloorCheckpointAge must be below MaxFloorAge, or new floors start out stale"
             );
             assert!(
-                T::MinForcedFloorAge::get() <= T::MaxFloorAge::get(),
-                "MinForcedFloorAge must not exceed MaxFloorAge, the age a forced request is capped at"
+                T::MinForcedFloorAge::get() < T::MaxFloorAge::get(),
+                "MinForcedFloorAge must be below MaxFloorAge, or forcing never starts a round"
             );
             assert!(
                 T::VenueTargetLag::get() < T::MaxVenueAge::get(),

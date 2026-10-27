@@ -95,8 +95,9 @@ pub struct FinalisedFloorRound {
     pub round_id: u64,
     /// The watchtower proposal the round was decided through.
     pub proposal_id: H256,
-    /// Unix timestamp every watchtower observed the floor at.
-    pub pinned_ts: u64,
+    /// Unix time, in seconds, of the checkpoint every watchtower observed the floor at. The
+    /// floor's data is as old as this.
+    pub checkpoint_time_sec: u64,
     /// The market the round read.
     pub market: FloorMarket,
     /// The observation the round settled on.
@@ -108,6 +109,8 @@ pub struct FinalisedFloorRound {
     /// Agreeing reports needed to finalise.
     pub required: u32,
     pub finalised_at_block: u32,
+    /// Unix time, in seconds, the round finalised at.
+    pub finalised_at_sec: u64,
 }
 
 // ---------------------------------------------------------------------- venue channel

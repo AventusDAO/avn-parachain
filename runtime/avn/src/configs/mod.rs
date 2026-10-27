@@ -847,7 +847,8 @@ parameter_types! {
     /// fresh. A round that takes longer (voting may last `OracleVoteDuration`) finalises stale and
     /// the next request starts a new one.
     pub const MaxFloorCheckpointAge: u64 = 5 * 60;
-    /// `force_floor_round` treats a smaller requested age as this one.
+    /// `force_floor_round` serves a floor that finalised within this many seconds instead of
+    /// starting a round. A forced round pins a checkpoint at most this old.
     pub const MinForcedFloorAge: u64 = 60;
     /// A finalised venue observation whose pinned block is younger than this answers requests
     /// directly. Venue state moves every few seconds; the consumer can always ask again.

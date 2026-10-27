@@ -227,7 +227,7 @@ benchmarks! {
             MAX_AGE_SECS
         )
         .is_ok());
-    }: _(RawOrigin::Root, 0u64)
+    }: _(RawOrigin::Root)
     verify {
         let round = ActiveFloorRound::<T>::get().expect("round started");
         assert_eq!(round.round_id, 1);

@@ -207,7 +207,7 @@ mod requests {
 
             let round = FloorOracle::active_floor_round().expect("round started");
             assert_eq!(round.round_id, 1);
-            assert_eq!(round.pinned_ts, checkpoint.agreed_at);
+            assert_eq!(round.checkpoint_time_sec, checkpoint.agreed_at);
             assert_eq!(round.pinned_block, SEED_BLOCK);
             assert_eq!(round.market, test_floor_market());
             assert_eq!(round.reports, 0);
@@ -230,7 +230,7 @@ mod requests {
             assert_event(Event::FloorRoundStarted {
                 round_id: 1,
                 proposal_id: round.proposal_id,
-                pinned_ts: checkpoint.agreed_at,
+                checkpoint_time_sec: checkpoint.agreed_at,
                 pinned_block: SEED_BLOCK,
                 market: test_floor_market(),
             });
@@ -277,7 +277,7 @@ mod requests {
             assert!(!FloorOracle::pending_floor_request());
             let round = FloorOracle::active_floor_round().expect("round started");
             assert_eq!(round.pinned_block, SEED_BLOCK + 50);
-            assert_eq!(round.pinned_ts, checkpoint.agreed_at);
+            assert_eq!(round.checkpoint_time_sec, checkpoint.agreed_at);
         });
     }
 
@@ -328,11 +328,20 @@ mod forced_rounds {
     use super::*;
 
     /// Forces as the privileged account, setting it first if needed.
-    fn force(max_age_secs: u64) -> DispatchResult {
+    fn force() -> DispatchResult {
         if FloorOracle::oracle_requester().is_none() {
             assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
         }
-        FloorOracle::force_floor_round(RuntimeOrigin::signed(requester()), max_age_secs)
+        FloorOracle::force_floor_round(RuntimeOrigin::signed(requester()))
+    }
+
+    /// Watchtower `i` reports a floor of `floor_wei` at the round's pinned block.
+    fn report_at(round: &FloorRound<BlockNumber>, floor_wei: u128, i: u8) -> DispatchResult {
+        let observation = FloorObservation {
+            observed_eth_block: round.pinned_block as u64,
+            ..observation(floor_wei)
+        };
+        ReportContext::new(round.round_id, observation, i).submit()
     }
 
     /// Runs a round to agreement on a floor of 50. Returns the finalised floor.
@@ -358,32 +367,32 @@ mod forced_rounds {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             seed_floor_chain();
             assert_noop!(
-                FloorOracle::force_floor_round(RuntimeOrigin::none(), 60),
+                FloorOracle::force_floor_round(RuntimeOrigin::none()),
                 sp_runtime::DispatchError::BadOrigin
             );
             assert_noop!(
-                FloorOracle::force_floor_round(RuntimeOrigin::signed(requester()), 60),
+                FloorOracle::force_floor_round(RuntimeOrigin::signed(requester())),
                 Error::<TestRuntime>::UnauthorizedOracleRequest
             );
             assert_ok!(FloorOracle::set_oracle_requester(RuntimeOrigin::root(), Some(requester())));
             assert_noop!(
-                FloorOracle::force_floor_round(RuntimeOrigin::signed(watchtower(1)), 60),
+                FloorOracle::force_floor_round(RuntimeOrigin::signed(watchtower(1))),
                 Error::<TestRuntime>::UnauthorizedOracleRequest
             );
 
-            assert_ok!(FloorOracle::force_floor_round(RuntimeOrigin::root(), 60));
+            assert_ok!(FloorOracle::force_floor_round(RuntimeOrigin::root()));
             assert_eq!(FloorOracle::last_floor_round_id(), 1);
-            assert_event(Event::FloorRoundForced { round_id: 1, requested_max_age: 60 });
+            assert_event(Event::FloorRoundForced { round_id: 1 });
         });
     }
 
     #[test]
-    fn a_floor_within_max_age_is_served() {
+    fn a_floor_finalised_within_min_forced_floor_age_is_served() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let floor = finalise_floor();
-            advance_secs(60);
+            advance_secs(MIN_FORCED_FLOOR_AGE_SECS);
 
-            assert_ok!(force(60));
+            assert_ok!(force());
             assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 50 });
             assert!(FloorOracle::active_floor_round().is_none());
             assert!(FloorOracle::checkpoint_round(FLOOR_CHAIN).is_none());
@@ -392,21 +401,21 @@ mod forced_rounds {
         });
     }
 
-    /// `request_floor_price` still serves the floor, but it is past the requested age. The
-    /// checkpoint the floor pinned is just as old, so the round waits for a new one rather than
-    /// read the same block again.
+    /// `request_floor_price` still serves the floor, but it finalised too long ago. The
+    /// checkpoint the floor pinned is as old, so the round waits for a new one rather than read
+    /// the same block again.
     #[test]
-    fn a_floor_older_than_max_age_starts_a_round_inside_max_floor_age() {
+    fn a_floor_finalised_earlier_starts_a_round_inside_max_floor_age() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let floor = finalise_floor();
-            advance_secs(61);
-            assert!(61 < MAX_FLOOR_AGE_SECS);
+            advance_secs(MIN_FORCED_FLOOR_AGE_SECS + 1);
+            assert!(MIN_FORCED_FLOOR_AGE_SECS + 1 < MAX_FLOOR_AGE_SECS);
 
             assert_ok!(request());
             assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 50 });
             assert!(FloorOracle::active_floor_round().is_none());
 
-            assert_ok!(force(60));
+            assert_ok!(force());
             assert!(FloorOracle::pending_floor_request());
             let checkpoint_round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("started");
             assert_event(Event::FloorRequestWaitingForCheckpoint {
@@ -418,43 +427,36 @@ mod forced_rounds {
             let round = FloorOracle::active_floor_round().expect("round started");
             assert_eq!(round.round_id, floor.round_id + 1);
             assert_eq!(round.pinned_block, SEED_BLOCK + 50);
-            assert_eq!(round.pinned_ts, checkpoint.agreed_at);
-            assert!(round.pinned_ts > floor.pinned_ts);
+            assert_eq!(round.checkpoint_time_sec, checkpoint.agreed_at);
+            assert!(round.checkpoint_time_sec > floor.checkpoint_time_sec);
             assert_eq!(forced_events(), 0, "the checkpoint round started it, not the call");
         });
     }
 
-    /// With a checkpoint younger than the requested age, the call starts the round itself.
+    /// With a checkpoint young enough, the call starts the round itself.
     #[test]
     fn a_round_started_by_the_call_is_reported_as_forced() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let floor = finalise_floor();
-            advance_secs(61);
-            assert_ok!(force(60));
+            advance_secs(MIN_FORCED_FLOOR_AGE_SECS + 1);
+            assert_ok!(force());
             agree_checkpoint_round();
 
-            // The round on the new checkpoint fails, so the stale floor stays the latest.
+            // The round on the new checkpoint fails, so the old floor stays the latest.
             let failed = FloorOracle::active_floor_round().expect("round started");
             assert_eq!(activate_head(), failed.proposal_id);
             for i in 1..=6 {
-                let observation = FloorObservation {
-                    observed_eth_block: failed.pinned_block as u64,
-                    ..observation(50 + i as u128)
-                };
-                assert_ok!(ReportContext::new(failed.round_id, observation, i).submit());
+                assert_ok!(report_at(&failed, 50 + i as u128, i));
             }
             assert!(FloorOracle::active_floor_round().is_none());
             assert_eq!(FloorOracle::last_finalised_floor(), Some(floor));
 
-            assert_ok!(force(60));
+            assert_ok!(force());
             let round = FloorOracle::active_floor_round().expect("round started");
             assert_eq!(round.round_id, failed.round_id + 1);
             assert_eq!(round.pinned_block, failed.pinned_block);
             assert!(!FloorOracle::pending_floor_request());
-            assert_event(Event::FloorRoundForced {
-                round_id: round.round_id,
-                requested_max_age: 60,
-            });
+            assert_event(Event::FloorRoundForced { round_id: round.round_id });
         });
     }
 
@@ -462,37 +464,60 @@ mod forced_rounds {
     fn a_running_round_is_joined() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let round = start_active_round();
-            assert_ok!(force(0));
+            assert_ok!(force());
             assert_event(Event::FloorRoundInProgress { round_id: round.round_id });
             assert_eq!(FloorOracle::last_floor_round_id(), round.round_id);
             assert_eq!(forced_events(), 0);
         });
     }
 
+    /// A forced round takes time to vote, so its floor's checkpoint is already older than
+    /// `MinForcedFloorAge` when it finalises. It is still served until that long after it
+    /// finalised, rather than letting the next force open another round at once.
     #[test]
-    fn max_age_is_clamped_to_min_forced_floor_age() {
+    fn a_new_floor_is_served_until_min_forced_floor_age_after_it_finalised() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let floor = finalise_floor();
-            advance_secs(MIN_FORCED_FLOOR_AGE_SECS);
+            finalise_floor();
+            advance_secs(MIN_FORCED_FLOOR_AGE_SECS + 1);
+            assert_ok!(force());
+            agree_checkpoint_round();
+            let round = FloorOracle::active_floor_round().expect("round started");
+            assert_eq!(activate_head(), round.proposal_id);
 
-            assert_ok!(force(0));
-            assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 50 });
-            assert!(FloorOracle::checkpoint_round(FLOOR_CHAIN).is_none());
+            advance_secs(20);
+            for i in 1..=6 {
+                assert_ok!(report_at(&round, 60, i));
+            }
+            let floor = FloorOracle::last_finalised_floor().expect("finalised");
+            assert_eq!(floor.round_id, round.round_id);
+            assert_eq!(floor.finalised_at_sec, now_secs());
 
-            advance_secs(1);
-            assert_ok!(force(0));
+            advance_secs(MIN_FORCED_FLOOR_AGE_SECS - 10);
+            assert!(now_secs() - floor.checkpoint_time_sec > MIN_FORCED_FLOOR_AGE_SECS);
+            assert_ok!(force());
+            assert_event(Event::FloorPriceServed { round_id: floor.round_id, floor_wei: 60 });
+            assert!(!FloorOracle::pending_floor_request());
+
+            advance_secs(11);
+            assert_ok!(force());
             assert!(FloorOracle::pending_floor_request(), "past the minimum a round is needed");
         });
     }
 
-    /// An age above `MaxFloorAge` never serves a floor `request_floor_price` would refuse.
+    /// A floor that just finalised but read data older than `MaxFloorAge` is never served:
+    /// `request_floor_price` would refuse it too.
     #[test]
-    fn max_age_is_capped_at_max_floor_age() {
+    fn a_floor_past_max_floor_age_is_never_served() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let floor = finalise_floor();
+            let round = start_active_round();
             advance_secs(MAX_FLOOR_AGE_SECS + 1);
+            for i in 1..=6 {
+                assert_ok!(report(round.round_id, 50, i));
+            }
+            let floor = FloorOracle::last_finalised_floor().expect("finalised");
+            assert_eq!(floor.finalised_at_sec, now_secs());
 
-            assert_ok!(force(u64::MAX));
+            assert_ok!(force());
             assert!(FloorOracle::pending_floor_request());
             assert_eq!(FloorOracle::last_floor_round_id(), floor.round_id);
         });
@@ -804,10 +829,11 @@ mod voting {
             let floor = FloorOracle::last_finalised_floor().expect("finalised");
             assert_eq!(floor.round_id, round.round_id);
             assert_eq!(floor.proposal_id, round.proposal_id);
-            assert_eq!(floor.pinned_ts, round.pinned_ts);
+            assert_eq!(floor.checkpoint_time_sec, round.checkpoint_time_sec);
             assert_eq!(floor.observation, observation(51));
             assert_eq!((floor.agreeing, floor.reports, floor.required), (6, 7, 6));
             assert_eq!(floor.finalised_at_block, System::block_number() as u32);
+            assert_eq!(floor.finalised_at_sec, now_secs());
             assert_event(Event::FloorRoundFinalised {
                 round_id: round.round_id,
                 floor_wei: 51,
