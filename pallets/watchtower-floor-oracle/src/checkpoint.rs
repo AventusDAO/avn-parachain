@@ -10,6 +10,9 @@
 //! reached. A chain no collator can reach never gets votes; its rounds time out and restart
 //! (`CheckpointRoundRestarted`) until the endpoint is fixed.
 //!
+//! A service block past the pallet's vote bound ([`Pallet::max_checkpoint_vote`]) is voted at
+//! the bound instead.
+//!
 //! Only validators vote: the node must hold the AVN key of a current validator. Watchtower
 //! nodes have none and return early.
 
@@ -81,6 +84,20 @@ impl<T: Config> Pallet<T> {
                 );
                 continue
             }
+            // Over the bound the vote would be refused. Capped, it still moves a checkpoint
+            // that fell behind the chain forward, by the bound each round.
+            let block = match Self::max_checkpoint_vote(chain_id) {
+                Some(max) if block > max => {
+                    log::warn!(
+                        "Checkpoint oracle: service block {} for chain {} is past the vote bound, voting {}",
+                        block,
+                        chain_id,
+                        max
+                    );
+                    max
+                },
+                _ => block,
+            };
 
             let payload =
                 Self::vote_signing_payload(chain_id, round_id, &validator.account_id, block);

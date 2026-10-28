@@ -28,7 +28,13 @@ fn next_block() {
 
 /// Seeds the chain, makes the seed stale and opens a round. Returns the round id.
 fn open_round(chain_id: ExternalChainId) -> RoundId {
-    assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), chain_id, SEED_BLOCK, MAX_AGE_SECS));
+    assert_ok!(FloorOracle::seed_chain(
+        RuntimeOrigin::root(),
+        chain_id,
+        SEED_BLOCK,
+        MAX_AGE_SECS,
+        None
+    ));
     advance_secs(MAX_AGE_SECS + 1);
     match FloorOracle::do_request_checkpoint(chain_id).expect("chain registered") {
         CheckpointRequest::Pending { round_id, .. } => round_id,
@@ -105,6 +111,37 @@ fn a_validator_votes_once_per_open_round() {
         next_block();
         run_ocw();
         assert!(pool.read().transactions.is_empty());
+    });
+}
+
+#[test]
+fn a_service_block_past_the_vote_bound_is_voted_at_the_bound() {
+    let (mut ext, pool, offchain) =
+        ExtBuilder::build_default().for_offchain_worker().as_externality_with_state();
+    ext.execute_with(|| {
+        set_local_validator(1);
+        assert_ok!(FloorOracle::seed_chain(
+            RuntimeOrigin::root(),
+            ETHEREUM,
+            SEED_BLOCK,
+            MAX_AGE_SECS,
+            Some(12_000)
+        ));
+        advance_secs(MAX_AGE_SECS + 1);
+        let round = match FloorOracle::do_request_checkpoint(ETHEREUM).expect("chain registered") {
+            CheckpointRequest::Pending { round_id, .. } => round_id,
+            other => panic!("expected a round to start, got {:?}", other),
+        };
+        let bound = FloorOracle::max_checkpoint_vote(ETHEREUM).expect("block time set");
+        assert!(bound < 1_000_000);
+
+        mock_checkpoint_service(&mut offchain.write(), ETHEREUM, Some(encoded_block(1_000_000)));
+        run_ocw();
+
+        let calls = pop_calls(&pool);
+        assert_eq!(calls.len(), 1);
+        assert_vote(&calls[0], ETHEREUM, round, bound);
+        assert_ok!(calls[0].clone().dispatch(RawOrigin::None.into()));
     });
 }
 

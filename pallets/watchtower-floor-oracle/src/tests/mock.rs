@@ -51,6 +51,7 @@ pub const VENUE_TARGET_LAG_SECS: u64 = 6;
 pub const VENUE_TARGET_TOLERANCE_SECS: u64 = 6;
 pub const MAX_FLOOR_CHECKPOINT_AGE_SECS: u64 = 150;
 pub const MIN_FORCED_FLOOR_AGE_SECS: u64 = 30;
+pub const CHECKPOINT_VOTE_SLACK_SECS: u64 = 60;
 pub const NODE_KEY_TYPE: KeyTypeId = KeyTypeId(*b"nodk");
 /// Country the test node reports with its observations.
 pub const TEST_COUNTRY: CountryCode = *b"GB";
@@ -148,6 +149,7 @@ impl Config for TestRuntime {
     type TimeProvider = Timestamp;
     type Quorum = Avn;
     type RoundTimeoutBlocks = RoundTimeoutBlocks;
+    type CheckpointVoteSlackSecs = ConstU64<CHECKPOINT_VOTE_SLACK_SECS>;
     type OracleRoundThreshold = OracleRoundThreshold;
     type OracleVoteDuration = ConstU32<ORACLE_VOTE_DURATION>;
     type MaxFloorAge = ConstU64<MAX_FLOOR_AGE_SECS>;

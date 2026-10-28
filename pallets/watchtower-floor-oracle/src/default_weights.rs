@@ -39,6 +39,7 @@ use core::marker::PhantomData;
 pub trait WeightInfo {
 	fn seed_chain() -> Weight;
 	fn force_set_checkpoint() -> Weight;
+	fn set_external_block_time() -> Weight;
 	fn request_checkpoint() -> Weight;
 	fn submit_checkpoint_vote(v: u32, ) -> Weight;
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight;
@@ -112,6 +113,14 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(110_875_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(13_u64))
 			.saturating_add(T::DbWeight::get().writes(11_u64))
+	}
+	/// PLACEHOLDER, not generated: regenerate with the benchmarks.
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
+	fn set_external_block_time() -> Weight {
+		Weight::from_parts(20_000_000, 3497)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
@@ -512,6 +521,14 @@ impl WeightInfo for () {
 		Weight::from_parts(110_875_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(13_u64))
 			.saturating_add(RocksDbWeight::get().writes(11_u64))
+	}
+	/// PLACEHOLDER, not generated: regenerate with the benchmarks.
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
+	fn set_external_block_time() -> Weight {
+		Weight::from_parts(20_000_000, 3497)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)

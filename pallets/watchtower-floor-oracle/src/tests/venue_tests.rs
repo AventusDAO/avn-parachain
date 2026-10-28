@@ -744,7 +744,8 @@ mod cross_channel {
             RuntimeOrigin::root(),
             FLOOR_CHAIN,
             SEED_BLOCK,
-            CHECKPOINT_MAX_AGE
+            CHECKPOINT_MAX_AGE,
+            None
         ));
     }
 
@@ -1079,7 +1080,8 @@ mod offchain_worker {
             RuntimeOrigin::root(),
             FLOOR_CHAIN,
             SEED_BLOCK,
-            CHECKPOINT_MAX_AGE
+            CHECKPOINT_MAX_AGE,
+            None
         ));
         assert_ok!(FloorOracle::request_floor_price(RuntimeOrigin::root()));
         assert_ok!(FloorOracle::request_venue_state(RuntimeOrigin::root()));

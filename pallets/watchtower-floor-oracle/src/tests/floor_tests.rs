@@ -29,7 +29,8 @@ fn seed_floor_chain() -> Checkpoint {
         RuntimeOrigin::root(),
         FLOOR_CHAIN,
         SEED_BLOCK,
-        CHECKPOINT_MAX_AGE
+        CHECKPOINT_MAX_AGE,
+        None
     ));
     FloorOracle::checkpoints(FLOOR_CHAIN).unwrap()
 }
@@ -349,7 +350,13 @@ mod requests {
             seed_floor_chain();
             advance_secs(CHECKPOINT_MAX_AGE + 1);
             assert_ok!(request());
-            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), 8453, 5, CHECKPOINT_MAX_AGE));
+            assert_ok!(FloorOracle::seed_chain(
+                RuntimeOrigin::root(),
+                8453,
+                5,
+                CHECKPOINT_MAX_AGE,
+                None
+            ));
             assert_eq!(FloorOracle::pending_floor_request(), Some(FloorRoundKind::Requested));
             assert!(FloorOracle::active_floor_round().is_none());
         });

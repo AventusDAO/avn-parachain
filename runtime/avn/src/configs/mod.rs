@@ -835,6 +835,11 @@ parameter_types! {
     /// A checkpoint round that has not settled after this many blocks (about 10 minutes) is
     /// restarted by the next request.
     pub const CheckpointRoundTimeoutBlocks: BlockNumber = 50;
+    /// A checkpoint vote may run this many seconds of blocks ahead of the time since the
+    /// checkpoint was agreed, on chains with a block time set. A checkpoint bad votes push to
+    /// the limit is overtaken by the real chain within about this long; until then floor
+    /// reads wait for the pinned block.
+    pub const CheckpointVoteSlackSecs: u64 = 10 * 60;
     /// Share of the committee that must report the same observation.
     pub const OracleRoundThreshold: Perbill = Perbill::from_percent(67);
     /// Must be at least the watchtower pallet's minimum voting period (100 blocks).
@@ -866,6 +871,7 @@ impl pallet_watchtower_floor_oracle::Config for Runtime {
     type TimeProvider = Timestamp;
     type Quorum = Avn;
     type RoundTimeoutBlocks = CheckpointRoundTimeoutBlocks;
+    type CheckpointVoteSlackSecs = CheckpointVoteSlackSecs;
     type OracleRoundThreshold = OracleRoundThreshold;
     type OracleVoteDuration = OracleVoteDuration;
     type MaxFloorAge = MaxFloorAge;
