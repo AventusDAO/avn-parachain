@@ -89,8 +89,16 @@ fn validate_watchtower(call: &pallet_watchtower::Call<TestRuntime>) -> bool {
     <Watchtower as ValidateUnsigned>::validate_unsigned(TransactionSource::External, call).is_ok()
 }
 
+/// The round is closed, its rows are queued for cleanup if it has any, and `on_idle` then
+/// deletes them.
 fn assert_round_cleared(round: &VenueRound<BlockNumber>) {
     assert!(FloorOracle::active_venue_round().is_none());
+    let key = (OracleChannel::Venue, round.round_id);
+    let stored = VenueReports::<TestRuntime>::iter_prefix(round.round_id).count();
+    assert_eq!(RoundsToClean::<TestRuntime>::contains_key(key), stored > 0);
+
+    run_idle_cleanup();
+    assert!(!RoundsToClean::<TestRuntime>::contains_key(key));
     assert_eq!(VenueReports::<TestRuntime>::iter_prefix(round.round_id).count(), 0);
     assert_eq!(VenueObservations::<TestRuntime>::iter_prefix(round.round_id).count(), 0);
 }
@@ -696,8 +704,8 @@ mod voting {
             assert!(FloorOracle::active_venue_round().is_some());
             round
         });
-        // Reports land in earlier blocks on a real chain. `clear_prefix` only applies its limit
-        // to committed keys, so commit them or the test cannot see a limit that is too low.
+        // Reports land in earlier blocks on a real chain; commit them so the cleanup deletes
+        // committed keys, as it does there.
         ext.commit_all().unwrap();
 
         ext.execute_with(|| {
@@ -729,6 +737,7 @@ mod cross_channel {
     pub(super) fn floor_obs(floor_wei: u128) -> FloorObservation {
         FloorObservation {
             external_block: SEED_BLOCK as u64,
+            external_block_time_sec: pinned_floor_block_time(FLOOR_CHAIN),
             floor_wei,
             last_sale_ts: 1_700_000_000,
             last_sale_wei: floor_wei,

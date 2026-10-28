@@ -8,6 +8,7 @@
 //! mainnet and a test network differ only in what the pallet sends.
 //!
 //! What is read, at `pinned_block`:
+//! - **block time**: the block's timestamp. The pallet measures the floor's age from it.
 //! - **floor**: `punksOfferedForSale(i)` for all 10,000 punks through Multicall3, in chunks. The
 //!   floor is the lowest public ask (`isForSale`, no `onlySellTo`, non-zero `minValue`).
 //! - **last sale**: the latest `PunkBought` log with a non-zero price in the `SALES_WINDOW_BLOCKS`
@@ -126,10 +127,11 @@ pub async fn observe(rpc_urls: &[String], request: &FloorRequest) -> Result<Floo
         match observe_with(url, request).await {
             Ok(observation) => {
                 log::info!(
-                    "floor oracle: observation from {} for chain {} at block {}: floor_wei={}, flags={}",
+                    "floor oracle: observation from {} for chain {} at block {} ({}): floor_wei={}, flags={}",
                     url,
                     request.chain_id,
                     request.pinned_block,
+                    observation.external_block_time_sec,
                     observation.floor_wei,
                     observation.flags
                 );
@@ -171,6 +173,8 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
         bail!("block {pinned_block} is not {depth} deep yet on this endpoint (latest {latest})");
     }
 
+    let external_block_time_sec =
+        block_timestamp(&provider, pinned_block).await.context("pinned block")?;
     let offers = read_offers(&provider, request.punks, pinned_block).await?;
     let floor_wei = floor_of(offers).ok_or_else(|| anyhow!("no punk is publicly for sale"))?;
 
@@ -179,6 +183,7 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
 
     Ok(FloorObservation {
         external_block: pinned_block,
+        external_block_time_sec,
         floor_wei,
         last_sale_ts,
         last_sale_wei,
@@ -257,12 +262,17 @@ async fn last_sale<P: Provider>(
     }
 
     let Some((sale_block, _, price)) = latest else { return Ok(None) };
+    let sale_ts = block_timestamp(provider, sale_block).await.context("sale block")?;
+    Ok(Some((sale_ts, price)))
+}
+
+/// Unix timestamp, in seconds, of `block`.
+async fn block_timestamp<P: Provider>(provider: &P, block: u64) -> Result<u64> {
     let header = provider
-        .get_block_by_number(BlockNumberOrTag::Number(sale_block))
-        .await
-        .context("sale block")?
-        .ok_or_else(|| anyhow!("sale block {sale_block} not found"))?;
-    Ok(Some((header.header.timestamp, price)))
+        .get_block_by_number(BlockNumberOrTag::Number(block))
+        .await?
+        .ok_or_else(|| anyhow!("block {block} not found"))?;
+    Ok(header.header.timestamp)
 }
 
 /// Inclusive `(from, to)` block ranges covering `window_start..=block`, newest first, each at

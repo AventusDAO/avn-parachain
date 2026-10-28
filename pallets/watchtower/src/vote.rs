@@ -57,26 +57,17 @@ impl<T: Config> Pallet<T> {
     /// Decision for `Choice` proposals. The first answer whose tally reaches the threshold
     /// wins and is stored in `WinningChoice`. If no answer can still get there with the votes
     /// left, the proposal fails early. On expiry the decision rule applies, where "majority"
-    /// means the single answer with the most votes.
+    /// means the single answer with the most votes. Reads only the running `ChoiceStandings`,
+    /// so its cost does not grow with the number of distinct answers.
     fn decide_choice(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
         expired: bool,
     ) -> Option<ProposalStatusEnum> {
-        let mut best: Option<(H256, u32)> = None;
-        let mut tie_at_best = false;
-        let mut cast: u32 = 0;
-        for (answer, tally) in ChoiceTally::<T>::iter_prefix(proposal_id) {
-            cast = cast.saturating_add(tally);
-            match best {
-                Some((_, best_tally)) if tally < best_tally => {},
-                Some((_, best_tally)) if tally == best_tally => tie_at_best = true,
-                _ => {
-                    best = Some((answer, tally));
-                    tie_at_best = false;
-                },
-            }
-        }
+        let standing = ChoiceStandings::<T>::get(proposal_id);
+        let best = standing.leader.map(|answer| (answer, standing.leader_tally));
+        let tie_at_best = standing.tied;
+        let cast = standing.cast;
 
         if !expired {
             let Some(needed) = Self::votes_needed(proposal_id, proposal) else { return None };

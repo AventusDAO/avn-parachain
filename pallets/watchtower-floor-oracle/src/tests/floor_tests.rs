@@ -70,6 +70,7 @@ fn agree_checkpoint_round() {
 fn observation(floor_wei: u128) -> FloorObservation {
     FloorObservation {
         external_block: SEED_BLOCK as u64,
+        external_block_time_sec: pinned_floor_block_time(FLOOR_CHAIN),
         floor_wei,
         last_sale_ts: 1_700_000_000,
         last_sale_wei: floor_wei - 1,
@@ -105,8 +106,16 @@ fn validate_watchtower(call: &pallet_watchtower::Call<TestRuntime>) -> bool {
     <Watchtower as ValidateUnsigned>::validate_unsigned(TransactionSource::External, call).is_ok()
 }
 
+/// The round is closed, its rows are queued for cleanup if it has any, and `on_idle` then
+/// deletes them.
 fn assert_round_cleared(round: &FloorRound<BlockNumber>) {
     assert!(FloorOracle::active_floor_round().is_none());
+    let key = (OracleChannel::Floor, round.round_id);
+    let stored = FloorReports::<TestRuntime>::iter_prefix(round.round_id).count();
+    assert_eq!(RoundsToClean::<TestRuntime>::contains_key(key), stored > 0);
+
+    run_idle_cleanup();
+    assert!(!RoundsToClean::<TestRuntime>::contains_key(key));
     assert_eq!(FloorReports::<TestRuntime>::iter_prefix(round.round_id).count(), 0);
     assert_eq!(FloorObservations::<TestRuntime>::iter_prefix(round.round_id).count(), 0);
 }
@@ -322,6 +331,36 @@ mod requests {
             assert!(FloorOracle::active_floor_round().is_none());
         });
     }
+
+    /// A floor is as old as the Ethereum block it was read at, which was mined before the
+    /// checkpoint was agreed. Its cache life runs from the block, not from the agreement.
+    #[test]
+    fn a_floor_ages_from_its_ethereum_block() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            advance_secs(MAX_FLOOR_AGE_SECS);
+            let round = start_active_round();
+            let block_age = MAX_FLOOR_AGE_SECS - 10;
+            let observation = FloorObservation {
+                external_block_time_sec: round.checkpoint_agreed_at_sec - block_age,
+                ..observation(50)
+            };
+            for i in 1..=6 {
+                assert_ok!(ReportContext::new(round.round_id, observation, i).submit());
+            }
+            let floor = FloorOracle::last_finalised_floor().expect("finalised");
+            assert_eq!(floor.observation, observation);
+
+            assert_ok!(request());
+            assert_event(Event::FloorPriceServed { round_id: round.round_id, floor_wei: 50 });
+
+            // Ten seconds after the agreement the checkpoint is young, but the block is past
+            // `MaxFloorAge`.
+            advance_secs(11);
+            assert_ok!(request());
+            let next = FloorOracle::active_floor_round().expect("a new round started");
+            assert_eq!(next.round_id, round.round_id + 1);
+        });
+    }
 }
 
 mod forced_rounds {
@@ -438,6 +477,34 @@ mod forced_rounds {
             assert_eq!(round.kind, FloorRoundKind::Forced);
             assert_eq!(round.external_block, SEED_BLOCK + 50);
             assert_event(Event::FloorRoundForced { round_id: round.round_id });
+        });
+    }
+
+    /// A checkpoint round that settles on the block the last floor was read at, because Ethereum
+    /// has not moved past it, answers the force with the last floor and starts the cooldown.
+    /// Nothing is left waiting, so a stalled chain cannot hold the request forever.
+    #[test]
+    fn a_force_without_a_newer_block_is_answered_with_the_last_floor() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let floor = finalise_floor();
+            let last_block = floor.observation.external_block as u32;
+            assert_ok!(force());
+            assert_eq!(FloorOracle::pending_floor_request(), Some(FloorRoundKind::Forced));
+
+            let round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("round started");
+            for i in 1..=4 {
+                assert_ok!(VoteContext::new(FLOOR_CHAIN, round.round_id, i, last_block).submit());
+            }
+            assert_eq!(FloorOracle::checkpoints(FLOOR_CHAIN).unwrap().block_number, last_block);
+            assert!(FloorOracle::active_floor_round().is_none());
+            assert!(FloorOracle::checkpoint_round(FLOOR_CHAIN).is_none());
+            assert_eq!(FloorOracle::pending_floor_request(), None);
+            assert_event(Event::FloorPriceServed {
+                round_id: floor.round_id,
+                floor_wei: floor.observation.floor_wei,
+            });
+            assert_eq!(FloorOracle::last_forced_round_ended_at(), Some(now_secs()));
+            assert_eq!(forced_events(), 0);
         });
     }
 
@@ -638,6 +705,19 @@ mod reports {
                     ReportContext::new(
                         round.round_id,
                         FloorObservation { floor_wei: 0, ..observation(50) },
+                        2,
+                    ),
+                    Error::ImplausibleObservation,
+                ),
+                (
+                    // The block was deep before the checkpoint was agreed; a later time would
+                    // make the floor look fresher than it is.
+                    ReportContext::new(
+                        round.round_id,
+                        FloorObservation {
+                            external_block_time_sec: round.checkpoint_agreed_at_sec + 1,
+                            ..observation(50)
+                        },
                         2,
                     ),
                     Error::ImplausibleObservation,
@@ -1001,8 +1081,8 @@ mod voting {
             assert!(FloorOracle::active_floor_round().is_some());
             round
         });
-        // Reports land in earlier blocks on a real chain. `clear_prefix` only applies its limit
-        // to committed keys, so commit them or the test cannot see a limit that is too low.
+        // Reports land in earlier blocks on a real chain; commit them so the cleanup deletes
+        // committed keys, as it does there.
         ext.commit_all().unwrap();
 
         ext.execute_with(|| {
@@ -1015,6 +1095,55 @@ mod voting {
 
             assert_round_cleared(&round);
         });
+    }
+
+    /// `on_idle` deletes only the page the weight left in the block pays for, and keeps the
+    /// round queued until every row is gone.
+    #[test]
+    fn cleanup_is_paged_by_the_idle_weight() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        let round = ext.execute_with(|| {
+            let round = start_active_round();
+            // Two answers of two reports each: still undecided.
+            for i in 1..=4 {
+                assert_ok!(report(round.round_id, if i <= 2 { 50 } else { 51 }, i));
+            }
+            <FloorOracle as WatchtowerHooks<pallet_watchtower::Proposal<TestRuntime>>>::on_cancelled(
+                round.proposal_id,
+                &H256::zero(),
+            );
+            round
+        });
+        let key = (OracleChannel::Floor, round.round_id);
+        let page = |n| <TestRuntime as crate::Config>::WeightInfo::cleanup_round_page(n);
+        let rows = || {
+            (
+                FloorReports::<TestRuntime>::iter_prefix(round.round_id).count(),
+                FloorObservations::<TestRuntime>::iter_prefix(round.round_id).count(),
+            )
+        };
+        // Each step is its own block: `clear_prefix` pages only rows committed to the
+        // database, as the reports are on a real chain by the time the round is cleaned.
+        let mut idle_block = |weight: Weight| {
+            ext.commit_all().unwrap();
+            ext.execute_with(|| {
+                let used = FloorOracle::cleanup_finished_rounds(weight);
+                (used, rows(), RoundsToClean::<TestRuntime>::contains_key(key))
+            })
+        };
+
+        // Not enough for a single row: nothing is touched.
+        assert_eq!(idle_block(page(0)), (Weight::zero(), (4, 2), true));
+        // Two rows of each map per block. The observations fit in one page.
+        assert_eq!(idle_block(page(2)), (page(2), (2, 0), true));
+        // The last two reports fill the page exactly, and the round is known to be empty.
+        assert_eq!(idle_block(page(2)), (page(2), (0, 0), false));
+        // Nothing queued: one read.
+        let one_read = <<TestRuntime as frame_system::Config>::DbWeight as Get<
+            frame_support::weights::RuntimeDbWeight,
+        >>::get()
+        .reads(1);
+        assert_eq!(idle_block(page(2)), (one_read, (0, 0), false));
     }
 }
 

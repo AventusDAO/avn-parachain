@@ -50,6 +50,7 @@ pub trait WeightInfo {
 	fn set_venue_market() -> Weight;
 	fn set_floor_market() -> Weight;
 	fn set_oracle_committee_size() -> Weight;
+	fn cleanup_round_page(n: u32, ) -> Weight;
 }
 
 /// Weights for pallet_watchtower_floor_oracle using the Substrate node and recommended hardware.
@@ -359,6 +360,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
+	// Placeholder until the benchmarks are rerun: one key read, then a read and a delete per
+	// report and per observation.
+	/// The range of component `n` is `[0, 250]`.
+	fn cleanup_round_page(n: u32, ) -> Weight {
+		Weight::from_parts(15_000_000, 3600)
+			.saturating_add(Weight::from_parts(12_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(n.into())))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+			.saturating_add(T::DbWeight::get().writes((2_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 5200).saturating_mul(n.into()))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -666,5 +679,17 @@ impl WeightInfo for () {
 		Weight::from_parts(21_968_000, 1489)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	// Placeholder until the benchmarks are rerun: one key read, then a read and a delete per
+	// report and per observation.
+	/// The range of component `n` is `[0, 250]`.
+	fn cleanup_round_page(n: u32, ) -> Weight {
+		Weight::from_parts(15_000_000, 3600)
+			.saturating_add(Weight::from_parts(12_000_000, 0).saturating_mul(n.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(n.into())))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(RocksDbWeight::get().writes((2_u64).saturating_mul(n.into())))
+			.saturating_add(Weight::from_parts(0, 5200).saturating_mul(n.into()))
 	}
 }

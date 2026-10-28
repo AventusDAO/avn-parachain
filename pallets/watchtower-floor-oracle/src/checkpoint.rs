@@ -4,10 +4,11 @@
 //!
 //! Every block, each collator looks at the open checkpoint rounds, asks its local external
 //! service which block of that chain to vote (`checkpoint/block/{chain_id}`), and submits one
-//! vote per round. The service rounds the chain's head down to a fixed interval after a
-//! confirmation depth, so collators reading the chain seconds apart vote the same number and
-//! the round reaches quorum. A chain no collator can reach never gets votes; its rounds time
-//! out and restart (`CheckpointRoundRestarted`) until the endpoint is fixed.
+//! vote per round. The service takes the chain's head back by a confirmation depth (and, on
+//! some chains, rounds it down to an interval). Collators reading the chain seconds apart may
+//! vote different numbers; the round still settles, on the lowest value about a third of them
+//! reached. A chain no collator can reach never gets votes; its rounds time out and restart
+//! (`CheckpointRoundRestarted`) until the endpoint is fixed.
 //!
 //! Only validators vote: the node must hold the AVN key of a current validator. Watchtower
 //! nodes have none and return early.

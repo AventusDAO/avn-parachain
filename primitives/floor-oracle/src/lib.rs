@@ -65,6 +65,8 @@ pub const FLAG_OFFCHAIN_UNAVAILABLE: u32 = 1 << 2;
 pub struct FloorObservation {
     /// Ethereum block the on-chain data was read at.
     pub external_block: u64,
+    /// Unix timestamp, in seconds, of `external_block`. The floor's age is measured from it.
+    pub external_block_time_sec: u64,
     /// Lowest ask, in wei.
     pub floor_wei: u128,
     /// Unix timestamp of the last sale. Zero when unavailable.
@@ -83,7 +85,7 @@ impl FloorObservation {
 
     /// Sanity checks an observation must pass before it can take part in a round.
     pub fn is_plausible(&self) -> bool {
-        self.floor_wei > 0 && self.external_block > 0
+        self.floor_wei > 0 && self.external_block > 0 && self.external_block_time_sec > 0
     }
 }
 
@@ -95,8 +97,8 @@ pub struct FinalisedFloorRound {
     pub round_id: u64,
     /// The watchtower proposal the round was decided through.
     pub proposal_id: H256,
-    /// Unix time, in seconds, of the checkpoint every watchtower observed the floor at. The
-    /// floor's data is as old as this.
+    /// Unix time, in seconds, the checkpoint every watchtower observed the floor at was agreed.
+    /// The data is older: its age runs from `observation.external_block_time_sec`.
     pub checkpoint_agreed_at_sec: u64,
     /// The market the round read.
     pub market: FloorMarket,
@@ -223,6 +225,7 @@ mod tests {
     fn plausible() -> FloorObservation {
         FloorObservation {
             external_block: 20_000_000,
+            external_block_time_sec: 1_750_000_000,
             floor_wei: 50_000_000_000_000_000_000,
             last_sale_ts: 1_700_000_000,
             last_sale_wei: 49_000_000_000_000_000_000,
@@ -251,14 +254,18 @@ mod tests {
         obs.external_block = 0;
         assert!(!obs.is_plausible(), "no block");
 
+        let mut obs = plausible();
+        obs.external_block_time_sec = 0;
+        assert!(!obs.is_plausible(), "no block time");
+
         assert!(!FloorObservation::default().is_plausible());
     }
 
     #[test]
     fn encoded_lengths() {
-        // u64 + u128 + u64 + u128 + u32
-        assert_eq!(plausible().encode().len(), 52);
-        assert_eq!(FloorObservation::max_encoded_len(), 52);
+        // u64 + u64 + u128 + u64 + u128 + u32
+        assert_eq!(plausible().encode().len(), 60);
+        assert_eq!(FloorObservation::max_encoded_len(), 60);
     }
 
     #[test]

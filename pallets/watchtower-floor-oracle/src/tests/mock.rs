@@ -6,7 +6,7 @@ use crate::{self as pallet_watchtower_floor_oracle, *};
 pub use codec::alloc::sync::Arc;
 use frame_support::{
     assert_ok, derive_impl, parameter_types,
-    traits::{ConstU32, ConstU64, EnsureOrigin, Randomness},
+    traits::{ConstU32, ConstU64, EnsureOrigin, Hooks, Randomness},
     weights::{constants::WEIGHT_REF_TIME_PER_SECOND, Weight},
     WeakBoundedVec,
 };
@@ -739,4 +739,25 @@ impl ExtBuilder {
         });
         (ext, self.pool_state.unwrap(), self.offchain_state.unwrap())
     }
+}
+
+/// Runs `on_idle` with ample weight until no finished round has rows left.
+pub fn run_idle_cleanup() {
+    for _ in 0..10 {
+        if FloorOracle::next_round_to_clean().is_none() {
+            return
+        }
+        <FloorOracle as Hooks<BlockNumber>>::on_idle(System::block_number(), Weight::MAX);
+    }
+    panic!("on_idle did not finish cleaning up finished rounds");
+}
+
+/// Block time for a test floor observation: when the running floor round's checkpoint was
+/// agreed (else the stored checkpoint's), the latest time the pinned block can have. Tests about
+/// the block's own age set it explicitly.
+pub fn pinned_floor_block_time(chain_id: ExternalChainId) -> u64 {
+    FloorOracle::active_floor_round()
+        .map(|round| round.checkpoint_agreed_at_sec)
+        .or_else(|| FloorOracle::checkpoints(chain_id).map(|checkpoint| checkpoint.agreed_at))
+        .unwrap_or(1)
 }

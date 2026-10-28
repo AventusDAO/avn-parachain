@@ -13,11 +13,11 @@
 //!   voting round starts, or the running one is joined, and the caller gets `Pending`.
 //! - Collators vote their own finalised view of the chain with [`Pallet::submit_checkpoint_vote`],
 //!   produced by their offchain worker (see [`checkpoint`]). The value is picked with the same
-//!   supermajority / quorum selection that pallet-eth-bridge uses for its latest block. The
-//!   external service rounds the chain head down to a fixed interval after a confirmation depth so
-//!   every collator votes the same number; a round therefore settles within roughly one such
-//!   interval of lag plus a few parachain blocks. A chain no collator can reach gets no votes: its
-//!   rounds time out and restart forever, visible as repeated `CheckpointRoundRestarted`.
+//!   supermajority / quorum selection that pallet-eth-bridge uses for its latest block, so votes
+//!   need not match: once two thirds are in, the round settles on the lowest value about a third of
+//!   the voters reached. The external service votes the head minus a confirmation depth, so a round
+//!   settles a few parachain blocks after it starts. A chain no collator can reach gets no votes:
+//!   its rounds time out and restart forever, visible as repeated `CheckpointRoundRestarted`.
 //! - A checkpoint is written exactly once per round and never changed. A later round writes a new
 //!   checkpoint under a new round id.
 //!
@@ -139,6 +139,16 @@ pub const VOTE_BEHIND_CHECKPOINT: u8 = 4;
 pub const FLOOR_REPORT_NOT_VALID: u8 = 10;
 pub const VENUE_REPORT_NOT_VALID: u8 = 11;
 
+/// Most reports, and most observations, `on_idle` deletes for a finished round in one block.
+pub const ROUND_CLEANUP_PAGE_SIZE: u32 = 250;
+
+/// The two oracle channels, as the key of a finished round awaiting cleanup.
+#[derive(Encode, Decode, Clone, Copy, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
+pub enum OracleChannel {
+    Floor,
+    Venue,
+}
+
 /// State of the checkpoint voting round that is running for one chain.
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen)]
 pub struct CheckpointRoundState<AccountId: Ord, BlockNumber> {
@@ -177,14 +187,16 @@ pub mod pallet {
         #[pallet::constant]
         type OracleVoteDuration: Get<u32>;
 
-        /// A finalised floor younger than this, in seconds, answers a request directly.
+        /// A finalised floor whose Ethereum block is younger than this, in seconds, answers a
+        /// request directly.
         #[pallet::constant]
         type MaxFloorAge: Get<u64>;
 
-        /// Oldest checkpoint, in seconds, a floor round pins. An older one starts a new
-        /// checkpoint round, even if the chain's own freshness limit still accepts it. A floor
-        /// is as old as its checkpoint, so this must be well below `MaxFloorAge`, or a new floor
-        /// could already be stale when it finalises.
+        /// Oldest checkpoint, in seconds since it was agreed, a floor round pins. An older one
+        /// starts a new checkpoint round, even if the chain's own freshness limit still accepts
+        /// it. A floor is older than its checkpoint by the confirmation depth (about two minutes
+        /// on Ethereum), so this must stay well below `MaxFloorAge`, or a new floor could
+        /// already be stale when it finalises.
         #[pallet::constant]
         type MaxFloorCheckpointAge: Get<u64>;
 
@@ -350,6 +362,12 @@ pub mod pallet {
     #[pallet::storage]
     #[pallet::getter(fn last_finalised_venue)]
     pub type LastFinalisedVenue<T: Config> = StorageValue<_, FinalisedVenueRound, OptionQuery>;
+
+    /// Rounds that have ended but still have reports or observations stored. `on_idle` deletes
+    /// them a page at a time, so the report or block that ends a round does not pay for it.
+    #[pallet::storage]
+    pub type RoundsToClean<T: Config> =
+        StorageMap<_, Twox64Concat, (OracleChannel, u64), (), OptionQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -971,6 +989,10 @@ pub mod pallet {
             );
         }
 
+        fn on_idle(_now: BlockNumberFor<T>, remaining_weight: Weight) -> Weight {
+            Self::cleanup_finished_rounds(remaining_weight)
+        }
+
         fn offchain_worker(now: BlockNumberFor<T>) {
             // Checkpoint votes first: a vote in this block can unblock a channel next block.
             Self::checkpoint_offchain_worker(now);
@@ -1053,13 +1075,13 @@ pub mod pallet {
         }
 
         /// As [`Pallet::do_request_checkpoint`], but a stored checkpoint only counts as ready
-        /// when it is also no older than `max_age` and agreed after `agreed_after`, if given.
+        /// when it is also no older than `max_age` and above block `above_block`, if given.
         /// Lets a channel ask for a fresher checkpoint than the chain's own limit, or for one
-        /// newer than a checkpoint it already read.
+        /// past a block it already read.
         pub(crate) fn do_request_checkpoint_within(
             chain_id: ExternalChainId,
             max_age: Option<u64>,
-            agreed_after: Option<u64>,
+            above_block: Option<u32>,
         ) -> Result<CheckpointRequest<BlockNumberFor<T>>, DispatchError> {
             let chain_max_age =
                 MaxCheckpointAge::<T>::get(chain_id).ok_or(Error::<T>::ChainNotRegistered)?;
@@ -1092,7 +1114,7 @@ pub mod pallet {
 
             if let Some(checkpoint) = &stale {
                 if Self::now_secs().saturating_sub(checkpoint.agreed_at) <= max_age &&
-                    agreed_after.map_or(true, |after| checkpoint.agreed_at > after)
+                    above_block.map_or(true, |above| checkpoint.block_number > above)
                 {
                     return Ok(CheckpointRequest::Ready(checkpoint.clone()))
                 }
@@ -1139,6 +1161,57 @@ pub mod pallet {
 
         pub(crate) fn now_secs() -> u64 {
             T::TimeProvider::now().as_secs()
+        }
+
+        /// Deletes one page of a finished round's rows, sized to what `remaining_weight` can
+        /// pay for. Generated weights are linear in the page size, so `cleanup_round_page(n)`
+        /// for any `n` up to the computed page fits.
+        pub(crate) fn cleanup_finished_rounds(remaining_weight: Weight) -> Weight {
+            let base = <T as Config>::WeightInfo::cleanup_round_page(0);
+            let per_row = <T as Config>::WeightInfo::cleanup_round_page(1).saturating_sub(base);
+            let Some(spare) = remaining_weight.checked_sub(&base) else { return Weight::zero() };
+            let page = spare
+                .checked_div_per_component(&per_row)
+                .unwrap_or(ROUND_CLEANUP_PAGE_SIZE as u64)
+                .min(ROUND_CLEANUP_PAGE_SIZE as u64) as u32;
+            if page == 0 {
+                return Weight::zero()
+            }
+
+            let Some((channel, round_id)) = Self::next_round_to_clean() else {
+                return T::DbWeight::get().reads(1)
+            };
+            let removed = Self::cleanup_round_page(channel, round_id, page);
+            <T as Config>::WeightInfo::cleanup_round_page(removed)
+        }
+
+        /// Some finished round still holding rows.
+        pub(crate) fn next_round_to_clean() -> Option<(OracleChannel, u64)> {
+            RoundsToClean::<T>::iter_keys().next()
+        }
+
+        /// Removes up to `max` reports and up to `max` observations of a finished round, and
+        /// forgets the round once both are gone. Returns the larger of the two counts, which is
+        /// what the weight is charged for.
+        ///
+        /// `clear_prefix` pages only rows already in the database; rows written in this block
+        /// are all removed. That is at most the round's last few reports. Each map is cleared
+        /// once per block, so no cursor is needed: the next block starts on committed state.
+        pub(crate) fn cleanup_round_page(channel: OracleChannel, round_id: u64, max: u32) -> u32 {
+            let (reports, observations) = match channel {
+                OracleChannel::Floor => (
+                    FloorReports::<T>::clear_prefix(round_id, max, None),
+                    FloorObservations::<T>::clear_prefix(round_id, max, None),
+                ),
+                OracleChannel::Venue => (
+                    VenueReports::<T>::clear_prefix(round_id, max, None),
+                    VenueObservations::<T>::clear_prefix(round_id, max, None),
+                ),
+            };
+            if reports.maybe_cursor.is_none() && observations.maybe_cursor.is_none() {
+                RoundsToClean::<T>::remove((channel, round_id));
+            }
+            reports.unique.max(observations.unique)
         }
 
         /// Hands an agreed checkpoint to the channels pinned to checkpoints (only the floor;

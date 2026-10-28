@@ -286,10 +286,11 @@ impl<T: Config> Pallet<T> {
         }
 
         ActiveVenueRound::<T>::kill();
-        // `reports` counts the rows this round wrote, and there is at most one observation per
-        // report, so this removes every row of the round however many nodes are registered now.
-        let _ = VenueReports::<T>::clear_prefix(round.round_id, round.reports, None);
-        let _ = VenueObservations::<T>::clear_prefix(round.round_id, round.reports, None);
+        // The round's reports and observations are deleted later by `on_idle`, so ending a
+        // round costs the same however many watchtowers reported.
+        if round.reports > 0 {
+            RoundsToClean::<T>::insert((OracleChannel::Venue, round.round_id), ());
+        }
     }
 
     // ------------------------------------------------------------------ offchain worker

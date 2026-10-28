@@ -2,15 +2,17 @@
 
 //! Checkpoint block for the collator offchain worker: `GET /checkpoint/block/{chain_id}`.
 //!
-//! Every collator must vote the SAME block number for a checkpoint round to reach quorum, yet
-//! collators read the chain seconds apart. The head is therefore taken back by a confirmation
-//! depth and rounded down to a fixed interval per chain:
+//! Each collator votes the head it sees, taken back by a confirmation depth and optionally
+//! rounded down to an interval per chain:
 //!
 //! `vote = ((latest - confirmations) / pin_interval) * pin_interval`
 //!
-//! Two collators only disagree when the head crosses an interval boundary between their reads,
-//! which the next round resolves. Short chains (local Hardhat right after start) fall back to
-//! `max(1, latest - confirmations)`. The vote is never zero.
+//! Collators read the chain seconds apart, so their votes may differ. That does not stop a round:
+//! the pallet settles on the lowest value about a third of the voters have reached (see
+//! `sp_avn_common::quorum`). Rounding only makes honest votes coincide, and it ages the
+//! checkpoint by up to `pin_interval - 1` blocks, so Ethereum does not round. Short chains (local
+//! Hardhat right after start) fall back to `max(1, latest - confirmations)`. The vote is never
+//! zero.
 //!
 //! The endpoint for a chain is picked from the lists the node has (floor, venue, bridge), by
 //! probing `eth_chainId`, and the first match is cached for the life of the process.
@@ -36,9 +38,10 @@ pub struct ChainParams {
 pub const ETHEREUM_CHECKPOINT_CONFIRMATIONS: u64 = 10;
 
 /// The floor read requires the same depth, so a floor round can read at its checkpoint as soon
-/// as it starts.
+/// as it starts. No rounding: the checkpoint is exactly `confirmations` behind the head the
+/// voters saw, about two minutes, which is what a floor's age starts from.
 pub const ETHEREUM: ChainParams =
-    ChainParams { confirmations: ETHEREUM_CHECKPOINT_CONFIRMATIONS, pin_interval: 50 };
+    ChainParams { confirmations: ETHEREUM_CHECKPOINT_CONFIRMATIONS, pin_interval: 1 };
 pub const BASE: ChainParams = ChainParams { confirmations: 10, pin_interval: 150 };
 pub const HARDHAT: ChainParams = ChainParams { confirmations: 2, pin_interval: 10 };
 pub const DEFAULT: ChainParams = ETHEREUM;
@@ -176,10 +179,9 @@ mod tests {
 
     #[test]
     fn votes_are_rounded_down_after_confirmations() {
-        // Ethereum: 10 confirmations, interval 50.
-        assert_eq!(vote_block(26_178_045, &ETHEREUM), 26_178_000);
-        assert_eq!(vote_block(26_178_060, &ETHEREUM), 26_178_050, "boundary crossed");
-        assert_eq!(vote_block(26_178_059, &ETHEREUM), 26_178_000, "just before the boundary");
+        // Ethereum: 10 confirmations, no rounding.
+        assert_eq!(vote_block(26_178_045, &ETHEREUM), 26_178_035);
+        assert_eq!(vote_block(26_178_046, &ETHEREUM), 26_178_036);
         // Base: 10 confirmations, interval 150.
         assert_eq!(vote_block(40_000_210, &BASE), 40_000_200);
         assert_eq!(vote_block(40_000_209, &BASE), 40_000_050, "just before the boundary");

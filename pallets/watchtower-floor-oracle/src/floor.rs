@@ -91,7 +91,8 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Starts a forced round, unless one is running. Within `MinForcedFloorAge` of the last
-    /// forced round ending, finalised or failed, it behaves as [`Pallet::do_request_floor_price`]
+    /// forced round ending, finalised or failed, or of a force answered with the last floor
+    /// because Ethereum had not moved past it, it behaves as [`Pallet::do_request_floor_price`]
     /// instead, so the requester cannot open forced rounds back to back.
     pub fn do_force_floor_round() -> DispatchResult {
         let cooling_down = LastForcedRoundEndedAt::<T>::get().map_or(false, |ended_at| {
@@ -111,7 +112,10 @@ impl<T: Config> Pallet<T> {
 
         if kind == FloorRoundKind::Requested {
             if let Some(floor) = LastFinalisedFloor::<T>::get() {
-                let age = Self::now_secs().saturating_sub(floor.checkpoint_agreed_at_sec);
+                // Measured from the Ethereum block the floor was read at, not from when the
+                // parachain agreed on it: the block was already confirmations deep by then.
+                let age =
+                    Self::now_secs().saturating_sub(floor.observation.external_block_time_sec);
                 if age <= T::MaxFloorAge::get() {
                     Self::deposit_event(Event::<T>::FloorPriceServed {
                         round_id: floor.round_id,
@@ -123,21 +127,21 @@ impl<T: Config> Pallet<T> {
         }
 
         let market = FloorMarketConfig::<T>::get().ok_or(Error::<T>::FloorMarketNotSet)?;
-        // A floor is as old as the checkpoint it pins, so pin only a young one; otherwise the
-        // new floor could be past `MaxFloorAge` by the time it finalises. A forced round pins an
-        // even younger one, agreed after the last floor's: a round on the block the suspect floor
-        // was read at would read the same floor again.
-        let (max_checkpoint_age, agreed_after) = match kind {
+        // A floor is at least as old as the checkpoint it pins, so pin only a young one;
+        // otherwise the new floor could be past `MaxFloorAge` by the time it finalises. A forced
+        // round pins an even younger one, past the block the last floor was read at: a round on
+        // that block would read the same floor again.
+        let (max_checkpoint_age, above_block) = match kind {
             FloorRoundKind::Requested => (T::MaxFloorCheckpointAge::get(), None),
             FloorRoundKind::Forced => (
                 T::MinForcedFloorAge::get().min(T::MaxFloorCheckpointAge::get()),
-                LastFinalisedFloor::<T>::get().map(|floor| floor.checkpoint_agreed_at_sec),
+                Self::last_floor_block(),
             ),
         };
         match Self::do_request_checkpoint_within(
             market.chain_id,
             Some(max_checkpoint_age),
-            agreed_after,
+            above_block,
         )? {
             CheckpointRequest::Ready(checkpoint) =>
                 Self::start_floor_round(&checkpoint, market, kind),
@@ -169,9 +173,31 @@ impl<T: Config> Pallet<T> {
         if ActiveFloorRound::<T>::exists() {
             return
         }
+        if kind == FloorRoundKind::Forced {
+            // Checkpoints never go backwards, so one not above the last floor's block is at it:
+            // the collators have not seen Ethereum move past it. The last floor is then the
+            // newest there is, so answer with it rather than read it again or wait on a chain
+            // that may have stalled. The force counts as ended, so the cooldown applies.
+            if let Some(floor) = LastFinalisedFloor::<T>::get().filter(|floor| {
+                checkpoint.block_number <= floor.observation.external_block.saturated_into::<u32>()
+            }) {
+                LastForcedRoundEndedAt::<T>::put(Self::now_secs());
+                Self::deposit_event(Event::<T>::FloorPriceServed {
+                    round_id: floor.round_id,
+                    floor_wei: floor.observation.floor_wei,
+                });
+                return
+            }
+        }
         if let Err(error) = Self::start_floor_round(checkpoint, market, kind) {
             Self::deposit_event(Event::<T>::FloorRoundStartFailed { error });
         }
+    }
+
+    /// The Ethereum block the last finalised floor was read at, which a forced round must pass.
+    fn last_floor_block() -> Option<u32> {
+        LastFinalisedFloor::<T>::get()
+            .map(|floor| floor.observation.external_block.saturated_into::<u32>())
     }
 
     fn start_floor_round(
@@ -276,7 +302,13 @@ impl<T: Config> Pallet<T> {
             !FloorReports::<T>::contains_key(round_id, watchtower),
             Error::<T>::DuplicateFloorReport
         );
-        ensure!(observation.is_plausible(), Error::<T>::ImplausibleObservation);
+        // The block was confirmations deep before the checkpoint was agreed, so it cannot be
+        // newer than the agreement. A later time would make the floor look fresher than it is.
+        ensure!(
+            observation.is_plausible() &&
+                observation.external_block_time_sec <= round.checkpoint_agreed_at_sec,
+            Error::<T>::ImplausibleObservation
+        );
         ensure!(
             observation.external_block == round.external_block as u64,
             Error::<T>::ObservationBlockMismatch
@@ -367,10 +399,11 @@ impl<T: Config> Pallet<T> {
         if round.kind == FloorRoundKind::Forced {
             LastForcedRoundEndedAt::<T>::put(Self::now_secs());
         }
-        // `reports` counts the rows this round wrote, and there is at most one observation per
-        // report, so this removes every row of the round however many nodes are registered now.
-        let _ = FloorReports::<T>::clear_prefix(round.round_id, round.reports, None);
-        let _ = FloorObservations::<T>::clear_prefix(round.round_id, round.reports, None);
+        // The round's reports and observations are deleted later by `on_idle`, so ending a
+        // round costs the same however many watchtowers reported.
+        if round.reports > 0 {
+            RoundsToClean::<T>::insert((OracleChannel::Floor, round.round_id), ());
+        }
     }
 
     // ------------------------------------------------------------------ offchain worker
