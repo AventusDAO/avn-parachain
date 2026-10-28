@@ -48,6 +48,7 @@ use sp_runtime::{
     DispatchError, Perbill, Perquintill, Saturating,
 };
 
+pub mod migration;
 pub mod node_index;
 pub mod offchain;
 pub mod reward;
@@ -72,6 +73,9 @@ mod test_auto_stake_preference;
 #[cfg(test)]
 #[path = "tests/test_heartbeat.rs"]
 mod test_heartbeat;
+#[cfg(test)]
+#[path = "tests/test_migration.rs"]
+mod test_migration;
 #[cfg(test)]
 #[path = "tests/test_move_nodes.rs"]
 mod test_move_nodes;
@@ -109,7 +113,7 @@ const MINT_REWARDS_CONTEXT: &'static [u8] = b"NodeManager_MintRewards";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
 const MAX_BATCH_SIZE: u32 = 1_000;
 const MINT_SAFETY_CAP_MULTIPLIER: u32 = 4;
-pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
 pub const MAX_NODES: u32 = 64;
@@ -207,7 +211,7 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Number of nodes owned by each account
+    /// Number of nodes owned by each account. An account that owns no nodes has no entry.
     #[pallet::storage]
     pub type OwnedNodesCount<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, u32, ValueQuery>;
@@ -1710,6 +1714,14 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Removes the owner's entry once they own no nodes, so that every entry of
+        /// `OwnedNodesCount` is an account that owns at least one node.
+        fn decrease_owned_nodes_count(owner: &T::AccountId, n: u32) {
+            <OwnedNodesCount<T>>::mutate_exists(owner, |count| {
+                *count = count.map(|c| c.saturating_sub(n)).filter(|c| *c > 0);
+            });
+        }
+
         fn do_deregister_nodes(
             owner: &T::AccountId,
             nodes: &BoundedVec<NodeId<T>, MaxNodes>,
@@ -1727,7 +1739,7 @@ pub mod pallet {
                 <OwnedNodes<T>>::remove(owner, node);
                 // Remove the override in case it exists
                 <GenesisOverrides<T>>::remove(info.serial_number);
-                <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
+                Self::decrease_owned_nodes_count(owner, 1);
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
 
                 if Self::is_bonus_node(&info) {
@@ -1810,7 +1822,7 @@ pub mod pallet {
             }
 
             let n = nodes.len() as u32;
-            <OwnedNodesCount<T>>::mutate(current_owner, |c| *c = c.saturating_sub(n));
+            Self::decrease_owned_nodes_count(current_owner, n);
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n));
 
             if !total_stake_moved.is_zero() {
@@ -1944,7 +1956,7 @@ pub mod pallet {
             }
 
             let n_u32 = n as u32;
-            <OwnedNodesCount<T>>::mutate(current_owner, |c| *c = c.saturating_sub(n_u32));
+            Self::decrease_owned_nodes_count(current_owner, n_u32);
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n_u32));
 
             if !stake_amount.is_zero() {

@@ -141,7 +141,7 @@ fn move_single_node_without_stake_succeeds() {
 
         assert!(!<OwnedNodes<TestRuntime>>::contains_key(&ctx.owner, &node));
         assert!(<OwnedNodes<TestRuntime>>::contains_key(&ctx.new_owner, &node));
-        assert_eq!(<OwnedNodesCount<TestRuntime>>::get(&ctx.owner), 0);
+        assert!(!<OwnedNodesCount<TestRuntime>>::contains_key(&ctx.owner));
         assert_eq!(<OwnedNodesCount<TestRuntime>>::get(&ctx.new_owner), 1);
         assert_eq!(<NodeRegistry<TestRuntime>>::get(&node).unwrap().owner, ctx.new_owner);
 
@@ -201,7 +201,7 @@ fn move_multiple_nodes_updates_all_storage() {
             assert!(<OwnedNodes<TestRuntime>>::contains_key(&ctx.new_owner, node));
             assert_eq!(<NodeRegistry<TestRuntime>>::get(node).unwrap().owner, ctx.new_owner);
         }
-        assert_eq!(<OwnedNodesCount<TestRuntime>>::get(&ctx.owner), 0);
+        assert!(!<OwnedNodesCount<TestRuntime>>::contains_key(&ctx.owner));
         assert_eq!(<OwnedNodesCount<TestRuntime>>::get(&ctx.new_owner), 3);
     });
 }
@@ -360,6 +360,8 @@ fn move_nodes_with_stake_to_brand_new_account_succeeds() {
         for node in &ctx.nodes {
             assert_eq!(<NodeRegistry<TestRuntime>>::get(node).unwrap().owner, brand_new_owner);
         }
+        assert!(!<OwnedNodesCount<TestRuntime>>::contains_key(&ctx.owner));
+        assert_eq!(<OwnedNodesCount<TestRuntime>>::get(&brand_new_owner), 2);
     });
 }
 
