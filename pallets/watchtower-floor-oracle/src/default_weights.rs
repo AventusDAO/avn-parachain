@@ -38,8 +38,8 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_watchtower_floor_oracle.
 pub trait WeightInfo {
 	fn seed_chain() -> Weight;
-	fn force_set_checkpoint() -> Weight;
 	fn set_external_block_time() -> Weight;
+	fn force_set_checkpoint() -> Weight;
 	fn request_checkpoint() -> Weight;
 	fn submit_checkpoint_vote(v: u32, ) -> Weight;
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight;
@@ -62,16 +62,31 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:0 w:1)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
 	fn seed_chain() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `118`
 		//  Estimated: `3509`
-		// Minimum execution time: 23_471_000 picoseconds.
-		Weight::from_parts(32_537_000, 3509)
+		// Minimum execution time: 27_670_000 picoseconds.
+		Weight::from_parts(39_204_000, 3509)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
-			.saturating_add(T::DbWeight::get().writes(2_u64))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+	fn set_external_block_time() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `167`
+		//  Estimated: `3497`
+		// Minimum execution time: 14_421_000 picoseconds.
+		Weight::from_parts(20_296_000, 3497)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:1)
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
@@ -107,20 +122,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
 	fn force_set_checkpoint() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `353`
+		//  Measured:  `390`
 		//  Estimated: `12313`
-		// Minimum execution time: 76_057_000 picoseconds.
-		Weight::from_parts(110_875_000, 12313)
+		// Minimum execution time: 75_407_000 picoseconds.
+		Weight::from_parts(116_004_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(13_u64))
 			.saturating_add(T::DbWeight::get().writes(11_u64))
-	}
-	/// PLACEHOLDER, not generated: regenerate with the benchmarks.
-	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
-	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
-	fn set_external_block_time() -> Weight {
-		Weight::from_parts(20_000_000, 3497)
-			.saturating_add(T::DbWeight::get().reads(1_u64))
-			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
@@ -132,10 +139,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `WatchtowerFloorOracle::LastCheckpointRoundId` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	fn request_checkpoint() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
+		//  Measured:  `321`
 		//  Estimated: `12719`
-		// Minimum execution time: 25_953_000 picoseconds.
-		Weight::from_parts(35_118_000, 12719)
+		// Minimum execution time: 27_717_000 picoseconds.
+		Weight::from_parts(36_152_000, 12719)
 			.saturating_add(T::DbWeight::get().reads(4_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
@@ -143,40 +150,46 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	/// Storage: `Avn::Validators` (r:1 w:0)
 	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
 	/// The range of component `v` is `[3, 10]`.
 	fn submit_checkpoint_vote(v: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `402 + v * (64 ±0)`
+		//  Measured:  `496 + v * (64 ±0)`
 		//  Estimated: `17871`
-		// Minimum execution time: 25_997_000 picoseconds.
-		Weight::from_parts(33_116_201, 17871)
-			// Standard Error: 36_875
-			.saturating_add(Weight::from_parts(616_329, 0).saturating_mul(v.into()))
-			.saturating_add(T::DbWeight::get().reads(3_u64))
+		// Minimum execution time: 39_401_000 picoseconds.
+		Weight::from_parts(49_519_427, 17871)
+			// Standard Error: 64_166
+			.saturating_add(Weight::from_parts(1_233_578, 0).saturating_mul(v.into()))
+			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:1)
 	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:1)
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
-	/// Storage: `Avn::Validators` (r:1 w:0)
-	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::FloorMarketConfig` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::FloorMarketConfig` (`max_values`: Some(1), `max_size`: Some(28), added: 523, mode: `MaxEncodedLen`)
 	/// The range of component `v` is `[3, 10]`.
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `397 + v * (88 ±0)`
+		//  Measured:  `449 + v * (88 ±0)`
 		//  Estimated: `17871`
-		// Minimum execution time: 38_625_000 picoseconds.
-		Weight::from_parts(49_476_307, 17871)
-			// Standard Error: 63_606
-			.saturating_add(Weight::from_parts(1_667_350, 0).saturating_mul(v.into()))
-			.saturating_add(T::DbWeight::get().reads(5_u64))
+		// Minimum execution time: 51_558_000 picoseconds.
+		Weight::from_parts(68_415_199, 17871)
+			// Standard Error: 87_235
+			.saturating_add(Weight::from_parts(2_095_023, 0).saturating_mul(v.into()))
+			.saturating_add(T::DbWeight::get().reads(6_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::ActiveFloorRound` (r:1 w:1)
@@ -217,8 +230,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `292`
 		//  Estimated: `12719`
-		// Minimum execution time: 66_042_000 picoseconds.
-		Weight::from_parts(88_558_000, 12719)
+		// Minimum execution time: 68_176_000 picoseconds.
+		Weight::from_parts(89_992_000, 12719)
 			.saturating_add(T::DbWeight::get().reads(15_u64))
 			.saturating_add(T::DbWeight::get().writes(8_u64))
 	}
@@ -262,8 +275,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `292`
 		//  Estimated: `12719`
-		// Minimum execution time: 71_777_000 picoseconds.
-		Weight::from_parts(92_501_000, 12719)
+		// Minimum execution time: 72_017_000 picoseconds.
+		Weight::from_parts(93_992_000, 12719)
 			.saturating_add(T::DbWeight::get().reads(16_u64))
 			.saturating_add(T::DbWeight::get().writes(8_u64))
 	}
@@ -309,8 +322,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1730`
 		//  Estimated: `12313`
-		// Minimum execution time: 145_291_000 picoseconds.
-		Weight::from_parts(186_774_000, 12313)
+		// Minimum execution time: 142_683_000 picoseconds.
+		Weight::from_parts(187_164_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(15_u64))
 			.saturating_add(T::DbWeight::get().writes(12_u64))
 	}
@@ -320,8 +333,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
-		// Minimum execution time: 7_188_000 picoseconds.
-		Weight::from_parts(8_234_000, 0)
+		// Minimum execution time: 7_076_000 picoseconds.
+		Weight::from_parts(8_199_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::ActiveVenueRound` (r:1 w:1)
@@ -354,8 +367,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `162`
 		//  Estimated: `12313`
-		// Minimum execution time: 46_043_000 picoseconds.
-		Weight::from_parts(51_931_000, 12313)
+		// Minimum execution time: 45_617_000 picoseconds.
+		Weight::from_parts(52_139_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(11_u64))
 			.saturating_add(T::DbWeight::get().writes(8_u64))
 	}
@@ -401,8 +414,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `1660`
 		//  Estimated: `12313`
-		// Minimum execution time: 130_495_000 picoseconds.
-		Weight::from_parts(172_039_000, 12313)
+		// Minimum execution time: 136_360_000 picoseconds.
+		Weight::from_parts(175_792_000, 12313)
 			.saturating_add(T::DbWeight::get().reads(15_u64))
 			.saturating_add(T::DbWeight::get().writes(12_u64))
 	}
@@ -412,8 +425,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
-		// Minimum execution time: 8_268_000 picoseconds.
-		Weight::from_parts(9_588_000, 0)
+		// Minimum execution time: 8_349_000 picoseconds.
+		Weight::from_parts(9_618_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::FloorMarketConfig` (r:0 w:1)
@@ -422,8 +435,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
-		// Minimum execution time: 7_785_000 picoseconds.
-		Weight::from_parts(9_118_000, 0)
+		// Minimum execution time: 7_826_000 picoseconds.
+		Weight::from_parts(9_131_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:0)
@@ -436,8 +449,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `427`
 		//  Estimated: `1489`
-		// Minimum execution time: 16_473_000 picoseconds.
-		Weight::from_parts(19_546_000, 1489)
+		// Minimum execution time: 16_590_000 picoseconds.
+		Weight::from_parts(19_773_000, 1489)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
 	}
@@ -452,10 +465,10 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		// Proof Size summary in bytes:
 		//  Measured:  `204 + n * (172 ±0)`
 		//  Estimated: `3593 + n * (2603 ±0)`
-		// Minimum execution time: 13_773_000 picoseconds.
-		Weight::from_parts(20_640_364, 3593)
-			// Standard Error: 11_966
-			.saturating_add(Weight::from_parts(7_315_275, 0).saturating_mul(n.into()))
+		// Minimum execution time: 13_873_000 picoseconds.
+		Weight::from_parts(24_966_403, 3593)
+			// Standard Error: 11_724
+			.saturating_add(Weight::from_parts(7_577_382, 0).saturating_mul(n.into()))
 			.saturating_add(T::DbWeight::get().reads(3_u64))
 			.saturating_add(T::DbWeight::get().reads((2_u64).saturating_mul(n.into())))
 			.saturating_add(T::DbWeight::get().writes(1_u64))
@@ -470,16 +483,31 @@ impl WeightInfo for () {
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:0 w:1)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
 	fn seed_chain() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `118`
 		//  Estimated: `3509`
-		// Minimum execution time: 23_471_000 picoseconds.
-		Weight::from_parts(32_537_000, 3509)
+		// Minimum execution time: 27_670_000 picoseconds.
+		Weight::from_parts(39_204_000, 3509)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+			.saturating_add(RocksDbWeight::get().writes(3_u64))
+	}
+	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+	fn set_external_block_time() -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `167`
+		//  Estimated: `3497`
+		// Minimum execution time: 14_421_000 picoseconds.
+		Weight::from_parts(20_296_000, 3497)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:1)
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
@@ -515,20 +543,12 @@ impl WeightInfo for () {
 	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
 	fn force_set_checkpoint() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `353`
+		//  Measured:  `390`
 		//  Estimated: `12313`
-		// Minimum execution time: 76_057_000 picoseconds.
-		Weight::from_parts(110_875_000, 12313)
+		// Minimum execution time: 75_407_000 picoseconds.
+		Weight::from_parts(116_004_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(13_u64))
 			.saturating_add(RocksDbWeight::get().writes(11_u64))
-	}
-	/// PLACEHOLDER, not generated: regenerate with the benchmarks.
-	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
-	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:0 w:1)
-	fn set_external_block_time() -> Weight {
-		Weight::from_parts(20_000_000, 3497)
-			.saturating_add(RocksDbWeight::get().reads(1_u64))
-			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
@@ -540,10 +560,10 @@ impl WeightInfo for () {
 	/// Proof: `WatchtowerFloorOracle::LastCheckpointRoundId` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	fn request_checkpoint() -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `284`
+		//  Measured:  `321`
 		//  Estimated: `12719`
-		// Minimum execution time: 25_953_000 picoseconds.
-		Weight::from_parts(35_118_000, 12719)
+		// Minimum execution time: 27_717_000 picoseconds.
+		Weight::from_parts(36_152_000, 12719)
 			.saturating_add(RocksDbWeight::get().reads(4_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
@@ -551,40 +571,46 @@ impl WeightInfo for () {
 	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
 	/// Storage: `Avn::Validators` (r:1 w:0)
 	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
 	/// The range of component `v` is `[3, 10]`.
 	fn submit_checkpoint_vote(v: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `402 + v * (64 ±0)`
+		//  Measured:  `496 + v * (64 ±0)`
 		//  Estimated: `17871`
-		// Minimum execution time: 25_997_000 picoseconds.
-		Weight::from_parts(33_116_201, 17871)
-			// Standard Error: 36_875
-			.saturating_add(Weight::from_parts(616_329, 0).saturating_mul(v.into()))
-			.saturating_add(RocksDbWeight::get().reads(3_u64))
+		// Minimum execution time: 39_401_000 picoseconds.
+		Weight::from_parts(49_519_427, 17871)
+			// Standard Error: 64_166
+			.saturating_add(Weight::from_parts(1_233_578, 0).saturating_mul(v.into()))
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::CheckpointRound` (r:1 w:1)
 	/// Proof: `WatchtowerFloorOracle::CheckpointRound` (`max_values`: None, `max_size`: Some(9254), added: 11729, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::Checkpoints` (r:1 w:1)
 	/// Proof: `WatchtowerFloorOracle::Checkpoints` (`max_values`: None, `max_size`: Some(44), added: 2519, mode: `MaxEncodedLen`)
-	/// Storage: `Avn::Validators` (r:1 w:0)
-	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (r:1 w:0)
+	/// Proof: `WatchtowerFloorOracle::MinExternalBlockTimeMs` (`max_values`: None, `max_size`: Some(28), added: 2503, mode: `MaxEncodedLen`)
 	/// Storage: `Timestamp::Now` (r:1 w:0)
 	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
 	/// Storage: `WatchtowerFloorOracle::FloorMarketConfig` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::FloorMarketConfig` (`max_values`: Some(1), `max_size`: Some(28), added: 523, mode: `MaxEncodedLen`)
 	/// The range of component `v` is `[3, 10]`.
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `397 + v * (88 ±0)`
+		//  Measured:  `449 + v * (88 ±0)`
 		//  Estimated: `17871`
-		// Minimum execution time: 38_625_000 picoseconds.
-		Weight::from_parts(49_476_307, 17871)
-			// Standard Error: 63_606
-			.saturating_add(Weight::from_parts(1_667_350, 0).saturating_mul(v.into()))
-			.saturating_add(RocksDbWeight::get().reads(5_u64))
+		// Minimum execution time: 51_558_000 picoseconds.
+		Weight::from_parts(68_415_199, 17871)
+			// Standard Error: 87_235
+			.saturating_add(Weight::from_parts(2_095_023, 0).saturating_mul(v.into()))
+			.saturating_add(RocksDbWeight::get().reads(6_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::ActiveFloorRound` (r:1 w:1)
@@ -625,8 +651,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `292`
 		//  Estimated: `12719`
-		// Minimum execution time: 66_042_000 picoseconds.
-		Weight::from_parts(88_558_000, 12719)
+		// Minimum execution time: 68_176_000 picoseconds.
+		Weight::from_parts(89_992_000, 12719)
 			.saturating_add(RocksDbWeight::get().reads(15_u64))
 			.saturating_add(RocksDbWeight::get().writes(8_u64))
 	}
@@ -670,8 +696,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `292`
 		//  Estimated: `12719`
-		// Minimum execution time: 71_777_000 picoseconds.
-		Weight::from_parts(92_501_000, 12719)
+		// Minimum execution time: 72_017_000 picoseconds.
+		Weight::from_parts(93_992_000, 12719)
 			.saturating_add(RocksDbWeight::get().reads(16_u64))
 			.saturating_add(RocksDbWeight::get().writes(8_u64))
 	}
@@ -717,8 +743,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1730`
 		//  Estimated: `12313`
-		// Minimum execution time: 145_291_000 picoseconds.
-		Weight::from_parts(186_774_000, 12313)
+		// Minimum execution time: 142_683_000 picoseconds.
+		Weight::from_parts(187_164_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(15_u64))
 			.saturating_add(RocksDbWeight::get().writes(12_u64))
 	}
@@ -728,8 +754,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
-		// Minimum execution time: 7_188_000 picoseconds.
-		Weight::from_parts(8_234_000, 0)
+		// Minimum execution time: 7_076_000 picoseconds.
+		Weight::from_parts(8_199_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::ActiveVenueRound` (r:1 w:1)
@@ -762,8 +788,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `162`
 		//  Estimated: `12313`
-		// Minimum execution time: 46_043_000 picoseconds.
-		Weight::from_parts(51_931_000, 12313)
+		// Minimum execution time: 45_617_000 picoseconds.
+		Weight::from_parts(52_139_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(11_u64))
 			.saturating_add(RocksDbWeight::get().writes(8_u64))
 	}
@@ -809,8 +835,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `1660`
 		//  Estimated: `12313`
-		// Minimum execution time: 130_495_000 picoseconds.
-		Weight::from_parts(172_039_000, 12313)
+		// Minimum execution time: 136_360_000 picoseconds.
+		Weight::from_parts(175_792_000, 12313)
 			.saturating_add(RocksDbWeight::get().reads(15_u64))
 			.saturating_add(RocksDbWeight::get().writes(12_u64))
 	}
@@ -820,8 +846,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
-		// Minimum execution time: 8_268_000 picoseconds.
-		Weight::from_parts(9_588_000, 0)
+		// Minimum execution time: 8_349_000 picoseconds.
+		Weight::from_parts(9_618_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::FloorMarketConfig` (r:0 w:1)
@@ -830,8 +856,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
-		// Minimum execution time: 7_785_000 picoseconds.
-		Weight::from_parts(9_118_000, 0)
+		// Minimum execution time: 7_826_000 picoseconds.
+		Weight::from_parts(9_131_000, 0)
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 	/// Storage: `NodeManager::TotalRegisteredNodes` (r:1 w:0)
@@ -844,8 +870,8 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `427`
 		//  Estimated: `1489`
-		// Minimum execution time: 16_473_000 picoseconds.
-		Weight::from_parts(19_546_000, 1489)
+		// Minimum execution time: 16_590_000 picoseconds.
+		Weight::from_parts(19_773_000, 1489)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
@@ -860,10 +886,10 @@ impl WeightInfo for () {
 		// Proof Size summary in bytes:
 		//  Measured:  `204 + n * (172 ±0)`
 		//  Estimated: `3593 + n * (2603 ±0)`
-		// Minimum execution time: 13_773_000 picoseconds.
-		Weight::from_parts(20_640_364, 3593)
-			// Standard Error: 11_966
-			.saturating_add(Weight::from_parts(7_315_275, 0).saturating_mul(n.into()))
+		// Minimum execution time: 13_873_000 picoseconds.
+		Weight::from_parts(24_966_403, 3593)
+			// Standard Error: 11_724
+			.saturating_add(Weight::from_parts(7_577_382, 0).saturating_mul(n.into()))
 			.saturating_add(RocksDbWeight::get().reads(3_u64))
 			.saturating_add(RocksDbWeight::get().reads((2_u64).saturating_mul(n.into())))
 			.saturating_add(RocksDbWeight::get().writes(1_u64))
