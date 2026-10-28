@@ -1,7 +1,8 @@
 // Copyright 2026 Aventus DAO Ltd
 
 use crate::{
-    chain::ChainClient, keystore_utils::*, signing::SignerProvider, timer::OperationTimer,
+    chain::ChainClient, floor_oracle::FloorRequest, keystore_utils::*, read_cache::ReadCache,
+    signing::SignerProvider, timer::OperationTimer, venue_oracle::VenueRequest,
 };
 use anyhow::Result;
 use axum::{
@@ -20,7 +21,7 @@ use sp_avn_common::{
     DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
 use sp_core::{sr25519, H160, H256};
-use sp_floor_oracle::{FLOOR_SERVICE_PATH, VENUE_SERVICE_PATH};
+use sp_floor_oracle::{FloorObservation, VenueObservation, FLOOR_SERVICE_PATH, VENUE_SERVICE_PATH};
 use sp_io::hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
 use sp_watchtower::NODE_COUNTRY_SERVICE_PATH;
@@ -29,6 +30,9 @@ use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
 
 const MAX_BODY_SIZE: usize = 100_000; // 100KB
+/// Observations kept per oracle route. A round asks for one key, so a few cover the rounds
+/// that can overlap.
+pub const OBSERVATION_CACHE_SIZE: usize = 8;
 
 #[derive(Clone)]
 pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<Block>> {
@@ -43,6 +47,10 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     /// Venue chain (Base) endpoints for the venue oracle, in failover order. `None` on nodes
     /// that are not registered watchtowers, where the route is disabled.
     pub venue_rpc_urls: Option<Vec<String>>,
+    /// Floor observations by request, shared by concurrent and repeated asks.
+    pub floor_reads: Arc<ReadCache<FloorRequest, FloorObservation>>,
+    /// Venue observations by request, shared by concurrent and repeated asks.
+    pub venue_reads: Arc<ReadCache<VenueRequest, VenueObservation>>,
     /// Every endpoint list the node has (floor, venue, bridge), for the checkpoint route on
     /// collators, with the per-chain choice cached.
     pub checkpoint_endpoints: Arc<crate::checkpoint::Endpoints>,
@@ -417,8 +425,10 @@ where
     let punks = punks
         .parse::<alloy::primitives::Address>()
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid punks address {punks}: {e}")))?;
-    let request = crate::floor_oracle::FloorRequest { chain_id, pinned_block, punks };
-    match crate::floor_oracle::observe(rpc_urls, &request).await {
+    let request = FloorRequest { chain_id, pinned_block, punks };
+    let rpc_urls = rpc_urls.clone();
+    let read = move || async move { crate::floor_oracle::observe(&rpc_urls, &request).await };
+    match state.floor_reads.get_or_read(request, read).await {
         Ok(observation) => Ok(encode_to_http_data(observation)),
         Err(e) => {
             let m = format!("floor observation unavailable: {e:#}");
@@ -451,19 +461,21 @@ where
         hex.parse::<alloy::primitives::Address>()
             .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid {name} address {hex}: {e}")))
     };
-    let request = crate::venue_oracle::VenueRequest {
+    let request = VenueRequest {
         chain_id,
         target_ts,
         clearing_house: parse("clearing_house", &clearing_house)?,
         amm: parse("amm", &amm)?,
     };
-    match crate::venue_oracle::observe(rpc_urls, &request).await {
+    let rpc_urls = rpc_urls.clone();
+    let read = move || async move { crate::venue_oracle::observe(&rpc_urls, &request).await };
+    match state.venue_reads.get_or_read(request, read).await {
         Ok(observation) => Ok(encode_to_http_data(Some(observation))),
         // Expected on a round's first attempts. Answered as a success with no observation, so
         // the watchtower retries next block without logging an error.
         Err(e) if crate::venue_oracle::is_target_not_reached(&e) => {
             log::info!("⛓️ external-service venue observation not ready: {e:#}");
-            Ok(encode_to_http_data(None::<sp_floor_oracle::VenueObservation>))
+            Ok(encode_to_http_data(None::<VenueObservation>))
         },
         Err(e) => {
             let m = format!("venue observation unavailable: {e:#}");

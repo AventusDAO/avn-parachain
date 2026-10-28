@@ -20,6 +20,12 @@
 //!   its rounds time out and restart forever, visible as repeated `CheckpointRoundRestarted`.
 //! - A checkpoint is written exactly once per round and never changed. A later round writes a new
 //!   checkpoint under a new round id.
+//! - Votes are bounded above when root has set the chain's fastest block time: a vote may run ahead
+//!   of the checkpoint only by the blocks the chain can have produced since it was agreed, plus
+//!   `CheckpointVoteSlackSecs` worth (see [`Pallet::max_checkpoint_vote`]). Bad votes can then push
+//!   a checkpoint at most that far past the real chain, which catches up on its own. Collators cap
+//!   their own vote at the bound, so a checkpoint left behind the chain still catches up, by at
+//!   most the bound per round.
 //!
 //! There is no background polling, no block rounding and no height advancement. Freshness is
 //! measured as time since agreement, not time since the external chain last advanced.
@@ -81,12 +87,12 @@ pub use sp_floor_oracle::{
     VENUE_SERVICE_PATH,
 };
 use sp_runtime::{
-    traits::{Dispatchable, Saturating},
+    traits::{Dispatchable, Saturating, Zero},
     transaction_validity::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
     },
-    DispatchError, Perbill, RuntimeAppPublic,
+    DispatchError, Perbill, RuntimeAppPublic, SaturatedConversion,
 };
 use sp_std::prelude::*;
 use sp_watchtower::sanitise_country;
@@ -137,6 +143,7 @@ pub const VOTE_NO_MATCHING_ROUND: u8 = 1;
 pub const VOTE_ALREADY_CAST: u8 = 2;
 pub const VOTE_BAD_SIGNATURE: u8 = 3;
 pub const VOTE_BEHIND_CHECKPOINT: u8 = 4;
+pub const VOTE_TOO_FAR_AHEAD: u8 = 5;
 pub const FLOOR_REPORT_NOT_VALID: u8 = 10;
 pub const VENUE_REPORT_NOT_VALID: u8 = 11;
 
@@ -228,6 +235,13 @@ pub mod pallet {
         #[pallet::constant]
         type RoundTimeoutBlocks: Get<BlockNumberFor<Self>>;
 
+        /// How far, in seconds of the chain's fastest block production, a checkpoint vote may
+        /// run ahead of the time elapsed since the checkpoint was agreed. Covers honest drift;
+        /// it is also about how long the chain needs to overtake a checkpoint bad votes pushed
+        /// to the limit. Only applies to chains with a `MinExternalBlockTimeMs`.
+        #[pallet::constant]
+        type CheckpointVoteSlackSecs: Get<u64>;
+
         type WeightInfo: WeightInfo;
     }
 
@@ -236,6 +250,14 @@ pub mod pallet {
     #[pallet::getter(fn max_checkpoint_age)]
     pub type MaxCheckpointAge<T: Config> =
         StorageMap<_, Blake2_128Concat, ExternalChainId, u64, OptionQuery>;
+
+    /// Shortest time between two blocks of a chain, in milliseconds. Bounds how far a checkpoint
+    /// vote may run ahead (see [`Pallet::max_checkpoint_vote`]). No entry: votes are not bounded
+    /// above, as on a local dev chain that mines on demand.
+    #[pallet::storage]
+    #[pallet::getter(fn min_external_block_time_ms)]
+    pub type MinExternalBlockTimeMs<T: Config> =
+        StorageMap<_, Blake2_128Concat, ExternalChainId, u32, OptionQuery>;
 
     /// The latest agreed checkpoint per chain. This is what nodes and other pallets read.
     #[pallet::storage]
@@ -426,9 +448,11 @@ pub mod pallet {
             hash: H256,
             country: CountryCode,
         },
-        /// The watchtowers agreed on a floor.
+        /// The watchtowers agreed on a floor. Voting can outlast `MaxFloorAge`, so the floor may
+        /// already be stale: its age runs from `external_block_time_sec`, as the cache's does.
         FloorRoundFinalised {
             round_id: u64,
+            external_block_time_sec: u64,
             floor_wei: u128,
             agreeing: u32,
             reports: u32,
@@ -459,10 +483,13 @@ pub mod pallet {
             hash: H256,
             country: CountryCode,
         },
-        /// The watchtowers agreed on the venue state. Raw contract values, 18 decimals.
+        /// The watchtowers agreed on the venue state. Raw contract values, 18 decimals. Voting
+        /// can outlast `MaxVenueAge`, so the state may already be stale: its age runs from
+        /// `external_block_time_sec`, as the cache's does.
         VenueRoundFinalised {
             round_id: u64,
             external_block: u64,
+            external_block_time_sec: u64,
             spot_e18: u128,
             oracle_e18: u128,
             oi_notional_e18: u128,
@@ -472,6 +499,10 @@ pub mod pallet {
         },
         /// The venue round ended without agreement.
         VenueRoundFailed { round_id: u64, result: ProposalStatusEnum },
+        /// Root replaced a chain's checkpoint and dropped its running round.
+        CheckpointForced { chain_id: ExternalChainId, block_number: u32, agreed_at: u64 },
+        /// The fastest block time of a chain was set, or cleared (`None`: votes unbounded).
+        ExternalBlockTimeSet { chain_id: ExternalChainId, min_external_block_time_ms: Option<u32> },
     }
 
     #[pallet::error]
@@ -488,7 +519,8 @@ pub mod pallet {
         DuplicateVote,
         /// The author is not a current validator.
         NotAValidator,
-        /// The voted height is below the current checkpoint. Checkpoints never move backwards.
+        /// The voted height is below the current checkpoint. Votes never move a checkpoint
+        /// backwards; only root can, with `force_set_checkpoint`.
         BlockBehindCheckpoint,
         /// The round cannot hold any more votes.
         TooManyVotes,
@@ -552,13 +584,23 @@ pub mod pallet {
         VenueVotesAreReports,
         /// The venue report signature does not verify against the watchtower's signing key.
         VenueReportBadSignature,
+        /// The voted height is further ahead of the checkpoint than the chain can have moved
+        /// since it was agreed (see `max_checkpoint_vote`).
+        BlockTooFarAhead,
+        /// A block time must be greater than zero.
+        InvalidBlockTime,
     }
 
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         /// Register a chain and, if it has no checkpoint yet, seed its initial block number.
         ///
-        /// Calling it again on a seeded chain only updates the freshness limit.
+        /// `min_external_block_time_ms` is the chain's fastest block time, which bounds how far
+        /// checkpoint votes may run ahead; `None` leaves votes unbounded. Seed with a recent
+        /// block: with a block time set, a checkpoint behind the chain catches up only by the
+        /// bound per round.
+        ///
+        /// Calling it again on a seeded chain only updates the freshness limit and block time.
         #[pallet::call_index(0)]
         #[pallet::weight(<T as Config>::WeightInfo::seed_chain())]
         pub fn seed_chain(
@@ -566,9 +608,11 @@ pub mod pallet {
             chain_id: ExternalChainId,
             initial_block_number: u32,
             max_checkpoint_age_secs: u64,
+            min_external_block_time_ms: Option<u32>,
         ) -> DispatchResult {
             ensure_root(origin)?;
             ensure!(max_checkpoint_age_secs > 0, Error::<T>::InvalidFreshnessLimit);
+            Self::do_set_external_block_time(chain_id, min_external_block_time_ms)?;
 
             MaxCheckpointAge::<T>::insert(chain_id, max_checkpoint_age_secs);
             Self::deposit_event(Event::<T>::FreshnessLimitSet {
@@ -590,6 +634,50 @@ pub mod pallet {
             }
 
             Ok(())
+        }
+
+        /// Replace the checkpoint of a seeded chain, in either direction. The recovery path for
+        /// a wrong checkpoint: votes below it are refused, so one agreed too high (or left above
+        /// a chain that was reset) would stop the chain's checkpoints for good. Drops the
+        /// running round, whose votes were cast against the old value, and hands the new
+        /// checkpoint to whatever waits on one, as an agreed checkpoint would be.
+        ///
+        /// Use a recent finalised block: forced floor rounds only pin young checkpoints, and with
+        /// a block time set, a checkpoint behind the chain catches up only by the vote bound per
+        /// round.
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::force_set_checkpoint())]
+        pub fn force_set_checkpoint(
+            origin: OriginFor<T>,
+            chain_id: ExternalChainId,
+            block_number: u32,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(Checkpoints::<T>::contains_key(chain_id), Error::<T>::ChainNotRegistered);
+
+            CheckpointRound::<T>::remove(chain_id);
+            let agreed_at = Self::now_secs();
+            let checkpoint = Checkpoint { block_number, agreed_at, round_id: 0 };
+            Checkpoints::<T>::insert(chain_id, &checkpoint);
+            Self::deposit_event(Event::<T>::CheckpointForced { chain_id, block_number, agreed_at });
+            Self::on_checkpoint_agreed(chain_id, &checkpoint);
+            Ok(())
+        }
+
+        /// Set or clear the fastest block time of a registered chain, in milliseconds. It bounds
+        /// how far checkpoint votes may run ahead (see [`Pallet::max_checkpoint_vote`]); `None`
+        /// removes the bound. Takes effect for votes from the next block, on the running round
+        /// too.
+        #[pallet::call_index(13)]
+        #[pallet::weight(<T as Config>::WeightInfo::set_external_block_time())]
+        pub fn set_external_block_time(
+            origin: OriginFor<T>,
+            chain_id: ExternalChainId,
+            min_external_block_time_ms: Option<u32>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(MaxCheckpointAge::<T>::contains_key(chain_id), Error::<T>::ChainNotRegistered);
+            Self::do_set_external_block_time(chain_id, min_external_block_time_ms)
         }
 
         /// Ask for a checkpoint the same way another pallet would. Meant for operations and
@@ -801,6 +889,10 @@ pub mod pallet {
                 Self::is_at_or_above_checkpoint(chain_id, block_number),
                 Error::<T>::BlockBehindCheckpoint
             );
+            ensure!(
+                Self::is_within_vote_bound(chain_id, block_number),
+                Error::<T>::BlockTooFarAhead
+            );
 
             let validators = AVN::<T>::validators();
             ensure!(
@@ -898,6 +990,9 @@ pub mod pallet {
                     }
                     if !Self::is_at_or_above_checkpoint(*chain_id, *block_number) {
                         return InvalidTransaction::Custom(VOTE_BEHIND_CHECKPOINT).into()
+                    }
+                    if !Self::is_within_vote_bound(*chain_id, *block_number) {
+                        return InvalidTransaction::Custom(VOTE_TOO_FAR_AHEAD).into()
                     }
 
                     let payload = Self::vote_signing_payload(
@@ -1024,7 +1119,23 @@ pub mod pallet {
             account_id: &T::AccountId,
             block_number: u32,
         ) -> Vec<u8> {
-            (SUBMIT_CHECKPOINT_VOTE_CONTEXT, chain_id, round_id, account_id, block_number).encode()
+            (
+                SUBMIT_CHECKPOINT_VOTE_CONTEXT,
+                Self::genesis_hash(),
+                chain_id,
+                round_id,
+                account_id,
+                block_number,
+            )
+                .encode()
+        }
+
+        /// Ties a signed payload to this chain. Unsigned calls get no `CheckGenesis`, and round
+        /// ids restart at 1 on every deployment, so without it a signature made on one chain
+        /// could verify on another where the same key is registered. frame_system never prunes
+        /// block 0's hash, so it is in every node's current state.
+        pub fn genesis_hash() -> T::Hash {
+            frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::zero())
         }
 
         /// Verify a vote signature against the key registered for the author, not the key sent
@@ -1048,6 +1159,42 @@ pub mod pallet {
                 Some(checkpoint) => block_number >= checkpoint.block_number,
                 None => true,
             }
+        }
+
+        /// Highest block a checkpoint vote on `chain_id` may name now: the checkpoint plus the
+        /// blocks the chain can have produced, at its fastest block time, since the checkpoint
+        /// was agreed and in `CheckpointVoteSlackSecs` more. `None`, for no bound, when the chain
+        /// has no block time set or no checkpoint.
+        ///
+        /// Honest votes stay under it: they trail the chain's head, and the checkpoint trailed
+        /// it too when agreed. Bad votes cannot carry a checkpoint more than about the slack
+        /// past the real chain, so a checkpoint agreed too high is overtaken within about the
+        /// slack instead of stopping the chain until root steps in.
+        pub fn max_checkpoint_vote(chain_id: ExternalChainId) -> Option<u32> {
+            let block_time_ms = MinExternalBlockTimeMs::<T>::get(chain_id)?;
+            let checkpoint = Checkpoints::<T>::get(chain_id)?;
+            let secs = Self::now_secs()
+                .saturating_sub(checkpoint.agreed_at)
+                .saturating_add(T::CheckpointVoteSlackSecs::get());
+            let blocks = secs.saturating_mul(1_000) / u64::from(block_time_ms.max(1));
+            Some(checkpoint.block_number.saturating_add(blocks.saturated_into::<u32>()))
+        }
+
+        pub fn is_within_vote_bound(chain_id: ExternalChainId, block_number: u32) -> bool {
+            Self::max_checkpoint_vote(chain_id).map_or(true, |max| block_number <= max)
+        }
+
+        fn do_set_external_block_time(
+            chain_id: ExternalChainId,
+            min_external_block_time_ms: Option<u32>,
+        ) -> DispatchResult {
+            ensure!(min_external_block_time_ms != Some(0), Error::<T>::InvalidBlockTime);
+            MinExternalBlockTimeMs::<T>::set(chain_id, min_external_block_time_ms);
+            Self::deposit_event(Event::<T>::ExternalBlockTimeSet {
+                chain_id,
+                min_external_block_time_ms,
+            });
+            Ok(())
         }
 
         /// Rounds that are currently collecting votes.

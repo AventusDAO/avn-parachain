@@ -29,7 +29,8 @@ fn seed_floor_chain() -> Checkpoint {
         RuntimeOrigin::root(),
         FLOOR_CHAIN,
         SEED_BLOCK,
-        CHECKPOINT_MAX_AGE
+        CHECKPOINT_MAX_AGE,
+        None
     ));
     FloorOracle::checkpoints(FLOOR_CHAIN).unwrap()
 }
@@ -290,6 +291,29 @@ mod requests {
         });
     }
 
+    /// A request waiting on a checkpoint round that root drops is served by the checkpoint
+    /// root sets, as it would be by an agreed one, rather than left waiting.
+    #[test]
+    fn a_forced_checkpoint_serves_the_waiting_request() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            seed_floor_chain();
+            advance_secs(CHECKPOINT_MAX_AGE + 1);
+            assert_ok!(request());
+            assert_eq!(FloorOracle::pending_floor_request(), Some(FloorRoundKind::Requested));
+
+            assert_ok!(FloorOracle::force_set_checkpoint(
+                RuntimeOrigin::root(),
+                FLOOR_CHAIN,
+                SEED_BLOCK + 50
+            ));
+            assert!(FloorOracle::checkpoint_round(FLOOR_CHAIN).is_none());
+            assert_eq!(FloorOracle::pending_floor_request(), None);
+            let round = FloorOracle::active_floor_round().expect("round started");
+            assert_eq!(round.external_block, SEED_BLOCK + 50);
+            assert_eq!(round.checkpoint_agreed_at_sec, now_secs());
+        });
+    }
+
     /// The chain still accepts the checkpoint, but it is too old for a floor: a floor pinned to
     /// it would be close to `MaxFloorAge` before it even finalised. A new checkpoint round runs.
     #[test]
@@ -326,7 +350,13 @@ mod requests {
             seed_floor_chain();
             advance_secs(CHECKPOINT_MAX_AGE + 1);
             assert_ok!(request());
-            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), 8453, 5, CHECKPOINT_MAX_AGE));
+            assert_ok!(FloorOracle::seed_chain(
+                RuntimeOrigin::root(),
+                8453,
+                5,
+                CHECKPOINT_MAX_AGE,
+                None
+            ));
             assert_eq!(FloorOracle::pending_floor_request(), Some(FloorRoundKind::Requested));
             assert!(FloorOracle::active_floor_round().is_none());
         });
@@ -774,6 +804,19 @@ mod reports {
                 validate(&relabelled),
                 Err(InvalidTransaction::Custom(FLOOR_REPORT_NOT_VALID))
             );
+
+            // The chain and the round's market are signed too: a report made on another
+            // deployment, or for another market, does not verify.
+            let signed = ReportContext::new(round.round_id, observation(50), 2).call();
+            assert_eq!(validate(&signed), Ok(()));
+            let genesis = frame_system::BlockHash::<TestRuntime>::get(0);
+            frame_system::BlockHash::<TestRuntime>::insert(0, H256::repeat_byte(9));
+            assert_eq!(validate(&signed), Err(InvalidTransaction::Custom(FLOOR_REPORT_NOT_VALID)));
+            frame_system::BlockHash::<TestRuntime>::insert(0, genesis);
+            ActiveFloorRound::<TestRuntime>::mutate(|round| {
+                round.as_mut().expect("round running").market.chain_id += 1
+            });
+            assert_eq!(validate(&signed), Err(InvalidTransaction::Custom(FLOOR_REPORT_NOT_VALID)));
         });
     }
 }
@@ -962,6 +1005,7 @@ mod voting {
             assert_eq!(floor.finalised_at_sec, now_secs());
             assert_event(Event::FloorRoundFinalised {
                 round_id: round.round_id,
+                external_block_time_sec: observation(51).external_block_time_sec,
                 floor_wei: 51,
                 agreeing: 6,
                 reports: 7,

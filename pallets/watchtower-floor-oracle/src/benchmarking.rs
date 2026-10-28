@@ -15,6 +15,9 @@ const VENUE_CHAIN_ID: ExternalChainId = 8453;
 const MAX_AGE_SECS: u64 = 600;
 const SEED_BLOCK: u32 = 100;
 const VOTED_BLOCK: u32 = 1_000;
+/// Fast enough that the vote bound never refuses `VOTED_BLOCK`, while the vote benchmarks
+/// still read the block time and compute the bound.
+const BLOCK_TIME_MS: u32 = 1;
 
 fn setup_validators<T: Config>(count: u32) -> Vec<Author<T>> {
     let mnemonic: &str =
@@ -37,9 +40,14 @@ fn setup_validators<T: Config>(count: u32) -> Vec<Author<T>> {
 }
 
 fn seed_default_chain<T: Config>() {
-    assert!(
-        Pallet::<T>::seed_chain(RawOrigin::Root.into(), CHAIN_ID, SEED_BLOCK, MAX_AGE_SECS).is_ok()
-    );
+    assert!(Pallet::<T>::seed_chain(
+        RawOrigin::Root.into(),
+        CHAIN_ID,
+        SEED_BLOCK,
+        MAX_AGE_SECS,
+        Some(BLOCK_TIME_MS)
+    )
+    .is_ok());
 }
 
 /// Open a round directly in storage, without touching the timestamp.
@@ -94,7 +102,8 @@ fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
         RawOrigin::Root.into(),
         market.chain_id,
         SEED_BLOCK,
-        MAX_AGE_SECS
+        MAX_AGE_SECS,
+        None
     )
     .is_ok());
     assert!(Pallet::<T>::do_request_floor_price().is_ok());
@@ -173,12 +182,39 @@ fn preload_votes_for<T: Config>(proposal_id: ProposalId, answer: H256) {
 
 benchmarks! {
     seed_chain {
-    }: _(RawOrigin::Root, CHAIN_ID, SEED_BLOCK, MAX_AGE_SECS)
+    }: _(RawOrigin::Root, CHAIN_ID, SEED_BLOCK, MAX_AGE_SECS, Some(BLOCK_TIME_MS))
     verify {
         assert_eq!(MaxCheckpointAge::<T>::get(CHAIN_ID), Some(MAX_AGE_SECS));
+        assert_eq!(MinExternalBlockTimeMs::<T>::get(CHAIN_ID), Some(BLOCK_TIME_MS));
         let checkpoint = Checkpoints::<T>::get(CHAIN_ID).expect("seeded");
         assert_eq!(checkpoint.block_number, SEED_BLOCK);
         assert_eq!(checkpoint.round_id, 0);
+    }
+
+    set_external_block_time {
+        seed_default_chain::<T>();
+    }: _(RawOrigin::Root, CHAIN_ID, Some(12_000))
+    verify {
+        assert_eq!(MinExternalBlockTimeMs::<T>::get(CHAIN_ID), Some(12_000));
+    }
+
+    // Worst path: a full round is dropped and a waiting floor request starts a floor round.
+    force_set_checkpoint {
+        let validators = setup_validators::<T>(MAX_VALIDATOR_ACCOUNTS);
+        assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(floor_market())).is_ok());
+        seed_default_chain::<T>();
+        let votes = validators.iter()
+            .map(|validator| (validator.account_id.clone(), VOTED_BLOCK))
+            .collect();
+        open_round::<T>(1, votes);
+        PendingFloorRequest::<T>::put(FloorRoundKind::Requested);
+    }: _(RawOrigin::Root, CHAIN_ID, SEED_BLOCK + 1)
+    verify {
+        assert!(CheckpointRound::<T>::get(CHAIN_ID).is_none());
+        let checkpoint = Checkpoints::<T>::get(CHAIN_ID).expect("set");
+        assert_eq!((checkpoint.block_number, checkpoint.round_id), (SEED_BLOCK + 1, 0));
+        assert_eq!(PendingFloorRequest::<T>::get(), None);
+        assert!(ActiveFloorRound::<T>::get().is_some());
     }
 
     // Worst path: a timed out round is replaced by a new one.
@@ -236,7 +272,8 @@ benchmarks! {
             RawOrigin::Root.into(),
             market.chain_id,
             SEED_BLOCK,
-            MAX_AGE_SECS
+            MAX_AGE_SECS,
+None
         )
         .is_ok());
     }: _(RawOrigin::Root)
@@ -255,7 +292,8 @@ benchmarks! {
             RawOrigin::Root.into(),
             market.chain_id,
             SEED_BLOCK,
-            MAX_AGE_SECS
+            MAX_AGE_SECS,
+None
         )
         .is_ok());
     }: _(RawOrigin::Root)

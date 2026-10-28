@@ -9,8 +9,9 @@
 //!
 //! What is read, at `pinned_block`:
 //! - **block time**: the block's timestamp. The pallet measures the floor's age from it.
-//! - **floor**: `punksOfferedForSale(i)` for all 10,000 punks through Multicall3, in chunks. The
-//!   floor is the lowest public ask (`isForSale`, no `onlySellTo`, non-zero `minValue`).
+//! - **floor**: `punksOfferedForSale(i)` for all 10,000 punks through Multicall3, in chunks, each
+//!   at the pinned block's hash so every chunk reads the same block. The floor is the lowest public
+//!   ask (`isForSale`, no `onlySellTo`, non-zero `minValue`).
 //! - **last sale**: the latest `PunkBought` log with a non-zero price in the `SALES_WINDOW_BLOCKS`
 //!   before the pinned block, with its block timestamp. The window is scanned newest first in
 //!   `SALES_CHUNK_BLOCKS` pieces, because public endpoints cap `eth_getLogs` ranges.
@@ -29,6 +30,11 @@
 //! round fails; if it lands after most of them have read, they agree on the orphaned block and
 //! that floor finalises. Post-Merge Ethereum has not seen reorgs anywhere near this deep. The
 //! reasoning is about Ethereum L1: a floor market on an L2 would need its own depth.
+//!
+//! Within one read, a reorg cannot mix blocks into the observation. The offers are read by the
+//! pinned block's hash. Sale logs can only be read by number range, so once everything is read
+//! the pinned block's hash is fetched again: a reorg reaching the pinned block or anything before
+//! it changes that hash, and the read then fails and is retried.
 
 use crate::evm::client::EvmClient;
 use alloy::{
@@ -173,13 +179,19 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
         bail!("block {pinned_block} is not {depth} deep yet on this endpoint (latest {latest})");
     }
 
-    let external_block_time_sec =
-        block_timestamp(&provider, pinned_block).await.context("pinned block")?;
-    let offers = read_offers(&provider, request.punks, pinned_block).await?;
+    let (external_block_time_sec, pinned_hash) =
+        block_header(&provider, pinned_block).await.context("pinned block")?;
+    let offers = read_offers(&provider, request.punks, pinned_hash).await?;
     let floor_wei = floor_of(offers).ok_or_else(|| anyhow!("no punk is publicly for sale"))?;
 
     let last_sale = last_sale(&provider, request.punks, pinned_block).await.context("last sale")?;
     let (last_sale_ts, last_sale_wei) = last_sale.unwrap_or((0, 0));
+
+    let (_, hash_after) =
+        block_header(&provider, pinned_block).await.context("pinned block, again")?;
+    if hash_after != pinned_hash {
+        bail!("block {pinned_block} changed from {pinned_hash} to {hash_after} while reading");
+    }
 
     Ok(FloorObservation {
         external_block: pinned_block,
@@ -191,18 +203,18 @@ async fn observe_with(url: &str, request: &FloorRequest) -> Result<FloorObservat
     })
 }
 
-/// All 10,000 offers at `block`, read through Multicall3 in chunks.
+/// All 10,000 offers at the block with `hash`, read through Multicall3 in chunks.
 async fn read_offers<P: Provider + Clone>(
     provider: &P,
     punks: Address,
-    block: u64,
+    hash: B256,
 ) -> Result<Vec<Offer>> {
     let mut offers = Vec::with_capacity(TOTAL_PUNKS as usize);
     let mut start = 0u64;
     while start < TOTAL_PUNKS {
         let end = (start + MULTICALL_CHUNK).min(TOTAL_PUNKS);
         let mut multicall =
-            MulticallBuilder::new_dynamic(provider.clone()).block(BlockId::number(block));
+            MulticallBuilder::new_dynamic(provider.clone()).block(BlockId::hash(hash));
         for index in start..end {
             let input = punksOfferedForSaleCall { punkIndex: U256::from(index) }.abi_encode();
             multicall = multicall
@@ -262,17 +274,20 @@ async fn last_sale<P: Provider>(
     }
 
     let Some((sale_block, _, price)) = latest else { return Ok(None) };
-    let sale_ts = block_timestamp(provider, sale_block).await.context("sale block")?;
+    let (sale_ts, _) = block_header(provider, sale_block).await.context("sale block")?;
     Ok(Some((sale_ts, price)))
 }
 
-/// Unix timestamp, in seconds, of `block`.
-async fn block_timestamp<P: Provider>(provider: &P, block: u64) -> Result<u64> {
-    let header = provider
+/// Unix timestamp, in seconds, and hash of `block`, checking the endpoint returned that block.
+async fn block_header<P: Provider>(provider: &P, block: u64) -> Result<(u64, B256)> {
+    let found = provider
         .get_block_by_number(BlockNumberOrTag::Number(block))
         .await?
         .ok_or_else(|| anyhow!("block {block} not found"))?;
-    Ok(header.header.timestamp)
+    if found.header.number != block {
+        bail!("endpoint returned block {} for {block}", found.header.number);
+    }
+    Ok((found.header.timestamp, found.header.hash))
 }
 
 /// Inclusive `(from, to)` block ranges covering `window_start..=block`, newest first, each at

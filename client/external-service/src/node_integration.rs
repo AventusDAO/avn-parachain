@@ -2,7 +2,8 @@ use crate::{
     chain::ChainClient,
     ethereum_events_handler::EthEventHandlerConfig,
     evm::client::EvmClient,
-    server::AppState,
+    read_cache::ReadCache,
+    server::{AppState, OBSERVATION_CACHE_SIZE},
     signing::{KeystoreSignerProvider, SignerProvider},
 };
 use anyhow::{Context, Result};
@@ -94,6 +95,8 @@ where
         signer_provider,
         floor_rpc_urls,
         venue_rpc_urls,
+        floor_reads: Arc::new(ReadCache::new(OBSERVATION_CACHE_SIZE)),
+        venue_reads: Arc::new(ReadCache::new(OBSERVATION_CACHE_SIZE)),
         checkpoint_endpoints,
         node_country: Arc::new(crate::node_country::NodeCountry::default()),
         client: deps.client.clone(),

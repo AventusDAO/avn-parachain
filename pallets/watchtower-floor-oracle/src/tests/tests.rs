@@ -16,7 +16,13 @@ const SEED_BLOCK: u32 = 100;
 const MAX_AGE_SECS: u64 = 600;
 
 fn seed(chain_id: ExternalChainId) {
-    assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), chain_id, SEED_BLOCK, MAX_AGE_SECS));
+    assert_ok!(FloorOracle::seed_chain(
+        RuntimeOrigin::root(),
+        chain_id,
+        SEED_BLOCK,
+        MAX_AGE_SECS,
+        None
+    ));
 }
 
 fn now_secs() -> u64 {
@@ -76,12 +82,19 @@ mod seed_chain {
                     RuntimeOrigin::signed(acc(1)),
                     ETHEREUM,
                     SEED_BLOCK,
-                    MAX_AGE_SECS
+                    MAX_AGE_SECS,
+                    None
                 ),
                 sp_runtime::DispatchError::BadOrigin
             );
             assert_noop!(
-                FloorOracle::seed_chain(RuntimeOrigin::none(), ETHEREUM, SEED_BLOCK, MAX_AGE_SECS),
+                FloorOracle::seed_chain(
+                    RuntimeOrigin::none(),
+                    ETHEREUM,
+                    SEED_BLOCK,
+                    MAX_AGE_SECS,
+                    None
+                ),
                 sp_runtime::DispatchError::BadOrigin
             );
         });
@@ -91,7 +104,7 @@ mod seed_chain {
     fn rejects_zero_freshness_limit() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             assert_noop!(
-                FloorOracle::seed_chain(RuntimeOrigin::root(), ETHEREUM, SEED_BLOCK, 0),
+                FloorOracle::seed_chain(RuntimeOrigin::root(), ETHEREUM, SEED_BLOCK, 0, None),
                 Error::<TestRuntime>::InvalidFreshnessLimit
             );
         });
@@ -119,7 +132,7 @@ mod seed_chain {
 
             // A second call changes the limit but keeps the checkpoint.
             advance_secs(5);
-            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), ETHEREUM, 999, 30));
+            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), ETHEREUM, 999, 30, None));
             assert_eq!(FloorOracle::max_checkpoint_age(ETHEREUM), Some(30));
             assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, SEED_BLOCK);
         });
@@ -129,11 +142,275 @@ mod seed_chain {
     fn chains_are_independent() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             seed(ETHEREUM);
-            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), BASE, 7, 60));
+            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), BASE, 7, 60, None));
 
             assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, SEED_BLOCK);
             assert_eq!(FloorOracle::checkpoints(BASE).unwrap().block_number, 7);
             assert_eq!(FloorOracle::max_checkpoint_age(BASE), Some(60));
+        });
+    }
+
+    #[test]
+    fn sets_the_block_time() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            assert_noop!(
+                FloorOracle::seed_chain(
+                    RuntimeOrigin::root(),
+                    ETHEREUM,
+                    SEED_BLOCK,
+                    MAX_AGE_SECS,
+                    Some(0)
+                ),
+                Error::<TestRuntime>::InvalidBlockTime
+            );
+
+            assert_ok!(FloorOracle::seed_chain(
+                RuntimeOrigin::root(),
+                ETHEREUM,
+                SEED_BLOCK,
+                MAX_AGE_SECS,
+                Some(12_000)
+            ));
+            assert_eq!(FloorOracle::min_external_block_time_ms(ETHEREUM), Some(12_000));
+            assert_event(Event::ExternalBlockTimeSet {
+                chain_id: ETHEREUM,
+                min_external_block_time_ms: Some(12_000),
+            });
+
+            // Seeding again replaces it, here with no bound.
+            seed(ETHEREUM);
+            assert_eq!(FloorOracle::min_external_block_time_ms(ETHEREUM), None);
+        });
+    }
+}
+
+mod set_external_block_time {
+    use super::*;
+
+    #[test]
+    fn requires_root_and_a_registered_chain() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            assert_noop!(
+                FloorOracle::set_external_block_time(RuntimeOrigin::root(), ETHEREUM, Some(12_000)),
+                Error::<TestRuntime>::ChainNotRegistered
+            );
+            seed(ETHEREUM);
+            assert_noop!(
+                FloorOracle::set_external_block_time(
+                    RuntimeOrigin::signed(acc(1)),
+                    ETHEREUM,
+                    Some(12_000)
+                ),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                FloorOracle::set_external_block_time(RuntimeOrigin::root(), ETHEREUM, Some(0)),
+                Error::<TestRuntime>::InvalidBlockTime
+            );
+        });
+    }
+
+    #[test]
+    fn sets_and_clears_it() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            seed(ETHEREUM);
+            assert_ok!(FloorOracle::set_external_block_time(
+                RuntimeOrigin::root(),
+                ETHEREUM,
+                Some(12_000)
+            ));
+            assert_eq!(FloorOracle::min_external_block_time_ms(ETHEREUM), Some(12_000));
+            assert_eq!(FloorOracle::min_external_block_time_ms(BASE), None);
+
+            assert_ok!(FloorOracle::set_external_block_time(RuntimeOrigin::root(), ETHEREUM, None));
+            assert_eq!(FloorOracle::min_external_block_time_ms(ETHEREUM), None);
+            assert_event(Event::ExternalBlockTimeSet {
+                chain_id: ETHEREUM,
+                min_external_block_time_ms: None,
+            });
+        });
+    }
+}
+
+mod vote_bound {
+    use super::*;
+
+    const BLOCK_TIME_MS: u32 = 12_000;
+
+    /// Like `seed_and_start_round`, with Ethereum's block time set. The round opens
+    /// `MAX_AGE_SECS + 1` seconds after the seed, so the bound is the seed plus
+    /// (601 + 60 slack) / 12 = 55 blocks.
+    fn start_bounded_round() -> RoundId {
+        assert_ok!(FloorOracle::seed_chain(
+            RuntimeOrigin::root(),
+            ETHEREUM,
+            SEED_BLOCK,
+            MAX_AGE_SECS,
+            Some(BLOCK_TIME_MS)
+        ));
+        advance_secs(MAX_AGE_SECS + 1);
+        match FloorOracle::do_request_checkpoint(ETHEREUM).expect("chain registered") {
+            CheckpointRequest::Pending { round_id, .. } => round_id,
+            other => panic!("expected a round to start, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn grows_with_the_time_since_the_checkpoint() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            start_bounded_round();
+            let bound = SEED_BLOCK + 55;
+            assert_eq!(FloorOracle::max_checkpoint_vote(ETHEREUM), Some(bound));
+
+            advance_secs(BLOCK_TIME_MS as u64 / 1_000);
+            assert_eq!(FloorOracle::max_checkpoint_vote(ETHEREUM), Some(bound + 1));
+        });
+    }
+
+    #[test]
+    fn votes_past_it_are_refused() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round_id = start_bounded_round();
+            let bound = SEED_BLOCK + 55;
+
+            let ahead = VoteContext::new(ETHEREUM, round_id, 1, bound + 1);
+            assert_eq!(
+                validate(&ahead.call()),
+                Err(InvalidTransaction::Custom(VOTE_TOO_FAR_AHEAD))
+            );
+            assert_noop!(ahead.submit(), Error::<TestRuntime>::BlockTooFarAhead);
+
+            assert_ok!(VoteContext::new(ETHEREUM, round_id, 1, bound).submit());
+
+            // One block time later the chain can be one block further.
+            advance_secs(BLOCK_TIME_MS as u64 / 1_000);
+            assert_ok!(VoteContext::new(ETHEREUM, round_id, 2, bound + 1).submit());
+        });
+    }
+
+    #[test]
+    fn caps_a_checkpoint_pushed_by_bad_votes() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round_id = start_bounded_round();
+            let bound = SEED_BLOCK + 55;
+            // Every voter lies, as far as the bound lets them.
+            for account in 1..=4 {
+                assert_ok!(VoteContext::new(ETHEREUM, round_id, account, bound).submit());
+            }
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, bound);
+        });
+    }
+
+    #[test]
+    fn does_not_apply_without_a_block_time() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round_id = seed_and_start_round(ETHEREUM);
+            assert_eq!(FloorOracle::max_checkpoint_vote(ETHEREUM), None);
+            assert_ok!(VoteContext::new(ETHEREUM, round_id, 1, 4_000_000_000).submit());
+        });
+    }
+
+    #[test]
+    fn clearing_the_block_time_lifts_it() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round_id = start_bounded_round();
+            let far = VoteContext::new(ETHEREUM, round_id, 1, 1_000_000);
+            assert_noop!(far.submit(), Error::<TestRuntime>::BlockTooFarAhead);
+
+            assert_ok!(FloorOracle::set_external_block_time(RuntimeOrigin::root(), ETHEREUM, None));
+            assert_ok!(far.submit());
+        });
+    }
+}
+
+mod force_set_checkpoint {
+    use super::*;
+
+    /// Far above any real block: every honest vote is behind it.
+    const STUCK_BLOCK: u32 = 4_000_000_000;
+
+    fn agree(round_id: RoundId, block: u32) {
+        for i in 1..=4 {
+            assert_ok!(VoteContext::new(ETHEREUM, round_id, i, block).submit());
+        }
+    }
+
+    fn start_round() -> RoundId {
+        advance_secs(MAX_AGE_SECS + 1);
+        match FloorOracle::do_request_checkpoint(ETHEREUM).expect("chain registered") {
+            CheckpointRequest::Pending { round_id, .. } => round_id,
+            other => panic!("expected a round to start, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn requires_root_and_a_seeded_chain() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            assert_noop!(
+                FloorOracle::force_set_checkpoint(RuntimeOrigin::root(), ETHEREUM, SEED_BLOCK),
+                Error::<TestRuntime>::ChainNotRegistered
+            );
+            seed(ETHEREUM);
+            assert_noop!(
+                FloorOracle::force_set_checkpoint(
+                    RuntimeOrigin::signed(acc(1)),
+                    ETHEREUM,
+                    SEED_BLOCK
+                ),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                FloorOracle::force_set_checkpoint(RuntimeOrigin::none(), ETHEREUM, SEED_BLOCK),
+                sp_runtime::DispatchError::BadOrigin
+            );
+        });
+    }
+
+    /// A checkpoint agreed far too high refuses every honest vote after it. Root lowers it and
+    /// drops the round stuck behind it, and honest votes agree again.
+    #[test]
+    fn unsticks_a_checkpoint_agreed_too_high() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round_id = seed_and_start_round(ETHEREUM);
+            agree(round_id, STUCK_BLOCK);
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, STUCK_BLOCK);
+
+            let stuck_round = start_round();
+            assert_noop!(
+                VoteContext::new(ETHEREUM, stuck_round, 1, 500).submit(),
+                Error::<TestRuntime>::BlockBehindCheckpoint
+            );
+            assert_ok!(VoteContext::new(ETHEREUM, stuck_round, 2, STUCK_BLOCK).submit());
+
+            assert_ok!(FloorOracle::force_set_checkpoint(RuntimeOrigin::root(), ETHEREUM, 400));
+            assert_eq!(
+                FloorOracle::checkpoints(ETHEREUM),
+                Some(Checkpoint { block_number: 400, agreed_at: now_secs(), round_id: 0 })
+            );
+            assert!(FloorOracle::checkpoint_round(ETHEREUM).is_none());
+            assert_event(Event::CheckpointForced {
+                chain_id: ETHEREUM,
+                block_number: 400,
+                agreed_at: now_secs(),
+            });
+
+            let round_id = start_round();
+            assert!(round_id > stuck_round);
+            agree(round_id, 500);
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, 500);
+        });
+    }
+
+    #[test]
+    fn only_touches_its_own_chain() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            seed(BASE);
+            let round_id = seed_and_start_round(ETHEREUM);
+
+            assert_ok!(FloorOracle::force_set_checkpoint(RuntimeOrigin::root(), BASE, 7));
+            assert_eq!(FloorOracle::checkpoints(BASE).unwrap().block_number, 7);
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, SEED_BLOCK);
+            assert_eq!(FloorOracle::checkpoint_round(ETHEREUM).unwrap().round_id, round_id);
         });
     }
 }
@@ -279,7 +556,7 @@ mod request_checkpoint {
     fn rounds_of_different_chains_do_not_interfere() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let eth_round = seed_and_start_round(ETHEREUM);
-            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), BASE, 7, 60));
+            assert_ok!(FloorOracle::seed_chain(RuntimeOrigin::root(), BASE, 7, 60, None));
             advance_secs(61);
             let base_round = match FloorOracle::do_request_checkpoint(BASE).unwrap() {
                 CheckpointRequest::Pending { round_id, .. } => round_id,
@@ -574,6 +851,12 @@ mod submit_checkpoint_vote {
                     signature: vote.signature(),
                 };
                 assert_ok!(validate(&wrong_key));
+
+                // Signed on another deployment: the genesis hash is part of the payload.
+                let signed = vote.call();
+                assert_ok!(validate(&signed));
+                frame_system::BlockHash::<TestRuntime>::insert(0, H256::repeat_byte(9));
+                assert_eq!(validate(&signed), Err(InvalidTransaction::Custom(VOTE_BAD_SIGNATURE)));
             });
         }
 

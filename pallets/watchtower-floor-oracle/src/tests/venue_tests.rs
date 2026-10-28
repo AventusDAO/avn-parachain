@@ -432,6 +432,19 @@ mod reports {
                 validate(&floor_signed),
                 Err(InvalidTransaction::Custom(VENUE_REPORT_NOT_VALID))
             );
+
+            // The chain and the round's market are signed too: a report made on another
+            // deployment, or for another market, does not verify.
+            let signed = VenueReportContext::new(round.round_id, observation(50), 3).call();
+            assert_eq!(validate(&signed), Ok(()));
+            let genesis = frame_system::BlockHash::<TestRuntime>::get(0);
+            frame_system::BlockHash::<TestRuntime>::insert(0, H256::repeat_byte(9));
+            assert_eq!(validate(&signed), Err(InvalidTransaction::Custom(VENUE_REPORT_NOT_VALID)));
+            frame_system::BlockHash::<TestRuntime>::insert(0, genesis);
+            ActiveVenueRound::<TestRuntime>::mutate(|round| {
+                round.as_mut().expect("round running").market.chain_id += 1
+            });
+            assert_eq!(validate(&signed), Err(InvalidTransaction::Custom(VENUE_REPORT_NOT_VALID)));
         });
     }
 }
@@ -580,6 +593,7 @@ mod voting {
             assert_event(Event::VenueRoundFinalised {
                 round_id: round.round_id,
                 external_block: SEED_BLOCK as u64,
+                external_block_time_sec: observation(51).external_block_time_sec,
                 spot_e18: 51,
                 oracle_e18: 50,
                 oi_notional_e18: 1_000,
@@ -730,7 +744,8 @@ mod cross_channel {
             RuntimeOrigin::root(),
             FLOOR_CHAIN,
             SEED_BLOCK,
-            CHECKPOINT_MAX_AGE
+            CHECKPOINT_MAX_AGE,
+            None
         ));
     }
 
@@ -1065,7 +1080,8 @@ mod offchain_worker {
             RuntimeOrigin::root(),
             FLOOR_CHAIN,
             SEED_BLOCK,
-            CHECKPOINT_MAX_AGE
+            CHECKPOINT_MAX_AGE,
+            None
         ));
         assert_ok!(FloorOracle::request_floor_price(RuntimeOrigin::root()));
         assert_ok!(FloorOracle::request_venue_state(RuntimeOrigin::root()));

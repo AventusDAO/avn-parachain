@@ -51,6 +51,7 @@ pub const VENUE_TARGET_LAG_SECS: u64 = 6;
 pub const VENUE_TARGET_TOLERANCE_SECS: u64 = 6;
 pub const MAX_FLOOR_CHECKPOINT_AGE_SECS: u64 = 150;
 pub const MIN_FORCED_FLOOR_AGE_SECS: u64 = 30;
+pub const CHECKPOINT_VOTE_SLACK_SECS: u64 = 60;
 pub const NODE_KEY_TYPE: KeyTypeId = KeyTypeId(*b"nodk");
 /// Country the test node reports with its observations.
 pub const TEST_COUNTRY: CountryCode = *b"GB";
@@ -148,6 +149,7 @@ impl Config for TestRuntime {
     type TimeProvider = Timestamp;
     type Quorum = Avn;
     type RoundTimeoutBlocks = RoundTimeoutBlocks;
+    type CheckpointVoteSlackSecs = ConstU64<CHECKPOINT_VOTE_SLACK_SECS>;
     type OracleRoundThreshold = OracleRoundThreshold;
     type OracleVoteDuration = ConstU32<ORACLE_VOTE_DURATION>;
     type MaxFloorAge = ConstU64<MAX_FLOOR_AGE_SECS>;
@@ -370,8 +372,13 @@ impl ReportContext {
     }
 
     pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
+        // Signed for the running round's market, as the offchain worker does. Rejections
+        // checked before the signature do not depend on it.
+        let market =
+            FloorOracle::active_floor_round().map(|round| round.market).unwrap_or_default();
         let payload = FloorOracle::report_signing_payload(
             self.round_id,
+            &market,
             &self.observation,
             &self.country,
             &self.account(),
@@ -558,8 +565,11 @@ impl VenueReportContext {
     }
 
     pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
+        let market =
+            FloorOracle::active_venue_round().map(|round| round.market).unwrap_or_default();
         let payload = FloorOracle::venue_report_signing_payload(
             self.round_id,
+            &market,
             &self.observation,
             &self.country,
             &self.account(),
