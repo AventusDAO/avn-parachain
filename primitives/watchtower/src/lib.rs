@@ -61,7 +61,8 @@ pub struct Checkpoint {
     pub block_number: u32,
     /// Parachain unix timestamp, in seconds, when agreement completed.
     pub agreed_at: u64,
-    /// The round that produced this checkpoint.
+    /// The round that produced this checkpoint. 0 when root set it (`seed_chain` or
+    /// `force_set_checkpoint`).
     pub round_id: RoundId,
 }
 

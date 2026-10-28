@@ -81,7 +81,7 @@ pub use sp_floor_oracle::{
     VENUE_SERVICE_PATH,
 };
 use sp_runtime::{
-    traits::{Dispatchable, Saturating},
+    traits::{Dispatchable, Saturating, Zero},
     transaction_validity::{
         InvalidTransaction, TransactionPriority, TransactionSource, TransactionValidity,
         ValidTransaction,
@@ -426,9 +426,11 @@ pub mod pallet {
             hash: H256,
             country: CountryCode,
         },
-        /// The watchtowers agreed on a floor.
+        /// The watchtowers agreed on a floor. Voting can outlast `MaxFloorAge`, so the floor may
+        /// already be stale: its age runs from `external_block_time_sec`, as the cache's does.
         FloorRoundFinalised {
             round_id: u64,
+            external_block_time_sec: u64,
             floor_wei: u128,
             agreeing: u32,
             reports: u32,
@@ -459,10 +461,13 @@ pub mod pallet {
             hash: H256,
             country: CountryCode,
         },
-        /// The watchtowers agreed on the venue state. Raw contract values, 18 decimals.
+        /// The watchtowers agreed on the venue state. Raw contract values, 18 decimals. Voting
+        /// can outlast `MaxVenueAge`, so the state may already be stale: its age runs from
+        /// `external_block_time_sec`, as the cache's does.
         VenueRoundFinalised {
             round_id: u64,
             external_block: u64,
+            external_block_time_sec: u64,
             spot_e18: u128,
             oracle_e18: u128,
             oi_notional_e18: u128,
@@ -472,6 +477,8 @@ pub mod pallet {
         },
         /// The venue round ended without agreement.
         VenueRoundFailed { round_id: u64, result: ProposalStatusEnum },
+        /// Root replaced a chain's checkpoint and dropped its running round.
+        CheckpointForced { chain_id: ExternalChainId, block_number: u32, agreed_at: u64 },
     }
 
     #[pallet::error]
@@ -488,7 +495,8 @@ pub mod pallet {
         DuplicateVote,
         /// The author is not a current validator.
         NotAValidator,
-        /// The voted height is below the current checkpoint. Checkpoints never move backwards.
+        /// The voted height is below the current checkpoint. Votes never move a checkpoint
+        /// backwards; only root can, with `force_set_checkpoint`.
         BlockBehindCheckpoint,
         /// The round cannot hold any more votes.
         TooManyVotes,
@@ -589,6 +597,32 @@ pub mod pallet {
                 });
             }
 
+            Ok(())
+        }
+
+        /// Replace the checkpoint of a seeded chain, in either direction. The recovery path for
+        /// a wrong checkpoint: votes below it are refused, so one agreed too high (or left above
+        /// a chain that was reset) would stop the chain's checkpoints for good. Drops the
+        /// running round, whose votes were cast against the old value, and hands the new
+        /// checkpoint to whatever waits on one, as an agreed checkpoint would be.
+        ///
+        /// Use a recent finalised block: forced floor rounds only pin young checkpoints.
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::force_set_checkpoint())]
+        pub fn force_set_checkpoint(
+            origin: OriginFor<T>,
+            chain_id: ExternalChainId,
+            block_number: u32,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(Checkpoints::<T>::contains_key(chain_id), Error::<T>::ChainNotRegistered);
+
+            CheckpointRound::<T>::remove(chain_id);
+            let agreed_at = Self::now_secs();
+            let checkpoint = Checkpoint { block_number, agreed_at, round_id: 0 };
+            Checkpoints::<T>::insert(chain_id, &checkpoint);
+            Self::deposit_event(Event::<T>::CheckpointForced { chain_id, block_number, agreed_at });
+            Self::on_checkpoint_agreed(chain_id, &checkpoint);
             Ok(())
         }
 
@@ -1024,7 +1058,23 @@ pub mod pallet {
             account_id: &T::AccountId,
             block_number: u32,
         ) -> Vec<u8> {
-            (SUBMIT_CHECKPOINT_VOTE_CONTEXT, chain_id, round_id, account_id, block_number).encode()
+            (
+                SUBMIT_CHECKPOINT_VOTE_CONTEXT,
+                Self::genesis_hash(),
+                chain_id,
+                round_id,
+                account_id,
+                block_number,
+            )
+                .encode()
+        }
+
+        /// Ties a signed payload to this chain. Unsigned calls get no `CheckGenesis`, and round
+        /// ids restart at 1 on every deployment, so without it a signature made on one chain
+        /// could verify on another where the same key is registered. frame_system never prunes
+        /// block 0's hash, so it is in every node's current state.
+        pub fn genesis_hash() -> T::Hash {
+            frame_system::Pallet::<T>::block_hash(BlockNumberFor::<T>::zero())
         }
 
         /// Verify a vote signature against the key registered for the author, not the key sent

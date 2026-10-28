@@ -181,6 +181,25 @@ benchmarks! {
         assert_eq!(checkpoint.round_id, 0);
     }
 
+    // Worst path: a full round is dropped and a waiting floor request starts a floor round.
+    force_set_checkpoint {
+        let validators = setup_validators::<T>(MAX_VALIDATOR_ACCOUNTS);
+        assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(floor_market())).is_ok());
+        seed_default_chain::<T>();
+        let votes = validators.iter()
+            .map(|validator| (validator.account_id.clone(), VOTED_BLOCK))
+            .collect();
+        open_round::<T>(1, votes);
+        PendingFloorRequest::<T>::put(FloorRoundKind::Requested);
+    }: _(RawOrigin::Root, CHAIN_ID, SEED_BLOCK + 1)
+    verify {
+        assert!(CheckpointRound::<T>::get(CHAIN_ID).is_none());
+        let checkpoint = Checkpoints::<T>::get(CHAIN_ID).expect("set");
+        assert_eq!((checkpoint.block_number, checkpoint.round_id), (SEED_BLOCK + 1, 0));
+        assert_eq!(PendingFloorRequest::<T>::get(), None);
+        assert!(ActiveFloorRound::<T>::get().is_some());
+    }
+
     // Worst path: a timed out round is replaced by a new one.
     request_checkpoint {
         seed_default_chain::<T>();

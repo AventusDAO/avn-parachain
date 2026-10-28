@@ -370,8 +370,13 @@ impl ReportContext {
     }
 
     pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
+        // Signed for the running round's market, as the offchain worker does. Rejections
+        // checked before the signature do not depend on it.
+        let market =
+            FloorOracle::active_floor_round().map(|round| round.market).unwrap_or_default();
         let payload = FloorOracle::report_signing_payload(
             self.round_id,
+            &market,
             &self.observation,
             &self.country,
             &self.account(),
@@ -558,8 +563,11 @@ impl VenueReportContext {
     }
 
     pub fn signature(&self) -> <SignerId as sp_runtime::RuntimeAppPublic>::Signature {
+        let market =
+            FloorOracle::active_venue_round().map(|round| round.market).unwrap_or_default();
         let payload = FloorOracle::venue_report_signing_payload(
             self.round_id,
+            &market,
             &self.observation,
             &self.country,
             &self.account(),

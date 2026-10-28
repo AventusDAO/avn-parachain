@@ -258,14 +258,25 @@ impl<T: Config> Pallet<T> {
 
     // ------------------------------------------------------------------ reports
 
-    /// Bytes a watchtower signs for a report.
+    /// Bytes a watchtower signs for a report. The round's market is included because the
+    /// observation does not name the collection it was read for.
     pub fn report_signing_payload(
         round_id: u64,
+        market: &FloorMarket,
         observation: &FloorObservation,
         country: &CountryCode,
         watchtower: &T::AccountId,
     ) -> Vec<u8> {
-        (FLOOR_ORACLE_REPORT_CONTEXT, round_id, observation, country, watchtower).encode()
+        (
+            FLOOR_ORACLE_REPORT_CONTEXT,
+            Self::genesis_hash(),
+            round_id,
+            market,
+            observation,
+            country,
+            watchtower,
+        )
+            .encode()
     }
 
     /// Everything a report must satisfy, including the signature. Used by the pool.
@@ -276,12 +287,13 @@ impl<T: Config> Pallet<T> {
         watchtower: &T::AccountId,
         signature: &<T::SignerId as RuntimeAppPublic>::Signature,
     ) -> DispatchResult {
-        Self::ensure_report_accepted(round_id, observation, watchtower)?;
+        let round = Self::ensure_report_accepted(round_id, observation, watchtower)?;
 
         let key = T::Watchtowers::get_node_signing_key(watchtower)
             .ok_or(Error::<T>::FloorReportBadSignature)?;
         // Checked against the bytes the offchain worker signs, so the two cannot drift apart.
-        let payload = Self::report_signing_payload(round_id, observation, country, watchtower);
+        let payload =
+            Self::report_signing_payload(round_id, &round.market, observation, country, watchtower);
         ensure!(key.verify(&payload, signature), Error::<T>::FloorReportBadSignature);
         Ok(())
     }
@@ -381,6 +393,7 @@ impl<T: Config> Pallet<T> {
                 });
                 Self::deposit_event(Event::<T>::FloorRoundFinalised {
                     round_id: round.round_id,
+                    external_block_time_sec: observation.external_block_time_sec,
                     floor_wei: observation.floor_wei,
                     agreeing,
                     reports: round.reports,
@@ -455,8 +468,13 @@ impl<T: Config> Pallet<T> {
         }
 
         let country = pallet_watchtower::fetch_node_country::<T>();
-        let payload =
-            Self::report_signing_payload(round.round_id, &observation, &country, &watchtower);
+        let payload = Self::report_signing_payload(
+            round.round_id,
+            &round.market,
+            &observation,
+            &country,
+            &watchtower,
+        );
         let signature = match signing_key.sign(&payload) {
             Some(signature) => signature,
             None => {

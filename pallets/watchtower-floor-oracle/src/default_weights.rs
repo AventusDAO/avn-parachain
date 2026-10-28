@@ -38,6 +38,7 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_watchtower_floor_oracle.
 pub trait WeightInfo {
 	fn seed_chain() -> Weight;
+	fn force_set_checkpoint() -> Weight;
 	fn request_checkpoint() -> Weight;
 	fn submit_checkpoint_vote(v: u32, ) -> Weight;
 	fn submit_checkpoint_vote_with_quorum(v: u32, ) -> Weight;
@@ -70,6 +71,13 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		Weight::from_parts(32_245_000, 3509)
 			.saturating_add(T::DbWeight::get().reads(2_u64))
 			.saturating_add(T::DbWeight::get().writes(2_u64))
+	}
+	/// PLACEHOLDER, not generated: regenerate with the benchmarks. Sized as `request_floor_price`
+	/// (the floor round it can start) plus removing a full `CheckpointRound`.
+	fn force_set_checkpoint() -> Weight {
+		Weight::from_parts(100_000_000, 22_000)
+			.saturating_add(T::DbWeight::get().reads(16_u64))
+			.saturating_add(T::DbWeight::get().writes(10_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)
@@ -429,6 +437,13 @@ impl WeightInfo for () {
 		Weight::from_parts(32_245_000, 3509)
 			.saturating_add(RocksDbWeight::get().reads(2_u64))
 			.saturating_add(RocksDbWeight::get().writes(2_u64))
+	}
+	/// PLACEHOLDER, not generated: regenerate with the benchmarks. Sized as `request_floor_price`
+	/// (the floor round it can start) plus removing a full `CheckpointRound`.
+	fn force_set_checkpoint() -> Weight {
+		Weight::from_parts(100_000_000, 22_000)
+			.saturating_add(RocksDbWeight::get().reads(16_u64))
+			.saturating_add(RocksDbWeight::get().writes(10_u64))
 	}
 	/// Storage: `WatchtowerFloorOracle::MaxCheckpointAge` (r:1 w:0)
 	/// Proof: `WatchtowerFloorOracle::MaxCheckpointAge` (`max_values`: None, `max_size`: Some(32), added: 2507, mode: `MaxEncodedLen`)

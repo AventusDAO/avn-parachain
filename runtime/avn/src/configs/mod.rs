@@ -814,7 +814,6 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
-    // Dev networks register three watchtower nodes; raise again for production.**
     /// Smallest committee any internal proposal may have. The `dev-network` feature lowers it
     /// for local networks with a handful of watchtowers; production builds keep 10.
     #[cfg(not(feature = "dev-network"))]

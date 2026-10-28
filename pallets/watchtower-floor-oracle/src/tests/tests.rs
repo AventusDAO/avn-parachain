@@ -138,6 +138,98 @@ mod seed_chain {
     }
 }
 
+mod force_set_checkpoint {
+    use super::*;
+
+    /// Far above any real block: every honest vote is behind it.
+    const STUCK_BLOCK: u32 = 4_000_000_000;
+
+    fn agree(round_id: RoundId, block: u32) {
+        for i in 1..=4 {
+            assert_ok!(VoteContext::new(ETHEREUM, round_id, i, block).submit());
+        }
+    }
+
+    fn start_round() -> RoundId {
+        advance_secs(MAX_AGE_SECS + 1);
+        match FloorOracle::do_request_checkpoint(ETHEREUM).expect("chain registered") {
+            CheckpointRequest::Pending { round_id, .. } => round_id,
+            other => panic!("expected a round to start, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn requires_root_and_a_seeded_chain() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            assert_noop!(
+                FloorOracle::force_set_checkpoint(RuntimeOrigin::root(), ETHEREUM, SEED_BLOCK),
+                Error::<TestRuntime>::ChainNotRegistered
+            );
+            seed(ETHEREUM);
+            assert_noop!(
+                FloorOracle::force_set_checkpoint(
+                    RuntimeOrigin::signed(acc(1)),
+                    ETHEREUM,
+                    SEED_BLOCK
+                ),
+                sp_runtime::DispatchError::BadOrigin
+            );
+            assert_noop!(
+                FloorOracle::force_set_checkpoint(RuntimeOrigin::none(), ETHEREUM, SEED_BLOCK),
+                sp_runtime::DispatchError::BadOrigin
+            );
+        });
+    }
+
+    /// A checkpoint agreed far too high refuses every honest vote after it. Root lowers it and
+    /// drops the round stuck behind it, and honest votes agree again.
+    #[test]
+    fn unsticks_a_checkpoint_agreed_too_high() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let round_id = seed_and_start_round(ETHEREUM);
+            agree(round_id, STUCK_BLOCK);
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, STUCK_BLOCK);
+
+            let stuck_round = start_round();
+            assert_noop!(
+                VoteContext::new(ETHEREUM, stuck_round, 1, 500).submit(),
+                Error::<TestRuntime>::BlockBehindCheckpoint
+            );
+            assert_ok!(VoteContext::new(ETHEREUM, stuck_round, 2, STUCK_BLOCK).submit());
+
+            assert_ok!(FloorOracle::force_set_checkpoint(RuntimeOrigin::root(), ETHEREUM, 400));
+            assert_eq!(
+                FloorOracle::checkpoints(ETHEREUM),
+                Some(Checkpoint { block_number: 400, agreed_at: now_secs(), round_id: 0 })
+            );
+            assert!(FloorOracle::checkpoint_round(ETHEREUM).is_none());
+            assert_event(Event::CheckpointForced {
+                chain_id: ETHEREUM,
+                block_number: 400,
+                agreed_at: now_secs(),
+            });
+
+            let round_id = start_round();
+            assert!(round_id > stuck_round);
+            agree(round_id, 500);
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, 500);
+        });
+    }
+
+    #[test]
+    fn only_touches_its_own_chain() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            seed(BASE);
+            let round_id = seed_and_start_round(ETHEREUM);
+
+            assert_ok!(FloorOracle::force_set_checkpoint(RuntimeOrigin::root(), BASE, 7));
+            assert_eq!(FloorOracle::checkpoints(BASE).unwrap().block_number, 7);
+            assert_eq!(FloorOracle::checkpoints(ETHEREUM).unwrap().block_number, SEED_BLOCK);
+            assert_eq!(FloorOracle::checkpoint_round(ETHEREUM).unwrap().round_id, round_id);
+        });
+    }
+}
+
 mod request_checkpoint {
     use super::*;
 
@@ -574,6 +666,12 @@ mod submit_checkpoint_vote {
                     signature: vote.signature(),
                 };
                 assert_ok!(validate(&wrong_key));
+
+                // Signed on another deployment: the genesis hash is part of the payload.
+                let signed = vote.call();
+                assert_ok!(validate(&signed));
+                frame_system::BlockHash::<TestRuntime>::insert(0, H256::repeat_byte(9));
+                assert_eq!(validate(&signed), Err(InvalidTransaction::Custom(VOTE_BAD_SIGNATURE)));
             });
         }
 
