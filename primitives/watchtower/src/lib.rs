@@ -251,8 +251,9 @@ pub trait WatchtowerInterface {
     /// Largest committee a proposal may request.
     fn max_committee_size() -> u32;
     /// Fails if a committee of `size` nodes could not be selected right now (node index still
-    /// backfilling, or fewer than `min_committee_size` nodes registered). Lets a consumer
-    /// refuse a configuration that would leave its proposals stuck in the queue.
+    /// backfilling, or more seats than the node owners can fill). Does not check the size
+    /// against `min_committee_size`/`max_committee_size`. Lets a consumer refuse a
+    /// configuration whose proposals would be cancelled or left waiting in the queue.
     fn ensure_committee_ready(size: u32) -> DispatchResult;
 
     /// Benchmark setup for consumers: registers enough nodes that `ensure_committee_ready(size)`

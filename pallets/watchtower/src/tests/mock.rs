@@ -104,17 +104,30 @@ pub fn set_indexed_count_override(count: Option<u32>) {
     INDEXED_COUNT_OVERRIDE.with(|o| *o.borrow_mut() = count);
 }
 
-/// A fault injected into the mock node index, to exercise the corruption paths.
+/// A fault injected into the mock owner index, to exercise the corruption paths.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IndexFault {
-    /// `get_node_at_index(i)` returns `None`.
+    /// `get_owner_at_index(i)` returns `None`.
     Hole(u32),
-    /// `get_node_at_index(i)` returns the node at position 0.
+    /// `get_owner_at_index(i)` returns the owner at position 0.
     Duplicate(u32),
 }
 
 pub fn set_index_fault(fault: Option<IndexFault>) {
     INDEX_FAULT.with(|f| *f.borrow_mut() = fault);
+}
+
+/// Groups nodes under owners for committee selection, as `(owner, nodes)` in owner index order.
+/// With `None` every authorized watchtower is an owner of its own.
+pub fn set_committee_owners(owners: Option<Vec<(AccountId, Vec<AccountId>)>>) {
+    COMMITTEE_OWNERS.with(|o| *o.borrow_mut() = owners);
+}
+
+/// The owner index committee selection reads, as `(owner, nodes)` in index order.
+pub fn committee_owners() -> Vec<(AccountId, Vec<AccountId>)> {
+    COMMITTEE_OWNERS.with(|o| o.borrow().clone()).unwrap_or_else(|| {
+        authorized_watchtowers().into_iter().map(|node| (node, vec![node])).collect()
+    })
 }
 
 pub fn set_authorized_watchtowers(watchtowers: Vec<AccountId>) {
@@ -276,6 +289,7 @@ thread_local! {
     pub static RANDOM_SEED: RefCell<u64> = RefCell::new(0);
     pub static INDEXED_COUNT_OVERRIDE: RefCell<Option<u32>> = RefCell::new(None);
     pub static INDEX_FAULT: RefCell<Option<IndexFault>> = RefCell::new(None);
+    pub static COMMITTEE_OWNERS: RefCell<Option<Vec<(AccountId, Vec<AccountId>)>>> = RefCell::new(None);
     pub static COMPLETED_VOTES: RefCell<Vec<(ProposalId, ProposalStatusEnum)>> = RefCell::new(vec![]);
 
     pub static NODE_SIGNING_KEYS: RefCell<std::collections::HashMap<AccountId, SignerId>> =
@@ -434,6 +448,7 @@ pub fn reset_hook_state() {
     set_random_seed(0);
     set_indexed_count_override(None);
     set_index_fault(None);
+    set_committee_owners(None);
 }
 
 pub fn proposals_submitted_to_hooks() -> Vec<ProposalId> {
@@ -513,12 +528,6 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     }
 
     fn get_node_at_index(index: u32) -> Option<AccountId> {
-        match INDEX_FAULT.with(|f| *f.borrow()) {
-            Some(IndexFault::Hole(i)) if i == index => return None,
-            Some(IndexFault::Duplicate(i)) if i == index =>
-                return AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().first().cloned()),
-            _ => {},
-        }
         AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().get(index as usize).cloned())
     }
 
@@ -526,6 +535,27 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
         INDEXED_COUNT_OVERRIDE
             .with(|o| *o.borrow())
             .unwrap_or_else(Self::get_authorized_watchtowers_count)
+    }
+
+    fn get_indexed_owners_count() -> u32 {
+        committee_owners().len() as u32
+    }
+
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)> {
+        let owners = committee_owners();
+        let index = match INDEX_FAULT.with(|f| *f.borrow()) {
+            Some(IndexFault::Hole(i)) if i == index => return None,
+            Some(IndexFault::Duplicate(i)) if i == index => 0,
+            _ => index,
+        };
+        owners.get(index as usize).map(|(owner, nodes)| (*owner, nodes.len() as u32))
+    }
+
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
+        committee_owners()
+            .into_iter()
+            .find(|(o, _)| o == owner)
+            .and_then(|(_, nodes)| nodes.get(index as usize).cloned())
     }
 }
 

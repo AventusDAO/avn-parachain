@@ -164,7 +164,7 @@ impl<T: Config> Pallet<T> {
         proposal.end_at = Some(now.saturating_add(proposal.vote_duration.into()));
 
         // `None` is the explicit legacy mode: every node votes, live denominator. `committee`
-        // is the effective size from `committee_ready_for`, computed once by the caller.
+        // is the size checked by `committee_ready_for`, computed once by the caller.
         if let Some(size) = committee {
             Self::select_committee(proposal_id, size)?;
             ProposalCommitteeSize::<T>::insert(proposal_id, size);
@@ -174,11 +174,24 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
+    /// Cancels a dequeued proposal whose committee could not be built. Cancelling rather than
+    /// failing keeps the queue moving: a failure would roll back the dequeue and the OCW would
+    /// retry forever.
+    fn cancel_without_committee(
+        proposal_id: ProposalId,
+        proposal: &Proposal<T>,
+        error: DispatchError,
+    ) -> DispatchResult {
+        Self::deposit_event(Event::CommitteeSelectionFailed { proposal_id, error });
+        Self::finalise_voting(proposal_id, proposal, ProposalStatusEnum::Cancelled)
+    }
+
     /// Dequeues the head of the internal proposal queue and activates it.
     /// Callers must have verified there is no active internal proposal.
     ///
-    /// Returns the effective committee size that selection ran for (0 when the proposal has
-    /// no committee or was skipped), so the caller can refund weight from it. The stored
+    /// Returns the committee size that selection ran for (0 when the proposal has no
+    /// committee, was skipped or was cancelled before selection), so the caller can refund
+    /// weight from it. The stored
     /// `ProposalCommitteeSize` is not a substitute: a failed selection rolls it back although
     /// the per-member work was done.
     pub(crate) fn activate_next_proposal_inner() -> Result<u32, DispatchError> {
@@ -196,10 +209,24 @@ impl<T: Config> Pallet<T> {
             return Ok(0)
         };
 
-        // Decided before dequeuing: a proposal whose committee cannot be built yet (index
-        // backfilling, too few nodes) stays at the head and is retried later. The policy is
-        // never silently changed to "everyone votes".
-        let committee = Self::committee_ready_for(&proposal)?;
+        // Decided before dequeuing: a proposal whose committee cannot be sampled yet (index
+        // backfilling) stays at the head and is retried later. The policy is never silently
+        // changed to "everyone votes", nor the committee to a smaller one.
+        let committee = match Self::committee_ready_for(&proposal) {
+            Ok(committee) => committee,
+            Err(error @ Error::<T>::NotEnoughSeatsForCommittee) => {
+                // Owners have left since the proposal was submitted. Waiting for new ones could
+                // hold the queue indefinitely.
+                log::warn!(
+                    "⚠️ Too few seats for the committee of proposal {:?}. Cancelling it.",
+                    proposal_id
+                );
+                Self::dequeue()?;
+                Self::cancel_without_committee(proposal_id, &proposal, error.into())?;
+                return Ok(0)
+            },
+            Err(e) => return Err(e.into()),
+        };
         let committee_size = committee.unwrap_or(0);
 
         Self::dequeue()?;
@@ -212,15 +239,13 @@ impl<T: Config> Pallet<T> {
         });
 
         if let Err(error) = activated {
-            // Readiness was checked above, so only index corruption gets here. Cancel rather
-            // than fail: failing would roll back the dequeue and the OCW would retry forever.
+            // Readiness was checked above, so only index corruption gets here.
             log::error!(
                 "🪲 Committee selection failed for proposal {:?}: {:?}. Cancelling it.",
                 proposal_id,
                 error
             );
-            Self::deposit_event(Event::CommitteeSelectionFailed { proposal_id, error });
-            Self::finalise_voting(proposal_id, &proposal, ProposalStatusEnum::Cancelled)?;
+            Self::cancel_without_committee(proposal_id, &proposal, error)?;
             return Ok(committee_size)
         }
 

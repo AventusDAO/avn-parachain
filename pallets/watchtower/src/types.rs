@@ -99,8 +99,8 @@ pub struct Proposal<T: Config> {
     pub vote_duration: u32,
     pub end_at: Option<BlockNumberFor<T>>,
     /// Requested number of randomly selected voters. `None` means every node votes and the
-    /// threshold is measured against the live node count. The effective size, fixed at
-    /// activation, lives in `ProposalCommitteeSize`.
+    /// threshold is measured against the live node count. The committee always has exactly
+    /// this many members; its size, fixed at activation, lives in `ProposalCommitteeSize`.
     pub committee_size: Option<u32>,
 }
 
@@ -159,15 +159,27 @@ pub trait NodesInterface<AccountId, SignerId> {
     /// Length of the dense node index. Lags `get_authorized_watchtowers_count` while nodes
     /// registered before the index existed are still being backfilled.
     fn get_indexed_nodes_count() -> u32;
+
+    /// Number of owners with at least one node in the dense node index.
+    fn get_indexed_owners_count() -> u32;
+
+    /// Owner at `index` in the dense owner index, with the number of their indexed nodes. Used
+    /// for random sampling of owners.
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)>;
+
+    /// Node at `index` among `owner`'s indexed nodes, for `index` below the count returned by
+    /// `get_owner_at_index`.
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId>;
 }
 
 /// Runtime-provided setup for benchmarks, so they measure the real storage work of the
 /// `NodesInterface` provider and of the `WatchtowerHooks` consumers instead of stubs.
 #[cfg(feature = "runtime-benchmarks")]
 pub trait BenchmarkHelper {
-    /// Registers `n` nodes with the `NodesInterface` provider so that both
-    /// `get_authorized_watchtowers_count` and `get_indexed_nodes_count` return `n` and
-    /// `get_node_at_index` reads a stored entry for every `index < n`.
+    /// Registers `n` nodes, each with an owner of its own, with the `NodesInterface` provider so
+    /// that `get_authorized_watchtowers_count`, `get_indexed_nodes_count` and
+    /// `get_indexed_owners_count` return `n` and the index getters read a stored entry for
+    /// every `index < n`.
     fn setup_nodes(n: u32);
 
     /// Makes the consumers recognise `external_ref` as a proposal they are waiting on, with

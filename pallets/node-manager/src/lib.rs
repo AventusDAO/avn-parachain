@@ -199,6 +199,39 @@ pub mod pallet {
     #[pallet::storage]
     pub type NodeIndexCount<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Dense index -> owner with at least one node in `NodeIndex`. Positions
+    /// `0..OwnerIndexCount` are always populated. Used to sample owners at random.
+    #[pallet::storage]
+    pub type OwnerIndex<T: Config> =
+        StorageMap<_, Twox64Concat, u32, IndexedOwner<T::AccountId>, OptionQuery>;
+
+    /// Owner -> position in `OwnerIndex`. Reverse lookup used for swap-remove.
+    #[pallet::storage]
+    pub type OwnerIndexOf<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, u32, OptionQuery>;
+
+    /// Length of the dense owner index. Similar to number of owners with at least one node.
+    #[pallet::storage]
+    pub type OwnerIndexCount<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    /// Per-owner dense index of the owner's nodes in `NodeIndex`. Positions
+    /// `0..IndexedOwner::nodes` are always populated.
+    #[pallet::storage]
+    pub type OwnerNodeIndex<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        Twox64Concat,
+        u32,
+        NodeId<T>,
+        OptionQuery,
+    >;
+
+    /// Node -> position in its owner's `OwnerNodeIndex`. Reverse lookup used for swap-remove.
+    #[pallet::storage]
+    pub type OwnerNodeIndexOf<T: Config> =
+        StorageMap<_, Blake2_128Concat, NodeId<T>, u32, OptionQuery>;
+
     /// Owner to node mapping
     #[pallet::storage]
     pub type OwnedNodes<T: Config> = StorageDoubleMap<
@@ -1733,7 +1766,7 @@ pub mod pallet {
                 );
 
                 let info = NodeRegistry::<T>::take(node).ok_or(Error::<T>::NodeNotRegistered)?;
-                Self::index_remove(node);
+                Self::index_remove(node, owner);
                 Self::remove_signing_key_index(node, &info.signing_key)?;
 
                 <OwnedNodes<T>>::remove(owner, node);
@@ -1812,6 +1845,7 @@ pub mod pallet {
 
                 <OwnedNodes<T>>::remove(current_owner, node_id);
                 <OwnedNodes<T>>::insert(new_owner, node_id, ());
+                Self::index_change_owner(node_id, current_owner, new_owner);
 
                 Self::deposit_event(Event::NodeMoved {
                     old_owner: current_owner.clone(),
@@ -1946,6 +1980,7 @@ pub mod pallet {
 
                 <OwnedNodes<T>>::remove(current_owner, node_id);
                 <OwnedNodes<T>>::insert(new_owner, node_id, ());
+                Self::index_change_owner(node_id, current_owner, new_owner);
 
                 Self::deposit_event(Event::NodeMoved {
                     old_owner: current_owner.clone(),
@@ -2050,7 +2085,7 @@ pub mod pallet {
                     ),
                 ),
             );
-            Self::index_insert(&node);
+            Self::index_insert(&node, &owner);
 
             Self::deposit_event(Event::NodeRegistered { owner, node });
 

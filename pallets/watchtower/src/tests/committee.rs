@@ -81,6 +81,13 @@ fn unsigned_vote_call(
     }
 }
 
+fn validate(proposal_id: ProposalId) -> TransactionValidity {
+    <Watchtower as ValidateUnsigned>::validate_unsigned(
+        TransactionSource::Local,
+        &crate::Call::activate_next_proposal { proposal_id },
+    )
+}
+
 fn vote(voter: AccountId, proposal_id: ProposalId, in_favor: bool) -> DispatchResultWithPostInfo {
     Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, in_favor)
 }
@@ -140,11 +147,11 @@ mod selection {
     }
 
     #[test]
-    fn selects_every_node_when_fewer_than_requested_are_registered() {
+    fn selects_every_node_when_as_many_are_requested_as_are_registered() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             set_authorized_watchtowers(first_n_watchtowers(3));
-            let id = submit_internal(1, Some(5));
+            let id = submit_internal(1, Some(3));
 
             assert_ok!(activate(id));
 
@@ -168,15 +175,206 @@ mod selection {
     }
 }
 
-mod not_ready {
+mod one_seat_per_owner {
     use super::*;
 
-    fn validate(proposal_id: ProposalId) -> TransactionValidity {
-        <Watchtower as ValidateUnsigned>::validate_unsigned(
-            TransactionSource::Local,
-            &crate::Call::activate_next_proposal { proposal_id },
-        )
+    /// The mock's node owners: 3, 3 and 4 nodes.
+    fn three_owners() -> Vec<(AccountId, Vec<AccountId>)> {
+        vec![
+            (watchtower_owner_1(), vec![watchtower_1(), watchtower_2(), watchtower_3()]),
+            (watchtower_owner_2(), vec![watchtower_4(), watchtower_5(), watchtower_6()]),
+            (
+                watchtower_owner_3(),
+                vec![watchtower_7(), watchtower_8(), watchtower_9(), watchtower_10()],
+            ),
+        ]
     }
+
+    fn owner_of(node: &AccountId) -> AccountId {
+        three_owners()
+            .into_iter()
+            .find(|(_, nodes)| nodes.contains(node))
+            .map(|(owner, _)| owner)
+            .expect("a mock node")
+    }
+
+    /// Activates a committee of `size` under `seed` with three owners and returns the members.
+    fn committee_of_owners(seed: u64, size: u32) -> Vec<AccountId> {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            set_committee_owners(Some(three_owners()));
+            set_random_seed(seed);
+            let id = submit_internal(1, Some(size));
+            assert_ok!(activate(id));
+            members(id).into_iter().collect()
+        })
+    }
+
+    #[test]
+    fn every_owner_holds_one_seat() {
+        for seed in 1..=10 {
+            let owners: BTreeSet<_> = committee_of_owners(seed, 3).iter().map(owner_of).collect();
+            assert_eq!(owners.len(), 3, "seed {}", seed);
+        }
+    }
+
+    #[test]
+    fn a_committee_larger_than_the_number_of_owners_is_never_built() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // Ten nodes but three owners, so three seats.
+            set_committee_owners(Some(three_owners()));
+            assert_ok!(<Watchtower as WatchtowerInterface>::ensure_committee_ready(3));
+            assert_noop!(
+                <Watchtower as WatchtowerInterface>::ensure_committee_ready(4),
+                Error::<TestRuntime>::NotEnoughSeatsForCommittee
+            );
+
+            let id = submit_internal(1, Some(4));
+            assert_ok!(activate(id));
+
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Cancelled);
+            assert!(members(id).is_empty());
+        });
+    }
+
+    #[test]
+    fn fewer_seats_than_owners_go_to_distinct_owners_chosen_at_random() {
+        let mut seated = BTreeSet::new();
+        for seed in 1..=10 {
+            let owners: Vec<_> = committee_of_owners(seed, 2).iter().map(owner_of).collect();
+            assert_eq!(owners.len(), 2);
+            assert_ne!(owners[0], owners[1], "seed {}", seed);
+            seated.extend(owners);
+        }
+        assert_eq!(seated.len(), 3, "ten seeds never seated every owner");
+    }
+
+    #[test]
+    fn an_owner_s_seat_goes_to_any_of_their_nodes() {
+        let seated: BTreeSet<_> = (1..=10)
+            .flat_map(|seed| committee_of_owners(seed, 3))
+            .filter(|node| owner_of(node) == watchtower_owner_3())
+            .collect();
+        assert!(seated.len() > 1, "ten seeds always seated the same node of the owner");
+    }
+
+    #[test]
+    fn a_queued_proposal_is_cancelled_when_nodes_move_to_fewer_owners() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            // The same ten nodes end up with one owner.
+            set_committee_owners(Some(vec![(watchtower_owner_1(), default_watchtowers())]));
+
+            assert_ok!(activate(id));
+
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Cancelled);
+            assert!(members(id).is_empty());
+        });
+    }
+}
+
+mod too_few_seats {
+    use super::*;
+
+    #[test]
+    fn submission_does_not_check_the_seats() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // A consumer submitting from its own critical path (summary's `end_voting`) must
+            // not fail because owners left; the proposal is cancelled at activation instead.
+            set_authorized_watchtowers(first_n_watchtowers(3));
+            let id = submit_internal(1, Some(4));
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Queued);
+
+            assert_ok!(activate(id));
+
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Cancelled);
+        });
+    }
+
+    #[test]
+    fn a_head_waits_for_the_backfill_before_its_seats_are_checked() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // The seat count is partial while the index backfills, so it is not trusted.
+            set_authorized_watchtowers(first_n_watchtowers(3));
+            set_indexed_count_override(Some(2));
+            let id = submit_internal(1, Some(4));
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Queued);
+            assert_noop!(activate(id), Error::<TestRuntime>::NodeIndexNotReady);
+
+            // Backfill done: three seats for a committee of four.
+            set_indexed_count_override(None);
+            assert_ok!(activate(id));
+
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Cancelled);
+        });
+    }
+
+    #[test]
+    fn a_queued_head_is_cancelled_when_owners_leave_and_the_queue_moves_on() {
+        let (mut ext, pool_state, _) =
+            ExtBuilder::build_default().for_offchain_worker().as_externality_with_state();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            let next = submit_internal(2, None);
+            set_authorized_watchtowers(first_n_watchtowers(2));
+
+            // The pool accepts the activation and the collator OCW submits it, so that it can
+            // cancel the head.
+            assert_ok!(validate(id));
+            Watchtower::offchain_worker(System::block_number());
+            assert_eq!(pool_state.read().transactions.len(), 1);
+
+            // Must not error: the OCW would otherwise retry forever.
+            let post_info = activate(id).expect("cancelled, not failed");
+
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Cancelled);
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
+            assert_eq!(committee_size(id), None);
+            assert!(members(id).is_empty());
+            assert!(ProposalsToRemove::<TestRuntime>::contains_key(id));
+            assert_eq!(completed_votes(), vec![(id, ProposalStatusEnum::Cancelled)]);
+            System::assert_has_event(
+                Event::CommitteeSelectionFailed {
+                    proposal_id: id,
+                    error: Error::<TestRuntime>::NotEnoughSeatsForCommittee.into(),
+                }
+                .into(),
+            );
+            assert!(proposals_submitted_to_hooks().is_empty());
+            // No committee was selected, so none is charged for.
+            assert_eq!(
+                post_info.actual_weight,
+                Some(<TestRuntime as Config>::WeightInfo::activate_next_proposal(0).max(
+                    <TestRuntime as Config>::WeightInfo::activate_next_proposal_hook_fails(0)
+                ))
+            );
+
+            assert_eq!(Watchtower::peek_front_id().unwrap(), Some(next));
+            assert_ok!(activate(next));
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(next));
+        });
+    }
+
+    #[test]
+    fn a_queued_head_is_cancelled_when_every_node_leaves() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            set_authorized_watchtowers(vec![]);
+
+            assert_ok!(activate(id));
+
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Cancelled);
+        });
+    }
+}
+
+mod not_ready {
+    use super::*;
 
     #[test]
     fn activation_is_deferred_while_the_node_index_is_backfilling() {
@@ -212,38 +410,6 @@ mod not_ready {
     }
 
     #[test]
-    fn activation_is_deferred_when_too_few_nodes_exist() {
-        let (mut ext, pool_state, _) =
-            ExtBuilder::build_default().for_offchain_worker().as_externality_with_state();
-        ext.execute_with(|| {
-            set_authorized_watchtowers(first_n_watchtowers(1)); // MinCommitteeSize is 2
-            let id = submit_internal(1, Some(3));
-
-            assert_noop!(activate(id), Error::<TestRuntime>::NotEnoughNodesForCommittee);
-            assert_eq!(validate(id), InvalidTransaction::Custom(COMMITTEE_NOT_READY).into());
-            Watchtower::offchain_worker(System::block_number());
-            assert!(pool_state.read().transactions.is_empty());
-            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Queued);
-
-            set_authorized_watchtowers(first_n_watchtowers(2));
-            assert_ok!(activate(id));
-            assert_eq!(committee_size(id), Some(2));
-        });
-    }
-
-    #[test]
-    fn activation_is_deferred_when_no_nodes_exist() {
-        let mut ext = ExtBuilder::build_default().as_externality();
-        ext.execute_with(|| {
-            set_authorized_watchtowers(vec![]);
-            let id = submit_internal(1, Some(3));
-
-            assert_noop!(activate(id), Error::<TestRuntime>::NotEnoughNodesForCommittee);
-            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Queued);
-        });
-    }
-
-    #[test]
     fn legacy_proposals_activate_while_the_node_index_is_backfilling() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
@@ -260,11 +426,11 @@ mod not_ready {
     fn consumers_can_check_readiness_before_configuring_a_committee() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            // 10 nodes, fully indexed: 3 is fine, 1 is below MinCommitteeSize.
-            assert_ok!(<Watchtower as WatchtowerInterface>::ensure_committee_ready(3));
+            // 10 nodes, each its own owner, fully indexed: 10 seats.
+            assert_ok!(<Watchtower as WatchtowerInterface>::ensure_committee_ready(10));
             assert_noop!(
-                <Watchtower as WatchtowerInterface>::ensure_committee_ready(1),
-                Error::<TestRuntime>::NotEnoughNodesForCommittee
+                <Watchtower as WatchtowerInterface>::ensure_committee_ready(11),
+                Error::<TestRuntime>::NotEnoughSeatsForCommittee
             );
 
             set_indexed_count_override(Some(9));
@@ -277,7 +443,7 @@ mod not_ready {
             set_authorized_watchtowers(first_n_watchtowers(1));
             assert_noop!(
                 <Watchtower as WatchtowerInterface>::ensure_committee_ready(3),
-                Error::<TestRuntime>::NotEnoughNodesForCommittee
+                Error::<TestRuntime>::NotEnoughSeatsForCommittee
             );
         });
     }
@@ -321,10 +487,10 @@ mod corrupt_index {
     fn a_hole_cancels_the_proposal_and_the_queue_moves_on() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            // 3 nodes, 5 requested: every index is read, so the hole is always hit.
+            // 3 nodes, 3 requested: every index is read, so the hole is always hit.
             set_authorized_watchtowers(first_n_watchtowers(3));
             set_index_fault(Some(IndexFault::Hole(1)));
-            let bad = submit_internal(1, Some(5));
+            let bad = submit_internal(1, Some(3));
             let next = submit_internal(2, None);
 
             // Must not error: the OCW would otherwise retry forever.
@@ -341,11 +507,11 @@ mod corrupt_index {
     fn a_failed_selection_is_still_charged_for_the_members_it_read() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            // 3 nodes, 5 requested: selection runs for an effective committee of 3 before
-            // the hole cancels it, and the rollback leaves no stored committee size behind.
+            // 3 nodes, 3 requested: selection runs for a committee of 3 before the hole
+            // cancels it, and the rollback leaves no stored committee size behind.
             set_authorized_watchtowers(first_n_watchtowers(3));
             set_index_fault(Some(IndexFault::Hole(1)));
-            let bad = submit_internal(1, Some(5));
+            let bad = submit_internal(1, Some(3));
 
             let post_info = activate(bad).expect("cancelled, not failed");
 
@@ -365,7 +531,46 @@ mod corrupt_index {
         ext.execute_with(|| {
             set_authorized_watchtowers(first_n_watchtowers(3));
             set_index_fault(Some(IndexFault::Duplicate(1)));
-            let bad = submit_internal(1, Some(5));
+            let bad = submit_internal(1, Some(3));
+
+            assert_ok!(activate(bad));
+
+            assert_cancelled_without_committee(bad, Error::<TestRuntime>::NodeIndexCorrupt);
+        });
+    }
+
+    #[test]
+    fn an_owner_listed_twice_cancels_the_proposal() {
+        // Owner 1 at positions 0 and 1. Its three nodes give it a second, different node in
+        // some draws, so only the owner check catches every seed.
+        for seed in 1..=10 {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                set_committee_owners(Some(vec![
+                    (watchtower_owner_1(), vec![watchtower_1(), watchtower_2(), watchtower_3()]),
+                    (watchtower_owner_2(), vec![watchtower_4(), watchtower_5(), watchtower_6()]),
+                    (watchtower_owner_3(), vec![watchtower_7(), watchtower_8(), watchtower_9()]),
+                ]));
+                set_index_fault(Some(IndexFault::Duplicate(1)));
+                set_random_seed(seed);
+                let bad = submit_internal(1, Some(3));
+
+                assert_ok!(activate(bad));
+
+                assert_cancelled_without_committee(bad, Error::<TestRuntime>::NodeIndexCorrupt);
+            });
+        }
+    }
+
+    #[test]
+    fn an_owner_without_nodes_cancels_the_proposal() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            set_committee_owners(Some(vec![
+                (watchtower_owner_1(), vec![watchtower_1()]),
+                (watchtower_owner_2(), vec![]),
+            ]));
+            let bad = submit_internal(1, Some(2));
 
             assert_ok!(activate(bad));
 
@@ -379,7 +584,7 @@ mod corrupt_index {
         ext.execute_with(|| {
             set_authorized_watchtowers(first_n_watchtowers(3));
             set_index_fault(Some(IndexFault::Hole(0)));
-            let bad = submit_internal(1, Some(5));
+            let bad = submit_internal(1, Some(3));
             assert_ok!(activate(bad));
 
             roll_forward(2);

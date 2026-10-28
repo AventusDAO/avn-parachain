@@ -533,8 +533,8 @@ benchmarks! {
     }
 
     // `k` is the requested committee size, ranged over the values a proposal may actually
-    // request. `MaxCommitteeSize` real nodes are registered with the node provider, so the
-    // effective size is `k` and every member costs a real index read.
+    // request. `MaxCommitteeSize` real nodes, each with its own owner, are registered with the
+    // node provider, so every one of the `k` members costs real index reads.
     activate_next_proposal {
         let k in (T::MinCommitteeSize::get()) .. T::MaxCommitteeSize::get();
         <frame_system::Pallet<T>>::set_block_number(100u32.into());

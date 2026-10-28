@@ -144,7 +144,7 @@ fn create_nodes_and_heartbeat<T: Config>(
         let _ = register_new_node::<T>(node.clone(), owner.clone(), i);
         // Registered through the extrinsic these nodes would be indexed, so deregistration
         // benchmarks must measure the swap-remove too.
-        Pallet::<T>::index_insert(&node);
+        Pallet::<T>::index_insert(&node, &owner);
         create_heartbeat::<T>(node.clone(), reward_period_index);
         registered_nodes.push(node);
     }
@@ -756,6 +756,8 @@ benchmarks! {
         for i in 1..=b {
             let node: NodeId<T> = account("node", i, i);
             register_new_node::<T>(node.clone(), owner.clone(), i);
+            // Indexed, as registration would, so the owner index update is measured.
+            Pallet::<T>::index_insert(&node, &owner);
             Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
             nodes.push(node);
         }
@@ -773,6 +775,8 @@ benchmarks! {
             assert!(<OwnedNodes<T>>::contains_key(new_owner.clone(), node));
             assert_eq!(<NodeRegistry<T>>::get(node).unwrap().owner, new_owner);
         }
+        assert!(<OwnerIndexOf<T>>::get(&owner).is_none());
+        assert!(Pallet::<T>::owner_node_at_index(&new_owner, b - 1).is_some());
         assert_has_event::<T>(Event::NodeMoved {
             old_owner: owner,
             new_owner,
@@ -851,6 +855,8 @@ benchmarks! {
         for i in 1..=b {
             let node: NodeId<T> = account("node", i, i);
             register_new_node::<T>(node.clone(), owner.clone(), i);
+            // Indexed, as registration would, so the owner index update is measured.
+            Pallet::<T>::index_insert(&node, &owner);
             Pallet::<T>::do_add_stake(&owner, &node, stake_per_node).unwrap();
             make_periodic_with_unsettled_periods::<T>(&node);
             nodes.push(node);
@@ -875,6 +881,8 @@ benchmarks! {
             // The Periodic path ran: allowance pooled and split evenly across the set.
             assert_eq!(info.stake.restriction.per_period_allowance(), Some(100u32.into()));
         }
+        assert!(<OwnerIndexOf<T>>::get(&owner).is_none());
+        assert!(Pallet::<T>::owner_node_at_index(&new_owner, b - 1).is_some());
         assert_has_event::<T>(Event::NodeMoved {
             old_owner: owner,
             new_owner,
@@ -887,14 +895,14 @@ benchmarks! {
         let n in 1 .. MAX_BACKFILL_NODES;
         let registrar: T::AccountId = account("registrar", 0, 0);
         set_registrar::<T>(registrar.clone());
-        let owner: T::AccountId = account("owner", 0, 0);
 
         // Nodes written straight into the registry, as if registered before the index existed.
+        // Each has its own owner, so every insert also adds an owner to the owner index.
         let already_indexed = <NodeIndexCount<T>>::get();
         let mut nodes: Vec<NodeId<T>> = Vec::new();
         for i in 0..n {
             let node: NodeId<T> = account("unindexed", i, 0);
-            register_new_node::<T>(node.clone(), owner.clone(), i);
+            register_new_node::<T>(node.clone(), account("owner", i, 0), i);
             nodes.push(node);
         }
         <TotalRegisteredNodes<T>>::put(already_indexed + n);
@@ -903,6 +911,7 @@ benchmarks! {
         assert!(<NodeIndexCount<T>>::get() == already_indexed + n);
         for (i, node) in nodes.iter().enumerate() {
             assert!(<NodeIndexOf<T>>::get(node) == Some(already_indexed + i as u32));
+            assert!(<OwnerNodeIndexOf<T>>::contains_key(node));
         }
         assert_last_event::<T>(Event::NodeIndexBackfillCompleted { count: already_indexed + n }.into());
     }
