@@ -1122,8 +1122,7 @@ mod voting {
                 FloorObservations::<TestRuntime>::iter_prefix(round.round_id).count(),
             )
         };
-        // Each step is its own block: `clear_prefix` pages only rows committed to the
-        // database, as the reports are on a real chain by the time the round is cleaned.
+        // Each step is its own block, with the previous blocks' deletions committed.
         let mut idle_block = |weight: Weight| {
             ext.commit_all().unwrap();
             ext.execute_with(|| {

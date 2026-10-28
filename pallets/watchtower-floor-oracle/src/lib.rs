@@ -52,10 +52,11 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String};
 
-use codec::{Decode, Encode, MaxEncodedLen};
+use codec::{Decode, Encode, FullCodec, MaxEncodedLen};
 use frame_support::{
     dispatch::{DispatchResult, DispatchResultWithPostInfo},
     pallet_prelude::*,
+    storage::IterableStorageDoubleMap,
     traits::UnixTime,
     BoundedBTreeMap,
 };
@@ -1194,24 +1195,41 @@ pub mod pallet {
         /// forgets the round once both are gone. Returns the larger of the two counts, which is
         /// what the weight is charged for.
         ///
-        /// `clear_prefix` pages only rows already in the database; rows written in this block
-        /// are all removed. That is at most the round's last few reports. Each map is cleared
-        /// once per block, so no cursor is needed: the next block starts on committed state.
+        /// Not `clear_prefix`: it still goes through the old `kill_prefix` host function, which
+        /// counts only rows already in the database, so rows written this block go uncharged.
         pub(crate) fn cleanup_round_page(channel: OracleChannel, round_id: u64, max: u32) -> u32 {
-            let (reports, observations) = match channel {
+            let ((reports, reports_left), (observations, observations_left)) = match channel {
                 OracleChannel::Floor => (
-                    FloorReports::<T>::clear_prefix(round_id, max, None),
-                    FloorObservations::<T>::clear_prefix(round_id, max, None),
+                    Self::remove_round_rows::<FloorReports<T>, _, _>(round_id, max),
+                    Self::remove_round_rows::<FloorObservations<T>, _, _>(round_id, max),
                 ),
                 OracleChannel::Venue => (
-                    VenueReports::<T>::clear_prefix(round_id, max, None),
-                    VenueObservations::<T>::clear_prefix(round_id, max, None),
+                    Self::remove_round_rows::<VenueReports<T>, _, _>(round_id, max),
+                    Self::remove_round_rows::<VenueObservations<T>, _, _>(round_id, max),
                 ),
             };
-            if reports.maybe_cursor.is_none() && observations.maybe_cursor.is_none() {
+            if !reports_left && !observations_left {
                 RoundsToClean::<T>::remove((channel, round_id));
             }
-            reports.unique.max(observations.unique)
+            reports.max(observations)
+        }
+
+        /// Removes up to `max` rows of `round_id` from `Map`, returning how many it removed and
+        /// whether any are left. Keys are collected first so nothing is deleted while iterating;
+        /// one key past the page tells whether the round is done.
+        fn remove_round_rows<Map, K2, V>(round_id: u64, max: u32) -> (u32, bool)
+        where
+            Map: IterableStorageDoubleMap<u64, K2, V>,
+            K2: FullCodec,
+            V: FullCodec,
+        {
+            let mut keys: Vec<K2> = Map::iter_key_prefix(round_id).take(max as usize + 1).collect();
+            let left = keys.len() > max as usize;
+            keys.truncate(max as usize);
+            for key in &keys {
+                Map::remove(round_id, key);
+            }
+            (keys.len() as u32, left)
         }
 
         /// Hands an agreed checkpoint to the channels pinned to checkpoints (only the floor;
