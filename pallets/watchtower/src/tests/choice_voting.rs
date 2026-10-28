@@ -255,6 +255,67 @@ mod tally {
     }
 
     #[test]
+    fn standing_tracks_the_leader_ties_and_votes_cast() {
+        let mut standing = ChoiceStanding::default();
+        standing.record(A, 1, 1);
+        assert_eq!(
+            standing,
+            ChoiceStanding { cast: 1, leader: Some(A), leader_tally: 1, tied: false }
+        );
+
+        // B draws level: A stays leader, the tie is flagged.
+        standing.record(B, 1, 1);
+        assert_eq!(
+            standing,
+            ChoiceStanding { cast: 2, leader: Some(A), leader_tally: 1, tied: true }
+        );
+
+        // B pulls ahead.
+        standing.record(B, 2, 1);
+        assert_eq!(
+            standing,
+            ChoiceStanding { cast: 3, leader: Some(B), leader_tally: 2, tied: false }
+        );
+
+        // A third answer below the leader changes only the count.
+        standing.record(H256::repeat_byte(0xcc), 1, 1);
+        assert_eq!(
+            standing,
+            ChoiceStanding { cast: 4, leader: Some(B), leader_tally: 2, tied: false }
+        );
+
+        // A draws level again, then the leader breaks the tie.
+        standing.record(A, 2, 1);
+        assert!(standing.tied);
+        standing.record(B, 3, 1);
+        assert_eq!(
+            standing,
+            ChoiceStanding { cast: 6, leader: Some(B), leader_tally: 3, tied: false }
+        );
+    }
+
+    #[test]
+    fn standing_matches_the_tallies() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let wt = watchtowers();
+            let c = H256::repeat_byte(0xcc);
+
+            for (i, choice) in [A, B, c, B, A].iter().enumerate() {
+                assert_ok!(vote_choice(&wt[i], id, *choice));
+            }
+            // A and B both have 2; B got there first, so it leads and the tie is flagged.
+            assert_eq!(
+                ChoiceStandings::<TestRuntime>::get(id),
+                ChoiceStanding { cast: 5, leader: Some(B), leader_tally: 2, tied: true }
+            );
+            assert_eq!(Watchtower::choice_tally(id, A), 2);
+            assert_eq!(Watchtower::choice_tally(id, B), 2);
+            assert_eq!(status(id), ProposalStatusEnum::Active);
+        });
+    }
+
+    #[test]
     fn committee_size_is_the_denominator() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let context = Context {
@@ -373,6 +434,7 @@ mod cleanup {
 
             assert!(!Proposals::<TestRuntime>::contains_key(id));
             assert_eq!(ChoiceTally::<TestRuntime>::iter_prefix(id).count(), 0);
+            assert!(!ChoiceStandings::<TestRuntime>::contains_key(id));
             assert!(!VotingKindOf::<TestRuntime>::contains_key(id));
             assert!(!WinningChoice::<TestRuntime>::contains_key(id));
             assert_eq!(Voters::<TestRuntime>::iter_prefix(id).count(), 0);

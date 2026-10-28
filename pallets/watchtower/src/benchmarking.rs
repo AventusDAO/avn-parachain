@@ -433,14 +433,18 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
         VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
-        // Committee of 10 at 50%: 4 answers already in, this one decides. Scatter a few other
-        // answers so the decision scans several tallies.
+        // Committee of 10 at 50%: 4 votes for `choice` already in, this one decides. The other
+        // answers only show in the running standing, which is all the decision reads.
         ChoiceTally::<T>::insert(proposal_id, choice, 4u32);
         for i in 0..4u32 {
             let other: T::AccountId = account("voter", i, 0);
             Voters::<T>::insert(proposal_id, &other, true);
             ChoiceTally::<T>::insert(proposal_id, H256::repeat_byte(100 + i as u8), 1u32);
         }
+        ChoiceStandings::<T>::insert(
+            proposal_id,
+            ChoiceStanding { cast: 8, leader: Some(choice), leader_tally: 4, tied: false },
+        );
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter

@@ -206,6 +206,48 @@ pub struct Vote {
     pub againsts: u32,
 }
 
+/// Running totals of a `Choice` proposal, updated with every answer so deciding the proposal
+/// never iterates `ChoiceTally`.
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
+pub struct ChoiceStanding {
+    /// Votes cast across every answer.
+    pub cast: u32,
+    /// The answer that reached `leader_tally` first. `None` until the first vote.
+    pub leader: Option<H256>,
+    pub leader_tally: u32,
+    /// Another answer has as many votes as the leader.
+    pub tied: bool,
+}
+
+impl ChoiceStanding {
+    /// Counts `weight` votes for `answer`, whose tally is `tally` after them. Tallies only
+    /// grow, so the leader stays ahead of every other answer until one matches or passes it.
+    pub fn record(&mut self, answer: H256, tally: u32, weight: u32) {
+        self.cast = self.cast.saturating_add(weight);
+        if self.leader == Some(answer) {
+            self.leader_tally = tally;
+            self.tied = false;
+        } else if tally > self.leader_tally {
+            self.leader = Some(answer);
+            self.leader_tally = tally;
+            self.tied = false;
+        } else if tally == self.leader_tally {
+            self.tied = true;
+        }
+    }
+}
+
 #[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq, DecodeWithMemTracking)]
 pub enum AdminConfig<BlockNumber, AccountId> {
     MinVotingPeriod(BlockNumber),

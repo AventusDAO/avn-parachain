@@ -840,13 +840,16 @@ parameter_types! {
     pub const OracleRoundThreshold: Perbill = Perbill::from_percent(67);
     /// Must be at least the watchtower pallet's minimum voting period (100 blocks).
     pub const OracleVoteDuration: u32 = 100;
-    /// A finalised floor younger than this answers requests directly.
+    /// A finalised floor whose Ethereum block is younger than this answers requests directly.
     pub const MaxFloorAge: u64 = 10 * 60;
-    /// A floor round pins a checkpoint at most this old. A floor is as old as its checkpoint,
-    /// so this leaves the round about five minutes, queue time included, to finalise while still
-    /// fresh. A round that takes longer (voting may last `OracleVoteDuration`) finalises stale and
-    /// the next request starts a new one.
-    pub const MaxFloorCheckpointAge: u64 = 5 * 60;
+    /// A floor round pins a checkpoint agreed at most this long ago. The checkpoint block is
+    /// already about two minutes old when agreed (10 confirmations), so a round starts on data
+    /// at most about four minutes old and its floor stays cached for about six minutes once
+    /// finalised. A request finding an older checkpoint waits for a new checkpoint round, which
+    /// settles within a few parachain blocks. A round that takes longer than about six minutes
+    /// (voting may last `OracleVoteDuration`) finalises stale and the next request starts a new
+    /// one.
+    pub const MaxFloorCheckpointAge: u64 = 2 * 60;
     /// For this long after a forced floor round ends, `force_floor_round` behaves as
     /// `request_floor_price`. A forced round pins a checkpoint at most this old.
     pub const MinForcedFloorAge: u64 = 60;

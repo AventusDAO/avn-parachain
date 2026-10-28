@@ -65,9 +65,15 @@ fn dummy_signature<T: Config>(
     author.key.sign(&("DummyProof").encode()).expect("Error signing proof")
 }
 
+/// Checkpoint agreement time benchmarks give floor rounds, since the benchmark clock may be at
+/// zero.
+const FLOOR_AGREED_AT: u64 = 1_750_000_000;
+
 fn plausible_observation(block: u32) -> FloorObservation {
     FloorObservation {
         external_block: block as u64,
+        // Ten Ethereum blocks before the agreement.
+        external_block_time_sec: FLOOR_AGREED_AT - 120,
         floor_wei: 50_000_000_000_000_000_000,
         last_sale_ts: 1_700_000_000,
         last_sale_wei: 49_000_000_000_000_000_000,
@@ -79,7 +85,8 @@ fn floor_market() -> FloorMarket {
     FloorMarket { chain_id: CHAIN_ID, punks: sp_core::H160::repeat_byte(0xB4) }
 }
 
-/// Configures the market, seeds its chain, opens a floor round and activates its proposal.
+/// Configures the market, seeds its chain, opens a floor round and activates its proposal. The
+/// round's checkpoint time is replaced by [`FLOOR_AGREED_AT`].
 fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
     let market = floor_market();
     assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(market)).is_ok());
@@ -97,7 +104,10 @@ fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
         round.proposal_id
     )
     .is_ok());
-    round
+    ActiveFloorRound::<T>::mutate(|round| {
+        round.as_mut().expect("round started").checkpoint_agreed_at_sec = FLOOR_AGREED_AT
+    });
+    ActiveFloorRound::<T>::get().expect("round started")
 }
 
 fn venue_market() -> VenueMarket {
@@ -139,6 +149,26 @@ fn start_active_venue_round<T: Config>() -> VenueRound<BlockNumberFor<T>> {
             Some(VENUE_TARGET_TS)
     });
     ActiveVenueRound::<T>::get().expect("round started")
+}
+
+/// Counts the votes an answer needs, minus one, on the round's proposal, so the benchmarked
+/// report is the one that decides it. That is the heaviest report: it also finalises the
+/// proposal and closes the round.
+fn preload_votes_for<T: Config>(proposal_id: ProposalId, answer: H256) {
+    let proposal = pallet_watchtower::Proposals::<T>::get(proposal_id).expect("proposal exists");
+    let needed = pallet_watchtower::Pallet::<T>::votes_needed(proposal_id, &proposal)
+        .expect("the committee is selected");
+    let earlier = needed.saturating_sub(1);
+    pallet_watchtower::ChoiceTally::<T>::insert(proposal_id, answer, earlier);
+    pallet_watchtower::ChoiceStandings::<T>::insert(
+        proposal_id,
+        pallet_watchtower::ChoiceStanding {
+            cast: earlier,
+            leader: (earlier > 0).then_some(answer),
+            leader_tally: earlier,
+            tied: false,
+        },
+    );
 }
 
 benchmarks! {
@@ -245,19 +275,17 @@ benchmarks! {
         let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
             .expect("a node is registered");
         let observation = plausible_observation(round.external_block);
+        preload_votes_for::<T>(round.proposal_id, observation.hash());
         let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
             .sign(&("DummyProof").encode())
             .expect("Error signing proof");
     }: _(RawOrigin::None, round.round_id, observation, UNKNOWN_COUNTRY, watchtower.clone(), signature)
     verify {
-        let round = ActiveFloorRound::<T>::get().expect("round still open");
-        assert_eq!(round.reports, 1);
-        assert_eq!(FloorObservations::<T>::get(round.round_id, observation.hash()), Some(observation));
-        assert!(FloorReports::<T>::contains_key(round.round_id, &watchtower));
-        assert_eq!(
-            pallet_watchtower::ChoiceTally::<T>::get(round.proposal_id, observation.hash()),
-            1
-        );
+        assert!(ActiveFloorRound::<T>::get().is_none(), "the report closed the round");
+        let floor = LastFinalisedFloor::<T>::get().expect("floor finalised");
+        assert_eq!(floor.round_id, round.round_id);
+        assert_eq!(floor.observation, observation);
+        assert!(RoundsToClean::<T>::contains_key((OracleChannel::Floor, round.round_id)));
     }
 
     set_oracle_requester {
@@ -287,19 +315,17 @@ benchmarks! {
         let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
             .expect("a node is registered");
         let observation = plausible_venue_observation();
+        preload_votes_for::<T>(round.proposal_id, observation.hash());
         let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
             .sign(&("DummyProof").encode())
             .expect("Error signing proof");
     }: _(RawOrigin::None, round.round_id, observation, UNKNOWN_COUNTRY, watchtower.clone(), signature)
     verify {
-        let round = ActiveVenueRound::<T>::get().expect("round still open");
-        assert_eq!(round.reports, 1);
-        assert_eq!(VenueObservations::<T>::get(round.round_id, observation.hash()), Some(observation));
-        assert!(VenueReports::<T>::contains_key(round.round_id, &watchtower));
-        assert_eq!(
-            pallet_watchtower::ChoiceTally::<T>::get(round.proposal_id, observation.hash()),
-            1
-        );
+        assert!(ActiveVenueRound::<T>::get().is_none(), "the report closed the round");
+        let venue = LastFinalisedVenue::<T>::get().expect("venue state finalised");
+        assert_eq!(venue.round_id, round.round_id);
+        assert_eq!(venue.observation, observation);
+        assert!(RoundsToClean::<T>::contains_key((OracleChannel::Venue, round.round_id)));
     }
 
     set_venue_market {
@@ -322,6 +348,30 @@ benchmarks! {
     }: _(RawOrigin::Root, Some(size))
     verify {
         assert_eq!(OracleCommitteeSize::<T>::get(), Some(size));
+    }
+
+    // One `on_idle` step: find a finished round and delete `n` reports and `n` observations of
+    // it. Venue rows are used because a venue observation is larger than a floor one.
+    cleanup_round_page {
+        let n in 0 .. ROUND_CLEANUP_PAGE_SIZE;
+        let round_id = 1u64;
+        for i in 0..n {
+            let reporter: T::AccountId = account("reporter", i, 0);
+            let mut observation = plausible_venue_observation();
+            observation.external_block = i as u64 + 1;
+            VenueReports::<T>::insert(round_id, &reporter, observation.hash());
+            VenueObservations::<T>::insert(round_id, observation.hash(), observation);
+        }
+        RoundsToClean::<T>::insert((OracleChannel::Venue, round_id), ());
+        let mut removed = 0u32;
+    }: {
+        let (channel, round_id) = Pallet::<T>::next_round_to_clean().expect("a round to clean");
+        removed = Pallet::<T>::cleanup_round_page(channel, round_id, ROUND_CLEANUP_PAGE_SIZE);
+    }
+    verify {
+        assert_eq!(removed, n);
+        assert!(VenueReports::<T>::iter_prefix(round_id).next().is_none());
+        assert!(VenueObservations::<T>::iter_prefix(round_id).next().is_none());
     }
 }
 

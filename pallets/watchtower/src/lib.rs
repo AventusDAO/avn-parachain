@@ -295,6 +295,12 @@ pub mod pallet {
     pub type ChoiceTally<T: Config> =
         StorageDoubleMap<_, Blake2_128Concat, ProposalId, Blake2_128Concat, H256, u32, ValueQuery>;
 
+    /// Running totals per `Choice` proposal, so the decision reads one entry however many
+    /// answers were given.
+    #[pallet::storage]
+    pub type ChoiceStandings<T: Config> =
+        StorageMap<_, Blake2_128Concat, ProposalId, ChoiceStanding, ValueQuery>;
+
     /// The answer a `Choice` proposal settled on. Readable from `on_voting_completed`.
     #[pallet::storage]
     #[pallet::getter(fn winning_choice)]
@@ -1084,8 +1090,12 @@ pub mod pallet {
                 },
                 VoteChoice::Choice(choice) => {
                     Voters::<T>::insert(proposal_id, voter, true);
-                    ChoiceTally::<T>::mutate(proposal_id, choice, |tally| {
-                        *tally = tally.saturating_add(vote_weight)
+                    let tally = ChoiceTally::<T>::mutate(proposal_id, choice, |tally| {
+                        *tally = tally.saturating_add(vote_weight);
+                        *tally
+                    });
+                    ChoiceStandings::<T>::mutate(proposal_id, |standing| {
+                        standing.record(choice, tally, vote_weight)
                     });
                     Self::deposit_event(Event::ChoiceVoteSubmitted {
                         voter: voter.clone(),
@@ -1249,6 +1259,7 @@ pub mod pallet {
             Votes::<T>::remove(proposal_id);
             ProposalCommitteeSize::<T>::remove(proposal_id);
             VotingKindOf::<T>::remove(proposal_id);
+            ChoiceStandings::<T>::remove(proposal_id);
             WinningChoice::<T>::remove(proposal_id);
             ProposalsToRemove::<T>::remove(proposal_id);
 
