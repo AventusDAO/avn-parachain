@@ -327,10 +327,14 @@ impl<T: Config> Pallet<T> {
         TotalRegisteredNodes::<T>::mutate(|total| *total = total.saturating_add(n));
     }
 
-    /// Checks the dense index invariants. The owner indexes are checked at any time, as they
-    /// track `NodeIndex` from its first entry; the node index only once the backfill is complete.
+    /// Checks the dense index invariants. The registered-node count, which decides when the
+    /// backfill is complete, and the owner indexes, which track `NodeIndex` from its first
+    /// entry, are checked at any time; the node index only once the backfill is complete.
     #[cfg(any(feature = "try-runtime", test))]
     pub fn check_node_index_invariants() -> Result<(), &'static str> {
+        if NodeRegistry::<T>::iter_keys().count() as u32 != TotalRegisteredNodes::<T>::get() {
+            return Err("TotalRegisteredNodes does not match NodeRegistry")
+        }
         let count = NodeIndexCount::<T>::get();
         Self::check_owner_index_invariants(count)?;
         if !Self::node_index_is_complete() {

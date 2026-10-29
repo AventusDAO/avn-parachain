@@ -1,6 +1,8 @@
 // Copyright 2026 Aventus DAO.
 
 use crate::{Config, OwnedNodes, OwnedNodesCount, Pallet, STORAGE_VERSION};
+#[cfg(feature = "try-runtime")]
+use crate::{NodeRegistry, TotalRegisteredNodes};
 use frame_support::{
     pallet_prelude::PhantomData,
     traits::{Get, GetStorageVersion, OnRuntimeUpgrade, StorageVersion},
@@ -23,6 +25,19 @@ fn count_owned_nodes<T: Config>() -> (BTreeMap<T::AccountId, u32>, u64) {
         *count = count.saturating_add(1);
     }
     (counts, nodes)
+}
+
+/// The node index backfill is complete once `NodeIndexCount` reaches `TotalRegisteredNodes`, so
+/// the counter must match the registry: too high and the backfill never completes, too low and it
+/// completes with nodes left out of the index. This migration does not repair it.
+#[cfg(feature = "try-runtime")]
+fn ensure_total_matches_registry<T: Config>() -> Result<(), TryRuntimeError> {
+    let registered = NodeRegistry::<T>::iter_keys().count() as u64;
+    frame_support::ensure!(
+        registered == TotalRegisteredNodes::<T>::get() as u64,
+        TryRuntimeError::Other("TotalRegisteredNodes does not match NodeRegistry")
+    );
+    Ok(())
 }
 
 /// Migration v0 -> v1: `OwnedNodesCount` is recounted from `OwnedNodes`. Before v1 an owner who
@@ -88,6 +103,7 @@ pub mod v1 {
                 StorageVersion::get::<Pallet<T>>() == 0,
                 TryRuntimeError::Other("expected storage version 0 before migration")
             );
+            ensure_total_matches_registry::<T>()?;
             let (_, nodes) = count_owned_nodes::<T>();
             Ok(nodes.encode())
         }
@@ -110,6 +126,7 @@ pub mod v1 {
                 stored == actual,
                 TryRuntimeError::Other("owner counts do not match owned nodes")
             );
+            ensure_total_matches_registry::<T>()?;
             Ok(())
         }
     }
