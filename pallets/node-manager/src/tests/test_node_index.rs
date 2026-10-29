@@ -483,6 +483,43 @@ mod owner_index {
     }
 
     #[test]
+    fn a_batch_to_a_new_owner_can_empty_the_old_one() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let (o1, o2, o3) = (account(50), account(51), account(52));
+            let a = register_for(o1, 10);
+            let b = register_for(o2, 11);
+            let c = register_for(o1, 12);
+
+            move_nodes(o1, o3, vec![a, c]);
+
+            // o3 was appended, then moved into the slot o1 left.
+            assert_owners(&[(o3, vec![a, c]), (o2, vec![b])]);
+            assert_eq!(<OwnerIndexOf<TestRuntime>>::get(o1), None);
+        });
+    }
+
+    #[test]
+    fn a_batch_moves_only_its_indexed_nodes() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            // `register_unindexed` gives every legacy node to `owner()`.
+            let legacy = register_unindexed(10);
+            let fresh = register_for(owner(), 20);
+            let new_owner = account(50);
+
+            move_nodes(owner(), new_owner, vec![legacy, fresh]);
+            assert_eq!(<OwnerNodeIndexOf<TestRuntime>>::get(legacy), None);
+            assert_eq!(<OwnerIndexOf<TestRuntime>>::get(owner()), None);
+
+            assert_ok!(backfill(vec![legacy]));
+            assert_owners(&[(new_owner, vec![fresh, legacy])]);
+        });
+    }
+
+    #[test]
     fn an_unindexed_node_is_indexed_under_its_owner_at_the_time_of_backfill() {
         let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
         ext.execute_with(|| {

@@ -151,6 +151,17 @@ fn create_nodes_and_heartbeat<T: Config>(
     registered_nodes
 }
 
+/// Indexes a node of another owner after the benchmarked owner's nodes, so that the owner
+/// leaving the owner index is a swap-remove that moves this one into their slot (the worst
+/// case). Returns the other owner.
+fn index_node_of_another_owner<T: Config>() -> T::AccountId {
+    let other_owner: T::AccountId = account("other_owner", 0, 0);
+    let node: NodeId<T> = account("other_node", 0, 0);
+    let _ = register_new_node::<T>(node.clone(), other_owner.clone(), u32::MAX);
+    Pallet::<T>::index_insert(&node, &other_owner);
+    other_owner
+}
+
 fn set_max_batch_size<T: Config>(batch_size: u32) {
     <MaxBatchSize<T>>::set(batch_size);
 }
@@ -545,6 +556,7 @@ benchmarks! {
         for node in &nodes_to_deregister {
              Pallet::<T>::do_add_stake(&owner, node, 100u32.into()).unwrap();
          }
+        let other_owner = index_node_of_another_owner::<T>();
 
         // Show that the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -559,6 +571,8 @@ benchmarks! {
             assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
             assert!(!<NodeRegistry<T>>::contains_key(node));
         }
+        // The other owner was moved into the slot the owner left.
+        assert_eq!(Pallet::<T>::owner_at_index(0).map(|(o, _)| o), Some(other_owner));
         assert_last_event::<T>(Event::NodeDeregistered{
             owner,
             node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone()}.into());
@@ -583,6 +597,7 @@ benchmarks! {
         for node in &nodes_to_deregister {
              Pallet::<T>::do_add_stake(&owner, node, 100u32.into()).unwrap();
          }
+        let other_owner = index_node_of_another_owner::<T>();
 
         // Show that at least some of the nodes are registered
         assert!(<OwnedNodes<T>>::contains_key(owner.clone(), nodes_to_deregister[0].clone()));
@@ -608,6 +623,8 @@ benchmarks! {
             assert!(!<OwnedNodes<T>>::contains_key(owner.clone(), node));
             assert!(!<NodeRegistry<T>>::contains_key(node));
         }
+        // The other owner was moved into the slot the owner left.
+        assert_eq!(Pallet::<T>::owner_at_index(0).map(|(o, _)| o), Some(other_owner));
         assert_last_event::<T>(Event::NodeDeregistered{
             owner,
             node: nodes_to_deregister[nodes_to_deregister.len() - 1].clone()}.into());

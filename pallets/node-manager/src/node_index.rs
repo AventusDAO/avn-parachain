@@ -98,90 +98,158 @@ impl<T: Config> Pallet<T> {
         Self::owner_index_remove(node, owner);
     }
 
-    /// Moves an indexed `node` from `old_owner`'s entries to `new_owner`'s. Its position in
-    /// `NodeIndex` is unchanged. No-op for a node that is not indexed yet.
-    pub(crate) fn index_change_owner(
-        node: &NodeId<T>,
+    /// Moves the indexed nodes among `nodes` from `old_owner`'s entries to `new_owner`'s. Each
+    /// owner's `OwnerIndex` entry is read and written once for the whole batch. Positions in
+    /// `NodeIndex` are unchanged, and nodes not indexed yet are skipped.
+    pub(crate) fn index_move_nodes(
+        nodes: &[NodeId<T>],
         old_owner: &T::AccountId,
         new_owner: &T::AccountId,
     ) {
-        if !NodeIndexOf::<T>::contains_key(node) {
+        if old_owner == new_owner {
             return
         }
-        Self::owner_index_remove(node, old_owner);
-        Self::owner_index_insert(node, new_owner);
+        let indexed: Vec<&NodeId<T>> =
+            nodes.iter().filter(|node| NodeIndexOf::<T>::contains_key(*node)).collect();
+        if indexed.is_empty() {
+            return
+        }
+
+        let mut old = match Self::load_owner(old_owner) {
+            Ok(Some(found)) => Some(found),
+            Ok(None) => {
+                log::error!("💔 Owner index corrupt: {:?} is not indexed", old_owner);
+                None
+            },
+            Err(()) => None,
+        };
+        let Ok(new) = Self::load_owner(new_owner) else { return };
+        let (new_position, mut new_entry) = Self::position_and_entry(new, new_owner);
+
+        for node in indexed {
+            if let Some((_, entry)) = old.as_mut() {
+                Self::owner_nodes_remove(node, entry);
+            }
+            Self::owner_nodes_append(node, &mut new_entry);
+        }
+
+        // The new owner first: if the old owner is removed, the swap-remove may move the new
+        // owner's entry, so it must already be in storage.
+        Self::store_owner(new_position, new_entry);
+        if let Some((position, entry)) = old {
+            Self::store_owner(Some(position), entry);
+        }
     }
 
     /// Appends `node` to `owner`'s node index, adding `owner` to the owner index if it is their
     /// first indexed node.
     fn owner_index_insert(node: &NodeId<T>, owner: &T::AccountId) {
-        let (position, mut entry) = match OwnerIndexOf::<T>::get(owner) {
-            Some(position) => match OwnerIndex::<T>::get(position) {
-                Some(entry) => (position, entry),
-                None => {
-                    log::error!(
-                        "💔 Owner index corrupt: no entry at position {} for {:?}",
-                        position,
-                        owner
-                    );
-                    return
-                },
-            },
-            None => {
-                let position = OwnerIndexCount::<T>::get();
-                OwnerIndexOf::<T>::insert(owner, position);
-                OwnerIndexCount::<T>::put(position.saturating_add(1));
-                (position, IndexedOwner { owner: owner.clone(), nodes: 0 })
-            },
-        };
-
-        OwnerNodeIndex::<T>::insert(owner, entry.nodes, node);
-        OwnerNodeIndexOf::<T>::insert(node, entry.nodes);
-        entry.nodes = entry.nodes.saturating_add(1);
-        OwnerIndex::<T>::insert(position, entry);
+        let Ok(found) = Self::load_owner(owner) else { return };
+        let (position, mut entry) = Self::position_and_entry(found, owner);
+        Self::owner_nodes_append(node, &mut entry);
+        Self::store_owner(position, entry);
     }
 
     /// Removes `node` from `owner`'s node index with a swap-remove, and `owner` from the owner
     /// index with a swap-remove once they have no indexed nodes left.
     fn owner_index_remove(node: &NodeId<T>, owner: &T::AccountId) {
+        let (position, mut entry) = match Self::load_owner(owner) {
+            Ok(Some(found)) => found,
+            Ok(None) => {
+                log::error!("💔 Owner index corrupt: {:?} is not indexed", owner);
+                return
+            },
+            Err(()) => return,
+        };
+        if Self::owner_nodes_remove(node, &mut entry) {
+            Self::store_owner(Some(position), entry);
+        }
+    }
+
+    /// `owner`'s position in the owner index and their entry, `Ok(None)` if they are not
+    /// indexed, or `Err` (logged) if the index is corrupt.
+    fn load_owner(owner: &T::AccountId) -> Result<Option<(u32, IndexedOwner<T::AccountId>)>, ()> {
+        let Some(position) = OwnerIndexOf::<T>::get(owner) else { return Ok(None) };
+        match OwnerIndex::<T>::get(position) {
+            Some(entry) => Ok(Some((position, entry))),
+            None => {
+                log::error!(
+                    "💔 Owner index corrupt: no entry at position {} for {:?}",
+                    position,
+                    owner
+                );
+                Err(())
+            },
+        }
+    }
+
+    /// The loaded entry of `owner`, or an empty one with no position for an owner not indexed
+    /// yet.
+    fn position_and_entry(
+        found: Option<(u32, IndexedOwner<T::AccountId>)>,
+        owner: &T::AccountId,
+    ) -> (Option<u32>, IndexedOwner<T::AccountId>) {
+        match found {
+            Some((position, entry)) => (Some(position), entry),
+            None => (None, IndexedOwner { owner: owner.clone(), nodes: 0 }),
+        }
+    }
+
+    /// Appends `node` to the node index of `entry`'s owner. The entry itself is not written.
+    fn owner_nodes_append(node: &NodeId<T>, entry: &mut IndexedOwner<T::AccountId>) {
+        OwnerNodeIndex::<T>::insert(&entry.owner, entry.nodes, node);
+        OwnerNodeIndexOf::<T>::insert(node, entry.nodes);
+        entry.nodes = entry.nodes.saturating_add(1);
+    }
+
+    /// Removes `node` from the node index of `entry`'s owner with a swap-remove. The entry
+    /// itself is not written. False (logged) if `node` had no owner entry.
+    fn owner_nodes_remove(node: &NodeId<T>, entry: &mut IndexedOwner<T::AccountId>) -> bool {
         let Some(node_position) = OwnerNodeIndexOf::<T>::take(node) else {
             log::error!("💔 Owner index corrupt: indexed node {:?} has no owner entry", node);
-            return
-        };
-        let Some(position) = OwnerIndexOf::<T>::get(owner) else {
-            log::error!("💔 Owner index corrupt: {:?} is not indexed", owner);
-            return
-        };
-        let Some(mut entry) = OwnerIndex::<T>::get(position) else {
-            log::error!("💔 Owner index corrupt: no entry at position {}", position);
-            return
+            return false
         };
 
         let last_node = entry.nodes.saturating_sub(1);
         if node_position != last_node {
-            match OwnerNodeIndex::<T>::get(owner, last_node) {
+            match OwnerNodeIndex::<T>::get(&entry.owner, last_node) {
                 Some(moved) => {
-                    OwnerNodeIndex::<T>::insert(owner, node_position, &moved);
+                    OwnerNodeIndex::<T>::insert(&entry.owner, node_position, &moved);
                     OwnerNodeIndexOf::<T>::insert(&moved, node_position);
                 },
                 None => {
                     log::error!(
                         "💔 Owner index corrupt: {:?} has no node at tail position {}",
-                        owner,
+                        entry.owner,
                         last_node
                     );
-                    OwnerNodeIndex::<T>::remove(owner, node_position);
+                    OwnerNodeIndex::<T>::remove(&entry.owner, node_position);
                 },
             }
         }
-        OwnerNodeIndex::<T>::remove(owner, last_node);
+        OwnerNodeIndex::<T>::remove(&entry.owner, last_node);
+        entry.nodes = last_node;
+        true
+    }
 
-        if last_node > 0 {
-            entry.nodes = last_node;
-            OwnerIndex::<T>::insert(position, entry);
-            return
+    /// Writes `entry` to the owner index: at `position`, or appended when `None` (a new owner).
+    /// An owner left without nodes is swap-removed instead.
+    fn store_owner(position: Option<u32>, entry: IndexedOwner<T::AccountId>) {
+        match (position, entry.nodes) {
+            (None, 0) => {},
+            (None, _) => {
+                let position = OwnerIndexCount::<T>::get();
+                OwnerIndexOf::<T>::insert(&entry.owner, position);
+                OwnerIndexCount::<T>::put(position.saturating_add(1));
+                OwnerIndex::<T>::insert(position, entry);
+            },
+            (Some(position), 0) => Self::owner_swap_remove(position, &entry.owner),
+            (Some(position), _) => OwnerIndex::<T>::insert(position, entry),
         }
+    }
 
+    /// Removes `owner`, at `position`, from the owner index with a swap-remove.
+    fn owner_swap_remove(position: u32, owner: &T::AccountId) {
         let last = OwnerIndexCount::<T>::get().saturating_sub(1);
         if position != last {
             match OwnerIndex::<T>::get(last) {

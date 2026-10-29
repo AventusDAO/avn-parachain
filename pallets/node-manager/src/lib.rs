@@ -1845,7 +1845,6 @@ pub mod pallet {
 
                 <OwnedNodes<T>>::remove(current_owner, node_id);
                 <OwnedNodes<T>>::insert(new_owner, node_id, ());
-                Self::index_change_owner(node_id, current_owner, new_owner);
 
                 Self::deposit_event(Event::NodeMoved {
                     old_owner: current_owner.clone(),
@@ -1854,6 +1853,8 @@ pub mod pallet {
                     stake,
                 });
             }
+
+            Self::index_move_nodes(nodes, current_owner, new_owner);
 
             let n = nodes.len() as u32;
             Self::decrease_owned_nodes_count(current_owner, n);
@@ -1980,7 +1981,6 @@ pub mod pallet {
 
                 <OwnedNodes<T>>::remove(current_owner, node_id);
                 <OwnedNodes<T>>::insert(new_owner, node_id, ());
-                Self::index_change_owner(node_id, current_owner, new_owner);
 
                 Self::deposit_event(Event::NodeMoved {
                     old_owner: current_owner.clone(),
@@ -1989,6 +1989,8 @@ pub mod pallet {
                     stake: target,
                 });
             }
+
+            Self::index_move_nodes(nodes, current_owner, new_owner);
 
             let n_u32 = n as u32;
             Self::decrease_owned_nodes_count(current_owner, n_u32);
