@@ -33,7 +33,7 @@ fn submit_active_internal(ref_byte: u8) -> ProposalId {
 /// Threshold is 50% of 10 watchtowers, so 5 votes in favour finalise the proposal.
 fn finalise_by_consensus(proposal_id: ProposalId) {
     for voter in [watchtower_1(), watchtower_2(), watchtower_3(), watchtower_4(), watchtower_5()] {
-        assert_ok!(Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, true));
+        assert_ok!(node_vote(voter, proposal_id, true));
     }
     assert_eq!(
         ProposalStatus::<TestRuntime>::get(proposal_id),

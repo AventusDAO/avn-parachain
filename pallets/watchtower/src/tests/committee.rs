@@ -47,19 +47,6 @@ fn first_n_watchtowers(n: usize) -> Vec<AccountId> {
     default_watchtowers().into_iter().take(n).collect()
 }
 
-/// The key pair that signs unsigned votes for `account` (see `NODE_SIGNING_KEYS` in the mock).
-fn signer_for(account: &AccountId) -> TestAccount {
-    if *account == watchtower_1() {
-        return get_default_voter()
-    }
-    for i in 2..=10u8 {
-        if TestAccount::new([10 + i; 32]).account_id() == *account {
-            return TestAccount::new([i; 32])
-        }
-    }
-    panic!("not a mock watchtower: {:?}", account);
-}
-
 fn unsigned_vote_call(
     proposal_id: ProposalId,
     voter: &AccountId,
@@ -71,7 +58,7 @@ fn unsigned_vote_call(
         &TEST_COUNTRY,
         voter,
     );
-    let signature: Signature = signer_for(voter).key_pair().sign(&payload).into();
+    let signature: Signature = node_signer(voter).key_pair().sign(&payload).into();
     crate::Call::unsigned_vote {
         proposal_id,
         in_favor,
@@ -86,10 +73,6 @@ fn validate(proposal_id: ProposalId) -> TransactionValidity {
         TransactionSource::Local,
         &crate::Call::activate_next_proposal { proposal_id },
     )
-}
-
-fn vote(voter: AccountId, proposal_id: ProposalId, in_favor: bool) -> DispatchResultWithPostInfo {
-    Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, in_favor)
 }
 
 /// Activates a committee proposal under `seed` in a fresh externality and returns the members.
@@ -614,10 +597,10 @@ mod voting {
         ext.execute_with(|| {
             let (id, selected, _) = activated_committee(3);
             // 50% of 3 is 2 votes, even though 10 nodes are registered.
-            assert_ok!(vote(selected[0], id, true));
+            assert_ok!(node_vote(selected[0], id, true));
             assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Active);
 
-            assert_ok!(vote(selected[1], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
 
             assert_eq!(
                 ProposalStatus::<TestRuntime>::get(id),
@@ -627,13 +610,18 @@ mod voting {
     }
 
     #[test]
-    fn non_members_cannot_vote_with_a_signed_transaction() {
+    fn signed_votes_are_refused_whoever_casts_them() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            let (id, _, non_members) = activated_committee(3);
+            let (id, selected, non_members) = activated_committee(3);
 
-            assert_noop!(vote(non_members[0], id, true), Error::<TestRuntime>::NotInCommittee);
-            assert!(!Voters::<TestRuntime>::contains_key(id, non_members[0]));
+            for voter in [selected[0], non_members[0], watchtower_owner_1(), random_user()] {
+                assert_noop!(
+                    owner_vote(voter, id, true),
+                    Error::<TestRuntime>::SignedVoteOnInternalProposal
+                );
+                assert!(!Voters::<TestRuntime>::contains_key(id, voter));
+            }
         });
     }
 
@@ -698,24 +686,15 @@ mod voting {
                 authorized_watchtowers().into_iter().filter(|w| *w != selected[0]).collect();
             set_authorized_watchtowers(remaining);
 
-            assert_noop!(vote(selected[0], id, true), Error::<TestRuntime>::UnauthorizedVoter);
+            assert_noop!(node_vote(selected[0], id, true), Error::<TestRuntime>::UnauthorizedVoter);
             assert_eq!(committee_size(id), Some(3));
             // The other two members still carry the proposal.
-            assert_ok!(vote(selected[1], id, true));
-            assert_ok!(vote(selected[2], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
+            assert_ok!(node_vote(selected[2], id, true));
             assert_eq!(
                 ProposalStatus::<TestRuntime>::get(id),
                 ProposalStatusEnum::Resolved { passed: true }
             );
-        });
-    }
-
-    #[test]
-    fn unauthorized_accounts_are_rejected_before_the_committee_check() {
-        let mut ext = ExtBuilder::build_default().as_externality();
-        ext.execute_with(|| {
-            let (id, _, _) = activated_committee(3);
-            assert_noop!(vote(random_user(), id, true), Error::<TestRuntime>::UnauthorizedVoter);
         });
     }
 }
@@ -753,8 +732,8 @@ mod cleanup {
             let id = submit_internal(1, Some(3));
             assert_ok!(activate(id));
             let selected: Vec<AccountId> = members(id).into_iter().collect();
-            assert_ok!(vote(selected[0], id, true));
-            assert_ok!(vote(selected[1], id, true));
+            assert_ok!(node_vote(selected[0], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
             assert!(ProposalsToRemove::<TestRuntime>::contains_key(id));
 
             // Pad the committee well past one cleanup page (250 rows per block).
@@ -893,7 +872,7 @@ mod decision_rules {
                 DecisionRule::ExpireUnresolved,
                 ProposalSource::Internal(ProposalType::Summary),
             );
-            assert_ok!(vote(watchtower_1(), id, true));
+            assert_ok!(node_vote(watchtower_1(), id, true));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Expired);
         });
@@ -907,7 +886,7 @@ mod decision_rules {
                 DecisionRule::RejectOnExpiry,
                 ProposalSource::Internal(ProposalType::Summary),
             );
-            assert_ok!(vote(watchtower_1(), id, true));
+            assert_ok!(node_vote(watchtower_1(), id, true));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Resolved { passed: false });
         });
@@ -921,9 +900,9 @@ mod decision_rules {
                 DecisionRule::SimpleMajorityOnExpiry,
                 ProposalSource::Internal(ProposalType::Summary),
             );
-            assert_ok!(vote(watchtower_1(), id, true));
-            assert_ok!(vote(watchtower_2(), id, true));
-            assert_ok!(vote(watchtower_3(), id, false));
+            assert_ok!(node_vote(watchtower_1(), id, true));
+            assert_ok!(node_vote(watchtower_2(), id, true));
+            assert_ok!(node_vote(watchtower_3(), id, false));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Resolved { passed: true });
         });
@@ -947,7 +926,7 @@ mod decision_rules {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(DecisionRule::RejectOnExpiry, ProposalSource::External);
-            assert_ok!(vote(watchtower_owner_1(), id, true));
+            assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Resolved { passed: false });
         });
@@ -958,7 +937,7 @@ mod decision_rules {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(DecisionRule::ExpireUnresolved, ProposalSource::External);
-            assert_ok!(vote(watchtower_owner_1(), id, true));
+            assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Expired);
         });
@@ -978,7 +957,7 @@ mod decision_rules {
                 Proposals::<TestRuntime>::get(id).unwrap().decision_rule,
                 DecisionRule::SimpleMajorityOnExpiry
             );
-            assert_ok!(vote(watchtower_owner_1(), id, true));
+            assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Resolved { passed: true });
         });

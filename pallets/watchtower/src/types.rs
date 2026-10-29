@@ -37,6 +37,13 @@ pub fn to_proposal<T: Config>(
         ensure!(size <= T::MaxCommitteeSize::get(), Error::<T>::CommitteeSizeTooLarge);
     }
 
+    // Owners vote on external proposals with yes/no only.
+    ensure!(
+        request.voting == VotingKind::Binary ||
+            matches!(request.source, ProposalSource::Internal(_)),
+        Error::<T>::ChoiceVotingInternalOnly
+    );
+
     let proposal = Proposal {
         title: BoundedVec::try_from(request.title).map_err(|_| Error::<T>::InvalidTitle)?,
         payload: to_payload(request.payload)?,
@@ -175,12 +182,16 @@ pub trait NodesInterface<AccountId, SignerId> {
 /// Runtime-provided setup for benchmarks, so they measure the real storage work of the
 /// `NodesInterface` provider and of the `WatchtowerHooks` consumers instead of stubs.
 #[cfg(feature = "runtime-benchmarks")]
-pub trait BenchmarkHelper {
+pub trait BenchmarkHelper<AccountId> {
     /// Registers `n` nodes, each with an owner of its own, with the `NodesInterface` provider so
     /// that `get_authorized_watchtowers_count`, `get_indexed_nodes_count` and
     /// `get_indexed_owners_count` return `n` and the index getters read a stored entry for
     /// every `index < n`.
     fn setup_nodes(n: u32);
+
+    /// Makes `owner` the owner of `nodes` nodes with the `NodesInterface` provider, so that
+    /// `is_watchtower_owner` holds and `get_watchtower_voting_weight` returns `nodes`.
+    fn setup_owner(owner: &AccountId, nodes: u32);
 
     /// Makes the consumers recognise `external_ref` as a proposal they are waiting on, with
     /// `payload` being the consumer-specific encoded payload such a proposal carries. After
@@ -193,8 +204,9 @@ pub trait BenchmarkHelper {
 }
 
 #[cfg(feature = "runtime-benchmarks")]
-impl BenchmarkHelper for () {
+impl<AccountId> BenchmarkHelper<AccountId> for () {
     fn setup_nodes(_n: u32) {}
+    fn setup_owner(_owner: &AccountId, _nodes: u32) {}
     fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
     fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
         true

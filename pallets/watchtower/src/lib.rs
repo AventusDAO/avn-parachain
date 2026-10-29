@@ -220,7 +220,7 @@ pub mod pallet {
 
         /// Populates the node provider and the consumers so benchmarks measure real storage.
         #[cfg(feature = "runtime-benchmarks")]
-        type BenchmarkHelper: BenchmarkHelper;
+        type BenchmarkHelper: BenchmarkHelper<Self::AccountId>;
     }
 
     #[pallet::type_value]
@@ -454,6 +454,11 @@ pub mod pallet {
         NodeIndexCorrupt,
         /// The internal proposal queue needs at least two entries for this operation
         QueueTooShort,
+        /// Choice voting is only available for internal proposals
+        ChoiceVotingInternalOnly,
+        /// Internal proposals are voted on by their committee nodes with `unsigned_vote` or
+        /// `unsigned_vote_choice`, not with a signed vote
+        SignedVoteOnInternalProposal,
     }
 
     #[pallet::call]
@@ -512,6 +517,9 @@ pub mod pallet {
             Ok(())
         }
 
+        /// A node owner votes yes or no on an external proposal. The vote counts once per node
+        /// the owner holds and carries no country. Internal proposals are refused: their
+        /// committee nodes vote with `unsigned_vote` or `unsigned_vote_choice`.
         #[pallet::call_index(2)]
         #[pallet::weight(
             <T as Config>::WeightInfo::vote()
@@ -523,7 +531,7 @@ pub mod pallet {
             in_favor: bool,
         ) -> DispatchResultWithPostInfo {
             let owner = ensure_signed(origin)?;
-            let finalised = Self::process_vote(&owner, proposal_id, in_favor)?;
+            let finalised = Self::process_owner_vote(&owner, proposal_id, in_favor)?;
 
             if finalised {
                 Ok(Some(<T as Config>::WeightInfo::vote_end_proposal()).into())
@@ -532,6 +540,10 @@ pub mod pallet {
             }
         }
 
+        /// `vote` relayed on the owner's behalf: the owner signs the vote offchain, together with
+        /// the relayer and `block_number`, and the proxy dispatches it with the owner as origin.
+        /// The signature must match and `block_number` be within `SignedTxLifetime` of now. The
+        /// vote is then counted as in `vote`.
         #[pallet::call_index(3)]
         #[pallet::weight(
             <T as Config>::WeightInfo::signed_vote()
@@ -565,7 +577,7 @@ pub mod pallet {
                 Error::<T>::UnauthorizedSignedTransaction
             );
 
-            let finalised = Self::process_vote(&owner, proposal_id, in_favor)?;
+            let finalised = Self::process_owner_vote(&owner, proposal_id, in_favor)?;
 
             if finalised {
                 Ok(Some(<T as Config>::WeightInfo::signed_vote_end_proposal()).into())
@@ -628,15 +640,17 @@ pub mod pallet {
         ) -> DispatchResultWithPostInfo {
             ensure_none(origin)?;
 
+            let vote = VoteChoice::Choice(choice);
             Self::validate_unsigned_vote(
                 proposal_id,
-                &VoteChoice::Choice(choice),
+                &vote,
                 &country,
                 watchtower.clone(),
                 signature,
             )?;
 
-            let finalised = Self::vote_choice_for(&watchtower, proposal_id, choice, country)?;
+            let finalised =
+                Self::process_vote_choice(&watchtower, proposal_id, vote, Some(country))?;
 
             if finalised {
                 Ok(Some(<T as Config>::WeightInfo::unsigned_vote_choice_end_proposal()).into())
@@ -987,25 +1001,19 @@ pub mod pallet {
             Ok(())
         }
 
-        fn process_vote(
-            voter: &T::AccountId,
+        /// A yes/no vote by a node owner on an external proposal (`vote`, `signed_vote`). Owners
+        /// are accounts, not nodes, so the vote carries no country.
+        fn process_owner_vote(
+            owner: &T::AccountId,
             proposal_id: ProposalId,
             in_favor: bool,
         ) -> Result<bool, DispatchError> {
-            Self::process_vote_choice(voter, proposal_id, VoteChoice::Binary(in_favor), None)
-        }
-
-        /// Counts an answer from an already authenticated voter on a `Choice` proposal. For
-        /// consumer pallets whose own extrinsic carries the vote (the floor oracle's report),
-        /// with the country the node reported in it. Returns whether the proposal was
-        /// finalised by this vote.
-        pub fn vote_choice_for(
-            voter: &T::AccountId,
-            proposal_id: ProposalId,
-            choice: H256,
-            country: CountryCode,
-        ) -> Result<bool, DispatchError> {
-            Self::process_vote_choice(voter, proposal_id, VoteChoice::Choice(choice), Some(country))
+            let proposal = Proposals::<T>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
+            ensure!(
+                matches!(proposal.source, ProposalSource::External),
+                Error::<T>::SignedVoteOnInternalProposal
+            );
+            Self::process_vote_choice(owner, proposal_id, VoteChoice::Binary(in_favor), None)
         }
 
         fn kind_of(vote: &VoteChoice) -> VotingKind {

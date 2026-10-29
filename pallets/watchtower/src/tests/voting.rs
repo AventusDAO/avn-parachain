@@ -12,6 +12,21 @@ fn sign_vote(voter: TestAccount, msg: &[u8]) -> Signature {
     voter.key_pair().sign(msg).into()
 }
 
+/// Votes the way the proposal's source allows: a node's unsigned vote on an internal proposal,
+/// an owner's signed vote on an external one.
+fn cast_vote(
+    voter: AccountId,
+    proposal_id: ProposalId,
+    in_favor: bool,
+    is_internal: bool,
+) -> DispatchResultWithPostInfo {
+    if is_internal {
+        node_vote(voter, proposal_id, in_favor)
+    } else {
+        owner_vote(voter, proposal_id, in_favor)
+    }
+}
+
 fn create_and_submit_proposal(payload: RawPayload, source: ProposalSource) -> (ProposalId, bool) {
     let context = Context::default();
     let proposal = context.build_request(payload, source.clone());
@@ -42,11 +57,13 @@ mod voting_on_proposals {
             let proposal = context.build_request(payload, source.clone());
             let voter;
             let vote_weight;
+            let country;
             if let ProposalSource::Internal(_) = source {
                 assert_ok!(Watchtower::submit_proposal(None, proposal));
                 activate_head();
                 vote_weight = 1;
                 voter = watchtower_1();
+                country = Some(TEST_COUNTRY);
             } else {
                 assert_ok!(Watchtower::submit_external_proposal(
                     RawOrigin::Signed(watchtower_owner_1()).into(),
@@ -55,11 +72,12 @@ mod voting_on_proposals {
 
                 vote_weight = <mock::TestRuntime as pallet::Config>::Watchtowers::get_watchtower_voting_weight(&watchtower_owner_1());
                 voter = watchtower_owner_1();
+                country = None;
             }
 
             let in_favor = true;
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
-            assert_ok!(Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, in_favor));
+            assert_ok!(cast_vote(voter, proposal_id, in_favor, country.is_some()));
 
             //Verify state and events
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
@@ -75,7 +93,7 @@ mod voting_on_proposals {
                     voter: voter.clone(),
                     in_favor,
                     vote_weight,
-                    country: None,
+                    country,
                 }
                 .into(),
             );
@@ -148,14 +166,10 @@ mod voting_on_proposals {
 
                 let in_favor = true;
 
-                assert_ok!(Watchtower::vote(
-                    RawOrigin::Signed(voter.clone()).into(),
-                    proposal_id,
-                    in_favor
-                ));
+                assert_ok!(cast_vote(voter, proposal_id, in_favor, is_internal));
                 // Vote again
                 assert_noop!(
-                    Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, in_favor),
+                    cast_vote(voter, proposal_id, in_favor, is_internal),
                     Error::<TestRuntime>::AlreadyVoted
                 );
             });
@@ -189,14 +203,13 @@ mod voting_on_proposals {
                 ProposalStatus::<TestRuntime>::insert(proposal_id, state);
 
                 assert_noop!(
-                    Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, in_favor),
+                    cast_vote(voter, proposal_id, in_favor, is_internal),
                     Error::<TestRuntime>::ProposalNotActive
                 );
             });
         }
 
         #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External; "external")]
-        #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary); "internal")]
         fn unauthorised_voter(payload: RawPayload, source: ProposalSource) {
             let mut ext = ExtBuilder::build_default().as_externality();
             ext.execute_with(|| {
@@ -228,19 +241,22 @@ mod voting_on_proposals {
             });
         }
 
-        #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary); "internal")]
-        fn node_owner_vote_on_internal_proposals(payload: RawPayload, source: ProposalSource) {
+        #[test]
+        fn signed_votes_on_internal_proposals() {
             let mut ext = ExtBuilder::build_default().as_externality();
             ext.execute_with(|| {
-                let (proposal_id, _) = create_and_submit_proposal(payload, source.clone());
-                let voter = watchtower_owner_1(); // A node owner account
-
-                let in_favor = true;
-
-                assert_noop!(
-                    Watchtower::vote(RawOrigin::Signed(voter).into(), proposal_id, in_favor),
-                    Error::<TestRuntime>::UnauthorizedVoter
+                let (proposal_id, _) = create_and_submit_proposal(
+                    RawPayload::Inline(b"test".to_vec()),
+                    ProposalSource::Internal(ProposalType::Summary),
                 );
+
+                // Nodes, owners and anyone else alike: nodes vote with `unsigned_vote` only.
+                for voter in [watchtower_1(), watchtower_owner_1(), random_user()] {
+                    assert_noop!(
+                        owner_vote(voter, proposal_id, true),
+                        Error::<TestRuntime>::SignedVoteOnInternalProposal
+                    );
+                }
             });
         }
     }
@@ -260,36 +276,12 @@ mod proposal_lifecycle {
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             // 1st vote - in favor
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_1()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_2()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_3()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_4()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_5()).into(),
-                proposal_id,
-                false
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_6()).into(),
-                proposal_id,
-                true
-            ));
+            assert_ok!(node_vote(watchtower_1(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_2(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_3(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_4(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_5(), proposal_id, false));
+            assert_ok!(node_vote(watchtower_6(), proposal_id, true));
 
             // Verify state and events
             let votes = Votes::<TestRuntime>::get(&proposal_id);
@@ -379,52 +371,16 @@ mod proposal_lifecycle {
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
             // 1st vote - in favor
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_1()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_2()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_3()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_4()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_5()).into(),
-                proposal_id,
-                false
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_6()).into(),
-                proposal_id,
-                true
-            ));
+            assert_ok!(node_vote(watchtower_1(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_2(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_3(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_4(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_5(), proposal_id, false));
+            assert_ok!(node_vote(watchtower_6(), proposal_id, true));
             // Additional votes are needed because the threshold is higher than 50%
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_7()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_8()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_9()).into(),
-                proposal_id,
-                true
-            ));
+            assert_ok!(node_vote(watchtower_7(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_8(), proposal_id, true));
+            assert_ok!(node_vote(watchtower_9(), proposal_id, true));
 
             // Verify state and events
             let votes = Votes::<TestRuntime>::get(&proposal_id);
@@ -455,11 +411,7 @@ mod proposal_lifecycle {
             activate_head();
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
 
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_1()).into(),
-                proposal_id,
-                true
-            ));
+            assert_ok!(node_vote(watchtower_1(), proposal_id, true));
             // Proposal is still active
             assert_eq!(ProposalStatus::<TestRuntime>::get(proposal_id), ProposalStatusEnum::Active);
 
@@ -777,35 +729,6 @@ mod vote_filter {
                 TransactionSource::External,
                 &unsigned_vote_call(proposal_id, true)
             ));
-        });
-    }
-
-    #[test]
-    fn rejected_votes_fail_on_signed_vote() {
-        let mut ext = ExtBuilder::build_default().as_externality();
-        ext.execute_with(|| {
-            reset_hook_state();
-            reject_vote(watchtower_1(), true);
-            let proposal_id = internal_proposal();
-
-            assert_noop!(
-                Watchtower::vote(RawOrigin::Signed(watchtower_1()).into(), proposal_id, true),
-                VOTE_FILTER_REJECTED
-            );
-            assert!(!Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
-
-            // Other members, and the other direction, are unaffected.
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_2()).into(),
-                proposal_id,
-                true
-            ));
-            assert_ok!(Watchtower::vote(
-                RawOrigin::Signed(watchtower_1()).into(),
-                proposal_id,
-                false
-            ));
-            assert!(Voters::<TestRuntime>::contains_key(proposal_id, watchtower_1()));
         });
     }
 

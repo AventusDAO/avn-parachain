@@ -993,9 +993,17 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
 #[cfg(feature = "runtime-benchmarks")]
 pub struct WatchtowerBenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
-impl pallet_watchtower::BenchmarkHelper for WatchtowerBenchmarkHelper {
+impl pallet_watchtower::BenchmarkHelper<AccountId> for WatchtowerBenchmarkHelper {
     fn setup_nodes(n: u32) {
         pallet_node_manager::Pallet::<Runtime>::benchmark_register_indexed_nodes(n);
+    }
+
+    fn setup_owner(owner: &AccountId, nodes: u32) {
+        for i in 0..nodes {
+            let node: AccountId = frame_benchmarking::account("owned_node", i, 0);
+            pallet_node_manager::OwnedNodes::<Runtime>::insert(owner, node, ());
+        }
+        pallet_node_manager::OwnedNodesCount::<Runtime>::insert(owner, nodes);
     }
 
     fn setup_consumer_proposal(external_ref: sp_core::H256, payload: sp_std::vec::Vec<u8>) {

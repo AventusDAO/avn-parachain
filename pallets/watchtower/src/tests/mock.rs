@@ -71,10 +71,15 @@ impl Config for TestRuntime {
 #[cfg(feature = "runtime-benchmarks")]
 pub struct TestBenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
-impl BenchmarkHelper for TestBenchmarkHelper {
+impl BenchmarkHelper<AccountId> for TestBenchmarkHelper {
     fn setup_nodes(n: u32) {
         let nodes = (0..n).map(|i| frame_benchmarking::account("node", i, 0)).collect();
         set_authorized_watchtowers(nodes);
+    }
+
+    fn setup_owner(owner: &AccountId, nodes: u32) {
+        let nodes = (0..nodes).map(|i| frame_benchmarking::account("owned_node", i, 0)).collect();
+        NODE_OWNERS.with(|owners| owners.borrow_mut().insert(*owner, nodes));
     }
 
     fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
@@ -263,6 +268,53 @@ pub fn get_signing_key_for_wt_1() -> SignerId {
 
 pub fn signing_key(index: u8) -> SignerId {
     TestAccount::new([index; 32]).public_key().into()
+}
+
+/// The key pair that signs unsigned votes for `account` (see `NODE_SIGNING_KEYS`).
+pub fn node_signer(account: &AccountId) -> TestAccount {
+    if *account == watchtower_1() {
+        return get_default_voter()
+    }
+    for i in 2..=10u8 {
+        if TestAccount::new([10 + i; 32]).account_id() == *account {
+            return TestAccount::new([i; 32])
+        }
+    }
+    panic!("not a mock watchtower: {:?}", account);
+}
+
+/// Casts `voter`'s yes/no vote the way its offchain worker does: an `unsigned_vote` signed with
+/// the node's signing key, reporting `TEST_COUNTRY`.
+pub fn node_vote(
+    voter: AccountId,
+    proposal_id: ProposalId,
+    in_favor: bool,
+) -> DispatchResultWithPostInfo {
+    let payload = Watchtower::unsigned_vote_signing_payload(
+        proposal_id,
+        &VoteChoice::Binary(in_favor),
+        &TEST_COUNTRY,
+        &voter,
+    );
+    use sp_core::Pair as _;
+    let signature: Signature = node_signer(&voter).key_pair().sign(&payload).into();
+    Watchtower::unsigned_vote(
+        RawOrigin::None.into(),
+        proposal_id,
+        in_favor,
+        TEST_COUNTRY,
+        voter,
+        signature.into(),
+    )
+}
+
+/// Casts an owner's yes/no vote with the signed `vote` call.
+pub fn owner_vote(
+    owner: AccountId,
+    proposal_id: ProposalId,
+    in_favor: bool,
+) -> DispatchResultWithPostInfo {
+    Watchtower::vote(RawOrigin::Signed(owner).into(), proposal_id, in_favor)
 }
 
 pub fn random_user() -> AccountId {

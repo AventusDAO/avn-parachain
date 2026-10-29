@@ -178,7 +178,8 @@ pub struct ProposalRequest {
     /// Number of nodes to randomly select to vote on this proposal. `None` means every node
     /// votes. Only valid for internal proposals.
     pub committee_size: Option<u32>,
-    /// Yes/no, or pick-an-answer.
+    /// Yes/no, or pick-an-answer. `Choice` is only valid for internal proposals: owners vote
+    /// on external proposals with yes/no only.
     pub voting: VotingKind,
 }
 

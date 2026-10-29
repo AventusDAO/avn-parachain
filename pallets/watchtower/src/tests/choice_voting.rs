@@ -22,18 +22,6 @@ fn watchtowers() -> Vec<AccountId> {
     default_watchtowers()
 }
 
-fn signer_for(account: &AccountId) -> TestAccount {
-    if get_default_voter().account_id() == *account {
-        return get_default_voter()
-    }
-    for i in 2..=10u8 {
-        if TestAccount::new([10 + i; 32]).account_id() == *account {
-            return TestAccount::new([i; 32])
-        }
-    }
-    panic!("not a mock watchtower: {:?}", account);
-}
-
 fn choice_call(
     proposal_id: ProposalId,
     voter: &AccountId,
@@ -45,7 +33,7 @@ fn choice_call(
         &TEST_COUNTRY,
         voter,
     );
-    let signature: Signature = signer_for(voter).key_pair().sign(&payload).into();
+    let signature: Signature = node_signer(voter).key_pair().sign(&payload).into();
     crate::Call::unsigned_vote_choice {
         proposal_id,
         choice,
@@ -110,17 +98,13 @@ mod kinds {
             let wt = watchtowers();
             assert_eq!(VotingKindOf::<TestRuntime>::get(id), VotingKind::Choice);
 
-            assert_noop!(
-                Watchtower::vote(RawOrigin::Signed(wt[0]).into(), id, true),
-                Error::<TestRuntime>::WrongVoteKind
-            );
             let payload = Watchtower::unsigned_vote_signing_payload(
                 id,
                 &VoteChoice::Binary(true),
                 &TEST_COUNTRY,
                 &wt[0],
             );
-            let signature: Signature = signer_for(&wt[0]).key_pair().sign(&payload).into();
+            let signature: Signature = node_signer(&wt[0]).key_pair().sign(&payload).into();
             let call = crate::Call::unsigned_vote {
                 proposal_id: id,
                 in_favor: true,
@@ -159,7 +143,7 @@ mod kinds {
             );
             assert_noop!(vote_choice(&wt[0], id, A), Error::<TestRuntime>::WrongVoteKind);
             // Yes/no still works.
-            assert_ok!(Watchtower::vote(RawOrigin::Signed(wt[0]).into(), id, true));
+            assert_ok!(node_vote(wt[0], id, true));
         });
     }
 }
@@ -487,6 +471,76 @@ mod filter {
             };
             assert_eq!(validate(&forged), Err(InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID)));
             assert_ok!(validate(&choice_call(id, &wt[0], A)));
+        });
+    }
+}
+
+mod external_choice_proposals {
+    use super::*;
+    use sp_avn_common::Proof;
+
+    fn external_choice_request() -> ProposalRequest {
+        let context = Context { voting: VotingKind::Choice, ..Default::default() };
+        context.build_external_request(b"uri".to_vec())
+    }
+
+    #[test]
+    fn are_refused_on_every_submission_route() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let proposer = watchtower_owner_1();
+            assert_noop!(
+                Watchtower::submit_external_proposal(
+                    RawOrigin::Signed(proposer).into(),
+                    external_choice_request()
+                ),
+                Error::<TestRuntime>::ChoiceVotingInternalOnly
+            );
+
+            let relayer = random_user();
+            let now = System::block_number();
+            let payload = Watchtower::encode_signed_submit_external_proposal_params(
+                &relayer,
+                &external_choice_request(),
+                &now,
+            );
+            let signature = TestAccount::new([31u8; 32]).key_pair().sign(&payload);
+            assert_noop!(
+                Watchtower::signed_submit_external_proposal(
+                    RawOrigin::Signed(proposer).into(),
+                    Proof { signer: proposer, relayer, signature },
+                    external_choice_request(),
+                    now,
+                ),
+                Error::<TestRuntime>::ChoiceVotingInternalOnly
+            );
+
+            assert_noop!(
+                Watchtower::submit_proposal(Some(proposer), external_choice_request()),
+                Error::<TestRuntime>::ChoiceVotingInternalOnly
+            );
+        });
+    }
+
+    #[test]
+    fn binary_external_and_choice_internal_proposals_are_still_accepted() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let binary = Context { external_ref: H256::repeat_byte(7), ..Default::default() };
+            assert_ok!(Watchtower::submit_external_proposal(
+                RawOrigin::Signed(watchtower_owner_1()).into(),
+                binary.build_external_request(b"uri".to_vec())
+            ));
+
+            let choice = Context {
+                voting: VotingKind::Choice,
+                external_ref: H256::repeat_byte(8),
+                ..Default::default()
+            };
+            assert_ok!(Watchtower::submit_proposal(
+                None,
+                choice.build_internal_request(b"test".to_vec())
+            ));
+            let id = ExternalRef::<TestRuntime>::get(choice.external_ref);
+            assert_eq!(VotingKindOf::<TestRuntime>::get(id), VotingKind::Choice);
         });
     }
 }

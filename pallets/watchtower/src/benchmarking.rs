@@ -117,12 +117,30 @@ fn set_active_proposal<T: Config>(proposal_id: H256, created_at: u32, length: u3
     Proposals::<T>::insert(proposal_id, &active_proposal);
     ActiveInternalProposal::<T>::put(proposal_id);
     ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Active);
-    // Vote benchmarks measure the committee-gated path: a 10-node committee that includes the
+    // Node vote benchmarks measure the committee-gated path: a 10-node committee that includes the
     // benchmark voter, so `*_end_proposal` thresholds are measured against 10 members.
     ProposalCommitteeSize::<T>::insert(proposal_id, 10u32);
     let (_, voter) = get_voter::<T>();
     ProposalCommittee::<T>::insert(proposal_id, &voter, ());
     active_proposal
+}
+
+/// An active external proposal for the owner vote benchmarks. Ten registered nodes are
+/// eligible, so `*_end_proposal` thresholds are measured against 10, and the benchmark voter
+/// owns one node, so its vote weighs 1.
+fn set_active_external_proposal<T: Config>(
+    proposal_id: H256,
+    created_at: u32,
+    length: u32,
+) -> Proposal<T> {
+    let created_at: BlockNumberFor<T> = created_at.into();
+    let proposal = create_proposal::<T>(1, created_at, Some(created_at + length.into()), false);
+    Proposals::<T>::insert(proposal_id, &proposal);
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Active);
+    T::BenchmarkHelper::setup_nodes(10);
+    let (_, voter) = get_voter::<T>();
+    T::BenchmarkHelper::setup_owner(&voter, 1);
+    proposal
 }
 
 const QUEUED_EXTERNAL_REF_ID: u32 = 2;
@@ -270,7 +288,7 @@ benchmarks! {
         let (_, voter) = get_voter::<T>();
 
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let _ = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
     }: vote(RawOrigin::Signed(voter.clone()), proposal_id, in_favor)
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
@@ -285,7 +303,7 @@ benchmarks! {
         let (_, voter) = get_voter::<T>();
 
         let proposal_id = H256::repeat_byte(3);
-        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
         // Add some votes to be above the threshold
         setup_votes::<T>(proposal_id, 9u32);
     }: vote(RawOrigin::Signed(voter.clone()), proposal_id, in_favor)
@@ -308,7 +326,7 @@ benchmarks! {
         let relayer: T::AccountId = account("relayer", 11, 11);
         let now = frame_system::Pallet::<T>::block_number();
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let _ = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
 
         let signed_payload = Pallet::<T>::encode_signed_submit_vote_params(
             &relayer.clone(),
@@ -334,7 +352,7 @@ benchmarks! {
         let relayer: T::AccountId = account("relayer", 11, 11);
         let now = frame_system::Pallet::<T>::block_number();
         let proposal_id = H256::repeat_byte(3);
-        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
 
         let signed_payload = Pallet::<T>::encode_signed_submit_vote_params(
             &relayer.clone(),
