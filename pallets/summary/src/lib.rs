@@ -745,9 +745,9 @@ pub mod pallet {
                             Error::<T, I>::InvalidExternalValidationCommitteeSize
                         );
                         // Refuse a size the watchtower cannot serve yet (node index still
-                        // backfilling, too few nodes): every root submitted afterwards would
-                        // otherwise sit in the queue until it can. Surfaces the watchtower's
-                        // own error.
+                        // backfilling, too few seats): every root submitted afterwards would
+                        // otherwise wait in the queue or be cancelled at activation. Surfaces
+                        // the watchtower's own error.
                         T::ExternalValidator::ensure_committee_ready(size)?;
                     }
                     <ExternalValidationCommitteeSize<T, I>>::set(size);

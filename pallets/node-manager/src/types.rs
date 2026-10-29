@@ -634,3 +634,13 @@ pub enum GenesisBonus {
     /// Genesis bonus has been excluded from this node
     Excluded,
 }
+
+/// An entry of the dense owner index: an owner with at least one indexed node.
+#[derive(
+    Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen,
+)]
+pub struct IndexedOwner<AccountId> {
+    pub owner: AccountId,
+    /// Length of the owner's node index (`OwnerNodeIndex`).
+    pub nodes: u32,
+}

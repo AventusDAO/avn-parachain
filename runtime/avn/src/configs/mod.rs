@@ -1026,6 +1026,18 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
     fn get_indexed_nodes_count() -> u32 {
         pallet_node_manager::Pallet::<Runtime>::indexed_node_count()
     }
+
+    fn get_indexed_owners_count() -> u32 {
+        pallet_node_manager::Pallet::<Runtime>::indexed_owner_count()
+    }
+
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)> {
+        pallet_node_manager::Pallet::<Runtime>::owner_at_index(index)
+    }
+
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
+        pallet_node_manager::Pallet::<Runtime>::owner_node_at_index(owner, index)
+    }
 }
 
 /// Gives the watchtower benchmarks real node-manager and summary state to run against.

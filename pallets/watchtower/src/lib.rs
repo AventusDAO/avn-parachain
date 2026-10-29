@@ -41,8 +41,9 @@ pub const WATCHTOWER_FINALISE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_finalise_pr
 pub const WATCHTOWER_ACTIVATE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_activate_proposal";
 pub const UNSIGNED_VOTE_NOT_VALID: u8 = 2;
 pub const ACTIVATE_PROPOSAL_NOT_VALID: u8 = 3;
-/// The queue head requests a committee that cannot be built yet (index backfilling or too few
-/// nodes). Activation is deferred, not degraded.
+/// The queue head requests a committee that cannot be sampled yet (index backfilling).
+/// Activation is deferred, not degraded. A head with too few seats is not deferred: activation
+/// cancels it.
 pub const COMMITTEE_NOT_READY: u8 = 4;
 /// Offchain worker lock id used to make sure activation is attempted at most once per block.
 pub const ACTIVATION_OCW_ID: &'static [u8] = b"watchtower_activation";
@@ -205,8 +206,8 @@ pub mod pallet {
         #[pallet::constant]
         type MaxInternalProposalLen: Get<u32>;
 
-        /// Smallest committee a proposal may request, and the smallest effective committee
-        /// that may be activated. Stops a handful of nodes deciding a proposal.
+        /// Smallest committee a proposal may request. Stops a handful of nodes deciding a
+        /// proposal.
         #[pallet::constant]
         type MinCommitteeSize: Get<u32>;
 
@@ -373,7 +374,8 @@ pub mod pallet {
         ProposalActivationSkipped { proposal_id: ProposalId },
         /// A committee of `size` nodes was selected to vote on the proposal
         CommitteeSelected { proposal_id: ProposalId, size: u32 },
-        /// The committee could not be built (corrupt node index); the proposal was cancelled
+        /// The committee could not be built (too few seats or a corrupt node index); the proposal
+        /// was cancelled
         CommitteeSelectionFailed { proposal_id: ProposalId, error: DispatchError },
         /// The queue head was moved one place back by an admin; `promoted` is the new head
         QueueHeadDemoted { demoted: ProposalId, promoted: ProposalId },
@@ -445,9 +447,10 @@ pub mod pallet {
         CommitteeSizeTooLarge,
         /// The dense node index is still being backfilled; a committee cannot be sampled yet
         NodeIndexNotReady,
-        /// Fewer than `MinCommitteeSize` nodes are available for the committee
-        NotEnoughNodesForCommittee,
-        /// The dense node index is inconsistent (hole or duplicate)
+        /// The requested committee is larger than the seats the node owners can fill (one per
+        /// owner)
+        NotEnoughSeatsForCommittee,
+        /// The dense node or owner index is inconsistent (hole, duplicate or empty owner)
         NodeIndexCorrupt,
         /// The internal proposal queue needs at least two entries for this operation
         QueueTooShort,
@@ -739,9 +742,8 @@ pub mod pallet {
         ///
         /// Root only. The consumer is told through `on_voting_completed` with `Cancelled` (the
         /// summary pallet sends the root to admin review) and the queue moves on. Meant for a
-        /// head whose committee can never be built, for example one that requests a committee
-        /// while fewer than `MinCommitteeSize` nodes are registered. The active proposal, if
-        /// any, is untouched.
+        /// head that cannot be activated, for example one whose committee waits for a node index
+        /// backfill that is not progressing. The active proposal, if any, is untouched.
         #[pallet::call_index(9)]
         #[pallet::weight(<T as Config>::WeightInfo::cancel_queue_head())]
         pub fn cancel_queue_head(origin: OriginFor<T>, proposal_id: ProposalId) -> DispatchResult {
@@ -788,8 +790,8 @@ pub mod pallet {
                         _ => return InvalidTransaction::Custom(ACTIVATE_PROPOSAL_NOT_VALID).into(),
                     }
 
-                    // A head whose committee cannot be built yet stays queued. Keep the
-                    // activation out of the block rather than include a failing tx.
+                    // A head that must wait for its committee stays queued. Keep the activation
+                    // out of the block rather than include a failing tx.
                     if Self::head_committee_ready(*proposal_id).is_err() {
                         return InvalidTransaction::Custom(COMMITTEE_NOT_READY).into()
                     }
@@ -882,9 +884,8 @@ pub mod pallet {
             };
 
             // The head may request a committee the node index cannot provide yet (backfill in
-            // progress or too few nodes). `validate_unsigned` would reject the tx anyway; skip
-            // it here and say why. Root can `demote_queue_head` to let the proposal behind it
-            // go first.
+            // progress). `validate_unsigned` would reject the tx anyway; skip it here and say
+            // why. Root can `demote_queue_head` to let the proposal behind it go first.
             if let Err(e) = Self::head_committee_ready(proposal_id) {
                 log::warn!(
                     "⚠️ Watchtower activation OCW: proposal {:?} cannot be activated yet: {:?}",
@@ -925,11 +926,16 @@ pub mod pallet {
                 .max(<T as Config>::WeightInfo::activate_next_proposal_hook_fails(k))
         }
 
-        /// Readiness of the committee requested by `proposal_id` (expected to be the queue head).
-        /// Proposals without a committee, or without data, are always ready.
+        /// Whether `proposal_id` (expected to be the queue head) can go through activation now.
+        /// It must wait only while its committee cannot be sampled yet: a head with too few
+        /// seats is let through so that activation cancels it. Proposals without a committee,
+        /// or without data, are always ready.
         pub(crate) fn head_committee_ready(proposal_id: ProposalId) -> Result<(), Error<T>> {
             match Proposals::<T>::get(proposal_id) {
-                Some(proposal) => Self::committee_ready_for(&proposal).map(|_| ()),
+                Some(proposal) => match Self::committee_ready_for(&proposal) {
+                    Ok(_) | Err(Error::<T>::NotEnoughSeatsForCommittee) => Ok(()),
+                    Err(e) => Err(e),
+                },
                 None => Ok(()),
             }
         }
@@ -1360,7 +1366,7 @@ pub mod pallet {
         }
 
         fn ensure_committee_ready(size: u32) -> DispatchResult {
-            Self::committee_ready(size).map(|_| ()).map_err(Into::into)
+            Self::committee_ready(size).map_err(Into::into)
         }
 
         #[cfg(feature = "runtime-benchmarks")]

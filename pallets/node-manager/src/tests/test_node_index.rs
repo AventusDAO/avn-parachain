@@ -335,3 +335,221 @@ mod backfill {
         });
     }
 }
+
+mod owner_index {
+    use super::*;
+
+    fn account(id: u8) -> AccountId {
+        TestAccount::new([id; 32]).account_id()
+    }
+
+    fn register_for(owner: AccountId, id: u8) -> AccountId {
+        let node_id = node(id);
+        assert_ok!(NodeManager::register_node(
+            RuntimeOrigin::signed(registrar()),
+            node_id,
+            owner,
+            UintAuthorityId(id as u64),
+        ));
+        node_id
+    }
+
+    fn deregister_for(owner: AccountId, nodes: Vec<AccountId>) {
+        assert_ok!(NodeManager::deregister_nodes(
+            RuntimeOrigin::signed(registrar()),
+            owner,
+            BoundedVec::truncate_from(nodes),
+        ));
+    }
+
+    fn move_nodes(from: AccountId, to: AccountId, nodes: Vec<AccountId>) {
+        assert_ok!(NodeManager::move_nodes(
+            RuntimeOrigin::signed(registrar()),
+            from,
+            to,
+            BoundedVec::truncate_from(nodes),
+        ));
+    }
+
+    /// The owner index holds exactly `expected`, in order, each owner with their nodes in
+    /// order.
+    fn assert_owners(expected: &[(AccountId, Vec<AccountId>)]) {
+        assert_eq!(NodeManager::indexed_owner_count(), expected.len() as u32);
+        for (position, (owner, nodes)) in expected.iter().enumerate() {
+            let position = position as u32;
+            assert_eq!(
+                NodeManager::owner_at_index(position),
+                Some((*owner, nodes.len() as u32)),
+                "owner at {}",
+                position
+            );
+            assert_eq!(<OwnerIndexOf<TestRuntime>>::get(owner), Some(position));
+            for (i, n) in nodes.iter().enumerate() {
+                assert_eq!(NodeManager::owner_node_at_index(owner, i as u32), Some(*n));
+            }
+            assert_eq!(NodeManager::owner_node_at_index(owner, nodes.len() as u32), None);
+        }
+        assert_eq!(NodeManager::owner_at_index(expected.len() as u32), None);
+        assert_ok!(NodeManager::check_node_index_invariants());
+    }
+
+    #[test]
+    fn groups_registered_nodes_by_owner() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let (o1, o2) = (account(50), account(51));
+            let a = register_for(o1, 10);
+            let b = register_for(o2, 11);
+            let c = register_for(o1, 12);
+
+            assert_index(&[a, b, c]);
+            assert_owners(&[(o1, vec![a, c]), (o2, vec![b])]);
+        });
+    }
+
+    #[test]
+    fn an_owner_s_middle_node_is_swap_removed() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let o1 = account(50);
+            let a = register_for(o1, 10);
+            let b = register_for(o1, 11);
+            let c = register_for(o1, 12);
+
+            deregister_for(o1, vec![a]);
+
+            assert_owners(&[(o1, vec![c, b])]);
+            assert_eq!(<OwnerNodeIndexOf<TestRuntime>>::get(a), None);
+        });
+    }
+
+    #[test]
+    fn an_owner_leaves_with_their_last_node() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let (o1, o2, o3) = (account(50), account(51), account(52));
+            let a = register_for(o1, 10);
+            let b = register_for(o2, 11);
+            let c = register_for(o3, 12);
+
+            deregister_for(o1, vec![a]);
+
+            // o3 moved into o1's slot.
+            assert_owners(&[(o3, vec![c]), (o2, vec![b])]);
+            assert_eq!(<OwnerIndexOf<TestRuntime>>::get(o1), None);
+
+            deregister_for(o3, vec![c]);
+            deregister_for(o2, vec![b]);
+            assert_owners(&[]);
+        });
+    }
+
+    #[test]
+    fn moved_nodes_change_owner_and_keep_their_node_index_position() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let (o1, o2) = (account(50), account(51));
+            let a = register_for(o1, 10);
+            let b = register_for(o1, 11);
+
+            move_nodes(o1, o2, vec![a]);
+            assert_index(&[a, b]);
+            assert_owners(&[(o1, vec![b]), (o2, vec![a])]);
+
+            move_nodes(o1, o2, vec![b]);
+            assert_index(&[a, b]);
+            assert_owners(&[(o2, vec![a, b])]);
+        });
+    }
+
+    #[test]
+    fn moved_nodes_go_to_an_owner_who_already_has_nodes() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let (o1, o2) = (account(50), account(51));
+            let a = register_for(o1, 10);
+            let b = register_for(o2, 11);
+            let c = register_for(o1, 12);
+
+            move_nodes(o1, o2, vec![a, c]);
+
+            assert_owners(&[(o2, vec![b, a, c])]);
+        });
+    }
+
+    #[test]
+    fn a_batch_to_a_new_owner_can_empty_the_old_one() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let (o1, o2, o3) = (account(50), account(51), account(52));
+            let a = register_for(o1, 10);
+            let b = register_for(o2, 11);
+            let c = register_for(o1, 12);
+
+            move_nodes(o1, o3, vec![a, c]);
+
+            // o3 was appended, then moved into the slot o1 left.
+            assert_owners(&[(o3, vec![a, c]), (o2, vec![b])]);
+            assert_eq!(<OwnerIndexOf<TestRuntime>>::get(o1), None);
+        });
+    }
+
+    #[test]
+    fn a_batch_moves_only_its_indexed_nodes() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            // `register_unindexed` gives every legacy node to `owner()`.
+            let legacy = register_unindexed(10);
+            let fresh = register_for(owner(), 20);
+            let new_owner = account(50);
+
+            move_nodes(owner(), new_owner, vec![legacy, fresh]);
+            assert_eq!(<OwnerNodeIndexOf<TestRuntime>>::get(legacy), None);
+            assert_eq!(<OwnerIndexOf<TestRuntime>>::get(owner()), None);
+
+            assert_ok!(backfill(vec![legacy]));
+            assert_owners(&[(new_owner, vec![fresh, legacy])]);
+        });
+    }
+
+    #[test]
+    fn an_unindexed_node_is_indexed_under_its_owner_at_the_time_of_backfill() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            // `register_unindexed` gives every legacy node to `owner()`.
+            let legacy = register_unindexed(10);
+            let _other = register_unindexed(11);
+            let new_owner = account(50);
+
+            move_nodes(owner(), new_owner, vec![legacy]);
+            assert_owners(&[]);
+
+            assert_ok!(backfill(vec![legacy]));
+            assert_owners(&[(new_owner, vec![legacy])]);
+        });
+    }
+
+    #[test]
+    fn backfill_indexes_each_node_under_its_owner() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+        ext.execute_with(|| {
+            setup_registrar();
+            let legacy: Vec<AccountId> = (10..12u8).map(register_unindexed).collect();
+            let o1 = account(50);
+            let fresh = register_for(o1, 20);
+
+            assert_ok!(backfill(legacy.clone()));
+
+            assert_index(&[fresh, legacy[0], legacy[1]]);
+            assert_owners(&[(o1, vec![fresh]), (owner(), legacy)]);
+        });
+    }
+}

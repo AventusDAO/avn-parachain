@@ -835,7 +835,8 @@ pub mod pallet {
         /// Root sets how many watchtowers are sampled per oracle round, or with `None` lets
         /// every watchtower report. Bounded by the watchtower pallet's committee limits and
         /// by the number of authorized watchtowers, and refused while the watchtower cannot
-        /// build such a committee yet. Rounds already started are unaffected.
+        /// build such a committee (index backfilling, more seats than node owners). Rounds
+        /// already started are unaffected.
         #[pallet::call_index(10)]
         #[pallet::weight(<T as Config>::WeightInfo::set_oracle_committee_size())]
         pub fn set_oracle_committee_size(
@@ -853,10 +854,11 @@ pub mod pallet {
                         size <= T::Watchtowers::get_authorized_watchtowers_count(),
                         Error::<T>::CommitteeSizeExceedsWatchtowers
                     );
-                    // Refuse a size the watchtower cannot serve yet (node index still
-                    // backfilling): the next oracle proposal would sit at the head of the
-                    // internal queue, holding back every summary and anchor proposal behind it.
-                    // Surfaces the watchtower's own error, as the summary pallet does.
+                    // Refuse a size the watchtower cannot serve (node index still backfilling,
+                    // more seats than node owners): the next oracle proposal would sit at the
+                    // head of the internal queue, holding back every summary and anchor
+                    // proposal behind it, or be cancelled. Surfaces the watchtower's own error,
+                    // as the summary pallet does.
                     <pallet_watchtower::Pallet<T> as sp_watchtower::WatchtowerInterface>::ensure_committee_ready(size)?;
                     OracleCommitteeSize::<T>::put(size)
                 },
