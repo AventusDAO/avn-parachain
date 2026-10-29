@@ -487,6 +487,42 @@ mod proposal_lifecycle {
     }
 
     #[test]
+    fn a_side_that_reaches_the_threshold_after_nodes_leave_decides_on_expiry() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // No committee, so the threshold is measured against the live node count.
+            let context = Context::default();
+            assert_ok!(Watchtower::submit_proposal(
+                None,
+                context.build_internal_request(b"test".to_vec())
+            ));
+            let proposal_id = activate_head();
+
+            // 4 of 10 against is short of the 5 needed...
+            let nodes = default_watchtowers();
+            for node in &nodes[..4] {
+                assert_ok!(node_vote(*node, proposal_id, false));
+            }
+            assert_eq!(ProposalStatus::<TestRuntime>::get(proposal_id), ProposalStatusEnum::Active);
+
+            // ...but 4 of the 7 left after three non-voters deregister is not, so the
+            // proposal is rejected instead of expiring unresolved.
+            set_authorized_watchtowers(nodes[..7].to_vec());
+            let end = Proposals::<TestRuntime>::get(proposal_id).unwrap().end_at.unwrap();
+            System::set_block_number(end);
+            assert_ok!(Watchtower::finalise_proposal(
+                RawOrigin::Signed(watchtower_1()).into(),
+                proposal_id
+            ));
+
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(proposal_id),
+                ProposalStatusEnum::Resolved { passed: false }
+            );
+        });
+    }
+
+    #[test]
     fn votes_can_finalise_expired_proposals() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {

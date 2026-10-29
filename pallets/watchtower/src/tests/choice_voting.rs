@@ -367,6 +367,25 @@ mod expiry {
     }
 
     #[test]
+    fn an_answer_that_reaches_the_threshold_after_nodes_leave_wins() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let id = active_proposal(VotingKind::Choice, DecisionRule::ExpireUnresolved);
+            let wt = watchtowers();
+            // 4 of 10 is short of the 5 needed...
+            for voter in &wt[..4] {
+                assert_ok!(vote_choice(voter, id, A));
+            }
+            assert_eq!(status(id), ProposalStatusEnum::Active);
+
+            // ...but 4 of the 7 left after three non-voters deregister is not.
+            set_authorized_watchtowers(wt[..7].to_vec());
+            expire(id);
+            assert_eq!(status(id), ProposalStatusEnum::Resolved { passed: true });
+            assert_eq!(Watchtower::winning_choice(id), Some(A));
+        });
+    }
+
+    #[test]
     fn simple_majority_picks_the_plurality_and_fails_ties() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let id = active_proposal(VotingKind::Choice, DecisionRule::SimpleMajorityOnExpiry);

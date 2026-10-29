@@ -168,6 +168,8 @@ pub enum VoteChoice {
 pub struct ProposalRequest {
     pub title: Vec<u8>,
     pub payload: RawPayload,
+    /// Share of the eligible voters one side (or one answer) needs to decide the proposal.
+    /// Must be above zero.
     pub threshold: Perbill,
     pub source: ProposalSource,
     pub decision_rule: DecisionRule,

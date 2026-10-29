@@ -123,6 +123,8 @@ impl<T: Config> Proposal<T> {
         let base_is_valid = !self.title.is_empty() &&
             self.external_ref != H256::zero() &&
             self.vote_duration >= MinVotingPeriod::<T>::get().saturated_into::<u32>() &&
+            // A zero threshold would let either side decide without a single vote.
+            self.threshold > Perbill::zero() &&
             self.threshold <= Perbill::one() &&
             self.created_at <= current_block;
 

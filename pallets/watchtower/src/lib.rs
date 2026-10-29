@@ -1120,8 +1120,8 @@ pub mod pallet {
                 },
             }
 
-            let expired = Self::proposal_expired(current_block, &proposal);
-            if let Some(result) = Self::decide(proposal_id, &proposal, expired) {
+            // Expiry was handled above, so only an early decision is possible here.
+            if let Some(result) = Self::decide(proposal_id, &proposal, false) {
                 // Consensus has been reached, finalise voting
                 Self::finalise_voting(proposal_id, &proposal, result)?;
                 return Ok(true)

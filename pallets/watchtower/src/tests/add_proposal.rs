@@ -272,6 +272,29 @@ mod adding_proposal_fails_when {
 
     #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External; "external")]
     #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary); "internal")]
+    fn threshold_is_zero(payload: RawPayload, source: ProposalSource) {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let mut context = Context::default();
+            context.threshold = Perbill::zero();
+            let proposal = context.build_request(payload.clone(), source.clone());
+
+            if source == ProposalSource::External {
+                assert_noop!(
+                    Watchtower::submit_external_proposal(RawOrigin::Root.into(), proposal.clone()),
+                    Error::<TestRuntime>::InvalidProposal
+                );
+            } else {
+                assert_noop!(
+                    Watchtower::submit_proposal(None, proposal.clone()),
+                    Error::<TestRuntime>::InvalidProposal
+                );
+            }
+        });
+    }
+
+    #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External; "external")]
+    #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary); "internal")]
     fn external_ref_empty(payload: RawPayload, source: ProposalSource) {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {

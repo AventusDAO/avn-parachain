@@ -3,9 +3,10 @@ use crate::*;
 impl<T: Config> Pallet<T> {
     /// The one place a proposal's outcome is decided.
     ///
-    /// Either side holding `threshold` of the eligible voters resolves the proposal early. Once
-    /// the voting period has ended (`expired`), the proposal's `DecisionRule` decides instead,
-    /// so the result is always `Some` for an expired proposal.
+    /// Either side holding `threshold` of the eligible voters resolves the proposal, before or
+    /// after expiry: without a committee the eligible count is the live node count, which can
+    /// drop after the last vote. Otherwise, once the voting period has ended (`expired`), the
+    /// proposal's `DecisionRule` decides, so the result is always `Some` for an expired proposal.
     pub fn decide(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
@@ -17,16 +18,17 @@ impl<T: Config> Pallet<T> {
 
         let votes = Votes::<T>::get(proposal_id);
 
-        if !expired {
-            // A committee fixes the denominator at activation; otherwise every node may vote
-            // and the live node count is used.
-            let Some(needed) = Self::votes_needed(proposal_id, proposal) else { return None };
+        // A committee fixes the denominator at activation; otherwise every node may vote and
+        // the live node count is used.
+        if let Some(needed) = Self::votes_needed(proposal_id, proposal) {
             if votes.in_favors >= needed {
                 return Some(ProposalStatusEnum::Resolved { passed: true })
             }
             if votes.againsts >= needed {
                 return Some(ProposalStatusEnum::Resolved { passed: false })
             }
+        }
+        if !expired {
             return None
         }
 
@@ -44,8 +46,8 @@ impl<T: Config> Pallet<T> {
             .unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count)
     }
 
-    /// Votes one side (or one answer) needs to decide the proposal early. `None` while nobody
-    /// is eligible.
+    /// Votes one side (or one answer) needs to decide the proposal. `None` while nobody is
+    /// eligible.
     pub fn votes_needed(proposal_id: ProposalId, proposal: &Proposal<T>) -> Option<u32> {
         let eligible = Self::eligible_voters(proposal_id);
         if eligible == 0 {
@@ -55,10 +57,11 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Decision for `Choice` proposals. The first answer whose tally reaches the threshold
-    /// wins and is stored in `WinningChoice`. If no answer can still get there with the votes
-    /// left, the proposal fails early. On expiry the decision rule applies, where "majority"
-    /// means the single answer with the most votes. Reads only the running `ChoiceStandings`,
-    /// so its cost does not grow with the number of distinct answers.
+    /// wins and is stored in `WinningChoice`, before or after expiry. If no answer can still
+    /// get there with the votes left, the proposal fails early. Otherwise on expiry the
+    /// decision rule applies, where "majority" means the single answer with the most votes. Reads
+    /// only the running `ChoiceStandings`, so its cost does not grow with the number of
+    /// distinct answers.
     fn decide_choice(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
@@ -69,16 +72,19 @@ impl<T: Config> Pallet<T> {
         let tie_at_best = standing.tied;
         let cast = standing.cast;
 
+        let needed = Self::votes_needed(proposal_id, proposal);
+        if let (Some(needed), Some((answer, tally))) = (needed, best) {
+            if tally >= needed {
+                WinningChoice::<T>::insert(proposal_id, answer);
+                return Some(ProposalStatusEnum::Resolved { passed: true })
+            }
+        }
+
         if !expired {
-            let Some(needed) = Self::votes_needed(proposal_id, proposal) else { return None };
-            let eligible = Self::eligible_voters(proposal_id);
-            if let Some((answer, tally)) = best {
-                if tally >= needed {
-                    WinningChoice::<T>::insert(proposal_id, answer);
-                    return Some(ProposalStatusEnum::Resolved { passed: true })
-                }
+            let Some(needed) = needed else { return None };
+            if let Some((_, tally)) = best {
                 // Even if every remaining voter backed the leader it would fall short.
-                let remaining = eligible.saturating_sub(cast);
+                let remaining = Self::eligible_voters(proposal_id).saturating_sub(cast);
                 if tally.saturating_add(remaining) < needed {
                     return Some(ProposalStatusEnum::Resolved { passed: false })
                 }
