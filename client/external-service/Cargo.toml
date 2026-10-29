@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-alloy = { version = "=1.6.3", features = ["providers", "rpc-types", "transports", "signers"] }
+alloy = { version = "=1.6.3", features = ["providers", "rpc-types", "transports", "signers", "sol-types"] }
 alloy-primitives = { version = "=1.5.4" }
 alloy-signer-local = { version = "=1.6.3" }
 async-trait = "0.1"
@@ -31,6 +31,8 @@ pallet-eth-bridge-runtime-api = { default-features = true, workspace = true }
 sp-block-builder = { default-features = true, workspace = true }
 sp-blockchain = { default-features = true, workspace = true }
 sp-avn-common = { default-features = true, workspace = true }
+sp-floor-oracle = { default-features = true, workspace = true }
+sp-watchtower = { default-features = true, workspace = true }
 sp-core = { default-features = true, workspace = true }
 sp-io = { default-features = true, workspace = true }
 sp-runtime = { default-features = true, workspace = true }

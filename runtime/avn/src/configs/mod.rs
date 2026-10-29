@@ -18,7 +18,9 @@ mod xcm_config;
 
 // Substrate and Polkadot dependencies
 // use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
-use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
+use cumulus_pallet_parachain_system::{
+    RelayNumberMonotonicallyIncreases, RelaychainDataProvider, RelaychainStateProvider,
+};
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 
 use polkadot_sdk::{staging_parachain_info as parachain_info, *};
@@ -35,7 +37,10 @@ use polkadot_sdk::{
         derive_impl,
         dispatch::DispatchClass,
         parameter_types,
-        traits::{ConstBool, ConstU32, ConstU64, EnsureOrigin, TransformOrigin, VariantCountOf},
+        traits::{
+            ConstBool, ConstU32, ConstU64, EnsureOrigin, Randomness, TransformOrigin,
+            VariantCountOf,
+        },
         weights::{ConstantMultiplier, Weight},
         PalletId,
     },
@@ -79,9 +84,9 @@ use crate::{
     RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
     Scheduler, Session, SessionKeys, Signature, Summary, SummaryWatchtower, System, Timestamp,
     TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
-    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
-    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    WatchtowerFloorOracle, WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO,
+    EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT,
+    NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -769,13 +774,39 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureExternalProposerOrRoot {
     }
 }
 
+/// Seed for watchtower committee selection.
+///
+/// Mixes the relay parent storage root (set by the `set_validation_data` inherent, so it is
+/// present in extrinsics and `on_idle`), the parent block hash and the block number with the
+/// subject. None of these can be freely chosen by the author of the block that activates a
+/// proposal: the collator can at most pick among a few recent relay parents or delay the
+/// activation by a block, and the only thing at stake is who sits on a watchtower committee.
+pub struct RelayChainRandomness;
+impl Randomness<Hash, BlockNumber> for RelayChainRandomness {
+    fn random(subject: &[u8]) -> (Hash, BlockNumber) {
+        use codec::Encode;
+
+        let relay_state = RelaychainDataProvider::<Runtime>::current_relay_chain_state();
+        if relay_state.state_root == Hash::zero() {
+            // Outside the inherent's scope (e.g. benchmarks). The other inputs still apply.
+            log::warn!("⚠️ RelayChainRandomness: no relay parent storage root available");
+        }
+        let block_number = System::block_number();
+        let seed = sp_io::hashing::blake2_256(
+            &(subject, relay_state.state_root, System::parent_hash(), block_number).encode(),
+        );
+        (Hash::from(seed), block_number)
+    }
+}
+
 impl pallet_watchtower::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = pallet_watchtower::default_weights::SubstrateWeight<Runtime>;
     type Watchtowers = RuntimeNodeManager;
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
-    type WatchtowerHooks = (Summary, SummaryWatchtower);
+    type WatchtowerHooks = (Summary, SummaryWatchtower, WatchtowerFloorOracle);
+    type VoteFilter = WatchtowerFloorOracle;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
@@ -783,11 +814,72 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
+    /// Smallest committee any internal proposal may have. The `dev-network` feature lowers it
+    /// for local networks with a handful of watchtowers; production builds keep 10.
+    #[cfg(not(feature = "dev-network"))]
+    type MinCommitteeSize = ConstU32<10>;
+    #[cfg(feature = "dev-network")]
+    type MinCommitteeSize = ConstU32<3>;
+    type MaxCommitteeSize = ConstU32<150>;
+    type Randomness = RelayChainRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = WatchtowerBenchmarkHelper;
 }
 
 impl pallet_summary_watchtower::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
+}
+
+parameter_types! {
+    /// A checkpoint round that has not settled after this many blocks (about 10 minutes) is
+    /// restarted by the next request.
+    pub const CheckpointRoundTimeoutBlocks: BlockNumber = 50;
+    /// A checkpoint vote may run this many seconds of blocks ahead of the time since the
+    /// checkpoint was agreed, on chains with a block time set. A checkpoint bad votes push to
+    /// the limit is overtaken by the real chain within about this long; until then floor
+    /// reads wait for the pinned block.
+    pub const CheckpointVoteSlackSecs: u64 = 10 * 60;
+    /// Share of the committee that must report the same observation.
+    pub const OracleRoundThreshold: Perbill = Perbill::from_percent(67);
+    /// Must be at least the watchtower pallet's minimum voting period (100 blocks).
+    pub const OracleVoteDuration: u32 = 100;
+    /// A finalised floor whose Ethereum block is younger than this answers requests directly.
+    pub const MaxFloorAge: u64 = 10 * 60;
+    /// A floor round pins, when its proposal activates, a checkpoint agreed at most this long
+    /// ago. The checkpoint block is already about two minutes old when agreed (10
+    /// confirmations), so watchtowers read data at most about four minutes old and its floor
+    /// stays cached for about six minutes once finalised. A round activating with an older
+    /// checkpoint waits for a new checkpoint round, which settles within a few parachain
+    /// blocks. A round whose voting takes longer than about six minutes (it may last
+    /// `OracleVoteDuration`) finalises stale and the next request starts a new one.
+    pub const MaxFloorCheckpointAge: u64 = 2 * 60;
+    /// For this long after a forced floor round ends, `force_floor_round` behaves as
+    /// `request_floor_price`. A forced round pins a checkpoint at most this old.
+    pub const MinForcedFloorAge: u64 = 60;
+    /// A finalised venue observation whose external block timestamp is younger than this answers
+    /// requests directly. Venue state moves every few seconds; the consumer can always ask again.
+    pub const MaxVenueAge: u64 = 45;
+    /// A venue round reads Base this far behind the parachain time at activation: three Base
+    /// blocks, so the target block exists on every watchtower's endpoint when it reads.
+    pub const VenueTargetLag: u64 = 6;
+
+}
+
+impl pallet_watchtower_floor_oracle::Config for Runtime {
+    type RuntimeCall = RuntimeCall;
+    type TimeProvider = Timestamp;
+    type Quorum = Avn;
+    type RoundTimeoutBlocks = CheckpointRoundTimeoutBlocks;
+    type CheckpointVoteSlackSecs = CheckpointVoteSlackSecs;
+    type OracleRoundThreshold = OracleRoundThreshold;
+    type OracleVoteDuration = OracleVoteDuration;
+    type MaxFloorAge = MaxFloorAge;
+    type MaxFloorCheckpointAge = MaxFloorCheckpointAge;
+    type MinForcedFloorAge = MinForcedFloorAge;
+    type MaxVenueAge = MaxVenueAge;
+    type VenueTargetLag = VenueTargetLag;
+    type WeightInfo = pallet_watchtower_floor_oracle::default_weights::SubstrateWeight<Runtime>;
 }
 
 parameter_types! {
@@ -920,14 +1012,52 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
         pallet_node_manager::OwnedNodesCount::<Runtime>::get(owner)
     }
 
+    // The node counts and the index are never stubbed: benchmarks that need nodes register
+    // real ones through `WatchtowerBenchmarkHelper`, so the measured weights include the index
+    // reads.
     fn get_authorized_watchtowers_count() -> u32 {
-        #[cfg(feature = "runtime-benchmarks")]
-        {
-            return 10u32
-        }
-
-        #[cfg(not(feature = "runtime-benchmarks"))]
         pallet_node_manager::TotalRegisteredNodes::<Runtime>::get()
+    }
+
+    fn get_node_at_index(index: u32) -> Option<AccountId> {
+        pallet_node_manager::Pallet::<Runtime>::node_at_index(index)
+    }
+
+    fn get_indexed_nodes_count() -> u32 {
+        pallet_node_manager::Pallet::<Runtime>::indexed_node_count()
+    }
+
+    fn get_indexed_owners_count() -> u32 {
+        pallet_node_manager::Pallet::<Runtime>::indexed_owner_count()
+    }
+
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)> {
+        pallet_node_manager::Pallet::<Runtime>::owner_at_index(index)
+    }
+
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
+        pallet_node_manager::Pallet::<Runtime>::owner_node_at_index(owner, index)
+    }
+}
+
+/// Gives the watchtower benchmarks real node-manager and summary state to run against.
+#[cfg(feature = "runtime-benchmarks")]
+pub struct WatchtowerBenchmarkHelper;
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_watchtower::BenchmarkHelper for WatchtowerBenchmarkHelper {
+    fn setup_nodes(n: u32) {
+        pallet_node_manager::Pallet::<Runtime>::benchmark_register_indexed_nodes(n);
+    }
+
+    fn setup_consumer_proposal(external_ref: sp_core::H256, payload: sp_std::vec::Vec<u8>) {
+        pallet_summary::Pallet::<Runtime>::benchmark_setup_external_validation(
+            external_ref,
+            payload,
+        );
+    }
+
+    fn consumer_proposal_cancelled(external_ref: sp_core::H256) -> bool {
+        pallet_summary::Pallet::<Runtime>::benchmark_is_pending_admin_review(external_ref)
     }
 }
 

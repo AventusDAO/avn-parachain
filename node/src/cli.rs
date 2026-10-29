@@ -58,6 +58,19 @@ pub struct AvnRunCmd {
     #[arg(long = "ethereum-node-url", value_name = "ETH URL", num_args = 0..=32)]
     pub eth_node_urls: Vec<String>,
 
+    /// Ethereum RPC endpoints for the floor channel, in failover order; defaults to a built-in
+    /// list of public mainnet endpoints. Registered (watchtower) nodes read floor observations
+    /// from them; collators use them to vote checkpoint blocks for that chain.
+    #[arg(long = "floor-rpc-url", value_name = "FLOOR RPC URL", num_args = 0..=32)]
+    pub floor_rpc_urls: Vec<String>,
+
+    /// Venue chain (Base) RPC endpoints for the venue channel, in failover order; defaults to
+    /// a built-in list of public Base endpoints. Registered (watchtower) nodes read venue
+    /// observations from them; collators use them to vote checkpoint blocks for that chain.
+    /// For a local Exotic Hardhat chain pass http://127.0.0.1:8545.
+    #[arg(long = "venue-rpc-url", value_name = "VENUE RPC URL", num_args = 0..=32)]
+    pub venue_rpc_urls: Vec<String>,
+
     /// Flag to specify the Id of a registered Aventus cloud node
     #[arg(long = "registered-node-id", value_name = "Registered Node Id")]
     pub registered_node_id: Option<String>,

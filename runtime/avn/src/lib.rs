@@ -157,6 +157,10 @@ pub type Migrations = (
     migrations::register_avt_token::RegisterAvtToken<Runtime>,
     pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
     pallet_avn_anchor::migration::AvnAnchorMigrations<Runtime>,
+    // v0 -> v1: `Proposal` gained `committee_size` and `DecisionRule` was widened.
+    pallet_watchtower::migration::WatchtowerMigrations<Runtime>,
+    // v0 -> v1: `OwnedNodesCount` recounted from `OwnedNodes`; owners with no nodes removed.
+    pallet_node_manager::migration::NodeManagerMigrations<Runtime>,
     pallet_session::migrations::v1::MigrateV0ToV1<
         Runtime,
         pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
@@ -450,6 +454,9 @@ mod runtime {
 
     #[runtime::pallet_index(103)]
     pub type CrossChainVoting = pallet_cross_chain_voting;
+
+    #[runtime::pallet_index(104)]
+    pub type WatchtowerFloorOracle = pallet_watchtower_floor_oracle;
 
     // ORML pallets
     #[runtime::pallet_index(110)]
