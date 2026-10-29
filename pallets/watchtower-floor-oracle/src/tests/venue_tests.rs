@@ -817,8 +817,9 @@ mod cross_channel {
         });
     }
 
-    /// Both markets on one chain with a stale checkpoint: the floor waits for the checkpoint
-    /// round, the venue round starts at once, and the agreement leaves the venue round alone.
+    /// Both markets on one chain with a stale checkpoint: the floor round waits at activation
+    /// for a checkpoint round, the venue round does not, and the agreement leaves the venue
+    /// round alone.
     #[test]
     fn a_stale_checkpoint_only_holds_back_the_floor() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
@@ -830,9 +831,11 @@ mod cross_channel {
 
             assert_ok!(FloorOracle::request_floor_price(RuntimeOrigin::root()));
             assert_ok!(request());
-            assert_eq!(FloorOracle::pending_floor_request(), Some(FloorRoundKind::Requested));
             let venue_round = FloorOracle::active_venue_round().expect("venue round");
             assert_eq!(venue_round.market, market);
+            let floor_round = FloorOracle::active_floor_round().expect("floor round");
+            assert_eq!(activate_head(), floor_round.proposal_id);
+            assert_eq!(FloorOracle::active_floor_round().unwrap().pin, None);
             let checkpoint_round = FloorOracle::checkpoint_round(FLOOR_CHAIN).expect("started");
 
             for i in 1..=4 {
@@ -845,9 +848,8 @@ mod cross_channel {
                 .submit());
             }
 
-            assert_eq!(FloorOracle::pending_floor_request(), None);
             let floor_round = FloorOracle::active_floor_round().expect("floor round");
-            assert_eq!(floor_round.external_block, SEED_BLOCK + 50);
+            assert_eq!(floor_round.pin.map(|pin| pin.external_block), Some(SEED_BLOCK + 50));
             assert_eq!(FloorOracle::active_venue_round(), Some(venue_round));
         });
     }
@@ -1020,10 +1022,11 @@ mod offchain_worker {
             cross_channel_setup();
             let floor_round = FloorOracle::active_floor_round().expect("floor round");
             assert_eq!(activate_head(), floor_round.proposal_id);
+            let floor_round = FloorOracle::active_floor_round().expect("floor round");
             mock_floor_service(
                 &mut offchain.write(),
                 &floor_round.market,
-                floor_round.external_block,
+                floor_round.pin.expect("pinned at activation").external_block,
                 Some(encoded_observation(&cross_channel::floor_obs(50))),
             );
             // An unusable country answer never blocks the report; it is reported as unknown.

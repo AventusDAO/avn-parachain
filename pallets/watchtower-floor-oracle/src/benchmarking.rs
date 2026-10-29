@@ -93,19 +93,10 @@ fn floor_market() -> FloorMarket {
     FloorMarket { chain_id: CHAIN_ID, punks: sp_core::H160::repeat_byte(0xB4) }
 }
 
-/// Configures the market, seeds its chain, opens a floor round and activates its proposal. The
-/// round's checkpoint time is replaced by [`FLOOR_AGREED_AT`].
-fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
-    let market = floor_market();
-    assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(market)).is_ok());
-    assert!(Pallet::<T>::seed_chain(
-        RawOrigin::Root.into(),
-        market.chain_id,
-        SEED_BLOCK,
-        MAX_AGE_SECS,
-        None
-    )
-    .is_ok());
+/// Configures the market on its already seeded chain, opens a floor round and activates its
+/// proposal. Returns the round as activation left it.
+fn request_and_activate_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
+    assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(floor_market())).is_ok());
     assert!(Pallet::<T>::do_request_floor_price().is_ok());
     let round = ActiveFloorRound::<T>::get().expect("round started");
     assert!(pallet_watchtower::Pallet::<T>::activate_next_proposal(
@@ -113,8 +104,32 @@ fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
         round.proposal_id
     )
     .is_ok());
+    ActiveFloorRound::<T>::get().expect("round started")
+}
+
+/// An active floor round waiting for the checkpoint round already running on its chain.
+fn start_waiting_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
+    assert!(CheckpointRound::<T>::contains_key(CHAIN_ID), "the round joins a checkpoint round");
+    let round = request_and_activate_floor_round::<T>();
+    assert!(round.pin.is_none());
+    round
+}
+
+/// Seeds the market's chain, then opens a floor round and activates its proposal, which pins
+/// the fresh seed. The pin's checkpoint time is replaced by [`FLOOR_AGREED_AT`].
+fn start_active_floor_round<T: Config>() -> FloorRound<BlockNumberFor<T>> {
+    assert!(Pallet::<T>::seed_chain(
+        RawOrigin::Root.into(),
+        CHAIN_ID,
+        SEED_BLOCK,
+        MAX_AGE_SECS,
+        None
+    )
+    .is_ok());
+    request_and_activate_floor_round::<T>();
     ActiveFloorRound::<T>::mutate(|round| {
-        round.as_mut().expect("round started").checkpoint_agreed_at_sec = FLOOR_AGREED_AT
+        let pin = round.as_mut().expect("round started").pin.as_mut();
+        pin.expect("pinned at activation").checkpoint_agreed_at_sec = FLOOR_AGREED_AT
     });
     ActiveFloorRound::<T>::get().expect("round started")
 }
@@ -198,23 +213,22 @@ benchmarks! {
         assert_eq!(MinExternalBlockTimeMs::<T>::get(CHAIN_ID), Some(12_000));
     }
 
-    // Worst path: a full round is dropped and a waiting floor request starts a floor round.
+    // Worst path: a full round is dropped and the floor round waiting for it is pinned.
     force_set_checkpoint {
         let validators = setup_validators::<T>(MAX_VALIDATOR_ACCOUNTS);
-        assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(floor_market())).is_ok());
         seed_default_chain::<T>();
         let votes = validators.iter()
             .map(|validator| (validator.account_id.clone(), VOTED_BLOCK))
             .collect();
         open_round::<T>(1, votes);
-        PendingFloorRequest::<T>::put(FloorRoundKind::Requested);
+        start_waiting_floor_round::<T>();
     }: _(RawOrigin::Root, CHAIN_ID, SEED_BLOCK + 1)
     verify {
         assert!(CheckpointRound::<T>::get(CHAIN_ID).is_none());
         let checkpoint = Checkpoints::<T>::get(CHAIN_ID).expect("set");
         assert_eq!((checkpoint.block_number, checkpoint.round_id), (SEED_BLOCK + 1, 0));
-        assert_eq!(PendingFloorRequest::<T>::get(), None);
-        assert!(ActiveFloorRound::<T>::get().is_some());
+        let pin = ActiveFloorRound::<T>::get().and_then(|round| round.pin).expect("pinned");
+        assert_eq!(pin.external_block, SEED_BLOCK + 1);
     }
 
     // Worst path: a timed out round is replaced by a new one.
@@ -246,6 +260,7 @@ benchmarks! {
         assert_eq!(Checkpoints::<T>::get(CHAIN_ID).expect("seeded").round_id, 0);
     }
 
+    // Worst path: the agreement also pins the floor round waiting for it.
     submit_checkpoint_vote_with_quorum {
         let v in 3 .. MAX_VALIDATOR_ACCOUNTS;
         let validators = setup_validators::<T>(v);
@@ -255,6 +270,7 @@ benchmarks! {
             .map(|validator| (validator.account_id.clone(), VOTED_BLOCK))
             .collect();
         open_round::<T>(1, votes);
+        start_waiting_floor_round::<T>();
         let author = validators[0].clone();
         let signature = dummy_signature::<T>(&author);
     }: submit_checkpoint_vote(RawOrigin::None, CHAIN_ID, 1, author.clone(), VOTED_BLOCK, signature)
@@ -263,8 +279,11 @@ benchmarks! {
         let checkpoint = Checkpoints::<T>::get(CHAIN_ID).expect("agreed");
         assert_eq!(checkpoint.round_id, 1);
         assert_eq!(checkpoint.block_number, VOTED_BLOCK);
+        let pin = ActiveFloorRound::<T>::get().and_then(|round| round.pin).expect("pinned");
+        assert_eq!(pin.external_block, VOTED_BLOCK);
     }
-    // Worst path: no fresh floor and a fresh checkpoint, so a watchtower proposal is created.
+    // Worst path: no fresh floor, so a watchtower proposal is created. The checkpoint is chosen
+    // at activation.
     request_floor_price {
         let market = floor_market();
         assert!(Pallet::<T>::set_floor_market(RawOrigin::Root.into(), Some(market)).is_ok());
@@ -312,7 +331,7 @@ None
         let round = start_active_floor_round::<T>();
         let watchtower = <T as pallet_watchtower::Config>::Watchtowers::get_node_at_index(0)
             .expect("a node is registered");
-        let observation = plausible_observation(round.external_block);
+        let observation = plausible_observation(round.pin.expect("pinned").external_block);
         preload_votes_for::<T>(round.proposal_id, observation.hash());
         let signature = <T as pallet_watchtower::Config>::SignerId::generate_pair(None)
             .sign(&("DummyProof").encode())

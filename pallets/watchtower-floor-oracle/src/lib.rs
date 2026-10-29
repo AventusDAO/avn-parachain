@@ -106,7 +106,7 @@ pub mod default_weights;
 pub use default_weights::WeightInfo;
 pub mod checkpoint;
 pub mod floor;
-pub use floor::{FloorRound, FloorRoundKind};
+pub use floor::{FloorPin, FloorRound, FloorRoundKind};
 pub mod ocw;
 pub mod venue;
 pub use venue::VenueRound;
@@ -317,12 +317,6 @@ pub mod pallet {
     #[pallet::getter(fn last_floor_round_id)]
     pub type LastFloorRoundId<T: Config> = StorageValue<_, u64, ValueQuery>;
 
-    /// A floor request is waiting for the checkpoint round on the market's chain to settle, and
-    /// the kind of round it starts then.
-    #[pallet::storage]
-    #[pallet::getter(fn pending_floor_request)]
-    pub type PendingFloorRequest<T: Config> = StorageValue<_, FloorRoundKind, OptionQuery>;
-
     /// Parachain time, in seconds, the last forced floor round ended, finalised or failed.
     #[pallet::storage]
     #[pallet::getter(fn last_forced_round_ended_at)]
@@ -420,26 +414,22 @@ pub mod pallet {
         FloorPriceServed { round_id: u64, floor_wei: u128 },
         /// A request joined the round already running.
         FloorRoundInProgress { round_id: u64 },
-        /// No fresh checkpoint exists; the request waits for the checkpoint round to settle.
-        FloorRequestWaitingForCheckpoint { checkpoint_round_id: RoundId },
-        /// A floor round opened as a watchtower proposal.
-        FloorRoundStarted {
-            round_id: u64,
-            proposal_id: ProposalId,
-            checkpoint_agreed_at_sec: u64,
-            external_block: u32,
-            market: FloorMarket,
-        },
-        /// The round that just started is forced: `force_floor_round` asked for it, directly or
-        /// through a request that waited for a checkpoint. Follows its `FloorRoundStarted`.
+        /// A floor round opened as a watchtower proposal. It pins a checkpoint once the
+        /// proposal activates.
+        FloorRoundStarted { round_id: u64, proposal_id: ProposalId, market: FloorMarket },
+        /// The round that just started is forced: `force_floor_round` asked for it. Follows its
+        /// `FloorRoundStarted`.
         FloorRoundForced { round_id: u64 },
+        /// The round's proposal activated with no young enough checkpoint; the round pins the
+        /// one `checkpoint_round_id` agrees. Watchtowers report only after that.
+        FloorRoundWaitingForCheckpoint { round_id: u64, checkpoint_round_id: RoundId },
+        /// The round pinned the checkpoint every watchtower reads the floor at.
+        FloorRoundPinned { round_id: u64, checkpoint_agreed_at_sec: u64, external_block: u32 },
         /// Root changed the floor market. `None` disables floor requests.
         FloorMarketSet { market: Option<FloorMarket> },
         /// Root changed the committee size of oracle rounds. `None` lets every watchtower
         /// report. Rounds already started keep their committee.
         OracleCommitteeSizeSet { size: Option<u32> },
-        /// The watchtower pallet refused the proposal; the request was dropped.
-        FloorRoundStartFailed { error: DispatchError },
         /// A watchtower reported its observation; `hash` is its answer on the proposal and
         /// `country` the self-reported location of the node, for display.
         FloorReportSubmitted {
@@ -531,6 +521,8 @@ pub mod pallet {
         /// The round's watchtower proposal is not active yet (no committee), or its voting
         /// period has ended and it awaits finalisation.
         FloorProposalNotActive,
+        /// The round's proposal is active but its checkpoint has not been agreed yet.
+        FloorRoundNotPinned,
         /// The reporter is not an authorized watchtower in the round's committee.
         NotInFloorCommittee,
         /// The watchtower already reported in this round.
@@ -701,7 +693,7 @@ pub mod pallet {
 
         /// Ask for the current Punks floor. Root or the privileged requester only. Answers from
         /// the last finalised floor when it is fresh, joins the running round, or opens a new
-        /// one (waiting for a checkpoint first if needed). The outcome is reported as an event.
+        /// one. The outcome is reported as an event.
         #[pallet::call_index(3)]
         #[pallet::weight(<T as Config>::WeightInfo::request_floor_price())]
         pub fn request_floor_price(origin: OriginFor<T>) -> DispatchResult {
@@ -1407,13 +1399,14 @@ pub mod pallet {
     }
 
     impl<T: Config> WatchtowerHooks<pallet_watchtower::Proposal<T>> for Pallet<T> {
-        /// Called when an internal proposal activates. A venue round fixes its target
-        /// timestamp here rather than when it was requested, so time spent in the queue does
-        /// not age the state it reads.
+        /// Called when an internal proposal activates. A floor round pins its checkpoint and a
+        /// venue round fixes its target timestamp here rather than when they were requested, so
+        /// time spent in the queue does not age what they read. An error cancels the proposal.
         fn on_proposal_submitted(
             proposal_id: ProposalId,
             _proposal: pallet_watchtower::Proposal<T>,
         ) -> DispatchResult {
+            Self::on_floor_proposal_activated(proposal_id)?;
             Self::on_venue_proposal_activated(proposal_id);
             Ok(())
         }

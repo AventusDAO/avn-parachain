@@ -1,24 +1,26 @@
 // Copyright 2026 Aventus DAO Ltd
 
-//! Floor rounds: pin a checkpoint, open a watchtower `Choice` proposal, and let every
-//! committee member report what it observed. The report is the vote.
+//! Floor rounds: open a watchtower `Choice` proposal, pin a checkpoint once it is active, and let
+//! every committee member report what it observed. The report is the vote.
 //!
 //! Life of a round:
 //! 1. `request_floor_price` finds no fresh floor and no running round. It needs a configured
-//!    [`FloorMarket`] and asks the checkpoint side for that market's chain. With a fresh checkpoint
-//!    the round starts at once; otherwise the request is parked in `PendingFloorRequest` and the
-//!    round starts when the checkpoint round settles.
+//!    [`FloorMarket`] on a seeded chain, and starts the round at once.
 //! 2. Starting a round submits an internal watchtower proposal of type `FloorOracle` with
 //!    `VotingKind::Choice`. The proposal queues and the collator OCW activates it, which fixes the
 //!    committee.
-//! 3. Watchtower nodes (their OCW, `floor_offchain_worker`) fetch
+//! 3. When the proposal activates, the round pins a checkpoint of the market's chain: the stored
+//!    one if it is young enough, otherwise the one a checkpoint round agrees next. Pinning at
+//!    activation keeps time spent in the queue from aging the floor.
+//! 4. Watchtower nodes (their OCW, `floor_offchain_worker`) fetch
 //!    `floor/punks/{chain_id}/{pinned_block}/{punks}` from their local external service and submit
 //!    `submit_floor_report`. The pallet stores the observation under its hash and counts the hash
 //!    as the node's answer through `pallet_watchtower::vote_choice_for`. The first answer reaching
 //!    the proposal's threshold wins; no single reporter can set a "candidate".
-//! 4. The watchtower pallet decides the proposal and calls `on_voting_completed`. A passed proposal
-//!    stores the winning observation as `LastFinalisedFloor`; anything else fails the round. Both
-//!    clear the round, so the next request can open a new one.
+//! 5. The watchtower pallet decides the proposal and calls `on_voting_completed`. A passed proposal
+//!    stores the winning observation as `LastFinalisedFloor`; anything else fails the round,
+//!    including one whose checkpoint never came. Both clear the round, so the next request can open
+//!    a new one.
 //!
 //! The pallet's `VoteFilter` keeps the two paths consistent: a watchtower vote on a floor
 //! proposal must be the hash it reported, and yes/no votes are refused outright.
@@ -61,6 +63,26 @@ pub enum FloorRoundKind {
     Forced,
 }
 
+/// The checkpoint a floor round reads at.
+#[derive(
+    Encode,
+    Decode,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub struct FloorPin {
+    /// Unix time, in seconds, the checkpoint was agreed.
+    pub checkpoint_agreed_at_sec: u64,
+    /// External chain block of the checkpoint; every watchtower reads on-chain data at it.
+    pub external_block: u32,
+}
+
 /// A floor round collecting reports.
 #[derive(
     Encode, Decode, Clone, PartialEq, Eq, Debug, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
@@ -69,10 +91,9 @@ pub struct FloorRound<BlockNumber> {
     pub round_id: u64,
     /// The watchtower proposal deciding this round.
     pub proposal_id: ProposalId,
-    /// Unix time, in seconds, of the checkpoint every watchtower observes the floor at.
-    pub checkpoint_agreed_at_sec: u64,
-    /// External chain block of the checkpoint; every watchtower reads on-chain data at it.
-    pub external_block: u32,
+    /// The checkpoint every watchtower observes the floor at. `None` until the proposal
+    /// activates, and after that until a young enough checkpoint is agreed.
+    pub pin: Option<FloorPin>,
     /// The market as configured when the round started. Reports are validated against this
     /// snapshot, so a later `set_floor_market` only affects the next round.
     pub market: FloorMarket,
@@ -91,8 +112,7 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Starts a forced round, unless one is running. Within `MinForcedFloorAge` of the last
-    /// forced round ending, finalised or failed, or of a force answered with the last floor
-    /// because Ethereum had not moved past it, it behaves as [`Pallet::do_request_floor_price`]
+    /// forced round ending, finalised or failed, it behaves as [`Pallet::do_request_floor_price`]
     /// instead, so the requester cannot open forced rounds back to back.
     pub fn do_force_floor_round() -> DispatchResult {
         let cooling_down = LastForcedRoundEndedAt::<T>::get().map_or(false, |ended_at| {
@@ -103,7 +123,7 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Joins the running round, answers a `Requested` request from a floor within `MaxFloorAge`,
-    /// or starts a round of `kind`, waiting for a checkpoint first if needed.
+    /// or starts a round of `kind`.
     fn request_floor(kind: FloorRoundKind) -> DispatchResult {
         if let Some(round) = ActiveFloorRound::<T>::get() {
             Self::deposit_event(Event::<T>::FloorRoundInProgress { round_id: round.round_id });
@@ -127,11 +147,30 @@ impl<T: Config> Pallet<T> {
         }
 
         let market = FloorMarketConfig::<T>::get().ok_or(Error::<T>::FloorMarketNotSet)?;
+        // The checkpoint is chosen at activation, but a chain that was never seeded would only
+        // fail the round then, after its time in the queue.
+        ensure!(
+            MaxCheckpointAge::<T>::contains_key(market.chain_id),
+            Error::<T>::ChainNotRegistered
+        );
+        Self::start_floor_round(market, kind)
+    }
+
+    /// Pins the running round when its proposal activates: to the stored checkpoint if it is
+    /// young enough, otherwise to the one the checkpoint round started or joined here agrees.
+    /// Runs on every proposal activation, so it only acts on the floor one. An error cancels the
+    /// proposal, which fails the round.
+    pub(crate) fn on_floor_proposal_activated(proposal_id: ProposalId) -> DispatchResult {
+        let Some(round) = ActiveFloorRound::<T>::get() else { return Ok(()) };
+        if round.proposal_id != proposal_id {
+            return Ok(())
+        }
+
         // A floor is at least as old as the checkpoint it pins, so pin only a young one;
         // otherwise the new floor could be past `MaxFloorAge` by the time it finalises. A forced
-        // round pins an even younger one, past the block the last floor was read at: a round on
-        // that block would read the same floor again.
-        let (max_checkpoint_age, above_block) = match kind {
+        // round asks for an even younger one, past the block the last floor was read at: a round
+        // on that block would read the same floor again.
+        let (max_checkpoint_age, above_block) = match round.kind {
             FloorRoundKind::Requested => (T::MaxFloorCheckpointAge::get(), None),
             FloorRoundKind::Forced => (
                 T::MinForcedFloorAge::get().min(T::MaxFloorCheckpointAge::get()),
@@ -139,59 +178,51 @@ impl<T: Config> Pallet<T> {
             ),
         };
         match Self::do_request_checkpoint_within(
-            market.chain_id,
+            round.market.chain_id,
             Some(max_checkpoint_age),
             above_block,
         )? {
-            CheckpointRequest::Ready(checkpoint) =>
-                Self::start_floor_round(&checkpoint, market, kind),
-            CheckpointRequest::Pending { round_id, .. } => {
-                // A forced request waiting alongside a requested one makes the round forced.
-                PendingFloorRequest::<T>::mutate(|pending| {
-                    if *pending != Some(FloorRoundKind::Forced) {
-                        *pending = Some(kind);
-                    }
-                });
-                Self::deposit_event(Event::<T>::FloorRequestWaitingForCheckpoint {
-                    checkpoint_round_id: round_id,
-                });
-                Ok(())
-            },
+            CheckpointRequest::Ready(checkpoint) => Self::pin_floor_round(round, &checkpoint),
+            CheckpointRequest::Pending { round_id: checkpoint_round_id, .. } =>
+                Self::deposit_event(Event::<T>::FloorRoundWaitingForCheckpoint {
+                    round_id: round.round_id,
+                    checkpoint_round_id,
+                }),
         }
+        Ok(())
     }
 
-    /// Called by the checkpoint side when a round on `chain_id` settles.
+    /// Called by the checkpoint side when a round on `chain_id` settles. Pins the active floor
+    /// round waiting for it. A queued round is left alone: it pins when it activates.
+    ///
+    /// The checkpoint is taken even when a forced round wanted one past the last floor's block
+    /// and this one is not: checkpoints never go backwards, so the collators have not seen the
+    /// chain move past it. Reading at it again gives the newest floor there is, and waiting for
+    /// another round could last until the proposal expires on a stalled chain.
     pub(crate) fn on_checkpoint_agreed_floor(chain_id: ExternalChainId, checkpoint: &Checkpoint) {
-        let market = match FloorMarketConfig::<T>::get() {
-            Some(market) => market,
-            None => return,
+        let Some(round) = ActiveFloorRound::<T>::get() else { return };
+        if round.pin.is_some() ||
+            round.market.chain_id != chain_id ||
+            !Self::oracle_proposal_open(round.proposal_id)
+        {
+            return
+        }
+        Self::pin_floor_round(round, checkpoint);
+    }
+
+    fn pin_floor_round(mut round: FloorRound<BlockNumberFor<T>>, checkpoint: &Checkpoint) {
+        let pin = FloorPin {
+            checkpoint_agreed_at_sec: checkpoint.agreed_at,
+            external_block: checkpoint.block_number,
         };
-        if chain_id != market.chain_id {
-            return
-        }
-        let Some(kind) = PendingFloorRequest::<T>::take() else { return };
-        if ActiveFloorRound::<T>::exists() {
-            return
-        }
-        if kind == FloorRoundKind::Forced {
-            // Checkpoints never go backwards, so one not above the last floor's block is at it:
-            // the collators have not seen Ethereum move past it. The last floor is then the
-            // newest there is, so answer with it rather than read it again or wait on a chain
-            // that may have stalled. The force counts as ended, so the cooldown applies.
-            if let Some(floor) = LastFinalisedFloor::<T>::get().filter(|floor| {
-                checkpoint.block_number <= floor.observation.external_block.saturated_into::<u32>()
-            }) {
-                LastForcedRoundEndedAt::<T>::put(Self::now_secs());
-                Self::deposit_event(Event::<T>::FloorPriceServed {
-                    round_id: floor.round_id,
-                    floor_wei: floor.observation.floor_wei,
-                });
-                return
-            }
-        }
-        if let Err(error) = Self::start_floor_round(checkpoint, market, kind) {
-            Self::deposit_event(Event::<T>::FloorRoundStartFailed { error });
-        }
+        round.pin = Some(pin);
+        let round_id = round.round_id;
+        ActiveFloorRound::<T>::put(round);
+        Self::deposit_event(Event::<T>::FloorRoundPinned {
+            round_id,
+            checkpoint_agreed_at_sec: pin.checkpoint_agreed_at_sec,
+            external_block: pin.external_block,
+        });
     }
 
     /// The Ethereum block the last finalised floor was read at, which a forced round must pass.
@@ -200,11 +231,7 @@ impl<T: Config> Pallet<T> {
             .map(|floor| floor.observation.external_block.saturated_into::<u32>())
     }
 
-    fn start_floor_round(
-        checkpoint: &Checkpoint,
-        market: FloorMarket,
-        kind: FloorRoundKind,
-    ) -> DispatchResult {
+    fn start_floor_round(market: FloorMarket, kind: FloorRoundKind) -> DispatchResult {
         let round_id = LastFloorRoundId::<T>::mutate(|id| {
             *id = id.saturating_add(1);
             *id
@@ -214,9 +241,7 @@ impl<T: Config> Pallet<T> {
 
         let request = ProposalRequest {
             title: FLOOR_PROPOSAL_TITLE.to_vec(),
-            payload: RawPayload::Inline(
-                (round_id, checkpoint.agreed_at, checkpoint.block_number, market).encode(),
-            ),
+            payload: RawPayload::Inline((round_id, market).encode()),
             threshold: T::OracleRoundThreshold::get(),
             source: ProposalSource::Internal(ProposalType::FloorOracle),
             decision_rule: DecisionRule::RejectOnExpiry,
@@ -232,20 +257,13 @@ impl<T: Config> Pallet<T> {
         ActiveFloorRound::<T>::put(FloorRound {
             round_id,
             proposal_id,
-            checkpoint_agreed_at_sec: checkpoint.agreed_at,
-            external_block: checkpoint.block_number,
+            pin: None,
             market,
             started_at: now_block,
             reports: 0,
             kind,
         });
-        Self::deposit_event(Event::<T>::FloorRoundStarted {
-            round_id,
-            proposal_id,
-            checkpoint_agreed_at_sec: checkpoint.agreed_at,
-            external_block: checkpoint.block_number,
-            market,
-        });
+        Self::deposit_event(Event::<T>::FloorRoundStarted { round_id, proposal_id, market });
         if kind == FloorRoundKind::Forced {
             Self::deposit_event(Event::<T>::FloorRoundForced { round_id });
         }
@@ -314,15 +332,16 @@ impl<T: Config> Pallet<T> {
             !FloorReports::<T>::contains_key(round_id, watchtower),
             Error::<T>::DuplicateFloorReport
         );
+        let pin = round.pin.ok_or(Error::<T>::FloorRoundNotPinned)?;
         // The block was confirmations deep before the checkpoint was agreed, so it cannot be
         // newer than the agreement. A later time would make the floor look fresher than it is.
         ensure!(
             observation.is_plausible() &&
-                observation.external_block_time_sec <= round.checkpoint_agreed_at_sec,
+                observation.external_block_time_sec <= pin.checkpoint_agreed_at_sec,
             Error::<T>::ImplausibleObservation
         );
         ensure!(
-            observation.external_block == round.external_block as u64,
+            observation.external_block == pin.external_block as u64,
             Error::<T>::ObservationBlockMismatch
         );
         Ok(round)
@@ -372,8 +391,13 @@ impl<T: Config> Pallet<T> {
                 FloorObservations::<T>::get(round.round_id, hash).map(|obs| (hash, obs))
             });
 
-        match (result, winner) {
-            (ProposalStatusEnum::Resolved { passed: true }, Some((hash, observation))) => {
+        // A winner needs reports, and reports need the pin.
+        match (result, winner, round.pin) {
+            (
+                ProposalStatusEnum::Resolved { passed: true },
+                Some((hash, observation)),
+                Some(pin),
+            ) => {
                 let eligible = pallet_watchtower::Pallet::<T>::eligible_voters(round.proposal_id);
                 let required = T::OracleRoundThreshold::get().mul_ceil(eligible);
                 let agreeing =
@@ -381,7 +405,7 @@ impl<T: Config> Pallet<T> {
                 LastFinalisedFloor::<T>::put(FinalisedFloorRound {
                     round_id: round.round_id,
                     proposal_id: round.proposal_id,
-                    checkpoint_agreed_at_sec: round.checkpoint_agreed_at_sec,
+                    checkpoint_agreed_at_sec: pin.checkpoint_agreed_at_sec,
                     market: round.market,
                     observation,
                     agreeing,
@@ -431,6 +455,7 @@ impl<T: Config> Pallet<T> {
         if !Self::oracle_proposal_open(round.proposal_id) {
             return
         }
+        let Some(pin) = round.pin else { return };
         if Self::ocw_already_run(&FLOOR_OCW, now).is_err() {
             return
         }
@@ -451,15 +476,14 @@ impl<T: Config> Pallet<T> {
             return
         }
 
-        let observation = match Self::fetch_observation(&round.market, round.external_block) {
+        let observation = match Self::fetch_observation(&round.market, pin.external_block) {
             Ok(observation) => observation,
             Err(e) => {
                 log::error!("💔 Floor oracle: cannot fetch observation: {:?}", e);
                 return
             },
         };
-        if !observation.is_plausible() || observation.external_block != round.external_block as u64
-        {
+        if !observation.is_plausible() || observation.external_block != pin.external_block as u64 {
             log::error!(
                 "💔 Floor oracle: service returned an unusable observation {:?}",
                 observation

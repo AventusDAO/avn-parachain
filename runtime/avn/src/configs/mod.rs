@@ -820,7 +820,7 @@ impl pallet_watchtower::Config for Runtime {
     type MinCommitteeSize = ConstU32<10>;
     #[cfg(feature = "dev-network")]
     type MinCommitteeSize = ConstU32<3>;
-    type MaxCommitteeSize = ConstU32<500>;
+    type MaxCommitteeSize = ConstU32<150>;
     type Randomness = RelayChainRandomness;
     #[cfg(feature = "runtime-benchmarks")]
     type BenchmarkHelper = WatchtowerBenchmarkHelper;
@@ -846,13 +846,13 @@ parameter_types! {
     pub const OracleVoteDuration: u32 = 100;
     /// A finalised floor whose Ethereum block is younger than this answers requests directly.
     pub const MaxFloorAge: u64 = 10 * 60;
-    /// A floor round pins a checkpoint agreed at most this long ago. The checkpoint block is
-    /// already about two minutes old when agreed (10 confirmations), so a round starts on data
-    /// at most about four minutes old and its floor stays cached for about six minutes once
-    /// finalised. A request finding an older checkpoint waits for a new checkpoint round, which
-    /// settles within a few parachain blocks. A round that takes longer than about six minutes
-    /// (voting may last `OracleVoteDuration`) finalises stale and the next request starts a new
-    /// one.
+    /// A floor round pins, when its proposal activates, a checkpoint agreed at most this long
+    /// ago. The checkpoint block is already about two minutes old when agreed (10
+    /// confirmations), so watchtowers read data at most about four minutes old and its floor
+    /// stays cached for about six minutes once finalised. A round activating with an older
+    /// checkpoint waits for a new checkpoint round, which settles within a few parachain
+    /// blocks. A round whose voting takes longer than about six minutes (it may last
+    /// `OracleVoteDuration`) finalises stale and the next request starts a new one.
     pub const MaxFloorCheckpointAge: u64 = 2 * 60;
     /// For this long after a forced floor round ends, `force_floor_round` behaves as
     /// `request_floor_price`. A forced round pins a checkpoint at most this old.

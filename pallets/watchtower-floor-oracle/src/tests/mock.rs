@@ -780,7 +780,8 @@ pub fn run_idle_cleanup() {
 /// the block's own age set it explicitly.
 pub fn pinned_floor_block_time(chain_id: ExternalChainId) -> u64 {
     FloorOracle::active_floor_round()
-        .map(|round| round.checkpoint_agreed_at_sec)
+        .and_then(|round| round.pin)
+        .map(|pin| pin.checkpoint_agreed_at_sec)
         .or_else(|| FloorOracle::checkpoints(chain_id).map(|checkpoint| checkpoint.agreed_at))
         .unwrap_or(1)
 }
