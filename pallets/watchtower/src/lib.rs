@@ -1325,12 +1325,6 @@ pub mod pallet {
             // `on_idle` do that.
             ensure!(!Voters::<T>::contains_key(proposal_id, &watchtower), Error::<T>::AlreadyVoted);
 
-            // Reject non-members before the signature check so they never reach the pool.
-            ensure!(
-                Self::is_committee_member(proposal_id, &watchtower),
-                Error::<T>::NotInCommittee
-            );
-
             let voter_signing_key = match T::Watchtowers::get_node_signing_key(&watchtower) {
                 Some(key) => key,
                 None => return Err(Error::<T>::VoterSigningKeyNotFound.into()),

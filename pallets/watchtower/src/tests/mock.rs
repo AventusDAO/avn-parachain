@@ -73,7 +73,13 @@ pub struct TestBenchmarkHelper;
 #[cfg(feature = "runtime-benchmarks")]
 impl BenchmarkHelper<AccountId> for TestBenchmarkHelper {
     fn setup_nodes(n: u32) {
-        let nodes = (0..n).map(|i| frame_benchmarking::account("node", i, 0)).collect();
+        // The benchmark suite runs every benchmark on one thread, so this list outlives the
+        // benchmark that set it. Keep the benchmark voter (`watchtower_1`) authorized for the
+        // node vote benchmarks that run later.
+        let nodes = core::iter::once(watchtower_1())
+            .chain((1..n).map(|i| frame_benchmarking::account("node", i, 0)))
+            .take(n as usize)
+            .collect();
         set_authorized_watchtowers(nodes);
     }
 
