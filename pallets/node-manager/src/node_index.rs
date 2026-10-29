@@ -327,10 +327,12 @@ impl<T: Config> Pallet<T> {
         TotalRegisteredNodes::<T>::mutate(|total| *total = total.saturating_add(n));
     }
 
-    /// Checks the dense index invariants. Only meaningful once the backfill is complete.
+    /// Checks the dense index invariants. The owner indexes are checked at any time, as they
+    /// track `NodeIndex` from its first entry; the node index only once the backfill is complete.
     #[cfg(any(feature = "try-runtime", test))]
     pub fn check_node_index_invariants() -> Result<(), &'static str> {
         let count = NodeIndexCount::<T>::get();
+        Self::check_owner_index_invariants(count)?;
         if !Self::node_index_is_complete() {
             return Ok(())
         }
@@ -355,7 +357,7 @@ impl<T: Config> Pallet<T> {
             return Err("registered node missing from the index")
         }
 
-        Self::check_owner_index_invariants(count)
+        Ok(())
     }
 
     /// Every indexed node appears once under its registered owner, with no holes.
