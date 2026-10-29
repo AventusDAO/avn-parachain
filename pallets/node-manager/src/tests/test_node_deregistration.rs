@@ -173,6 +173,7 @@ fn deregistration_succeeds() {
             assert!(!<OwnedNodes<TestRuntime>>::contains_key(context.owner.clone(), node));
             assert!(!<NodeRegistry<TestRuntime>>::contains_key(node));
         }
+        assert!(!<OwnedNodesCount<TestRuntime>>::contains_key(context.owner));
         System::assert_last_event(
             Event::NodeDeregistered {
                 owner: context.owner,
@@ -254,6 +255,7 @@ fn signed_deregistration_succeeds() {
             assert!(!<OwnedNodes<TestRuntime>>::contains_key(context.owner.clone(), node));
             assert!(!<NodeRegistry<TestRuntime>>::contains_key(node));
         }
+        assert!(!<OwnedNodesCount<TestRuntime>>::contains_key(context.owner));
         System::assert_last_event(
             Event::NodeDeregistered {
                 owner: context.owner,
@@ -543,6 +545,7 @@ fn partial_deregistration_decrements_total_stake_correctly() {
 
         // TotalStake must only reflect the remaining staked node
         assert_eq!(<TotalStake<TestRuntime>>::get(&context.owner), Some(stake_per_node));
+        assert_eq!(<OwnedNodesCount<TestRuntime>>::get(&context.owner), 1);
         assert_eq!(Balances::reserved_balance(&context.owner), stake_per_node);
     });
 }

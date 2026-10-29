@@ -83,24 +83,22 @@ mod internally_adding_proposal {
 
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
             assert!(Proposals::<TestRuntime>::contains_key(&proposal_id));
-            assert_eq!(
-                ProposalStatus::<TestRuntime>::get(&proposal_id),
-                ProposalStatusEnum::Active
-            );
 
-            if source == ProposalSource::Internal(ProposalType::Summary) {
-                // Internal proposals are added to active proposals
-                assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(proposal_id));
+            // Internal proposals are always queued and activated later by the OCW; external
+            // proposals are active straight away. Neither touches the active internal slot.
+            let expected_status = if source == ProposalSource::Internal(ProposalType::Summary) {
+                ProposalStatusEnum::Queued
             } else {
-                // External proposals are not added to active proposals
-                assert_eq!(ActiveInternalProposal::<TestRuntime>::get().is_none(), true);
-            }
+                ProposalStatusEnum::Active
+            };
+            assert_eq!(ProposalStatus::<TestRuntime>::get(&proposal_id), expected_status);
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
 
             System::assert_last_event(
                 Event::ProposalSubmitted {
                     proposal_id,
                     external_ref: context.external_ref,
-                    status: ProposalStatusEnum::Active,
+                    status: expected_status,
                 }
                 .into(),
             );
@@ -125,16 +123,16 @@ mod internally_adding_proposal {
             let second_proposal = second_context.build_internal_request(payload);
             assert_ok!(<Watchtower as WatchtowerInterface>::submit_proposal(None, second_proposal));
 
-            // Verify first proposal - active
+            // Verify first proposal - queued at the head
             let proposal_id = ExternalRef::<TestRuntime>::get(&context.external_ref);
             assert!(Proposals::<TestRuntime>::contains_key(&proposal_id));
             assert_eq!(
                 ProposalStatus::<TestRuntime>::get(&proposal_id),
-                ProposalStatusEnum::Active
+                ProposalStatusEnum::Queued
             );
-            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(proposal_id));
+            assert_eq!(Watchtower::peek_front_id().unwrap(), Some(proposal_id));
 
-            // Verify second proposal - queued
+            // Verify second proposal - queued behind it
             let second_proposal_id = ExternalRef::<TestRuntime>::get(&second_context.external_ref);
             assert!(Proposals::<TestRuntime>::contains_key(&second_proposal_id));
             assert_eq!(
@@ -142,8 +140,8 @@ mod internally_adding_proposal {
                 ProposalStatusEnum::Queued
             );
 
-            // Active proposal stays the same
-            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), Some(proposal_id));
+            // Nothing is active until the OCW activates the head
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
 
             System::assert_last_event(
                 Event::ProposalSubmitted {
@@ -357,7 +355,8 @@ mod adding_proposal_fails_when {
             let context = Context::default();
             let max_queue_size: u32 =
                 <<TestRuntime as crate::Config>::MaxInternalProposalLen as Get<u32>>::get();
-            for _i in 0..=max_queue_size {
+            // Every internal proposal is queued, so the queue is full after `max_queue_size`.
+            for _i in 0..max_queue_size {
                 let external_ref = H256::random();
                 let queue_context = Context { external_ref, ..context.clone() };
                 let proposal = queue_context.build_internal_request(b"Test".to_vec());

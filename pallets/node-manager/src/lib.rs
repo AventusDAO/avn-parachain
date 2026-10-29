@@ -48,6 +48,8 @@ use sp_runtime::{
     DispatchError, Perbill, Perquintill, Saturating,
 };
 
+pub mod migration;
+pub mod node_index;
 pub mod offchain;
 pub mod reward;
 pub mod stake;
@@ -72,11 +74,17 @@ mod test_auto_stake_preference;
 #[path = "tests/test_heartbeat.rs"]
 mod test_heartbeat;
 #[cfg(test)]
+#[path = "tests/test_migration.rs"]
+mod test_migration;
+#[cfg(test)]
 #[path = "tests/test_move_nodes.rs"]
 mod test_move_nodes;
 #[cfg(test)]
 #[path = "tests/test_node_deregistration.rs"]
 mod test_node_deregistration;
+#[cfg(test)]
+#[path = "tests/test_node_index.rs"]
+mod test_node_index;
 #[cfg(test)]
 #[path = "tests/test_node_registration.rs"]
 mod test_node_registration;
@@ -105,10 +113,12 @@ const MINT_REWARDS_CONTEXT: &'static [u8] = b"NodeManager_MintRewards";
 const HEARTBEAT_CONTEXT: &'static [u8] = b"NodeManager_heartbeat";
 const MAX_BATCH_SIZE: u32 = 1_000;
 const MINT_SAFETY_CAP_MULTIPLIER: u32 = 4;
-pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
+pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 pub const SIGNED_REGISTER_NODE_CONTEXT: &[u8] = b"register_node";
 pub const SIGNED_DEREGISTER_NODE_CONTEXT: &[u8] = b"deregister_node";
 pub const MAX_NODES: u32 = 64;
+/// Max nodes the registrar can add to the dense node index per `backfill_node_index` call.
+pub const MAX_BACKFILL_NODES: u32 = 250;
 pub const MAX_STAKE_CHANGES_PER_PERIOD: u32 = 256;
 
 const PALLET_ID: &'static [u8; 12] = b"node-manager";
@@ -141,6 +151,8 @@ pub(crate) type PositiveImbalanceOf<T> = <<T as Config>::Currency as Currency<
 pub(crate) type NodeId<T> = <T as frame_system::Config>::AccountId;
 /// Max nodes per deregistration call
 pub type MaxNodes = ConstU32<MAX_NODES>;
+/// Max nodes per `backfill_node_index` call
+pub type MaxBackfillNodes = ConstU32<MAX_BACKFILL_NODES>;
 /// Max stake changes per period
 pub type MaxStakeChangesPerPeriod = ConstU32<MAX_STAKE_CHANGES_PER_PERIOD>;
 
@@ -173,6 +185,53 @@ pub mod pallet {
     #[pallet::storage]
     pub type TotalRegisteredNodes<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    /// Dense index -> node. Positions `0..NodeIndexCount` are always populated. Used to sample
+    /// nodes at random without iterating the registry.
+    #[pallet::storage]
+    pub type NodeIndex<T: Config> = StorageMap<_, Twox64Concat, u32, NodeId<T>, OptionQuery>;
+
+    /// Node -> position in `NodeIndex`. Reverse lookup used for swap-remove.
+    #[pallet::storage]
+    pub type NodeIndexOf<T: Config> = StorageMap<_, Blake2_128Concat, NodeId<T>, u32, OptionQuery>;
+
+    /// Length of the dense index. Equals `TotalRegisteredNodes` once the backfill of
+    /// pre-existing nodes (`backfill_node_index`) is complete.
+    #[pallet::storage]
+    pub type NodeIndexCount<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    /// Dense index -> owner with at least one node in `NodeIndex`. Positions
+    /// `0..OwnerIndexCount` are always populated. Used to sample owners at random.
+    #[pallet::storage]
+    pub type OwnerIndex<T: Config> =
+        StorageMap<_, Twox64Concat, u32, IndexedOwner<T::AccountId>, OptionQuery>;
+
+    /// Owner -> position in `OwnerIndex`. Reverse lookup used for swap-remove.
+    #[pallet::storage]
+    pub type OwnerIndexOf<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, u32, OptionQuery>;
+
+    /// Length of the dense owner index. Similar to number of owners with at least one node.
+    #[pallet::storage]
+    pub type OwnerIndexCount<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    /// Per-owner dense index of the owner's nodes in `NodeIndex`. Positions
+    /// `0..IndexedOwner::nodes` are always populated.
+    #[pallet::storage]
+    pub type OwnerNodeIndex<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        T::AccountId,
+        Twox64Concat,
+        u32,
+        NodeId<T>,
+        OptionQuery,
+    >;
+
+    /// Node -> position in its owner's `OwnerNodeIndex`. Reverse lookup used for swap-remove.
+    #[pallet::storage]
+    pub type OwnerNodeIndexOf<T: Config> =
+        StorageMap<_, Blake2_128Concat, NodeId<T>, u32, OptionQuery>;
+
     /// Owner to node mapping
     #[pallet::storage]
     pub type OwnedNodes<T: Config> = StorageDoubleMap<
@@ -185,7 +244,7 @@ pub mod pallet {
         OptionQuery,
     >;
 
-    /// Number of nodes owned by each account
+    /// Number of nodes owned by each account. An account that owns no nodes has no entry.
     #[pallet::storage]
     pub type OwnedNodesCount<T: Config> =
         StorageMap<_, Blake2_128Concat, T::AccountId, u32, ValueQuery>;
@@ -514,6 +573,10 @@ pub mod pallet {
         },
         /// Stake moved from multiple source nodes into a single destination node
         StakeMoved { owner: T::AccountId, to_node: NodeId<T>, total_amount: BalanceOf<T> },
+        /// Some pre-existing nodes were added to the dense node index; more remain
+        NodeIndexBackfillProgress { indexed: u32, total: u32 },
+        /// Every registered node is now in the dense node index
+        NodeIndexBackfillCompleted { count: u32 },
     }
 
     #[pallet::error]
@@ -626,6 +689,12 @@ pub mod pallet {
         AutoStakeExpired,
         /// Nodes are not in compatible unstake-restriction states for moving stake
         IncompatibleStakeRestriction,
+        /// Every registered node is already in the dense node index
+        NodeIndexBackfillComplete,
+        /// The node is already in the dense node index
+        NodeAlreadyIndexed,
+        /// The list holds more nodes than remain to be indexed
+        TooManyNodesToIndex,
     }
 
     #[pallet::config]
@@ -1409,10 +1478,36 @@ pub mod pallet {
 
             Self::do_move_nodes_with_stake(&current_owner, &new_owner, &nodes, total_stake_to_move)
         }
+
+        /// Add nodes that were registered before the dense node index existed to the index.
+        ///
+        /// Registrar only. Every node must be registered and not yet indexed, otherwise the whole
+        /// call fails. Nodes registered after the index was introduced are indexed on
+        /// registration and must not be passed here. The registrar builds each list offchain as
+        /// `NodeRegistry` keys minus `NodeIndexOf` keys. Emits `NodeIndexBackfillCompleted` once
+        /// `NodeIndexCount` reaches `TotalRegisteredNodes`.
+        #[pallet::call_index(17)]
+        #[pallet::weight(<T as Config>::WeightInfo::backfill_node_index(nodes.len() as u32))]
+        pub fn backfill_node_index(
+            origin: OriginFor<T>,
+            nodes: BoundedVec<NodeId<T>, MaxBackfillNodes>,
+        ) -> DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            let registrar = NodeRegistrar::<T>::get().ok_or(Error::<T>::RegistrarNotSet)?;
+            ensure!(registrar == sender, Error::<T>::OriginNotRegistrar);
+
+            Self::do_backfill_node_index(&nodes)
+        }
     }
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        #[cfg(feature = "try-runtime")]
+        fn try_state(_n: BlockNumberFor<T>) -> Result<(), sp_runtime::TryRuntimeError> {
+            Self::check_node_index_invariants().map_err(sp_runtime::TryRuntimeError::Other)
+        }
+
         // Keep this logic light and bounded
         fn on_initialize(n: BlockNumberFor<T>) -> Weight {
             if !RewardEnabled::<T>::get() {
@@ -1652,6 +1747,14 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Removes the owner's entry once they own no nodes, so that every entry of
+        /// `OwnedNodesCount` is an account that owns at least one node.
+        fn decrease_owned_nodes_count(owner: &T::AccountId, n: u32) {
+            <OwnedNodesCount<T>>::mutate_exists(owner, |count| {
+                *count = count.map(|c| c.saturating_sub(n)).filter(|c| *c > 0);
+            });
+        }
+
         fn do_deregister_nodes(
             owner: &T::AccountId,
             nodes: &BoundedVec<NodeId<T>, MaxNodes>,
@@ -1663,12 +1766,13 @@ pub mod pallet {
                 );
 
                 let info = NodeRegistry::<T>::take(node).ok_or(Error::<T>::NodeNotRegistered)?;
+                Self::index_remove(node, owner);
                 Self::remove_signing_key_index(node, &info.signing_key)?;
 
                 <OwnedNodes<T>>::remove(owner, node);
                 // Remove the override in case it exists
                 <GenesisOverrides<T>>::remove(info.serial_number);
-                <OwnedNodesCount<T>>::mutate(owner, |count| *count = count.saturating_sub(1));
+                Self::decrease_owned_nodes_count(owner, 1);
                 <TotalRegisteredNodes<T>>::mutate(|n| *n = n.saturating_sub(1));
 
                 if Self::is_bonus_node(&info) {
@@ -1750,8 +1854,10 @@ pub mod pallet {
                 });
             }
 
+            Self::index_move_nodes(nodes, current_owner, new_owner);
+
             let n = nodes.len() as u32;
-            <OwnedNodesCount<T>>::mutate(current_owner, |c| *c = c.saturating_sub(n));
+            Self::decrease_owned_nodes_count(current_owner, n);
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n));
 
             if !total_stake_moved.is_zero() {
@@ -1884,8 +1990,10 @@ pub mod pallet {
                 });
             }
 
+            Self::index_move_nodes(nodes, current_owner, new_owner);
+
             let n_u32 = n as u32;
-            <OwnedNodesCount<T>>::mutate(current_owner, |c| *c = c.saturating_sub(n_u32));
+            Self::decrease_owned_nodes_count(current_owner, n_u32);
             <OwnedNodesCount<T>>::mutate(new_owner, |c| *c = c.saturating_add(n_u32));
 
             if !stake_amount.is_zero() {
@@ -1979,6 +2087,7 @@ pub mod pallet {
                     ),
                 ),
             );
+            Self::index_insert(&node, &owner);
 
             Self::deposit_event(Event::NodeRegistered { owner, node });
 

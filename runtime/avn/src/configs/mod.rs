@@ -18,7 +18,9 @@ mod xcm_config;
 
 // Substrate and Polkadot dependencies
 // use cumulus_pallet_parachain_system::RelayNumberStrictlyIncreases;
-use cumulus_pallet_parachain_system::RelayNumberMonotonicallyIncreases;
+use cumulus_pallet_parachain_system::{
+    RelayNumberMonotonicallyIncreases, RelaychainDataProvider, RelaychainStateProvider,
+};
 use cumulus_primitives_core::{AggregateMessageOrigin, ParaId};
 
 use polkadot_sdk::{staging_parachain_info as parachain_info, *};
@@ -35,7 +37,10 @@ use polkadot_sdk::{
         derive_impl,
         dispatch::DispatchClass,
         parameter_types,
-        traits::{ConstBool, ConstU32, ConstU64, EnsureOrigin, TransformOrigin, VariantCountOf},
+        traits::{
+            ConstBool, ConstU32, ConstU64, EnsureOrigin, Randomness, TransformOrigin,
+            VariantCountOf,
+        },
         weights::{ConstantMultiplier, Weight},
         PalletId,
     },
@@ -769,6 +774,31 @@ impl EnsureOrigin<RuntimeOrigin> for EnsureExternalProposerOrRoot {
     }
 }
 
+/// Seed for watchtower committee selection.
+///
+/// Mixes the relay parent storage root (set by the `set_validation_data` inherent, so it is
+/// present in extrinsics and `on_idle`), the parent block hash and the block number with the
+/// subject. None of these can be freely chosen by the author of the block that activates a
+/// proposal: the collator can at most pick among a few recent relay parents or delay the
+/// activation by a block, and the only thing at stake is who sits on a watchtower committee.
+pub struct RelayChainRandomness;
+impl Randomness<Hash, BlockNumber> for RelayChainRandomness {
+    fn random(subject: &[u8]) -> (Hash, BlockNumber) {
+        use codec::Encode;
+
+        let relay_state = RelaychainDataProvider::<Runtime>::current_relay_chain_state();
+        if relay_state.state_root == Hash::zero() {
+            // Outside the inherent's scope (e.g. benchmarks). The other inputs still apply.
+            log::warn!("⚠️ RelayChainRandomness: no relay parent storage root available");
+        }
+        let block_number = System::block_number();
+        let seed = sp_io::hashing::blake2_256(
+            &(subject, relay_state.state_root, System::parent_hash(), block_number).encode(),
+        );
+        (Hash::from(seed), block_number)
+    }
+}
+
 impl pallet_watchtower::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = pallet_watchtower::default_weights::SubstrateWeight<Runtime>;
@@ -776,6 +806,7 @@ impl pallet_watchtower::Config for Runtime {
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
     type WatchtowerHooks = (Summary, SummaryWatchtower);
+    type VoteFilter = ();
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
@@ -783,6 +814,16 @@ impl pallet_watchtower::Config for Runtime {
     type Signature = Signature;
     type SignedTxLifetime = ConstU32<64>;
     type MaxInternalProposalLen = ConstU32<4096>;
+    /// Smallest committee any internal proposal may have. The `dev-network` feature lowers it
+    /// for local networks with a handful of watchtowers; production builds keep 10.
+    #[cfg(not(feature = "dev-network"))]
+    type MinCommitteeSize = ConstU32<10>;
+    #[cfg(feature = "dev-network")]
+    type MinCommitteeSize = ConstU32<3>;
+    type MaxCommitteeSize = ConstU32<150>;
+    type Randomness = RelayChainRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = WatchtowerBenchmarkHelper;
 }
 
 impl pallet_summary_watchtower::Config for Runtime {
@@ -920,14 +961,52 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
         pallet_node_manager::OwnedNodesCount::<Runtime>::get(owner)
     }
 
+    // The node counts and the index are never stubbed: benchmarks that need nodes register
+    // real ones through `WatchtowerBenchmarkHelper`, so the measured weights include the index
+    // reads.
     fn get_authorized_watchtowers_count() -> u32 {
-        #[cfg(feature = "runtime-benchmarks")]
-        {
-            return 10u32
-        }
-
-        #[cfg(not(feature = "runtime-benchmarks"))]
         pallet_node_manager::TotalRegisteredNodes::<Runtime>::get()
+    }
+
+    fn get_node_at_index(index: u32) -> Option<AccountId> {
+        pallet_node_manager::Pallet::<Runtime>::node_at_index(index)
+    }
+
+    fn get_indexed_nodes_count() -> u32 {
+        pallet_node_manager::Pallet::<Runtime>::indexed_node_count()
+    }
+
+    fn get_indexed_owners_count() -> u32 {
+        pallet_node_manager::Pallet::<Runtime>::indexed_owner_count()
+    }
+
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)> {
+        pallet_node_manager::Pallet::<Runtime>::owner_at_index(index)
+    }
+
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
+        pallet_node_manager::Pallet::<Runtime>::owner_node_at_index(owner, index)
+    }
+}
+
+/// Gives the watchtower benchmarks real node-manager and summary state to run against.
+#[cfg(feature = "runtime-benchmarks")]
+pub struct WatchtowerBenchmarkHelper;
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_watchtower::BenchmarkHelper for WatchtowerBenchmarkHelper {
+    fn setup_nodes(n: u32) {
+        pallet_node_manager::Pallet::<Runtime>::benchmark_register_indexed_nodes(n);
+    }
+
+    fn setup_consumer_proposal(external_ref: sp_core::H256, payload: sp_std::vec::Vec<u8>) {
+        pallet_summary::Pallet::<Runtime>::benchmark_setup_external_validation(
+            external_ref,
+            payload,
+        );
+    }
+
+    fn consumer_proposal_cancelled(external_ref: sp_core::H256) -> bool {
+        pallet_summary::Pallet::<Runtime>::benchmark_is_pending_admin_review(external_ref)
     }
 }
 

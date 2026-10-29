@@ -50,12 +50,28 @@ impl pallet_watchtower::Config for TestRuntime {
     type Signature = Signature;
     type Watchtowers = TestNodeManager;
     type WatchtowerHooks = SummaryWatchtower;
+    type VoteFilter = ();
     type WeightInfo = ();
     type SignedTxLifetime = ConstU32<5>;
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
     type MaxUriLen = ConstU32<2040>;
     type MaxInternalProposalLen = ConstU32<100>;
+    type MinCommitteeSize = ConstU32<2>;
+    type MaxCommitteeSize = ConstU32<5>;
+    type Randomness = TestRandomness;
+    #[cfg(feature = "runtime-benchmarks")]
+    type BenchmarkHelper = ();
+}
+
+pub struct TestRandomness;
+impl frame_support::traits::Randomness<sp_core::H256, u64> for TestRandomness {
+    fn random(subject: &[u8]) -> (sp_core::H256, u64) {
+        (
+            sp_core::H256::from(sp_io::hashing::blake2_256(subject)),
+            frame_system::Pallet::<TestRuntime>::block_number(),
+        )
+    }
 }
 
 impl Config for TestRuntime {
@@ -310,6 +326,27 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
 
     fn get_authorized_watchtowers_count() -> u32 {
         AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().len() as u32)
+    }
+
+    fn get_node_at_index(index: u32) -> Option<AccountId> {
+        AUTHORIZED_WATCHTOWERS.with(|w| w.borrow().get(index as usize).cloned())
+    }
+
+    fn get_indexed_nodes_count() -> u32 {
+        Self::get_authorized_watchtowers_count()
+    }
+
+    // Each node is an owner of its own for committee selection.
+    fn get_indexed_owners_count() -> u32 {
+        Self::get_authorized_watchtowers_count()
+    }
+
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)> {
+        Self::get_node_at_index(index).map(|node| (node, 1))
+    }
+
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
+        (index == 0 && Self::is_authorized_watchtower(owner)).then(|| owner.clone())
     }
 }
 
