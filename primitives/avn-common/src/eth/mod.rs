@@ -377,7 +377,9 @@ pub fn create_function_confirmation_hash(
         },
 
         BridgeContractMethod::FreezeLower => {
-            if params.len() != 3 {
+            // The calldata selector is built from the param types, so a wrong type would get
+            // signed but call a function the bridge does not have
+            if params.len() != 3 || params[0].0 != crate::UINT32 {
                 return Err(())
             }
 
@@ -581,8 +583,25 @@ mod test {
 
         // Lower id that is not a decimal u32
         assert!(create_function_confirmation_hash(
+            name.clone(),
+            vec![(b"uint32".to_vec(), b"4294967296".to_vec()), expiry.clone(), tx_id.clone()],
+            domain()
+        )
+        .is_err());
+
+        // Lower id with a type other than uint32
+        assert!(create_function_confirmation_hash(
+            name.clone(),
+            vec![(b"uint256".to_vec(), b"22274".to_vec()), expiry.clone(), tx_id.clone()],
+            domain()
+        )
+        .is_err());
+
+        // An extra param would shift the expiry and tx id
+        let lower_id = (b"uint32".to_vec(), b"22274".to_vec());
+        assert!(create_function_confirmation_hash(
             name,
-            vec![(b"uint32".to_vec(), b"4294967296".to_vec()), expiry, tx_id],
+            vec![lower_id.clone(), lower_id, expiry, tx_id],
             domain()
         )
         .is_err());
