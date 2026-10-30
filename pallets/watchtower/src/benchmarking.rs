@@ -5,7 +5,7 @@
 use super::*;
 use frame_benchmarking::{account, benchmarks, impl_benchmark_test_suite};
 use frame_system::{EventRecord, RawOrigin};
-use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof};
+use sp_avn_common::{benchmarking::convert_sr25519_signature, Proof, RootId, RootRange};
 use sp_core::{crypto::DEV_PHRASE, sr25519, ByteArray};
 use sp_runtime::{traits::Hash, SaturatedConversion};
 
@@ -17,6 +17,28 @@ fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::Runt
     assert_eq!(event, &system_event);
 }
 
+/// The rule v0 proposals implicitly had for each source.
+fn legacy_decision_rule(is_internal: bool) -> DecisionRule {
+    if is_internal {
+        DecisionRule::ExpireUnresolved
+    } else {
+        DecisionRule::SimpleMajorityOnExpiry
+    }
+}
+
+/// The `(RootId, H256)` payload of the summary proposal `create_proposal` builds for
+/// `external_ref_id`. The root range must end at or before the current block for the
+/// summary-watchtower hook to accept it.
+fn summary_payload<T: Config>(external_ref_id: u32, created_at: BlockNumberFor<T>) -> Vec<u8> {
+    let external_ref: T::Hash = T::Hashing::hash_of(&external_ref_id);
+    let root_id = RootId::<BlockNumberFor<T>>::new(
+        RootRange::new(1u32.into(), created_at),
+        external_ref_id as u64,
+    );
+    let root_hash = H256::from_slice(&external_ref.as_ref());
+    (root_id, root_hash).encode()
+}
+
 fn create_proposal<T: Config>(
     external_ref_id: u32,
     created_at: BlockNumberFor<T>,
@@ -24,16 +46,21 @@ fn create_proposal<T: Config>(
     is_internal: bool,
 ) -> Proposal<T> {
     let external_ref: T::Hash = T::Hashing::hash_of(&external_ref_id);
-    let inner_payload = BoundedVec::try_from(external_ref_id.encode()).unwrap();
     let source: ProposalSource;
     let proposer: Option<T::AccountId>;
+    let inner_payload: BoundedVec<u8, T::MaxInlineLen>;
 
     if is_internal {
-        source = ProposalSource::Internal(ProposalType::Governance);
+        // Use a Summary proposal with a payload the summary-watchtower hook can decode, so
+        // benchmarks that activate the proposal measure the `on_proposal_submitted` work too.
+        source = ProposalSource::Internal(ProposalType::Summary);
         proposer = None;
+        inner_payload =
+            BoundedVec::try_from(summary_payload::<T>(external_ref_id, created_at)).unwrap();
     } else {
         source = ProposalSource::External;
         proposer = Some(account("proposer", 0, 0));
+        inner_payload = BoundedVec::try_from(external_ref_id.encode()).unwrap();
     };
 
     Proposal {
@@ -43,7 +70,7 @@ fn create_proposal<T: Config>(
         payload: Payload::Inline(inner_payload),
         source,
         proposer,
-        decision_rule: DecisionRule::SimpleMajority,
+        decision_rule: legacy_decision_rule(is_internal),
         created_at,
         vote_duration: if let Some(end) = end_at {
             end.saturating_sub(created_at).saturated_into::<u32>()
@@ -51,6 +78,7 @@ fn create_proposal<T: Config>(
             MinVotingPeriod::<T>::get().saturated_into::<u32>()
         },
         end_at,
+        committee_size: None,
     }
 }
 
@@ -74,9 +102,11 @@ fn create_proposal_request<T: Config>(
         threshold: Perbill::from_percent(50),
         payload: RawPayload::Uri(external_ref_id.encode()),
         source,
-        decision_rule: DecisionRule::SimpleMajority,
+        decision_rule: legacy_decision_rule(is_internal),
         created_at,
         vote_duration: Some(MinVotingPeriod::<T>::get().saturated_into::<u32>() + 1u32),
+        committee_size: None,
+        voting: VotingKind::Binary,
     }
 }
 
@@ -87,12 +117,82 @@ fn set_active_proposal<T: Config>(proposal_id: H256, created_at: u32, length: u3
     Proposals::<T>::insert(proposal_id, &active_proposal);
     ActiveInternalProposal::<T>::put(proposal_id);
     ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Active);
+    // Node vote benchmarks measure the committee-gated path: a 10-node committee that includes the
+    // benchmark voter, so `*_end_proposal` thresholds are measured against 10 members.
+    ProposalCommitteeSize::<T>::insert(proposal_id, 10u32);
+    let (_, voter) = get_voter::<T>();
+    ProposalCommittee::<T>::insert(proposal_id, &voter, ());
     active_proposal
 }
 
+/// An active external proposal for the owner vote benchmarks. Ten registered nodes are
+/// eligible, so `*_end_proposal` thresholds are measured against 10, and the benchmark voter
+/// owns one node, so its vote weighs 1.
+fn set_active_external_proposal<T: Config>(
+    proposal_id: H256,
+    created_at: u32,
+    length: u32,
+) -> Proposal<T> {
+    let created_at: BlockNumberFor<T> = created_at.into();
+    let proposal = create_proposal::<T>(1, created_at, Some(created_at + length.into()), false);
+    Proposals::<T>::insert(proposal_id, &proposal);
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Active);
+    T::BenchmarkHelper::setup_nodes(10);
+    let (_, voter) = get_voter::<T>();
+    T::BenchmarkHelper::setup_owner(&voter, 1);
+    proposal
+}
+
+const QUEUED_EXTERNAL_REF_ID: u32 = 2;
+
 fn queue_proposal<T: Config>(proposal_id: H256, created_at: u32) -> Proposal<T> {
     let created_at: BlockNumberFor<T> = created_at.into();
-    let queued_proposal = create_proposal::<T>(2, created_at, None, true);
+    let queued_proposal = create_proposal::<T>(QUEUED_EXTERNAL_REF_ID, created_at, None, true);
+    Proposals::<T>::insert(proposal_id, &queued_proposal);
+    Pallet::<T>::enqueue(proposal_id).unwrap();
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Queued);
+    queued_proposal
+}
+
+/// Tells the consumers about the proposal `queue_proposal` queued, so that cancelling it
+/// runs their real completion work (the summary pallet sends the root to admin review).
+fn setup_consumer_for_queued_proposal<T: Config>(proposal: &Proposal<T>, created_at: u32) {
+    T::BenchmarkHelper::setup_consumer_proposal(
+        proposal.external_ref,
+        summary_payload::<T>(QUEUED_EXTERNAL_REF_ID, created_at.into()),
+    );
+}
+
+/// A finished proposal whose voters and committee are already removed, waiting for the final
+/// cleanup step.
+fn set_proposal_to_remove<T: Config>(proposal_id: H256) {
+    let proposal = create_proposal::<T>(1, 5u32.into(), Some(55u32.into()), true);
+    Proposals::<T>::insert(proposal_id, &proposal);
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Expired);
+    Votes::<T>::insert(proposal_id, Vote { in_favors: 1, againsts: 0 });
+    ProposalCommitteeSize::<T>::insert(proposal_id, 10u32);
+    ProposalsToRemove::<T>::insert(proposal_id, ());
+}
+
+/// Makes an already stored proposal request a committee of `size` nodes.
+fn request_committee<T: Config>(proposal_id: H256, size: u32) -> Proposal<T> {
+    Proposals::<T>::mutate(proposal_id, |p| {
+        let p = p.as_mut().expect("proposal stored by the benchmark setup");
+        p.committee_size = Some(size);
+        p.clone()
+    })
+}
+
+/// Queues a Summary proposal whose payload the summary-watchtower hook cannot decode, so that
+/// activating it in the runtime exercises the cancel path of `activate_next_proposal`.
+fn queue_proposal_with_invalid_payload<T: Config>(
+    proposal_id: H256,
+    created_at: u32,
+) -> Proposal<T> {
+    let created_at: BlockNumberFor<T> = created_at.into();
+    let mut queued_proposal = create_proposal::<T>(QUEUED_EXTERNAL_REF_ID, created_at, None, true);
+    queued_proposal.payload =
+        Payload::Inline(BoundedVec::try_from(b"not a root".to_vec()).unwrap());
     Proposals::<T>::insert(proposal_id, &queued_proposal);
     Pallet::<T>::enqueue(proposal_id).unwrap();
     ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Queued);
@@ -138,6 +238,9 @@ fn setup_votes<T: Config>(proposal_id: ProposalId, vote_count: u32) {
         Voters::<T>::insert(proposal_id, &voter, true);
     }
 }
+
+/// Country the benchmarked node votes from.
+const BENCH_COUNTRY: CountryCode = *b"GB";
 
 benchmarks! {
     submit_external_proposal {
@@ -185,13 +288,13 @@ benchmarks! {
         let (_, voter) = get_voter::<T>();
 
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let _ = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
     }: vote(RawOrigin::Signed(voter.clone()), proposal_id, in_favor)
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: None }.into()
         );
     }
 
@@ -200,7 +303,7 @@ benchmarks! {
         let (_, voter) = get_voter::<T>();
 
         let proposal_id = H256::repeat_byte(3);
-        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
         // Add some votes to be above the threshold
         setup_votes::<T>(proposal_id, 9u32);
     }: vote(RawOrigin::Signed(voter.clone()), proposal_id, in_favor)
@@ -211,7 +314,9 @@ benchmarks! {
             Event::VotingEnded {
                 proposal_id,
                 external_ref: proposal.external_ref,
-                consensus_result: ProposalStatusEnum::Resolved { passed: true }}.into()
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: None,
+            }.into()
         );
     }
 
@@ -221,7 +326,7 @@ benchmarks! {
         let relayer: T::AccountId = account("relayer", 11, 11);
         let now = frame_system::Pallet::<T>::block_number();
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let _ = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
 
         let signed_payload = Pallet::<T>::encode_signed_submit_vote_params(
             &relayer.clone(),
@@ -237,7 +342,7 @@ benchmarks! {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: None }.into()
         );
     }
 
@@ -247,7 +352,7 @@ benchmarks! {
         let relayer: T::AccountId = account("relayer", 11, 11);
         let now = frame_system::Pallet::<T>::block_number();
         let proposal_id = H256::repeat_byte(3);
-        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_external_proposal::<T>(proposal_id, 1u32, 50u32);
 
         let signed_payload = Pallet::<T>::encode_signed_submit_vote_params(
             &relayer.clone(),
@@ -269,7 +374,9 @@ benchmarks! {
             Event::VotingEnded {
                 proposal_id,
                 external_ref: proposal.external_ref,
-                consensus_result: ProposalStatusEnum::Resolved { passed: true }}.into()
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: None,
+            }.into()
         );
     }
 
@@ -279,14 +386,16 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
 
-        let proof =  &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
-    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, voter.clone(), signature.into())
+    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1 }.into()
+            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: Some(BENCH_COUNTRY) }.into()
         );
     }
 
@@ -296,11 +405,13 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
 
-        let proof =  &(WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &voter).encode();
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
+        );
         let signature = voter_key.sign(&proof).unwrap();
         // Add some votes to be above the threshold
         setup_votes::<T>(proposal_id, 9u32);
-    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, voter.clone(), signature.into())
+    }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
@@ -308,7 +419,65 @@ benchmarks! {
             Event::VotingEnded {
                 proposal_id,
                 external_ref: proposal.external_ref,
-                consensus_result: ProposalStatusEnum::Resolved { passed: true }}.into()
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: None,
+            }.into()
+        );
+    }
+
+    unsigned_vote_choice {
+        let (voter_key, voter) = get_voter::<T>();
+        let choice = H256::repeat_byte(7);
+        let proposal_id = H256::repeat_byte(3);
+        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
+        );
+        let signature = voter_key.sign(&proof).unwrap();
+    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, BENCH_COUNTRY, voter.clone(), signature.into())
+    verify {
+        assert_eq!(ChoiceTally::<T>::get(proposal_id, choice), 1);
+        assert!(Voters::<T>::contains_key(proposal_id, &voter));
+        assert_last_event::<T>(
+            Event::ChoiceVoteSubmitted { proposal_id, voter, choice, country: Some(BENCH_COUNTRY) }.into()
+        );
+    }
+
+    unsigned_vote_choice_end_proposal {
+        let (voter_key, voter) = get_voter::<T>();
+        let choice = H256::repeat_byte(7);
+        let proposal_id = H256::repeat_byte(3);
+        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+        // Committee of 10 at 50%: 4 votes for `choice` already in, this one decides. The other
+        // answers only show in the running standing, which is all the decision reads.
+        ChoiceTally::<T>::insert(proposal_id, choice, 4u32);
+        for i in 0..4u32 {
+            let other: T::AccountId = account("voter", i, 0);
+            Voters::<T>::insert(proposal_id, &other, true);
+            ChoiceTally::<T>::insert(proposal_id, H256::repeat_byte(100 + i as u8), 1u32);
+        }
+        ChoiceStandings::<T>::insert(
+            proposal_id,
+            ChoiceStanding { cast: 8, leader: Some(choice), leader_tally: 4, tied: false },
+        );
+
+        let proof = Pallet::<T>::unsigned_vote_signing_payload(
+            proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
+        );
+        let signature = voter_key.sign(&proof).unwrap();
+    }: unsigned_vote_choice(RawOrigin::None, proposal_id, choice, BENCH_COUNTRY, voter.clone(), signature.into())
+    verify {
+        assert_eq!(WinningChoice::<T>::get(proposal_id), Some(choice));
+        assert_last_event::<T>(
+            Event::VotingEnded {
+                proposal_id,
+                external_ref: proposal.external_ref,
+                consensus_result: ProposalStatusEnum::Resolved { passed: true },
+                winning_choice: Some(choice),
+            }.into()
         );
     }
 
@@ -322,8 +491,11 @@ benchmarks! {
     }: finalise_proposal(RawOrigin::Signed(signer), proposal_id)
     verify {
         assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
-        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
-        assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
+        // Finalisation no longer activates the next proposal; that is done by
+        // `activate_next_proposal`.
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
+        assert!(ActiveInternalProposal::<T>::get().is_none());
     }
 
     set_admin_config_voting {
@@ -373,10 +545,150 @@ benchmarks! {
     }: { let _ = Pallet::<T>::finalise_expired_voting(proposal_id, &active_proposal); }
     verify {
         assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
-        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
-        assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
+        assert!(ActiveInternalProposal::<T>::get().is_none());
     }
 
+    // `k` is the requested committee size, ranged over the values a proposal may actually
+    // request. `MaxCommitteeSize` real nodes, each with its own owner, are registered with the
+    // node provider, so every one of the `k` members costs real index reads.
+    activate_next_proposal {
+        let k in (T::MinCommitteeSize::get()) .. T::MaxCommitteeSize::get();
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+        T::BenchmarkHelper::setup_nodes(T::MaxCommitteeSize::get());
+
+        let queued_proposal_id = H256::repeat_byte(7);
+        let _ = queue_proposal::<T>(queued_proposal_id, 100u32);
+        let queued_proposal = request_committee::<T>(queued_proposal_id, k);
+        let expected_end: BlockNumberFor<T> =
+            (100u32 + queued_proposal.vote_duration).into();
+    }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
+    verify {
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Active);
+        assert!(ActiveInternalProposal::<T>::get() == Some(queued_proposal_id));
+        assert!(Proposals::<T>::get(queued_proposal_id).unwrap().end_at == Some(expected_end));
+        assert!(Head::<T>::get() == Tail::<T>::get());
+        assert!(ProposalCommitteeSize::<T>::get(queued_proposal_id) == Some(k));
+        assert!(ProposalCommittee::<T>::iter_prefix(queued_proposal_id).count() as u32 == k);
+        assert_last_event::<T>(
+            Event::ProposalActivated { proposal_id: queued_proposal_id }.into()
+        );
+    }
+
+    // Worst case: the consumer hook rejects the proposal and it is cancelled instead of
+    // activated, which also runs the consumers' completion work for a cancelled proposal.
+    // The test mock's hooks always accept, so verify only what holds in both cases.
+    activate_next_proposal_hook_fails {
+        let k in (T::MinCommitteeSize::get()) .. T::MaxCommitteeSize::get();
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+        T::BenchmarkHelper::setup_nodes(T::MaxCommitteeSize::get());
+
+        let queued_proposal_id = H256::repeat_byte(7);
+        let queued_proposal = queue_proposal_with_invalid_payload::<T>(queued_proposal_id, 100u32);
+        setup_consumer_for_queued_proposal::<T>(&queued_proposal, 100u32);
+        let _ = request_committee::<T>(queued_proposal_id, k);
+    }: activate_next_proposal(RawOrigin::None, queued_proposal_id)
+    verify {
+        // Dequeued either way.
+        assert!(Head::<T>::get() == Tail::<T>::get());
+        assert!(ProposalStatus::<T>::get(queued_proposal_id) != ProposalStatusEnum::Queued);
+        assert!(T::BenchmarkHelper::consumer_proposal_cancelled(queued_proposal.external_ref));
+    }
+
+    demote_queue_head {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+        let first = H256::repeat_byte(7);
+        let second = H256::repeat_byte(8);
+        let _ = queue_proposal::<T>(first, 100u32);
+        let _ = queue_proposal::<T>(second, 100u32);
+    }: demote_queue_head(RawOrigin::Root, first)
+    verify {
+        assert!(Pallet::<T>::peek_front_id().unwrap() == Some(second));
+        assert_last_event::<T>(
+            Event::QueueHeadDemoted { demoted: first, promoted: second }.into()
+        );
+    }
+
+    // The consumers know about the head, so cancelling it runs their real completion work.
+    cancel_queue_head {
+        <frame_system::Pallet<T>>::set_block_number(100u32.into());
+        let first = H256::repeat_byte(7);
+        let second = H256::repeat_byte(8);
+        let proposal = queue_proposal::<T>(first, 100u32);
+        setup_consumer_for_queued_proposal::<T>(&proposal, 100u32);
+        let _ = queue_proposal::<T>(second, 100u32);
+    }: cancel_queue_head(RawOrigin::Root, first)
+    verify {
+        assert!(ProposalStatus::<T>::get(first) == ProposalStatusEnum::Cancelled);
+        assert!(ProposalsToRemove::<T>::contains_key(first));
+        assert!(Pallet::<T>::peek_front_id().unwrap() == Some(second));
+        assert!(T::BenchmarkHelper::consumer_proposal_cancelled(proposal.external_ref));
+        assert_last_event::<T>(Event::QueueHeadCancelled { proposal_id: first }.into());
+    }
+
+    // The fixed part of `on_idle` cleanup: head read, emptiness checks and the removal of the
+    // proposal's remaining data.
+    cleanup_finished_proposal {
+        let proposal_id = H256::repeat_byte(3);
+        set_proposal_to_remove::<T>(proposal_id);
+        let mut removed = false;
+    }: {
+        let head = Pallet::<T>::next_proposal_to_remove().expect("a proposal to remove");
+        removed = Pallet::<T>::remove_proposal_if_cleaned(head);
+    }
+    verify {
+        assert!(removed);
+        assert!(!Proposals::<T>::contains_key(proposal_id));
+        assert!(!ProposalsToRemove::<T>::contains_key(proposal_id));
+        assert_last_event::<T>(Event::ProposalCleaned { proposal_id }.into());
+    }
+
+    cleanup_choice_tally_page {
+        let n in 0 .. CLEANUP_PAGE_SIZE;
+        let proposal_id = H256::repeat_byte(3);
+        for i in 0..n {
+            let mut answer = [0u8; 32];
+            answer[..4].copy_from_slice(&(i + 1).to_be_bytes());
+            ChoiceTally::<T>::insert(proposal_id, H256(answer), 1u32);
+        }
+        let mut removed = 0u32;
+    }: {
+        removed = Pallet::<T>::remove_choice_tally_page(proposal_id, CLEANUP_PAGE_SIZE);
+    }
+    verify {
+        assert!(removed == n);
+        assert!(ChoiceTally::<T>::iter_prefix(proposal_id).next().is_none());
+    }
+
+    cleanup_voters_page {
+        let n in 0 .. CLEANUP_PAGE_SIZE;
+        let proposal_id = H256::repeat_byte(3);
+        setup_votes::<T>(proposal_id, n);
+        let mut removed = 0u32;
+    }: {
+        removed = Pallet::<T>::remove_voters_page(proposal_id, CLEANUP_PAGE_SIZE);
+    }
+    verify {
+        assert!(removed == n);
+        assert!(Voters::<T>::iter_prefix(proposal_id).next().is_none());
+    }
+
+    cleanup_committee_page {
+        let n in 0 .. CLEANUP_PAGE_SIZE;
+        let proposal_id = H256::repeat_byte(3);
+        for i in 0..n {
+            let member: T::AccountId = account("member", i, 0);
+            ProposalCommittee::<T>::insert(proposal_id, &member, ());
+        }
+        let mut removed = 0u32;
+    }: {
+        removed = Pallet::<T>::remove_committee_page(proposal_id, CLEANUP_PAGE_SIZE);
+    }
+    verify {
+        assert!(removed == n);
+        assert!(ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_none());
+    }
 }
 
 impl_benchmark_test_suite!(

@@ -13,6 +13,39 @@ use sp_runtime::{traits::Member, Debug, DispatchResult, Perbill};
 
 pub type ProposalId = H256;
 
+/// ISO 3166-1 alpha-2 code of the country a watchtower node votes or reports from, as resolved
+/// by its own external service. Display only: it is self-reported, signed with the vote and
+/// shown in events, and never part of what nodes must agree on.
+pub type CountryCode = [u8; 2];
+/// Reported when the node could not resolve its country.
+pub const UNKNOWN_COUNTRY: CountryCode = *b"??";
+/// External service path answering the node's own country code.
+pub const NODE_COUNTRY_SERVICE_PATH: &str = "node/country";
+
+/// The country as shown in events: two letters, upper-cased, or [`UNKNOWN_COUNTRY`] for
+/// anything else. A node signs whatever bytes it likes; this keeps garbage out of UIs.
+pub fn sanitise_country(country: CountryCode) -> CountryCode {
+    if country.iter().all(u8::is_ascii_alphabetic) {
+        [country[0].to_ascii_uppercase(), country[1].to_ascii_uppercase()]
+    } else {
+        UNKNOWN_COUNTRY
+    }
+}
+
+#[cfg(test)]
+mod country_tests {
+    use super::*;
+
+    #[test]
+    fn only_letters_reach_events() {
+        assert_eq!(sanitise_country(*b"GB"), *b"GB");
+        assert_eq!(sanitise_country(*b"de"), *b"DE");
+        assert_eq!(sanitise_country(UNKNOWN_COUNTRY), UNKNOWN_COUNTRY);
+        assert_eq!(sanitise_country([0xFF, 0x00]), UNKNOWN_COUNTRY);
+        assert_eq!(sanitise_country(*b"G1"), UNKNOWN_COUNTRY);
+    }
+}
+
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub enum RawPayload {
     /// Small proposals that can fit safely in the runtime
@@ -54,12 +87,33 @@ pub enum ProposalStatusEnum {
     Unknown,
 }
 
+/// How a proposal is decided.
+///
+/// Either side holding `threshold` of the eligible voters always resolves the proposal early,
+/// whatever the rule. The rule says what happens when the voting period ends first.
 #[derive(
-    Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, MaxEncodedLen, DecodeWithMemTracking,
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+    Default,
 )]
 pub enum DecisionRule {
-    /// Yes > No to win
-    SimpleMajority,
+    /// Report `Expired` and let the consumer decide what that means. The summary pallet treats
+    /// it as "no objection in time, accepted". Legacy default for internal proposals.
+    #[default]
+    ExpireUnresolved,
+    /// `Resolved { passed: in_favors > againsts }` over the votes actually cast. Legacy
+    /// behaviour of external proposals.
+    SimpleMajorityOnExpiry,
+    /// `Resolved { passed: false }`.
+    RejectOnExpiry,
 }
 
 //implement default for ProposalStatusEnum to be Unknown
@@ -69,10 +123,53 @@ impl Default for ProposalStatusEnum {
     }
 }
 
+/// How a proposal is voted on.
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+    Default,
+)]
+pub enum VotingKind {
+    /// Yes / no. `threshold` of the eligible voters on either side decides.
+    #[default]
+    Binary,
+    /// Every voter names an answer (a hash). The first answer reaching `threshold` of the
+    /// eligible voters wins; the proposal passes and the answer is stored as its outcome.
+    Choice,
+}
+
+/// A single vote, in either kind.
+#[derive(
+    Encode,
+    Decode,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub enum VoteChoice {
+    Binary(bool),
+    Choice(H256),
+}
+
 #[derive(Encode, Decode, Debug, Clone, PartialEq, Eq, TypeInfo, DecodeWithMemTracking)]
 pub struct ProposalRequest {
     pub title: Vec<u8>,
     pub payload: RawPayload,
+    /// Share of the eligible voters one side (or one answer) needs to decide the proposal.
+    /// Must be above zero.
     pub threshold: Perbill,
     pub source: ProposalSource,
     pub decision_rule: DecisionRule,
@@ -80,6 +177,12 @@ pub struct ProposalRequest {
     pub external_ref: H256,
     pub created_at: u32,
     pub vote_duration: Option<u32>,
+    /// Number of nodes to randomly select to vote on this proposal. `None` means every node
+    /// votes. Only valid for internal proposals.
+    pub committee_size: Option<u32>,
+    /// Yes/no, or pick-an-answer. `Choice` is only valid for internal proposals: owners vote
+    /// on external proposals with yes/no only.
+    pub voting: VotingKind,
 }
 
 // Interface for other pallets to interact with the watchtower pallet
@@ -93,6 +196,20 @@ pub trait WatchtowerInterface {
 
     fn get_proposal_status(proposal_id: ProposalId) -> ProposalStatusEnum;
     fn get_proposer(proposal_id: ProposalId) -> Option<Self::AccountId>;
+    /// Smallest committee a proposal may request.
+    fn min_committee_size() -> u32;
+    /// Largest committee a proposal may request.
+    fn max_committee_size() -> u32;
+    /// Fails if a committee of `size` nodes could not be selected right now (node index still
+    /// backfilling, or more seats than the node owners can fill). Does not check the size
+    /// against `min_committee_size`/`max_committee_size`. Lets a consumer refuse a
+    /// configuration whose proposals would be cancelled or left waiting in the queue.
+    fn ensure_committee_ready(size: u32) -> DispatchResult;
+
+    /// Benchmark setup for consumers: registers enough nodes that `ensure_committee_ready(size)`
+    /// passes. Implementations without real nodes need not override it.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn setup_nodes_for_benchmark(_size: u32) {}
 }
 
 // A simple no-op implementation of the WatchtowerInterface trait
@@ -114,6 +231,18 @@ where
     fn get_proposer(_id: ProposalId) -> Option<Self::AccountId> {
         None
     }
+
+    fn min_committee_size() -> u32 {
+        0
+    }
+
+    fn max_committee_size() -> u32 {
+        u32::MAX
+    }
+
+    fn ensure_committee_ready(_size: u32) -> DispatchResult {
+        Ok(())
+    }
 }
 
 pub trait WatchtowerHooks<P> {
@@ -127,10 +256,34 @@ pub trait WatchtowerHooks<P> {
     fn on_cancelled(proposal_id: ProposalId, external_ref: &H256);
 }
 
+/// Consulted before a vote on an internal proposal is counted. Lets a consumer require that a
+/// vote be backed by data it holds and be consistent with it (the floor oracle: a choice vote
+/// must equal the hash of the observation the voter reported).
+pub trait VoteFilter<AccountId> {
+    fn ensure_can_vote(
+        proposal_id: ProposalId,
+        voter: &AccountId,
+        vote: &VoteChoice,
+    ) -> DispatchResult;
+}
+
+// `()` accepts every vote: the tuple impl covers the empty tuple.
+#[impl_trait_for_tuples::impl_for_tuples(8)]
+impl<A> VoteFilter<A> for Tuple {
+    // Stops at the first member that rejects the vote.
+    fn ensure_can_vote(proposal_id: ProposalId, voter: &A, vote: &VoteChoice) -> DispatchResult {
+        for_tuples!( #( Tuple::ensure_can_vote(proposal_id, voter, vote)?; )* );
+        Ok(())
+    }
+}
+
 #[impl_trait_for_tuples::impl_for_tuples(30)]
 impl<P: Clone> WatchtowerHooks<P> for Tuple {
+    /// Stops at the first member that rejects the proposal and returns its error, so the
+    /// watchtower pallet can refuse (on submission) or cancel (on deferred activation) a
+    /// proposal that a consumer cannot process. Members before the failing one have already run.
     fn on_proposal_submitted(proposal_id: ProposalId, proposal: P) -> DispatchResult {
-        for_tuples!( #( Tuple::on_proposal_submitted(proposal_id, proposal.clone()); )* );
+        for_tuples!( #( Tuple::on_proposal_submitted(proposal_id, proposal.clone())?; )* );
         Ok(())
     }
 

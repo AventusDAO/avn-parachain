@@ -19,7 +19,7 @@ use frame_system::{
 use codec::Decode;
 use log;
 pub use pallet_avn::{self as avn};
-use pallet_watchtower::{NodesInterface, Payload, Proposal, WATCHTOWER_UNSIGNED_VOTE_CONTEXT};
+use pallet_watchtower::{NodesInterface, Payload, Proposal, VoteChoice};
 pub use sp_avn_common::{
     ocw_lock::{self as OcwLock, OcwStorageError},
     RootId, RootRange,
@@ -122,6 +122,31 @@ pub mod pallet {
             }
 
             if let Some((proposal_id, root_data)) = RootInfo::<T>::get() {
+                // Local and storage checks first; the external service is only asked once they
+                // pass.
+                let maybe_node_info = T::Watchtowers::get_node_from_local_signing_keys();
+                let (watchtower, signing_key) = match maybe_node_info {
+                    Some(info) => info,
+                    None => return,
+                };
+
+                // Once the vote is counted there is nothing left to do: a resubmission would
+                // only be refused by the pool.
+                if pallet_watchtower::Voters::<T>::contains_key(proposal_id, &watchtower) {
+                    return
+                }
+
+                // Only committee members may vote; the pool would reject the vote anyway, so
+                // skip the root validation work on nodes that were not selected.
+                if !pallet_watchtower::Pallet::<T>::is_committee_member(proposal_id, &watchtower) {
+                    log::debug!(
+                        "🛠️  Node {:?} is not in the committee for proposal {:?}, skipping validation.",
+                        watchtower,
+                        proposal_id
+                    );
+                    return
+                }
+
                 let finalised_block = AVN::<T>::get_finalised_block_from_external_service();
                 if let Ok(finalised_block) = finalised_block {
                     if root_data.root_id.range.to_block > finalised_block {
@@ -133,12 +158,6 @@ pub mod pallet {
                         return
                     }
                 }
-
-                let maybe_node_info = T::Watchtowers::get_node_from_local_signing_keys();
-                let (watchtower, signing_key) = match maybe_node_info {
-                    Some(info) => info,
-                    None => return,
-                };
 
                 Self::process_pending_validation(
                     proposal_id,
@@ -239,9 +258,14 @@ pub mod pallet {
             watchtower: T::AccountId,
             block_number: BlockNumberFor<T>,
         ) -> Result<(), &'static str> {
-            let data_to_sign =
-                (WATCHTOWER_UNSIGNED_VOTE_CONTEXT, proposal_id, in_favor, &watchtower);
-            let signature = match signing_key.sign(&data_to_sign.encode()) {
+            let country = pallet_watchtower::fetch_node_country::<T>();
+            let data_to_sign = pallet_watchtower::Pallet::<T>::unsigned_vote_signing_payload(
+                proposal_id,
+                &VoteChoice::Binary(in_favor),
+                &country,
+                &watchtower,
+            );
+            let signature = match signing_key.sign(&data_to_sign) {
                 Some(sig) => sig,
                 None => return Err("Failed to sign vote data"),
             };
@@ -250,6 +274,7 @@ pub mod pallet {
                 pallet_watchtower::Call::unsigned_vote {
                     proposal_id,
                     in_favor,
+                    country,
                     watchtower: watchtower.clone(),
                     signature,
                 }

@@ -115,6 +115,9 @@ runtime-common.workspace = true
 default = [
 	"std",
 ]
+# Local networks with a handful of watchtowers: lowers the watchtower committee minimum.
+# Never enable for a production build.
+dev-network = []
 std = [
 	"codec/std",
 	"log/std",

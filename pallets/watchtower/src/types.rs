@@ -32,6 +32,18 @@ pub fn to_proposal<T: Config>(
         return Err(Error::<T>::VotingPeriodTooShort)
     }
 
+    if let Some(size) = request.committee_size {
+        ensure!(size >= T::MinCommitteeSize::get(), Error::<T>::CommitteeSizeTooSmall);
+        ensure!(size <= T::MaxCommitteeSize::get(), Error::<T>::CommitteeSizeTooLarge);
+    }
+
+    // Owners vote on external proposals with yes/no only.
+    ensure!(
+        request.voting == VotingKind::Binary ||
+            matches!(request.source, ProposalSource::Internal(_)),
+        Error::<T>::ChoiceVotingInternalOnly
+    );
+
     let proposal = Proposal {
         title: BoundedVec::try_from(request.title).map_err(|_| Error::<T>::InvalidTitle)?,
         payload: to_payload(request.payload)?,
@@ -44,6 +56,7 @@ pub fn to_proposal<T: Config>(
         vote_duration,
         // This gets updated when the proposal is activated
         end_at: None,
+        committee_size: request.committee_size,
     };
 
     if !proposal.is_valid(current_block) {
@@ -92,6 +105,10 @@ pub struct Proposal<T: Config> {
     pub created_at: BlockNumberFor<T>,
     pub vote_duration: u32,
     pub end_at: Option<BlockNumberFor<T>>,
+    /// Requested number of randomly selected voters. `None` means every node votes and the
+    /// threshold is measured against the live node count. The committee always has exactly
+    /// this many members; its size, fixed at activation, lives in `ProposalCommitteeSize`.
+    pub committee_size: Option<u32>,
 }
 
 impl<T: Config> Proposal<T> {
@@ -106,6 +123,8 @@ impl<T: Config> Proposal<T> {
         let base_is_valid = !self.title.is_empty() &&
             self.external_ref != H256::zero() &&
             self.vote_duration >= MinVotingPeriod::<T>::get().saturated_into::<u32>() &&
+            // A zero threshold would let either side decide without a single vote.
+            self.threshold > Perbill::zero() &&
             self.threshold <= Perbill::one() &&
             self.created_at <= current_block;
 
@@ -116,7 +135,11 @@ impl<T: Config> Proposal<T> {
                 !data.is_empty() && matches!(self.source, ProposalSource::External),
         };
 
-        base_is_valid && payload_valid
+        // Committees are only meaningful for node-voted (internal) proposals.
+        let committee_valid =
+            self.committee_size.is_none() || matches!(self.source, ProposalSource::Internal(_));
+
+        base_is_valid && payload_valid && committee_valid
     }
 }
 
@@ -138,6 +161,58 @@ pub trait NodesInterface<AccountId, SignerId> {
 
     /// Get a local watchtower account and its signing key, if available on this node
     fn get_node_from_local_signing_keys() -> Option<(AccountId, SignerId)>;
+
+    /// Node at `index` in the dense node index, used for random sampling
+    fn get_node_at_index(index: u32) -> Option<AccountId>;
+
+    /// Length of the dense node index. Lags `get_authorized_watchtowers_count` while nodes
+    /// registered before the index existed are still being backfilled.
+    fn get_indexed_nodes_count() -> u32;
+
+    /// Number of owners with at least one node in the dense node index.
+    fn get_indexed_owners_count() -> u32;
+
+    /// Owner at `index` in the dense owner index, with the number of their indexed nodes. Used
+    /// for random sampling of owners.
+    fn get_owner_at_index(index: u32) -> Option<(AccountId, u32)>;
+
+    /// Node at `index` among `owner`'s indexed nodes, for `index` below the count returned by
+    /// `get_owner_at_index`.
+    fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId>;
+}
+
+/// Runtime-provided setup for benchmarks, so they measure the real storage work of the
+/// `NodesInterface` provider and of the `WatchtowerHooks` consumers instead of stubs.
+#[cfg(feature = "runtime-benchmarks")]
+pub trait BenchmarkHelper<AccountId> {
+    /// Registers `n` nodes, each with an owner of its own, with the `NodesInterface` provider so
+    /// that `get_authorized_watchtowers_count`, `get_indexed_nodes_count` and
+    /// `get_indexed_owners_count` return `n` and the index getters read a stored entry for
+    /// every `index < n`.
+    fn setup_nodes(n: u32);
+
+    /// Makes `owner` the owner of `nodes` nodes with the `NodesInterface` provider, so that
+    /// `is_watchtower_owner` holds and `get_watchtower_voting_weight` returns `nodes`.
+    fn setup_owner(owner: &AccountId, nodes: u32);
+
+    /// Makes the consumers recognise `external_ref` as a proposal they are waiting on, with
+    /// `payload` being the consumer-specific encoded payload such a proposal carries. After
+    /// this, the completion hooks do their real work for that proposal.
+    fn setup_consumer_proposal(external_ref: H256, payload: Vec<u8>);
+
+    /// True if the consumers recorded `external_ref` as cancelled (e.g. sent to admin review).
+    /// Implementations without such state return true.
+    fn consumer_proposal_cancelled(external_ref: H256) -> bool;
+}
+
+#[cfg(feature = "runtime-benchmarks")]
+impl<AccountId> BenchmarkHelper<AccountId> for () {
+    fn setup_nodes(_n: u32) {}
+    fn setup_owner(_owner: &AccountId, _nodes: u32) {}
+    fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
+    fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
+        true
+    }
 }
 
 #[derive(
@@ -155,6 +230,48 @@ pub trait NodesInterface<AccountId, SignerId> {
 pub struct Vote {
     pub in_favors: u32,
     pub againsts: u32,
+}
+
+/// Running totals of a `Choice` proposal, updated with every answer so deciding the proposal
+/// never iterates `ChoiceTally`.
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    Default,
+)]
+pub struct ChoiceStanding {
+    /// Votes cast across every answer.
+    pub cast: u32,
+    /// The answer that reached `leader_tally` first. `None` until the first vote.
+    pub leader: Option<H256>,
+    pub leader_tally: u32,
+    /// Another answer has as many votes as the leader.
+    pub tied: bool,
+}
+
+impl ChoiceStanding {
+    /// Counts `weight` votes for `answer`, whose tally is `tally` after them. Tallies only
+    /// grow, so the leader stays ahead of every other answer until one matches or passes it.
+    pub fn record(&mut self, answer: H256, tally: u32, weight: u32) {
+        self.cast = self.cast.saturating_add(weight);
+        if self.leader == Some(answer) {
+            self.leader_tally = tally;
+            self.tied = false;
+        } else if tally > self.leader_tally {
+            self.leader = Some(answer);
+            self.leader_tally = tally;
+            self.tied = false;
+        } else if tally == self.leader_tally {
+            self.tied = true;
+        }
+    }
 }
 
 #[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq, DecodeWithMemTracking)]

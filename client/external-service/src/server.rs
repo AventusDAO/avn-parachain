@@ -15,12 +15,14 @@ use codec::{Decode, Encode};
 use sc_client_api::{client::BlockBackend, UsageProvider};
 use sc_keystore::LocalKeystore;
 use sp_avn_common::{
-    http_data_codec::decode_from_http_data, short_hex, EthQueryRequest, EthQueryResponse,
-    EthQueryResponseType, EthTransaction, DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
+    http_data_codec::{decode_from_http_data, encode_to_http_data},
+    short_hex, EthQueryRequest, EthQueryResponse, EthQueryResponseType, EthTransaction,
+    DEFAULT_EXTERNAL_SERVICE_PORT_NUMBER,
 };
 use sp_core::{sr25519, H160, H256};
 use sp_io::hashing::blake2_256;
 use sp_runtime::traits::Block as BlockT;
+use sp_watchtower::NODE_COUNTRY_SERVICE_PATH;
 use std::{marker::PhantomData, net::SocketAddr, sync::Arc, time::Instant};
 use tokio::sync::Mutex;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -34,6 +36,8 @@ pub struct AppState<Block: BlockT, ClientT: BlockBackend<Block> + UsageProvider<
     pub avn_port: Option<String>,
     pub chain: Option<Arc<dyn ChainClient>>,
     pub signer_provider: Option<Arc<dyn SignerProvider>>,
+    /// The node's self-reported country, for watchtower votes and oracle reports.
+    pub node_country: Arc<crate::node_country::NodeCountry>,
     pub client: Arc<ClientT>,
     pub send_lock: Arc<Mutex<()>>,
     pub _block: PhantomData<Block>,
@@ -132,6 +136,7 @@ where
         .route("/eth/query", post(query::<Block, ClientT>))
         .route("/roothash/{from_block}/{to_block}", get(roothash::<Block, ClientT>))
         .route("/latest_finalised_block", get(latest_finalised_block::<Block, ClientT>))
+        .route(&format!("/{NODE_COUNTRY_SERVICE_PATH}"), get(node_country::<Block, ClientT>))
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
         .with_state(Arc::new(state));
 
@@ -371,6 +376,17 @@ where
     use client_extrinsic_utils::extrinsic_utils::get_latest_finalised_block;
     let n = get_latest_finalised_block(&state.client);
     Ok(hex::encode(n.encode()))
+}
+
+/// `GET /node/country`: the node's self-reported two letter country code, `??` when unknown.
+/// The body is the http-data encoding of a `[u8; 2]`.
+async fn node_country<Block: BlockT, ClientT>(
+    State(state): State<Arc<AppState<Block, ClientT>>>,
+) -> String
+where
+    ClientT: BlockBackend<Block> + UsageProvider<Block> + Send + Sync + 'static,
+{
+    encode_to_http_data(state.node_country.get().await)
 }
 
 async fn sign_hashed_data<Block: BlockT, ClientT>(

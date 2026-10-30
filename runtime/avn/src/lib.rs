@@ -157,6 +157,10 @@ pub type Migrations = (
     migrations::register_avt_token::RegisterAvtToken<Runtime>,
     pallet_eth_bridge::migration::EthBridgeMigrations<Runtime>,
     pallet_avn_anchor::migration::AvnAnchorMigrations<Runtime>,
+    // v0 -> v1: `Proposal` gained `committee_size` and `DecisionRule` was widened.
+    pallet_watchtower::migration::WatchtowerMigrations<Runtime>,
+    // v0 -> v1: `OwnedNodesCount` recounted from `OwnedNodes`; owners with no nodes removed.
+    pallet_node_manager::migration::NodeManagerMigrations<Runtime>,
     pallet_session::migrations::v1::MigrateV0ToV1<
         Runtime,
         pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
@@ -193,7 +197,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 238,
+    spec_version: 239,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,

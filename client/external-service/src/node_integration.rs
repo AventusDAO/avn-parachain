@@ -63,6 +63,7 @@ where
         avn_port: deps.avn_port.clone(),
         chain,
         signer_provider,
+        node_country: Arc::new(crate::node_country::NodeCountry::default()),
         client: deps.client.clone(),
         send_lock: Arc::new(Mutex::new(())),
         _block: Default::default(),
