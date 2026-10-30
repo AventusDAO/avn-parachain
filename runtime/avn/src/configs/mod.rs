@@ -831,7 +831,11 @@ impl pallet_summary_watchtower::Config for Runtime {
     type WeightInfo = ();
 }
 
-impl pallet_bridge_watchtower::Config for Runtime {}
+impl pallet_bridge_watchtower::Config for Runtime {
+    type BridgeInterface = EthBridge;
+    type LowerDataProvider = TokenManager;
+    type WeightInfo = pallet_bridge_watchtower::default_weights::SubstrateWeight<Runtime>;
+}
 
 parameter_types! {
     pub AvnTreasuryAccount: AccountId = AvnTreasuryPotId::get().into_account_truncating();

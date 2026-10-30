@@ -488,6 +488,20 @@ impl<AccountId> NodeSerialLookup<AccountId> for () {
     }
 }
 
+/// Gives access to the lowers T2 has issued whose proof is ready to be claimed on T1. Implemented
+/// by token-manager and used by bridge-watchtower to check the lowers locked on T1.
+pub trait LowerDataProvider {
+    /// Returns `None` if no lower with this id is ready to be claimed.
+    fn ready_to_claim_lower_params(lower_id: u32) -> Option<eth::LowerParams>;
+}
+
+/// Default implementation: no lower is ready to be claimed.
+impl LowerDataProvider for () {
+    fn ready_to_claim_lower_params(_lower_id: u32) -> Option<eth::LowerParams> {
+        None
+    }
+}
+
 /// Interface for interacting with app chains.
 pub trait AppChainInterface {
     type AccountId;
