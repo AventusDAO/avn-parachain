@@ -48,6 +48,13 @@ sol! {
         uint32 t2TxId,
         bytes calldata confirmations
     );
+
+    function freezeLower(
+        uint32 lowerId,
+        uint256 expiry,
+        uint32 t2TxId,
+        bytes calldata confirmations
+    ) external;
 }
 
 fn corroborate_good_transactions(
@@ -93,6 +100,29 @@ fn check_publish_root_encoding() {
         hex::encode(
             publishRootCall {
                 rootHash: B256::from_slice(&hex::decode(ROOT_HASH).unwrap()[..]),
+                expiry: U256::from(expected_expiry),
+                t2TxId: 1,
+                confirmations: confirmations.into(),
+            }
+            .abi_encode(),
+        )
+        .to_ascii_lowercase()
+    };
+
+    run_checks(function_name, params, expected_msg_hash, &expected_calldata);
+}
+
+#[test]
+fn check_freeze_lower_encoding() {
+    let lower_id: u32 = 22274;
+    let function_name = BridgeContractMethod::FreezeLower.name_as_bytes().to_vec();
+    let params = vec![(b"uint32".to_vec(), lower_id.to_string().into_bytes())];
+    let expected_msg_hash = "1d1a7e013c9460e00deb2df97a15c8a8153db3b6270af2bd8f42b115603d91ed";
+    let expected_calldata = |expected_expiry: u64| -> String {
+        let confirmations = vec![];
+        hex::encode(
+            freezeLowerCall {
+                lowerId: lower_id,
                 expiry: U256::from(expected_expiry),
                 t2TxId: 1,
                 confirmations: confirmations.into(),

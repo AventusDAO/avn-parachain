@@ -53,4 +53,8 @@ runtime-benchmarks = [
     "sp-avn-common/runtime-benchmarks",
     "pallet-watchtower/runtime-benchmarks",
 ]
-try-runtime = ["frame-support/try-runtime"]
+try-runtime = [
+    "frame-support/try-runtime",
+    "pallet-avn/try-runtime",
+    "pallet-watchtower/try-runtime",
+]

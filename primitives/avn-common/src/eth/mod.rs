@@ -143,6 +143,7 @@ pub enum BridgeContractMethod {
     AddAuthor,
     RemoveAuthor,
     MintRewards,
+    FreezeLower,
 }
 
 impl BridgeContractMethod {
@@ -156,6 +157,7 @@ impl BridgeContractMethod {
             BridgeContractMethod::AddAuthor => b"addAuthor",
             BridgeContractMethod::RemoveAuthor => b"removeAuthor",
             BridgeContractMethod::MintRewards => b"mintRewards",
+            BridgeContractMethod::FreezeLower => b"freezeLower",
         }
     }
 }
@@ -173,6 +175,7 @@ impl TryFrom<&[u8]> for BridgeContractMethod {
             b"addAuthor" => Ok(BridgeContractMethod::AddAuthor),
             b"removeAuthor" => Ok(BridgeContractMethod::RemoveAuthor),
             b"mintRewards" => Ok(BridgeContractMethod::MintRewards),
+            b"freezeLower" => Ok(BridgeContractMethod::FreezeLower),
             _ => Err(()),
         }
     }
@@ -231,6 +234,14 @@ sol! {
     uint256 expiry;
     uint32 t2TxId;
   }
+}
+
+sol! {
+    struct FreezeLower {
+        uint32 lowerId;
+        uint256 expiry;
+        uint32 t2TxId;
+    }
 }
 
 impl TryFrom<LowerParams> for LowerData {
@@ -362,6 +373,18 @@ pub fn create_function_confirmation_hash(
             let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
 
             let data = MintRewards { amount, expiry, t2TxId: tx_id };
+            return Ok(eip712_hash(&data, &domain))
+        },
+
+        BridgeContractMethod::FreezeLower => {
+            if params.len() != 3 {
+                return Err(())
+            }
+
+            let lower_id = parse_from_utf8::<u32>(&params[0].1)?;
+            let (tx_id, expiry) = extract_tx_id_and_expiry(&params)?;
+
+            let data = FreezeLower { lowerId: lower_id, expiry, t2TxId: tx_id };
             return Ok(eip712_hash(&data, &domain))
         },
 
@@ -525,6 +548,44 @@ mod test {
             hash,
             H256(hex!("560ddcd37021adc249014f89c426ee711d1928db1d6e3e145101ddc128aae27c")) /* Generated via the EnergyBridge contract */
         );
+    }
+
+    #[test]
+    fn freeze_lower_eip_712_hash() {
+        use hex_literal::hex;
+
+        let freeze = FreezeLower { lowerId: 22274, expiry: AlloyU256::from(1695811529), t2TxId: 1 };
+
+        let eip712_domain: Eip712Domain = domain();
+        let hash = eip712_hash(&freeze, &eip712_domain);
+
+        assert_eq!(
+            hash,
+            H256(hex!("1d1a7e013c9460e00deb2df97a15c8a8153db3b6270af2bd8f42b115603d91ed")) /* Generated via ethers TypedDataEncoder, matching the AVNBridge FreezeLower typehash */
+        );
+    }
+
+    #[test]
+    fn freeze_lower_confirmation_hash_rejects_bad_params() {
+        let name = BridgeContractMethod::FreezeLower.name_as_bytes().to_vec();
+        let expiry = (b"uint256".to_vec(), b"1695811529".to_vec());
+        let tx_id = (b"uint32".to_vec(), b"1".to_vec());
+
+        // Missing lower id
+        assert!(create_function_confirmation_hash(
+            name.clone(),
+            vec![expiry.clone(), tx_id.clone()],
+            domain()
+        )
+        .is_err());
+
+        // Lower id that is not a decimal u32
+        assert!(create_function_confirmation_hash(
+            name,
+            vec![(b"uint32".to_vec(), b"4294967296".to_vec()), expiry, tx_id],
+            domain()
+        )
+        .is_err());
     }
 
     #[test]
