@@ -10250,10 +10250,12 @@ version = "10.3.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "pallet-avn",
  "pallet-node-manager",
  "pallet-watchtower",
  "parity-scale-codec",
  "scale-info",
+ "sp-avn-common",
  "sp-core",
  "sp-io",
  "sp-runtime",
