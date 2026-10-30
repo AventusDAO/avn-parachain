@@ -2100,6 +2100,7 @@ dependencies = [
  "pallet-avn-proxy",
  "pallet-avn-transaction-payment",
  "pallet-balances",
+ "pallet-bridge-watchtower",
  "pallet-cross-chain-voting",
  "pallet-cross-chain-voting-runtime-api",
  "pallet-eth-bridge",
@@ -10241,6 +10242,23 @@ dependencies = [
  "sp-arithmetic",
  "sp-runtime",
  "tracing",
+]
+
+[[package]]
+name = "pallet-bridge-watchtower"
+version = "10.3.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "pallet-node-manager",
+ "pallet-watchtower",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+ "sp-watchtower",
 ]
 
 [[package]]
