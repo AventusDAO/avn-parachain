@@ -488,16 +488,17 @@ impl<AccountId> NodeSerialLookup<AccountId> for () {
     }
 }
 
-/// Gives access to the lowers T2 has issued whose proof is ready to be claimed on T1. Implemented
+/// Gives access to the lowers T2 has issued and not yet seen claimed on T1. Implemented
 /// by token-manager and used by bridge-watchtower to check the lowers locked on T1.
 pub trait LowerDataProvider {
-    /// Returns `None` if no lower with this id is ready to be claimed.
-    fn ready_to_claim_lower_params(lower_id: u32) -> Option<eth::LowerParams>;
+    /// The params of a lower T2 issued that has not been claimed yet and whose proof is ready or
+    /// being (re)generated. Returns `None` if there is no such lower.
+    fn unclaimed_lower_params(lower_id: u32) -> Option<eth::LowerParams>;
 }
 
-/// Default implementation: no lower is ready to be claimed.
+/// Default implementation: no lower is unclaimed.
 impl LowerDataProvider for () {
-    fn ready_to_claim_lower_params(_lower_id: u32) -> Option<eth::LowerParams> {
+    fn unclaimed_lower_params(_lower_id: u32) -> Option<eth::LowerParams> {
         None
     }
 }

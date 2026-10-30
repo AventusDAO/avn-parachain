@@ -75,7 +75,7 @@ pub const PARTIAL_PUBLISH_KEY: &[u8] = b"test_bridge::partial_publish";
 thread_local! {
     static PUBLISHED: RefCell<Vec<PublishedTx>> = RefCell::new(vec![]);
     static PUBLISH_FAILS: RefCell<bool> = RefCell::new(false);
-    static READY_LOWERS: RefCell<HashMap<LowerId, LowerParams>> = RefCell::new(HashMap::new());
+    static UNCLAIMED_LOWERS: RefCell<HashMap<LowerId, LowerParams>> = RefCell::new(HashMap::new());
 }
 
 pub fn published() -> Vec<PublishedTx> {
@@ -86,8 +86,8 @@ pub fn set_publish_fails(fails: bool) {
     PUBLISH_FAILS.with(|f| *f.borrow_mut() = fails);
 }
 
-pub fn add_ready_lower(lower_id: LowerId, params: LowerParams) {
-    READY_LOWERS.with(|l| l.borrow_mut().insert(lower_id, params));
+pub fn add_unclaimed_lower(lower_id: LowerId, params: LowerParams) {
+    UNCLAIMED_LOWERS.with(|l| l.borrow_mut().insert(lower_id, params));
 }
 
 pub struct TestBridgeInterface;
@@ -134,8 +134,8 @@ impl pallet_avn::BridgeInterface for TestBridgeInterface {
 
 pub struct TestLowerDataProvider;
 impl LowerDataProvider for TestLowerDataProvider {
-    fn ready_to_claim_lower_params(lower_id: u32) -> Option<LowerParams> {
-        READY_LOWERS.with(|l| l.borrow().get(&lower_id).copied())
+    fn unclaimed_lower_params(lower_id: u32) -> Option<LowerParams> {
+        UNCLAIMED_LOWERS.with(|l| l.borrow().get(&lower_id).copied())
     }
 }
 

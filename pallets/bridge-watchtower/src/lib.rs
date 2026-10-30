@@ -75,7 +75,7 @@ pub mod pallet {
     pub enum Event<T: Config> {
         /// A lower locked on T1 matches the lower T2 issued.
         LowerLockVerified { lower_id: LowerId, eth_tx_hash: EthTransactionId },
-        /// A lower locked on T1 does not match any lower T2 issued and ready to be claimed.
+        /// A lower locked on T1 does not match any unclaimed lower T2 issued.
         LowerLockMismatch {
             lower_id: LowerId,
             t1_recipient: H160,
@@ -160,8 +160,7 @@ pub mod pallet {
 
         /// Whether a locked lower matches the lower T2 issued with the same id.
         fn lower_lock_matches(data: &LowerLockedData) -> bool {
-            let Some(params) = T::LowerDataProvider::ready_to_claim_lower_params(data.lower_id)
-            else {
+            let Some(params) = T::LowerDataProvider::unclaimed_lower_params(data.lower_id) else {
                 return false
             };
             // No T2 lower holds more than a u128

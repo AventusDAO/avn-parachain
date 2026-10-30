@@ -1171,8 +1171,12 @@ impl<T: Config> ProcessedEventHandler for Pallet<T> {
 }
 
 impl<T: Config> LowerDataProvider for Pallet<T> {
-    fn ready_to_claim_lower_params(lower_id: LowerId) -> Option<LowerParams> {
-        LowersReadyToClaim::<T>::get(lower_id).map(|lower| lower.params)
+    // A lower whose proof is being regenerated still has a usable proof on T1, but a failed one
+    // never got a proof that can be claimed
+    fn unclaimed_lower_params(lower_id: LowerId) -> Option<LowerParams> {
+        LowersReadyToClaim::<T>::get(lower_id)
+            .map(|lower| lower.params)
+            .or_else(|| LowersPendingProof::<T>::get(lower_id))
     }
 }
 

@@ -61,7 +61,7 @@ fn locked_lower(lower_id: LowerId) -> LowerLockedData {
     }
 }
 
-/// Records on T2 a lower ready to be claimed with the same values as `lock`
+/// Records on T2 an unclaimed lower with the same values as `lock`
 fn issue_lower(lock: &LowerLockedData) {
     let params = concat_lower_data(
         lock.lower_id,
@@ -71,7 +71,7 @@ fn issue_lower(lock: &LowerLockedData) {
         lock.t2_sender,
         1_600_000_000,
     );
-    add_ready_lower(lock.lower_id, params);
+    add_unclaimed_lower(lock.lower_id, params);
 }
 
 fn lock_event(lock: LowerLockedData) -> EthEvent {
