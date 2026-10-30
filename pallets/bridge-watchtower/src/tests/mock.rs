@@ -26,7 +26,7 @@ frame_support::construct_runtime!(
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
         Watchtower: pallet_watchtower::{Pallet, Call, Storage, Event<T>},
-        BridgeWatchtower: pallet_bridge_watchtower::{Pallet, Call, Storage},
+        BridgeWatchtower: pallet_bridge_watchtower::{Pallet, Call, Storage, Event<T>},
     }
 );
 

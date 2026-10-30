@@ -83,6 +83,13 @@ pub enum Error {
     LiftedToPredictionMarketEventWrongTopicCount,
     LiftedToPredictionMarketEventBadTopicLength,
 
+    LowerLockedEventMissingData,
+    LowerLockedEventBadDataLength,
+    LowerLockedEventWrongTopicCount,
+    LowerLockedEventBadTopicLength,
+    LowerLockedEventLowerIdConversion,
+    LowerLockedEventUnlockTimeConversion,
+
     AvtRewardsMintedEventShouldOnlyContainTopics,
     AvtRewardsMintedEventWrongTopicCount,
     AvtRewardsMintedEventBadTopicLength,
@@ -143,6 +150,8 @@ pub enum ValidEvents {
     AvtRewardsMinted,
     /// A frozen lower was cancelled by the T1 owner. The funds remain on T1.
     LowerCancelled,
+    /// A lower was claimed on T1 and its funds are held until its unlock time.
+    LowerLocked,
 }
 
 impl ValidEvents {
@@ -204,6 +213,11 @@ impl ValidEvents {
             // hex string of Keccak-256 for LogLowerCancelled(uint32)
             ValidEvents::LowerCancelled =>
                 H256(hex!("59829ae26d7f0135ce724b36fe58f03580eafbd239c97946ed348086cbfe5660")),
+
+            // hex string of Keccak-256 for
+            // LogLowerLocked(uint32,address,address,uint256,bytes32,uint64)
+            ValidEvents::LowerLocked =>
+                H256(hex!("6be2ac6222bc751d7139c1a8ffa7d33888a7b6bbbf91d820418c1d2891656faa")),
         }
     }
 
@@ -897,6 +911,97 @@ impl LowerCancelledData {
     }
 }
 
+// T1 Event definition:
+// event LogLowerLocked(uint32 indexed lowerId, address indexed recipient, address token,
+//     uint256 amount, bytes32 t2Sender, uint64 unlockTime);
+#[derive(
+    Encode,
+    Decode,
+    Default,
+    Clone,
+    PartialEq,
+    Debug,
+    Eq,
+    TypeInfo,
+    MaxEncodedLen,
+    DecodeWithMemTracking,
+)]
+pub struct LowerLockedData {
+    pub lower_id: u32,
+    pub t1_recipient: H160,
+    pub token_contract: H160,
+    /// Kept as a uint256: a forged lower can claim more than a T2 lower can hold, and it must
+    /// still be parsed to be detected.
+    pub amount: U256,
+    pub t2_sender: H256,
+    pub unlock_time: u64,
+}
+
+impl LowerLockedData {
+    const TOPIC_LOWER_ID: usize = 1;
+    const TOPIC_RECIPIENT: usize = 2;
+
+    pub fn parse_bytes(data: Option<Vec<u8>>, topics: Vec<Vec<u8>>) -> Result<Self, Error> {
+        // Structure of input:
+        // data (required, 4 * 32 bytes):
+        //   [0..32)    --> token address (H160, last 20 bytes)
+        //   [32..64)   --> amount (uint256)
+        //   [64..96)   --> t2Sender (H256)
+        //   [96..128)  --> unlockTime (uint64, stored in the low 8 bytes)
+        //
+        // topics:
+        //   topics[0] --> event signature (ignored)
+        //   topics[1] --> lowerId (uint32, stored in the low 4 bytes)
+        //   topics[2] --> recipient (H160, last 20 bytes)
+
+        if data.is_none() {
+            return Err(Error::LowerLockedEventMissingData)
+        }
+        let data = data.expect("Already checked for errors");
+
+        if data.len() != 4 * WORD_LENGTH {
+            return Err(Error::LowerLockedEventBadDataLength)
+        }
+
+        if topics.len() != 3 {
+            return Err(Error::LowerLockedEventWrongTopicCount)
+        }
+
+        if topics[Self::TOPIC_LOWER_ID].len() != WORD_LENGTH ||
+            topics[Self::TOPIC_RECIPIENT].len() != WORD_LENGTH
+        {
+            return Err(Error::LowerLockedEventBadTopicLength)
+        }
+
+        let lower_id = u32::from_be_bytes(
+            topics[Self::TOPIC_LOWER_ID][TWENTY_EIGHT_BYTES..WORD_LENGTH]
+                .try_into()
+                .map_err(|_| Error::LowerLockedEventLowerIdConversion)?,
+        );
+
+        let t1_recipient =
+            H160::from_slice(&topics[Self::TOPIC_RECIPIENT][DISCARDED_ZERO_BYTES..WORD_LENGTH]);
+
+        let token_contract = H160::from_slice(&data[DISCARDED_ZERO_BYTES..WORD_LENGTH]);
+        let amount = U256::from_big_endian(&data[WORD_LENGTH..2 * WORD_LENGTH]);
+        let t2_sender = H256::from_slice(&data[2 * WORD_LENGTH..3 * WORD_LENGTH]);
+        let unlock_time = u64::from_be_bytes(
+            data[3 * WORD_LENGTH + TWENTY_FOUR_BYTES..4 * WORD_LENGTH]
+                .try_into()
+                .map_err(|_| Error::LowerLockedEventUnlockTimeConversion)?,
+        );
+
+        Ok(LowerLockedData {
+            lower_id,
+            t1_recipient,
+            token_contract,
+            amount,
+            t2_sender,
+            unlock_time,
+        })
+    }
+}
+
 #[derive(
     Encode,
     Decode,
@@ -1083,6 +1188,7 @@ pub enum EventData {
     LogErc20Transfer(LiftedData),
     LogRewardsMinted(TotalSupplyUpdatedData),
     LogLowerCancelled(LowerCancelledData),
+    LogLowerLocked(LowerLockedData),
 }
 
 impl EventData {
@@ -1103,6 +1209,9 @@ impl EventData {
             // check
             EventData::LogLowerClaimed(_) => true,
             EventData::LogLowerCancelled(_) => true,
+            // Every locked lower must reach T2, however odd its values, so that T2 can check it
+            // against the lower it issued
+            EventData::LogLowerLocked(_) => true,
             EventData::EmptyEvent => true,
         }
     }
@@ -1343,3 +1452,7 @@ mod test_lower_claim;
 #[cfg(test)]
 #[path = "tests/test_lower_cancelled.rs"]
 mod test_lower_cancelled;
+
+#[cfg(test)]
+#[path = "tests/test_lower_locked.rs"]
+mod test_lower_locked;
