@@ -77,16 +77,16 @@ use crate::{
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn, AvnAnchor,
     AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
-    BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
-    HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
-    NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime,
-    RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
-    Scheduler, Session, SessionKeys, Signature, Summary, SummaryWatchtower, System, Timestamp,
-    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
-    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
-    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    BlockNumber, BridgeWatchtower, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge,
+    Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
+    Moment, NftManager, NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller,
+    OrmlTokens, PalletInfo, ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp,
+    RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason,
+    RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, Session, SessionKeys, Signature,
+    Summary, SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee,
+    UncheckedExtrinsic, ValidatorsManager, Watchtower, WeightToFee, XcmpQueue,
+    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -805,7 +805,7 @@ impl pallet_watchtower::Config for Runtime {
     type Watchtowers = RuntimeNodeManager;
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
-    type WatchtowerHooks = (Summary, SummaryWatchtower);
+    type WatchtowerHooks = (Summary, SummaryWatchtower, BridgeWatchtower);
     type VoteFilter = ();
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
@@ -830,6 +830,8 @@ impl pallet_summary_watchtower::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
 }
+
+impl pallet_bridge_watchtower::Config for Runtime {}
 
 parameter_types! {
     pub AvnTreasuryAccount: AccountId = AvnTreasuryPotId::get().into_account_truncating();
