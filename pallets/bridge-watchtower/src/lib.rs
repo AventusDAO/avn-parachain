@@ -5,9 +5,7 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::ToString};
 
-use frame_support::{
-    dispatch::DispatchResult, pallet_prelude::*, storage::with_storage_layer, traits::Get,
-};
+use frame_support::{dispatch::DispatchResult, pallet_prelude::*, storage::with_storage_layer};
 use frame_system::pallet_prelude::*;
 
 use pallet_avn::{BridgeInterface, BridgeInterfaceNotification};
