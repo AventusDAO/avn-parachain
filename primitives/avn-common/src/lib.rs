@@ -503,6 +503,16 @@ impl LowerDataProvider for () {
     }
 }
 
+/// Lets a pallet stop lowering on T2, e.g. when it detects a lift that did not happen on T1.
+/// Implemented by token-manager. Only root can enable lowering again.
+pub trait LoweringControl {
+    fn disable_lowering();
+}
+
+impl LoweringControl for () {
+    fn disable_lowering() {}
+}
+
 /// Interface for interacting with app chains.
 pub trait AppChainInterface {
     type AccountId;

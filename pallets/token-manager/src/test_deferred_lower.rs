@@ -5,6 +5,7 @@ use crate::{
 };
 use frame_support::{assert_noop, assert_ok};
 use pallet_scheduler::Agenda;
+use sp_avn_common::LoweringControl;
 use sp_runtime::DispatchError;
 
 fn schedule_lower(from: AccountId, amount: u128, t1_recipient: H160) {
@@ -346,5 +347,29 @@ fn toggling_lowering_works() {
             amount,
             t1_recipient
         ));
+    });
+}
+
+#[test]
+fn disable_lowering_works() {
+    let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+    ext.execute_with(|| {
+        let disabled_event = RuntimeEvent::TokenManager(crate::Event::LoweringDisabled);
+
+        TokenManager::disable_lowering();
+
+        assert_eq!(LowersDisabled::<TestRuntime>::get(), true);
+        assert!(System::events().iter().any(|e| e.event == disabled_event));
+
+        // Disabling again changes nothing
+        let events_count = System::events().len();
+        TokenManager::disable_lowering();
+        assert_eq!(LowersDisabled::<TestRuntime>::get(), true);
+        assert_eq!(System::events().len(), events_count);
+
+        // Only root can enable lowering again
+        assert_ok!(TokenManager::toggle_lowering(RuntimeOrigin::root(), true));
+        assert_eq!(LowersDisabled::<TestRuntime>::get(), false);
     });
 }
