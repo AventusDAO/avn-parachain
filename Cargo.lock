@@ -10248,8 +10248,10 @@ dependencies = [
 name = "pallet-bridge-watchtower"
 version = "10.3.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
+ "log",
  "pallet-avn",
  "pallet-node-manager",
  "pallet-watchtower",

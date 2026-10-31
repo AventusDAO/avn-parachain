@@ -4,6 +4,7 @@ use crate::{
     Balances as TokenManagerBalances, *,
 };
 use frame_support::{assert_noop, assert_ok};
+use sp_avn_common::LowerDataProvider;
 
 fn schedule_lower(
     from: AccountId,
@@ -288,4 +289,87 @@ fn proof_cannot_be_regenerated_if_lower_disabled() {
             Error::<TestRuntime>::LoweringDisabled
         );
     });
+}
+
+mod unclaimed_lower_params {
+    use super::*;
+
+    /// Schedules a lower whose proof is being generated and returns its id and params
+    fn setup_pending_lower() -> (u32, LowerParams) {
+        let (_, from, burn_acc, t1_recipient) = MockData::setup_lower_request_data();
+        let amount = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+        let lower_id = 0;
+        schedule_lower(from, amount, t1_recipient, lower_id, burn_acc);
+
+        (lower_id, <LowersPendingProof<TestRuntime>>::get(lower_id).unwrap())
+    }
+
+    fn complete_proof(lower_id: u32, result: Result<Vec<u8>, ()>) {
+        assert_ok!(TokenManager::process_lower_proof_result(lower_id, PALLET_ID.to_vec(), result));
+    }
+
+    #[test]
+    fn includes_lower_waiting_for_proof() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+        ext.execute_with(|| {
+            let (lower_id, params) = setup_pending_lower();
+
+            assert_eq!(TokenManager::unclaimed_lower_params(lower_id), Some(params));
+        });
+    }
+
+    #[test]
+    fn includes_lower_ready_to_claim() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+        ext.execute_with(|| {
+            let (lower_id, params) = setup_pending_lower();
+            complete_proof(lower_id, Ok("lowerProofReady".to_string().into()));
+            assert!(<LowersReadyToClaim<TestRuntime>>::get(lower_id).is_some());
+
+            assert_eq!(TokenManager::unclaimed_lower_params(lower_id), Some(params));
+        });
+    }
+
+    #[test]
+    fn includes_lower_whose_proof_is_being_regenerated() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+        ext.execute_with(|| {
+            let (lower_id, params) = setup_pending_lower();
+            complete_proof(lower_id, Ok("lowerProofReady".to_string().into()));
+            assert_ok!(TokenManager::regenerate_lower_proof(
+                RuntimeOrigin::signed(account_id_with_100_avt()),
+                lower_id
+            ));
+            assert!(<LowersReadyToClaim<TestRuntime>>::get(lower_id).is_none());
+
+            assert_eq!(TokenManager::unclaimed_lower_params(lower_id), Some(params));
+        });
+    }
+
+    #[test]
+    fn excludes_lower_with_failed_proof() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+        ext.execute_with(|| {
+            let (lower_id, _) = setup_pending_lower();
+            complete_proof(lower_id, Err(()));
+            assert!(<FailedLowerProofs<TestRuntime>>::get(lower_id).is_some());
+
+            assert_eq!(TokenManager::unclaimed_lower_params(lower_id), None);
+        });
+    }
+
+    #[test]
+    fn excludes_unknown_lower() {
+        let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+        ext.execute_with(|| {
+            setup_pending_lower();
+
+            assert_eq!(TokenManager::unclaimed_lower_params(7), None);
+        });
+    }
 }

@@ -54,7 +54,8 @@ use sp_avn_common::{
         LowerCancelledData, LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
-    verify_signature, CallDecoder, InnerCallValidator, OnIdleHandler, PaymentHandler, Proof,
+    verify_signature, CallDecoder, InnerCallValidator, LowerDataProvider, OnIdleHandler,
+    PaymentHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
@@ -1166,6 +1167,16 @@ impl<T: Config> Pallet<T> {
 impl<T: Config> ProcessedEventHandler for Pallet<T> {
     fn on_event_processed(event: &EthEvent) -> DispatchResult {
         Self::processed_event_handler(event)
+    }
+}
+
+impl<T: Config> LowerDataProvider for Pallet<T> {
+    // A lower whose proof is being regenerated still has a usable proof on T1, but a failed one
+    // never got a proof that can be claimed
+    fn unclaimed_lower_params(lower_id: LowerId) -> Option<LowerParams> {
+        LowersReadyToClaim::<T>::get(lower_id)
+            .map(|lower| lower.params)
+            .or_else(|| LowersPendingProof::<T>::get(lower_id))
     }
 }
 
