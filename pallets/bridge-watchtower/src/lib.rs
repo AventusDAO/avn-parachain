@@ -3,9 +3,11 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 #[cfg(not(feature = "std"))]
-use alloc::string::ToString;
+use alloc::{format, string::ToString};
 
-use frame_support::{dispatch::DispatchResult, pallet_prelude::*, storage::with_storage_layer};
+use frame_support::{
+    dispatch::DispatchResult, pallet_prelude::*, storage::with_storage_layer, traits::Get,
+};
 use frame_system::pallet_prelude::*;
 
 use pallet_avn::{BridgeInterface, BridgeInterfaceNotification};
@@ -13,9 +15,10 @@ use pallet_watchtower::Proposal;
 use sp_avn_common::{
     eth::{lower_params_match, EthereumId},
     event_types::{EthEvent, EthTransactionId, EventData, LowerLockedData},
-    BridgeContractMethod, LowerDataProvider, UINT32,
+    BridgeContractMethod, LowerDataProvider, LoweringControl, UINT32,
 };
 use sp_core::{H160, H256, U256};
+use sp_runtime::{traits::SaturatedConversion, Perbill};
 use sp_std::prelude::*;
 use sp_watchtower::*;
 
@@ -23,6 +26,23 @@ pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
 pub const PALLET_ID: &'static [u8; 17] = b"bridge_watchtower";
 
 pub type LowerId = u32;
+
+const LIFT_CHECK_CONTEXT: &[u8] = b"bridge_watchtower:lift";
+
+/// Why a lift could not be verified against T1.
+#[derive(Encode, Decode, DecodeWithMemTracking, Clone, PartialEq, Eq, Debug, TypeInfo)]
+pub enum LiftCheckFailure {
+    /// The watchtower proposal could not be submitted.
+    RequestFailed,
+    /// Watchtowers voted that the lift does not match T1.
+    Rejected,
+    /// The vote did not resolve in time.
+    Expired,
+    /// The vote was cancelled, e.g. no committee could be selected.
+    Cancelled,
+    /// The vote ended with a status that is not a result.
+    UnexpectedResult,
+}
 
 #[cfg(test)]
 #[path = "tests/mock.rs"]
@@ -53,6 +73,16 @@ pub mod pallet {
         type LowerDataProvider: LowerDataProvider;
         /// Weight information for extrinsics in this pallet.
         type WeightInfo: WeightInfo;
+        /// Runs the watchtower votes that check lifts against T1.
+        type ExternalValidator: WatchtowerInterface<AccountId = Self::AccountId>;
+        /// Stops lowering when a lift cannot be verified.
+        type LoweringControl: LoweringControl;
+        /// Share of the committee needed to decide a lift check.
+        #[pallet::constant]
+        type LiftCheckThreshold: Get<Perbill>;
+        /// Number of watchtowers randomly selected to check each lift.
+        #[pallet::constant]
+        type LiftCheckCommitteeSize: Get<u32>;
     }
 
     /// The freeze transaction being checked.
@@ -69,6 +99,15 @@ pub mod pallet {
     /// Cleared once a freeze succeeds.
     #[pallet::storage]
     pub type FailedFreezes<T: Config> = StorageMap<_, Blake2_128Concat, LowerId, (), OptionQuery>;
+
+    /// Lifts waiting for, or going through, a watchtower check, by the external ref of their
+    /// proposal.
+    #[pallet::storage]
+    pub type LiftChecks<T: Config> = StorageMap<_, Blake2_128Concat, H256, EthEvent, OptionQuery>;
+
+    /// The lift whose check is being voted on.
+    #[pallet::storage]
+    pub type ActiveLiftCheck<T: Config> = StorageValue<_, (ProposalId, EthEvent), OptionQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -93,6 +132,12 @@ pub mod pallet {
         LowerFrozen { lower_id: LowerId, tx_id: EthereumId },
         /// The transaction to freeze a lower failed on T1.
         LowerFreezeFailed { lower_id: LowerId, tx_id: EthereumId },
+        /// Watchtowers were asked to check a lift against T1.
+        LiftCheckRequested { eth_tx_hash: EthTransactionId, external_ref: H256 },
+        /// Watchtowers confirmed a lift matches T1.
+        LiftVerified { eth_tx_hash: EthTransactionId },
+        /// A lift could not be verified against T1. Lowering is disabled.
+        LiftFailedVerification { eth_tx_hash: EthTransactionId, reason: LiftCheckFailure },
     }
 
     #[pallet::error]
@@ -119,7 +164,16 @@ pub mod pallet {
     }
 
     #[pallet::hooks]
-    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn integrity_test() {
+            let size = T::LiftCheckCommitteeSize::get();
+            assert!(
+                size >= T::ExternalValidator::min_committee_size() &&
+                    size <= T::ExternalValidator::max_committee_size(),
+                "LiftCheckCommitteeSize is outside the watchtower committee bounds"
+            );
+        }
+    }
 
     impl<T: Config> Pallet<T> {
         fn process_lower_locked(eth_tx_hash: EthTransactionId, data: &LowerLockedData) {
@@ -192,6 +246,56 @@ pub mod pallet {
 
             Ok(tx_id)
         }
+
+        pub fn lift_check_ref(eth_tx_hash: &EthTransactionId) -> H256 {
+            H256(sp_io::hashing::blake2_256(&(LIFT_CHECK_CONTEXT, eth_tx_hash).encode()))
+        }
+
+        /// Asks the watchtowers to check a lift against T1. If that is not possible, the lift
+        /// cannot be verified so lowering is disabled.
+        fn process_lift(event: &EthEvent) {
+            let eth_tx_hash = event.event_id.transaction_hash;
+            match Self::request_lift_check(event) {
+                Ok(external_ref) => Self::deposit_event(Event::<T>::LiftCheckRequested {
+                    eth_tx_hash,
+                    external_ref,
+                }),
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to request the check of lift {:?}: {:?}",
+                        eth_tx_hash,
+                        e
+                    );
+                    Self::fail_lift_verification(eth_tx_hash, LiftCheckFailure::RequestFailed);
+                },
+            }
+        }
+
+        fn request_lift_check(event: &EthEvent) -> Result<H256, DispatchError> {
+            let eth_tx_hash = event.event_id.transaction_hash;
+            let external_ref = Self::lift_check_ref(&eth_tx_hash);
+            let request = ProposalRequest {
+                title: format!("Verify lift {:?}", eth_tx_hash).into_bytes(),
+                payload: RawPayload::Inline(event.encode()),
+                threshold: T::LiftCheckThreshold::get(),
+                source: ProposalSource::Internal(ProposalType::Lift),
+                decision_rule: DecisionRule::RejectOnExpiry,
+                external_ref,
+                created_at: frame_system::Pallet::<T>::block_number().saturated_into::<u32>(),
+                vote_duration: None,
+                committee_size: Some(T::LiftCheckCommitteeSize::get()),
+                voting: VotingKind::Binary,
+            };
+            with_storage_layer(|| T::ExternalValidator::submit_proposal(None, request))?;
+
+            LiftChecks::<T>::insert(external_ref, event);
+            Ok(external_ref)
+        }
+
+        fn fail_lift_verification(eth_tx_hash: EthTransactionId, reason: LiftCheckFailure) {
+            Self::deposit_event(Event::<T>::LiftFailedVerification { eth_tx_hash, reason });
+            T::LoweringControl::disable_lowering();
+        }
     }
 
     impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
@@ -221,8 +325,12 @@ pub mod pallet {
         // Never fails: by now the event is accepted, so an error would only stop the
         // notification reaching the remaining consumers.
         fn on_incoming_event_processed(event: &EthEvent) -> DispatchResult {
-            if let EventData::LogLowerLocked(data) = &event.event_data {
-                Self::process_lower_locked(event.event_id.transaction_hash, data);
+            match &event.event_data {
+                EventData::LogLowerLocked(data) =>
+                    Self::process_lower_locked(event.event_id.transaction_hash, data),
+                EventData::LogLifted(_) | EventData::LogAvtGrowthLifted(_) =>
+                    Self::process_lift(event),
+                _ => {},
             }
 
             Ok(())
@@ -230,20 +338,48 @@ pub mod pallet {
     }
 
     impl<T: Config> WatchtowerHooks<Proposal<T>> for Pallet<T> {
-        fn on_proposal_submitted(
-            _proposal_id: ProposalId,
-            _proposal: Proposal<T>,
-        ) -> DispatchResult {
+        // Never fails: an error would cancel the check, which disables lowering
+        fn on_proposal_submitted(proposal_id: ProposalId, proposal: Proposal<T>) -> DispatchResult {
+            if proposal.source != ProposalSource::Internal(ProposalType::Lift) {
+                return Ok(())
+            }
+
+            if let Some(event) = LiftChecks::<T>::get(proposal.external_ref) {
+                ActiveLiftCheck::<T>::put((proposal_id, event));
+            }
+
             Ok(())
         }
 
         fn on_voting_completed(
-            _proposal_id: ProposalId,
-            _external_ref: &H256,
-            _result: &ProposalStatusEnum,
+            proposal_id: ProposalId,
+            external_ref: &H256,
+            result: &ProposalStatusEnum,
         ) {
+            let Some(event) = LiftChecks::<T>::take(external_ref) else { return };
+            if ActiveLiftCheck::<T>::get().is_some_and(|(id, _)| id == proposal_id) {
+                ActiveLiftCheck::<T>::kill();
+            }
+
+            let eth_tx_hash = event.event_id.transaction_hash;
+            let reason = match result {
+                ProposalStatusEnum::Resolved { passed: true } => {
+                    Self::deposit_event(Event::<T>::LiftVerified { eth_tx_hash });
+                    return
+                },
+                ProposalStatusEnum::Resolved { passed: false } => LiftCheckFailure::Rejected,
+                ProposalStatusEnum::Expired => LiftCheckFailure::Expired,
+                ProposalStatusEnum::Cancelled => LiftCheckFailure::Cancelled,
+                // Never reported as a result. The check is over either way, so fail safe.
+                ProposalStatusEnum::Queued |
+                ProposalStatusEnum::Active |
+                ProposalStatusEnum::Unknown => LiftCheckFailure::UnexpectedResult,
+            };
+            Self::fail_lift_verification(eth_tx_hash, reason);
         }
 
-        fn on_cancelled(_proposal_id: ProposalId, _external_ref: &H256) {}
+        fn on_cancelled(proposal_id: ProposalId, external_ref: &H256) {
+            Self::on_voting_completed(proposal_id, external_ref, &ProposalStatusEnum::Cancelled);
+        }
     }
 }

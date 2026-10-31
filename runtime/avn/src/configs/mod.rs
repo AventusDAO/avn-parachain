@@ -831,10 +831,23 @@ impl pallet_summary_watchtower::Config for Runtime {
     type WeightInfo = ();
 }
 
+parameter_types! {
+    pub const LiftCheckThreshold: Perbill = Perbill::from_percent(51);
+}
+
 impl pallet_bridge_watchtower::Config for Runtime {
     type BridgeInterface = EthBridge;
     type LowerDataProvider = TokenManager;
     type WeightInfo = pallet_bridge_watchtower::default_weights::SubstrateWeight<Runtime>;
+    type ExternalValidator = Watchtower;
+    type LoweringControl = TokenManager;
+    type LiftCheckThreshold = LiftCheckThreshold;
+    /// Each committee member needs a distinct watchtower owner. The `dev-network` feature lowers
+    /// it for local networks with a handful of watchtowers.
+    #[cfg(not(feature = "dev-network"))]
+    type LiftCheckCommitteeSize = ConstU32<20>;
+    #[cfg(feature = "dev-network")]
+    type LiftCheckCommitteeSize = ConstU32<3>;
 }
 
 parameter_types! {

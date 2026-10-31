@@ -54,8 +54,8 @@ use sp_avn_common::{
         LowerCancelledData, LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
-    verify_signature, CallDecoder, InnerCallValidator, LowerDataProvider, OnIdleHandler,
-    PaymentHandler, Proof,
+    verify_signature, CallDecoder, InnerCallValidator, LowerDataProvider, LoweringControl,
+    OnIdleHandler, PaymentHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
@@ -1177,6 +1177,15 @@ impl<T: Config> LowerDataProvider for Pallet<T> {
         LowersReadyToClaim::<T>::get(lower_id)
             .map(|lower| lower.params)
             .or_else(|| LowersPendingProof::<T>::get(lower_id))
+    }
+}
+
+impl<T: Config> LoweringControl for Pallet<T> {
+    fn disable_lowering() {
+        if !LowersDisabled::<T>::get() {
+            LowersDisabled::<T>::put(true);
+            Self::deposit_event(Event::<T>::LoweringDisabled);
+        }
     }
 }
 
