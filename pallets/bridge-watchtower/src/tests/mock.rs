@@ -2,7 +2,7 @@
 
 use crate::{self as pallet_bridge_watchtower, *};
 use frame_support::{
-    derive_impl,
+    derive_impl, parameter_types,
     traits::{ConstU32, EnsureOrigin},
 };
 use frame_system::{self as system, EnsureRoot};
@@ -61,10 +61,18 @@ impl pallet_watchtower::Config for TestRuntime {
     type BenchmarkHelper = ();
 }
 
+parameter_types! {
+    pub const LiftCheckThreshold: Perbill = Perbill::from_percent(51);
+}
+
 impl Config for TestRuntime {
     type BridgeInterface = TestBridgeInterface;
     type LowerDataProvider = TestLowerDataProvider;
     type WeightInfo = ();
+    type ExternalValidator = TestWatchtower;
+    type LoweringControl = TestLoweringControl;
+    type LiftCheckThreshold = LiftCheckThreshold;
+    type LiftCheckCommitteeSize = ConstU32<20>;
 }
 
 pub type PublishedTx = (Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>, Vec<u8>);
@@ -76,6 +84,21 @@ thread_local! {
     static PUBLISHED: RefCell<Vec<PublishedTx>> = RefCell::new(vec![]);
     static PUBLISH_FAILS: RefCell<bool> = RefCell::new(false);
     static UNCLAIMED_LOWERS: RefCell<HashMap<LowerId, LowerParams>> = RefCell::new(HashMap::new());
+    static PROPOSALS: RefCell<Vec<ProposalRequest>> = RefCell::new(vec![]);
+    static PROPOSAL_FAILS: RefCell<bool> = RefCell::new(false);
+    static LOWERING_DISABLED: RefCell<bool> = RefCell::new(false);
+}
+
+pub fn proposals() -> Vec<ProposalRequest> {
+    PROPOSALS.with(|p| p.borrow().clone())
+}
+
+pub fn set_proposal_fails(fails: bool) {
+    PROPOSAL_FAILS.with(|f| *f.borrow_mut() = fails);
+}
+
+pub fn lowering_disabled() -> bool {
+    LOWERING_DISABLED.with(|d| *d.borrow())
 }
 
 pub fn published() -> Vec<PublishedTx> {
@@ -136,6 +159,51 @@ pub struct TestLowerDataProvider;
 impl LowerDataProvider for TestLowerDataProvider {
     fn unclaimed_lower_params(lower_id: u32) -> Option<LowerParams> {
         UNCLAIMED_LOWERS.with(|l| l.borrow().get(&lower_id).copied())
+    }
+}
+
+/// Storage key the mock watchtower writes before failing, to check failed requests are reverted.
+pub const PARTIAL_PROPOSAL_KEY: &[u8] = b"test_watchtower::partial_proposal";
+
+pub struct TestWatchtower;
+impl WatchtowerInterface for TestWatchtower {
+    type AccountId = AccountId;
+
+    fn submit_proposal(_proposer: Option<AccountId>, proposal: ProposalRequest) -> DispatchResult {
+        frame_support::storage::unhashed::put(PARTIAL_PROPOSAL_KEY, &true);
+        if PROPOSAL_FAILS.with(|f| *f.borrow()) {
+            return Err(DispatchError::Other("submission failed"))
+        }
+
+        PROPOSALS.with(|p| p.borrow_mut().push(proposal));
+        Ok(())
+    }
+
+    fn get_proposal_status(_proposal_id: ProposalId) -> ProposalStatusEnum {
+        ProposalStatusEnum::Unknown
+    }
+
+    fn get_proposer(_proposal_id: ProposalId) -> Option<AccountId> {
+        None
+    }
+
+    fn min_committee_size() -> u32 {
+        10
+    }
+
+    fn max_committee_size() -> u32 {
+        150
+    }
+
+    fn ensure_committee_ready(_size: u32) -> DispatchResult {
+        Ok(())
+    }
+}
+
+pub struct TestLoweringControl;
+impl LoweringControl for TestLoweringControl {
+    fn disable_lowering() {
+        LOWERING_DISABLED.with(|d| *d.borrow_mut() = true);
     }
 }
 
@@ -231,6 +299,8 @@ pub struct ExtBuilder {
 
 impl ExtBuilder {
     pub fn build_default() -> Self {
+        PROPOSALS.with(|p| p.borrow_mut().clear());
+        LOWERING_DISABLED.with(|d| *d.borrow_mut() = false);
         let storage = frame_system::GenesisConfig::<TestRuntime>::default()
             .build_storage()
             .unwrap()

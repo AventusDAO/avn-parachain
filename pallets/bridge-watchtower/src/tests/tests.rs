@@ -5,18 +5,18 @@ use frame_support::{assert_noop, assert_ok, BoundedVec};
 use pallet_watchtower::Payload;
 use sp_avn_common::{
     eth::concat_lower_data,
-    event_types::{AvtLowerClaimedData, EthEventId, ValidEvents},
+    event_types::{AvtGrowthLiftedData, AvtLowerClaimedData, EthEventId, LiftedData, ValidEvents},
 };
 use sp_runtime::{traits::BadOrigin, Perbill};
 
-fn make_proposal(source: ProposalSource) -> Proposal<TestRuntime> {
+fn make_proposal(source: ProposalSource, external_ref: H256) -> Proposal<TestRuntime> {
     Proposal {
         title: BoundedVec::try_from(b"Title".to_vec()).unwrap(),
         payload: Payload::Inline(BoundedVec::try_from(b"payload".to_vec()).unwrap()),
         threshold: Perbill::from_percent(50),
         source,
         decision_rule: DecisionRule::ExpireUnresolved,
-        external_ref: H256::repeat_byte(0xaa),
+        external_ref,
         proposer: None,
         created_at: 1,
         vote_duration: 10,
@@ -26,24 +26,31 @@ fn make_proposal(source: ProposalSource) -> Proposal<TestRuntime> {
 }
 
 #[test]
-fn hooks_accept_any_proposal() {
+fn hooks_ignore_other_proposals() {
     ExtBuilder::build_default().as_externality().execute_with(|| {
         let proposal_id = H256::repeat_byte(0x01);
+        let external_ref = H256::repeat_byte(0xaa);
 
         for source in [
             ProposalSource::Internal(ProposalType::Summary),
-            ProposalSource::Internal(ProposalType::Other(1)),
+            ProposalSource::Internal(ProposalType::Lift),
             ProposalSource::External,
         ] {
-            assert_ok!(BridgeWatchtower::on_proposal_submitted(proposal_id, make_proposal(source)));
+            assert_ok!(BridgeWatchtower::on_proposal_submitted(
+                proposal_id,
+                make_proposal(source, external_ref)
+            ));
         }
+        assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), None);
 
         BridgeWatchtower::on_voting_completed(
             proposal_id,
-            &H256::repeat_byte(0xaa),
-            &ProposalStatusEnum::Resolved { passed: true },
+            &external_ref,
+            &ProposalStatusEnum::Resolved { passed: false },
         );
-        BridgeWatchtower::on_cancelled(proposal_id, &H256::repeat_byte(0xaa));
+        BridgeWatchtower::on_cancelled(proposal_id, &external_ref);
+        assert!(!lowering_disabled());
+        assert!(System::events().is_empty());
     });
 }
 
@@ -361,6 +368,216 @@ mod freeze_lower {
                 BridgeWatchtower::freeze_lower(RuntimeOrigin::root(), LOWER_ID),
                 DispatchError::Other("publish failed")
             );
+        });
+    }
+}
+
+mod lift_check {
+    use super::*;
+
+    const PROPOSAL_ID: H256 = H256::repeat_byte(0x01);
+
+    fn lift_event() -> EthEvent {
+        EthEvent {
+            event_id: EthEventId {
+                signature: ValidEvents::Lifted.signature(),
+                transaction_hash: ETH_TX_HASH,
+            },
+            event_data: EventData::LogLifted(LiftedData::new(
+                H160::repeat_byte(0x11),
+                H256::repeat_byte(0x33),
+                1_000,
+            )),
+        }
+    }
+
+    fn growth_event() -> EthEvent {
+        EthEvent {
+            event_id: EthEventId {
+                signature: ValidEvents::AvtGrowthLifted.signature(),
+                transaction_hash: ETH_TX_HASH,
+            },
+            event_data: EventData::LogAvtGrowthLifted(AvtGrowthLiftedData {
+                amount: 1_000,
+                period: 3,
+            }),
+        }
+    }
+
+    fn external_ref() -> H256 {
+        BridgeWatchtower::lift_check_ref(&ETH_TX_HASH)
+    }
+
+    /// Processes `event` and starts the vote on its check
+    fn start_check(event: &EthEvent) {
+        assert_ok!(BridgeWatchtower::on_incoming_event_processed(event));
+        assert_ok!(BridgeWatchtower::on_proposal_submitted(
+            PROPOSAL_ID,
+            make_proposal(ProposalSource::Internal(ProposalType::Lift), external_ref())
+        ));
+    }
+
+    fn failed_verification_event(reason: LiftCheckFailure) -> RuntimeEvent {
+        RuntimeEvent::BridgeWatchtower(crate::Event::LiftFailedVerification {
+            eth_tx_hash: ETH_TX_HASH,
+            reason,
+        })
+    }
+
+    #[test]
+    fn lift_requests_a_check() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let event = lift_event();
+
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&event));
+
+            let requests = proposals();
+            assert_eq!(requests.len(), 1);
+            let request = &requests[0];
+            assert_eq!(request.external_ref, external_ref());
+            assert_eq!(request.payload, RawPayload::Inline(event.encode()));
+            assert_eq!(request.source, ProposalSource::Internal(ProposalType::Lift));
+            assert_eq!(request.decision_rule, DecisionRule::RejectOnExpiry);
+            assert_eq!(request.threshold, Perbill::from_percent(51));
+            assert_eq!(request.committee_size, Some(20));
+            assert_eq!(request.voting, VotingKind::Binary);
+            assert_eq!(request.created_at, 1);
+
+            assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), Some(event));
+            System::assert_last_event(RuntimeEvent::BridgeWatchtower(
+                crate::Event::LiftCheckRequested {
+                    eth_tx_hash: ETH_TX_HASH,
+                    external_ref: external_ref(),
+                },
+            ));
+            assert!(!lowering_disabled());
+        });
+    }
+
+    #[test]
+    fn growth_lift_requests_a_check() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let event = growth_event();
+
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&event));
+
+            assert_eq!(proposals().len(), 1);
+            assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), Some(event));
+        });
+    }
+
+    #[test]
+    fn other_events_are_ignored() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let event = EthEvent {
+                event_id: EthEventId {
+                    signature: ValidEvents::AvtLowerClaimed.signature(),
+                    transaction_hash: ETH_TX_HASH,
+                },
+                event_data: EventData::LogLowerClaimed(AvtLowerClaimedData { lower_id: 1 }),
+            };
+
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&event));
+
+            assert!(proposals().is_empty());
+        });
+    }
+
+    #[test]
+    fn failed_request_disables_lowering_and_is_reverted() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            set_proposal_fails(true);
+
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
+
+            assert!(lowering_disabled());
+            assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), None);
+            assert!(!frame_support::storage::unhashed::exists(PARTIAL_PROPOSAL_KEY));
+            System::assert_last_event(failed_verification_event(LiftCheckFailure::RequestFailed));
+        });
+    }
+
+    #[test]
+    fn started_vote_becomes_the_active_check() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let event = lift_event();
+
+            start_check(&event);
+
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), Some((PROPOSAL_ID, event)));
+        });
+    }
+
+    #[test]
+    fn passed_vote_verifies_the_lift() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            start_check(&lift_event());
+
+            BridgeWatchtower::on_voting_completed(
+                PROPOSAL_ID,
+                &external_ref(),
+                &ProposalStatusEnum::Resolved { passed: true },
+            );
+
+            assert!(!lowering_disabled());
+            assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), None);
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), None);
+            System::assert_last_event(RuntimeEvent::BridgeWatchtower(crate::Event::LiftVerified {
+                eth_tx_hash: ETH_TX_HASH,
+            }));
+        });
+    }
+
+    #[test]
+    fn unpassed_vote_disables_lowering() {
+        for (status, reason) in [
+            (ProposalStatusEnum::Resolved { passed: false }, LiftCheckFailure::Rejected),
+            (ProposalStatusEnum::Expired, LiftCheckFailure::Expired),
+            (ProposalStatusEnum::Cancelled, LiftCheckFailure::Cancelled),
+            (ProposalStatusEnum::Queued, LiftCheckFailure::UnexpectedResult),
+            (ProposalStatusEnum::Active, LiftCheckFailure::UnexpectedResult),
+            (ProposalStatusEnum::Unknown, LiftCheckFailure::UnexpectedResult),
+        ] {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                start_check(&lift_event());
+
+                BridgeWatchtower::on_voting_completed(PROPOSAL_ID, &external_ref(), &status);
+
+                assert!(lowering_disabled());
+                assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), None);
+                assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), None);
+                System::assert_last_event(failed_verification_event(reason));
+            });
+        }
+    }
+
+    #[test]
+    fn cancelled_check_disables_lowering() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            start_check(&lift_event());
+
+            BridgeWatchtower::on_cancelled(PROPOSAL_ID, &external_ref());
+
+            assert!(lowering_disabled());
+            System::assert_last_event(failed_verification_event(LiftCheckFailure::Cancelled));
+        });
+    }
+
+    #[test]
+    fn queued_check_completing_keeps_the_active_check() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let active = (H256::repeat_byte(0x02), growth_event());
+            ActiveLiftCheck::<TestRuntime>::put(active.clone());
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
+
+            // e.g. cancelled by root while queued
+            BridgeWatchtower::on_voting_completed(
+                PROPOSAL_ID,
+                &external_ref(),
+                &ProposalStatusEnum::Cancelled,
+            );
+
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), Some(active));
         });
     }
 }
