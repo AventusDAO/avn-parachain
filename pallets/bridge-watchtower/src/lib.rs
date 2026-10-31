@@ -46,10 +46,14 @@ pub enum LiftCheckFailure {
 #[path = "tests/mock.rs"]
 mod mock;
 #[cfg(test)]
+#[path = "tests/test_lift_vote.rs"]
+mod test_lift_vote;
+#[cfg(test)]
 #[path = "tests/tests.rs"]
 mod tests;
 
 mod benchmarking;
+mod lift_vote;
 
 pub mod default_weights;
 pub use default_weights::WeightInfo;
@@ -64,7 +68,9 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config + pallet_watchtower::Config {
+    pub trait Config:
+        frame_system::Config + pallet_watchtower::Config + pallet_avn::Config
+    {
         /// Sends the freeze transactions to Ethereum.
         type BridgeInterface: BridgeInterface;
         /// The lowers T2 issued, against which locked lowers are checked.
@@ -163,6 +169,15 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn offchain_worker(now: BlockNumberFor<T>) {
+            // Only watchtower nodes vote on lift checks
+            if sp_io::offchain::is_validator() {
+                return
+            }
+
+            Self::vote_on_lift_check(now);
+        }
+
         fn integrity_test() {
             let size = T::LiftCheckCommitteeSize::get();
             assert!(

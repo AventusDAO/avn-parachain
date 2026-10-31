@@ -41,6 +41,7 @@ sha3 = { version = "0.8", default-features = false }
 alloy-primitives.workspace = true
 alloy-sol-types.workspace = true
 serde = { features = ["alloc", "derive"], workspace = true, optional = true }
+serde_json = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 byte-slice-cast = "1.2.1"
@@ -66,6 +67,7 @@ std = [
 	"strum/std",
 	"serde/std",
 	"hex/std",
+	"serde_json/std",
 	"sc-transaction-pool-api",
 	"async-trait",
 ]

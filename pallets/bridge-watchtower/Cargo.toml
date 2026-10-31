@@ -31,7 +31,10 @@ sp-watchtower = { workspace = true }
 pallet-watchtower = { workspace = true }
 
 [dev-dependencies]
+hex = { workspace = true }
 pallet-node-manager = { workspace = true, features = ["default"] }
+parking_lot = { workspace = true }
+sp-keystore = { workspace = true, features = ["std"] }
 
 [features]
 default = ["std"]

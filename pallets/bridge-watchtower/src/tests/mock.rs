@@ -7,26 +7,37 @@ use frame_support::{
 };
 use frame_system::{self as system, EnsureRoot};
 use pallet_watchtower::NodesInterface;
+use parking_lot::RwLock;
 pub use sp_avn_common::eth::LowerParams;
-pub use sp_core::sr25519;
-pub use sp_runtime::{
-    testing::TestXt,
-    traits::{IdentityLookup, Verify},
-    BuildStorage, DispatchError,
+pub use sp_core::{
+    offchain::{
+        testing::{
+            OffchainState, PendingRequest, PoolState, TestOffchainExt, TestTransactionPoolExt,
+        },
+        OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
+    },
+    sr25519,
 };
-use std::{cell::RefCell, collections::HashMap};
+use sp_keystore::{testing::MemoryKeystore, KeystoreExt};
+pub use sp_runtime::{
+    testing::{TestXt, UintAuthorityId},
+    traits::{IdentityLookup, Verify},
+    BuildStorage, DispatchError, RuntimeAppPublic,
+};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 pub type Signature = sr25519::Signature;
 pub type AccountId = <Signature as Verify>::Signer;
 pub type Extrinsic = TestXt<RuntimeCall, ()>;
 
 type Block = frame_system::mocking::MockBlock<TestRuntime>;
-type SignerId = pallet_node_manager::sr25519::AuthorityId;
+pub type SignerId = pallet_node_manager::sr25519::AuthorityId;
 
 frame_support::construct_runtime!(
     pub enum TestRuntime
     {
         System: frame_system::{Pallet, Call, Config<T>, Storage, Event<T>},
+        AVN: pallet_avn::{Pallet, Storage, Event},
         Watchtower: pallet_watchtower::{Pallet, Call, Storage, Event<T>},
         BridgeWatchtower: pallet_bridge_watchtower::{Pallet, Call, Storage, Event<T>},
     }
@@ -61,6 +72,14 @@ impl pallet_watchtower::Config for TestRuntime {
     type BenchmarkHelper = ();
 }
 
+impl pallet_avn::Config for TestRuntime {
+    type AuthorityId = UintAuthorityId;
+    type EthereumPublicKeyChecker = ();
+    type NewSessionHandler = ();
+    type DisabledValidatorChecker = ();
+    type WeightInfo = ();
+}
+
 parameter_types! {
     pub const LiftCheckThreshold: Perbill = Perbill::from_percent(51);
 }
@@ -75,6 +94,8 @@ impl Config for TestRuntime {
     type LiftCheckCommitteeSize = ConstU32<20>;
 }
 
+pub const BRIDGE_CONTRACT: H160 = H160([9u8; 20]);
+
 pub type PublishedTx = (Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>, Vec<u8>);
 
 /// Storage key the mock bridge writes before failing, to check failed publishes are reverted.
@@ -87,6 +108,12 @@ thread_local! {
     static PROPOSALS: RefCell<Vec<ProposalRequest>> = RefCell::new(vec![]);
     static PROPOSAL_FAILS: RefCell<bool> = RefCell::new(false);
     static LOWERING_DISABLED: RefCell<bool> = RefCell::new(false);
+    static LOCAL_WATCHTOWER: RefCell<Option<(AccountId, SignerId)>> = RefCell::new(None);
+}
+
+/// The watchtower this node runs, as the offchain worker sees it.
+pub fn set_local_watchtower(node: Option<(AccountId, SignerId)>) {
+    LOCAL_WATCHTOWER.with(|n| *n.borrow_mut() = node);
 }
 
 pub fn proposals() -> Vec<ProposalRequest> {
@@ -152,6 +179,10 @@ impl pallet_avn::BridgeInterface for TestBridgeInterface {
 
     fn latest_finalised_ethereum_block() -> Result<u32, DispatchError> {
         Ok(1)
+    }
+
+    fn bridge_contract_address() -> H160 {
+        BRIDGE_CONTRACT
     }
 }
 
@@ -231,7 +262,8 @@ impl frame_support::traits::Randomness<H256, u64> for TestRandomness {
     }
 }
 
-/// No watchtowers are registered: the bridge watchtower has no voting logic to exercise yet.
+/// No watchtowers are registered. The offchain worker runs as the watchtower set with
+/// `set_local_watchtower`.
 pub struct TestNodeManager;
 impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     fn is_authorized_watchtower(_node: &AccountId) -> bool {
@@ -247,7 +279,7 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     }
 
     fn get_node_from_local_signing_keys() -> Option<(AccountId, SignerId)> {
-        None
+        LOCAL_WATCHTOWER.with(|n| n.borrow().clone())
     }
 
     fn get_watchtower_voting_weight(_owner: &AccountId) -> u32 {
@@ -301,6 +333,7 @@ impl ExtBuilder {
     pub fn build_default() -> Self {
         PROPOSALS.with(|p| p.borrow_mut().clear());
         LOWERING_DISABLED.with(|d| *d.borrow_mut() = false);
+        LOCAL_WATCHTOWER.with(|n| *n.borrow_mut() = None);
         let storage = frame_system::GenesisConfig::<TestRuntime>::default()
             .build_storage()
             .unwrap()
@@ -316,5 +349,21 @@ impl ExtBuilder {
             frame_system::Pallet::<TestRuntime>::set_block_number(1u32.into());
         });
         ext
+    }
+
+    /// Externalities for the offchain worker, with HTTP requests and submitted transactions the
+    /// test can inspect.
+    pub fn for_offchain_worker(
+        self,
+    ) -> (sp_io::TestExternalities, Arc<RwLock<OffchainState>>, Arc<RwLock<PoolState>>) {
+        let (offchain, offchain_state) = TestOffchainExt::new();
+        let (pool, pool_state) = TestTransactionPoolExt::new();
+
+        let mut ext = self.as_externality();
+        ext.register_extension(OffchainDbExt::new(offchain.clone()));
+        ext.register_extension(OffchainWorkerExt::new(offchain));
+        ext.register_extension(TransactionPoolExt::new(pool));
+        ext.register_extension(KeystoreExt(Arc::new(MemoryKeystore::new())));
+        (ext, offchain_state, pool_state)
     }
 }

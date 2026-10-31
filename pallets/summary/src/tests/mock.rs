@@ -20,7 +20,7 @@ use sp_core::{
         },
         OffchainDbExt, OffchainWorkerExt, TransactionPoolExt,
     },
-    ConstU64, H256,
+    ConstU64, H160, H256,
 };
 use sp_runtime::{
     testing::{TestSignature, TestXt, UintAuthorityId},
@@ -506,6 +506,10 @@ impl BridgeInterface for TestRuntime {
 
     fn latest_finalised_ethereum_block() -> Result<u32, DispatchError> {
         Ok(0)
+    }
+
+    fn bridge_contract_address() -> H160 {
+        H160::zero()
     }
 }
 
