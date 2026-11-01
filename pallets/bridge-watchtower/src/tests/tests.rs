@@ -377,12 +377,19 @@ mod lift_check {
 
     const PROPOSAL_ID: H256 = H256::repeat_byte(0x01);
 
+    fn lift_checks_ext() -> sp_io::TestExternalities {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| LiftCheckingEnabled::<TestRuntime>::put(true));
+        ext
+    }
+
     fn lift_event() -> EthEvent {
+        lift_event_in(ETH_TX_HASH)
+    }
+
+    fn lift_event_in(transaction_hash: H256) -> EthEvent {
         EthEvent {
-            event_id: EthEventId {
-                signature: ValidEvents::Lifted.signature(),
-                transaction_hash: ETH_TX_HASH,
-            },
+            event_id: EthEventId { signature: ValidEvents::Lifted.signature(), transaction_hash },
             event_data: EventData::LogLifted(LiftedData::new(
                 H160::repeat_byte(0x11),
                 H256::repeat_byte(0x33),
@@ -426,7 +433,7 @@ mod lift_check {
 
     #[test]
     fn lift_requests_a_check() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             let event = lift_event();
 
             assert_ok!(BridgeWatchtower::on_incoming_event_processed(&event));
@@ -456,7 +463,7 @@ mod lift_check {
 
     #[test]
     fn growth_lift_requests_a_check() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             let event = growth_event();
 
             assert_ok!(BridgeWatchtower::on_incoming_event_processed(&event));
@@ -468,7 +475,7 @@ mod lift_check {
 
     #[test]
     fn other_events_are_ignored() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             let event = EthEvent {
                 event_id: EthEventId {
                     signature: ValidEvents::AvtLowerClaimed.signature(),
@@ -485,7 +492,7 @@ mod lift_check {
 
     #[test]
     fn failed_request_disables_lowering_and_is_reverted() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             set_proposal_fails(true);
 
             assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
@@ -499,7 +506,7 @@ mod lift_check {
 
     #[test]
     fn started_vote_becomes_the_active_check() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             let event = lift_event();
 
             start_check(&event);
@@ -510,7 +517,7 @@ mod lift_check {
 
     #[test]
     fn passed_vote_verifies_the_lift() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             start_check(&lift_event());
 
             BridgeWatchtower::on_voting_completed(
@@ -538,7 +545,7 @@ mod lift_check {
             (ProposalStatusEnum::Active, LiftCheckFailure::UnexpectedResult),
             (ProposalStatusEnum::Unknown, LiftCheckFailure::UnexpectedResult),
         ] {
-            ExtBuilder::build_default().as_externality().execute_with(|| {
+            lift_checks_ext().execute_with(|| {
                 start_check(&lift_event());
 
                 BridgeWatchtower::on_voting_completed(PROPOSAL_ID, &external_ref(), &status);
@@ -553,7 +560,7 @@ mod lift_check {
 
     #[test]
     fn cancelled_check_disables_lowering() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             start_check(&lift_event());
 
             BridgeWatchtower::on_cancelled(PROPOSAL_ID, &external_ref());
@@ -565,7 +572,7 @@ mod lift_check {
 
     #[test]
     fn queued_check_completing_keeps_the_active_check() {
-        ExtBuilder::build_default().as_externality().execute_with(|| {
+        lift_checks_ext().execute_with(|| {
             let active = (H256::repeat_byte(0x02), growth_event());
             ActiveLiftCheck::<TestRuntime>::put(active.clone());
             assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
@@ -579,5 +586,160 @@ mod lift_check {
 
             assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), Some(active));
         });
+    }
+
+    #[test]
+    fn queued_check_is_not_active() {
+        lift_checks_ext().execute_with(|| {
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), None);
+
+            // Nor does it replace the check being voted on
+            let active = (H256::repeat_byte(0x02), lift_event_in(H256::repeat_byte(0xef)));
+            ActiveLiftCheck::<TestRuntime>::put(active.clone());
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event_in(
+                H256::repeat_byte(0xdd)
+            )));
+
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), Some(active));
+        });
+    }
+
+    #[test]
+    fn lifts_get_independent_checks() {
+        lift_checks_ext().execute_with(|| {
+            let first = lift_event();
+            let second_hash = H256::repeat_byte(0xef);
+            let second = lift_event_in(second_hash);
+            let second_ref = BridgeWatchtower::lift_check_ref(&second_hash);
+            let second_id = H256::repeat_byte(0x02);
+
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&first));
+            assert_ok!(BridgeWatchtower::on_incoming_event_processed(&second));
+
+            let refs: Vec<_> = proposals().iter().map(|p| p.external_ref).collect();
+            assert_eq!(refs, vec![external_ref(), second_ref]);
+            assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), Some(first));
+            assert_eq!(LiftChecks::<TestRuntime>::get(second_ref), Some(second.clone()));
+
+            // The first passes while the second waits
+            assert_ok!(BridgeWatchtower::on_proposal_submitted(
+                PROPOSAL_ID,
+                make_proposal(ProposalSource::Internal(ProposalType::Lift), external_ref())
+            ));
+            BridgeWatchtower::on_voting_completed(
+                PROPOSAL_ID,
+                &external_ref(),
+                &ProposalStatusEnum::Resolved { passed: true },
+            );
+            assert!(!lowering_disabled());
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), None);
+            assert_eq!(LiftChecks::<TestRuntime>::get(second_ref), Some(second.clone()));
+
+            // The second is voted on and fails on its own
+            assert_ok!(BridgeWatchtower::on_proposal_submitted(
+                second_id,
+                make_proposal(ProposalSource::Internal(ProposalType::Lift), second_ref)
+            ));
+            assert_eq!(ActiveLiftCheck::<TestRuntime>::get(), Some((second_id, second)));
+            BridgeWatchtower::on_voting_completed(
+                second_id,
+                &second_ref,
+                &ProposalStatusEnum::Resolved { passed: false },
+            );
+
+            assert!(lowering_disabled());
+            assert_eq!(LiftChecks::<TestRuntime>::get(second_ref), None);
+            System::assert_last_event(RuntimeEvent::BridgeWatchtower(
+                crate::Event::LiftFailedVerification {
+                    eth_tx_hash: second_hash,
+                    reason: LiftCheckFailure::Rejected,
+                },
+            ));
+        });
+    }
+
+    mod toggle_lift_checks {
+        use super::*;
+
+        #[test]
+        fn lifts_are_not_checked_until_enabled() {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                // Lowering stays on even though a check could not be requested
+                set_proposal_fails(true);
+
+                assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
+
+                assert!(proposals().is_empty());
+                assert_eq!(LiftChecks::<TestRuntime>::get(external_ref()), None);
+                assert!(!lowering_disabled());
+                assert!(System::events().is_empty());
+            });
+        }
+
+        #[test]
+        fn root_can_start_and_stop_lift_checks() {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                assert_ok!(BridgeWatchtower::toggle_lift_checks(RuntimeOrigin::root(), true));
+
+                assert!(LiftCheckingEnabled::<TestRuntime>::get());
+                System::assert_last_event(RuntimeEvent::BridgeWatchtower(
+                    crate::Event::LiftChecksEnabled,
+                ));
+                assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event()));
+                assert_eq!(proposals().len(), 1);
+
+                assert_ok!(BridgeWatchtower::toggle_lift_checks(RuntimeOrigin::root(), false));
+
+                assert!(!LiftCheckingEnabled::<TestRuntime>::get());
+                System::assert_last_event(RuntimeEvent::BridgeWatchtower(
+                    crate::Event::LiftChecksDisabled,
+                ));
+                assert_ok!(BridgeWatchtower::on_incoming_event_processed(&lift_event_in(
+                    H256::repeat_byte(0xef)
+                )));
+                assert_eq!(proposals().len(), 1);
+            });
+        }
+
+        #[test]
+        fn fails_for_non_root_origins() {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                let caller = sr25519::Public::from_raw([1u8; 32]);
+                assert_noop!(
+                    BridgeWatchtower::toggle_lift_checks(RuntimeOrigin::signed(caller), true),
+                    BadOrigin
+                );
+            });
+        }
+
+        #[test]
+        fn requested_checks_still_run_after_stopping() {
+            lift_checks_ext().execute_with(|| {
+                start_check(&lift_event());
+
+                assert_ok!(BridgeWatchtower::toggle_lift_checks(RuntimeOrigin::root(), false));
+
+                assert_eq!(
+                    ActiveLiftCheck::<TestRuntime>::get(),
+                    Some((PROPOSAL_ID, lift_event()))
+                );
+                BridgeWatchtower::on_voting_completed(
+                    PROPOSAL_ID,
+                    &external_ref(),
+                    &ProposalStatusEnum::Resolved { passed: false },
+                );
+                assert!(lowering_disabled());
+                System::assert_last_event(failed_verification_event(LiftCheckFailure::Rejected));
+            });
+        }
+
+        #[test]
+        fn lower_locks_are_checked_while_lift_checks_are_off() {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                request_freeze_on_mismatch();
+                assert_eq!(published(), vec![freeze_tx(LOWER_ID)]);
+            });
+        }
     }
 }
