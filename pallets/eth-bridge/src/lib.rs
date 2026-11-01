@@ -88,7 +88,7 @@ use sp_avn_common::{
     event_discovery::*,
     event_types::{self, EthEventId, EthProcessedEvent, EthTransactionId, ValidEvents, Validator},
 };
-use sp_core::{ecdsa, ConstU32, H256};
+use sp_core::{ecdsa, ConstU32, H160, H256};
 use sp_io::hashing::twox_64;
 use sp_runtime::{scale_info::TypeInfo, traits::Dispatchable, Saturating};
 use sp_std::prelude::*;
@@ -1261,6 +1261,10 @@ pub mod pallet {
             })?;
 
             Ok(latest_block)
+        }
+
+        fn bridge_contract_address() -> H160 {
+            Instance::<T, I>::get().bridge_contract
         }
     }
 }

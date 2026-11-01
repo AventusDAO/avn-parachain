@@ -52,6 +52,7 @@ pub mod benchmarking;
 pub mod constants;
 pub mod eth;
 pub mod eth_key_actions;
+pub mod eth_receipt;
 pub mod event_discovery;
 pub mod event_types;
 pub mod http_data_codec;

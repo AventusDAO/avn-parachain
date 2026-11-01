@@ -36,6 +36,7 @@ use codec::{Decode, Encode, MaxEncodedLen};
 use sp_application_crypto::RuntimeAppPublic;
 use sp_avn_common::{
     bounds::ProcessingBatchBound,
+    eth_receipt::decode_receipt_response,
     event_discovery::EthereumEventsFilterTrait,
     event_types::{
         AddedValidatorData, AvtGrowthLiftedData, AvtLowerClaimedData, Challenge, ChallengeReason,
@@ -44,8 +45,8 @@ use sp_avn_common::{
         NftMintData, NftTransferToData, ProcessedEventHandler, TotalSupplyUpdatedData, ValidEvents,
         Validator,
     },
-    verify_signature, EthQueryRequest, EthQueryResponse, EthQueryResponseType, EthTransaction,
-    IngressCounter, InnerCallValidator, Proof,
+    verify_signature, EthQueryRequest, EthQueryResponseType, EthTransaction, IngressCounter,
+    InnerCallValidator, Proof,
 };
 
 use pallet_session::historical::IdentificationTuple;
@@ -59,8 +60,6 @@ use crate::offence::{
     create_and_report_invalid_log_offence, EthereumLogOffenceType, InvalidEthereumLogOffence,
 };
 
-pub mod event_parser;
-use crate::event_parser::{find_event, get_status, parse_response_to_json};
 use sp_runtime::BoundedVec;
 
 pub type AVN<T> = avn::Pallet<T>;
@@ -1446,35 +1445,44 @@ impl<T: Config> Pallet<T> {
             )
         }
 
-        let (response_data_object, num_confirmations) =
-            parse_response_to_json(response_body.expect("Checked for error."))
-                .unwrap_or((vec![], 0));
-
-        if response_data_object.is_empty() {
-            log::error!("❌ Response data json is empty");
-            return invalid_result
-        };
+        let (receipt, num_confirmations) =
+            match decode_receipt_response(&response_body.expect("Checked for error.")) {
+                Ok(Some(receipt)) => receipt,
+                Ok(None) => {
+                    log::error!("❌ No receipt found for the event's transaction");
+                    return invalid_result
+                },
+                Err(e) => {
+                    log::error!("❌ Invalid receipt response: {:?}", e);
+                    return invalid_result
+                },
+            };
 
         // make sure the transaction has been successfully executed
-        let status = get_status(&response_data_object).unwrap_or(0);
-        if status != 1 {
+        if !receipt.succeeded {
             log::error!("❌ Transaction was not executed successfully on Ethereum");
             return invalid_result
         }
 
-        let event_object: Option<(_, _, _)> = find_event(&response_data_object, event_id.signature);
-        if event_object.is_none() {
-            log::error!("❌ Event missing from response or response is not valid. Response: {:?}, event topic: {:?}", response_data_object, event_id.signature);
+        let log = match receipt.find_log(&event_id.signature) {
+            Some(log) => log,
+            None => {
+                log::error!(
+                    "❌ Event missing from receipt {:?}, event topic: {:?}",
+                    receipt,
+                    event_id.signature
+                );
+                return invalid_result
+            },
+        };
+
+        if Self::is_event_contract_valid(&log.address, event_id) == false {
+            log::error!("❌ Event contract address {:?} is not recognised", log.address);
             return invalid_result
         }
-        let (data, topics, contract_address) = event_object.expect("Value is not none");
 
-        if Self::is_event_contract_valid(&contract_address, event_id) == false {
-            log::error!("❌ Event contract address {:?} is not recognised", contract_address);
-            return invalid_result
-        }
-
-        let parsed_event = Self::parse_tier1_event(event_id.clone(), data, topics);
+        let parsed_event =
+            Self::parse_tier1_event(event_id.clone(), log.data(), log.topics.clone());
         if let Err(e) = parsed_event {
             log::error!("❌ Unable to parse tier 1 event data {:?}", e);
             return invalid_result

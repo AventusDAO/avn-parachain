@@ -84,6 +84,10 @@ impl pallet_avn::BridgeInterface for TestBridgeInterface {
     fn latest_finalised_ethereum_block() -> Result<u32, DispatchError> {
         Ok(1u32)
     }
+
+    fn bridge_contract_address() -> H160 {
+        H160::zero()
+    }
 }
 
 pub struct TestProcessedEventsChecker;

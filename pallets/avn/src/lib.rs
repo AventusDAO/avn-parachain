@@ -827,6 +827,8 @@ pub trait BridgeInterface {
         eth_block: Option<u32>,
     ) -> Result<Vec<u8>, DispatchError>;
     fn latest_finalised_ethereum_block() -> Result<u32, DispatchError>;
+    /// The T1 contract the bridge sends transactions to and reads events from.
+    fn bridge_contract_address() -> H160;
 }
 
 pub trait BridgeInterfaceNotification {
