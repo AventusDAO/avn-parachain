@@ -379,6 +379,22 @@ pub mod pallet {
 
             Ok(())
         }
+
+        #[cfg(feature = "runtime-benchmarks")]
+        fn benchmark_setup_incoming_events() {
+            LiftCheckingEnabled::<T>::put(true);
+        }
+
+        #[cfg(feature = "runtime-benchmarks")]
+        fn benchmark_incoming_event_handled(event: &EthEvent) -> bool {
+            match &event.event_data {
+                EventData::LogLifted(_) | EventData::LogAvtGrowthLifted(_) =>
+                    LiftChecks::<T>::contains_key(Self::lift_check_ref(
+                        &event.event_id.transaction_hash,
+                    )),
+                _ => true,
+            }
+        }
     }
 
     impl<T: Config> WatchtowerHooks<Proposal<T>> for Pallet<T> {

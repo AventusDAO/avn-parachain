@@ -839,6 +839,14 @@ pub trait BridgeInterfaceNotification {
     fn on_incoming_event_processed(_event: &EthEvent) -> DispatchResult {
         Ok(())
     }
+    /// Benchmarks only: makes the consumers do all their work when incoming events are processed.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_setup_incoming_events() {}
+    /// Benchmarks only: whether the consumers did all their work for a processed event.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_incoming_event_handled(_event: &EthEvent) -> bool {
+        true
+    }
 }
 
 #[impl_trait_for_tuples::impl_for_tuples(30)]
@@ -860,6 +868,17 @@ impl BridgeInterfaceNotification for Tuple {
     fn on_incoming_event_processed(_event: &EthEvent) -> DispatchResult {
         for_tuples!( #( Tuple::on_incoming_event_processed(_event)?; )* );
         Ok(())
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_setup_incoming_events() {
+        for_tuples!( #( Tuple::benchmark_setup_incoming_events(); )* );
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_incoming_event_handled(_event: &EthEvent) -> bool {
+        for_tuples!( #( if !Tuple::benchmark_incoming_event_handled(_event) { return false } )* );
+        true
     }
 }
 
