@@ -292,7 +292,8 @@ pub mod pallet {
                 payload: RawPayload::Inline(event.encode()),
                 threshold: T::LiftCheckThreshold::get(),
                 source: ProposalSource::Internal(ProposalType::Lift),
-                decision_rule: DecisionRule::RejectOnExpiry,
+                // Expiry still disables lowering, but is reported apart from a rejection
+                decision_rule: DecisionRule::ExpireUnresolved,
                 external_ref,
                 created_at: frame_system::Pallet::<T>::block_number().saturated_into::<u32>(),
                 vote_duration: None,

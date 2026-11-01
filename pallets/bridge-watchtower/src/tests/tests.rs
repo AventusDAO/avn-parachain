@@ -437,7 +437,7 @@ mod lift_check {
             assert_eq!(request.external_ref, external_ref());
             assert_eq!(request.payload, RawPayload::Inline(event.encode()));
             assert_eq!(request.source, ProposalSource::Internal(ProposalType::Lift));
-            assert_eq!(request.decision_rule, DecisionRule::RejectOnExpiry);
+            assert_eq!(request.decision_rule, DecisionRule::ExpireUnresolved);
             assert_eq!(request.threshold, Perbill::from_percent(51));
             assert_eq!(request.committee_size, Some(20));
             assert_eq!(request.voting, VotingKind::Binary);
