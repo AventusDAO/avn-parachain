@@ -113,6 +113,11 @@ pub mod pallet {
     #[pallet::storage]
     pub type ActiveLiftCheck<T: Config> = StorageValue<_, (ProposalId, EthEvent), OptionQuery>;
 
+    /// Whether processed lifts are checked by the watchtowers. Off until enough watchtowers are
+    /// online to vote. Turning it off only stops new checks; requested ones still run.
+    #[pallet::storage]
+    pub type LiftCheckingEnabled<T: Config> = StorageValue<_, bool, ValueQuery>;
+
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
@@ -142,6 +147,10 @@ pub mod pallet {
         LiftVerified { eth_tx_hash: EthTransactionId },
         /// A lift could not be verified against T1. Lowering is disabled.
         LiftFailedVerification { eth_tx_hash: EthTransactionId, reason: LiftCheckFailure },
+        /// Processed lifts are checked by the watchtowers.
+        LiftChecksEnabled,
+        /// Processed lifts are no longer checked. Checks already requested still run.
+        LiftChecksDisabled,
     }
 
     #[pallet::error]
@@ -163,6 +172,23 @@ pub mod pallet {
             );
 
             Self::request_freeze(lower_id)?;
+            Ok(())
+        }
+
+        /// Starts or stops the watchtower checks of processed lifts.
+        #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config>::WeightInfo::toggle_lift_checks())]
+        pub fn toggle_lift_checks(origin: OriginFor<T>, enabled: bool) -> DispatchResult {
+            ensure_root(origin)?;
+
+            LiftCheckingEnabled::<T>::put(enabled);
+
+            if enabled {
+                Self::deposit_event(Event::<T>::LiftChecksEnabled);
+            } else {
+                Self::deposit_event(Event::<T>::LiftChecksDisabled);
+            }
+
             Ok(())
         }
     }
@@ -267,6 +293,10 @@ pub mod pallet {
         /// Asks the watchtowers to check a lift against T1. If that is not possible, the lift
         /// cannot be verified so lowering is disabled.
         fn process_lift(event: &EthEvent) {
+            if !LiftCheckingEnabled::<T>::get() {
+                return
+            }
+
             let eth_tx_hash = event.event_id.transaction_hash;
             match Self::request_lift_check(event) {
                 Ok(external_ref) => Self::deposit_event(Event::<T>::LiftCheckRequested {
@@ -348,6 +378,22 @@ pub mod pallet {
             }
 
             Ok(())
+        }
+
+        #[cfg(feature = "runtime-benchmarks")]
+        fn benchmark_setup_incoming_events() {
+            LiftCheckingEnabled::<T>::put(true);
+        }
+
+        #[cfg(feature = "runtime-benchmarks")]
+        fn benchmark_incoming_event_handled(event: &EthEvent) -> bool {
+            match &event.event_data {
+                EventData::LogLifted(_) | EventData::LogAvtGrowthLifted(_) =>
+                    LiftChecks::<T>::contains_key(Self::lift_check_ref(
+                        &event.event_id.transaction_hash,
+                    )),
+                _ => true,
+            }
         }
     }
 

@@ -450,9 +450,14 @@ benchmarks_instance_pallet! {
         let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
 
         submit_votes_from_other_authors::<T, I>(T::Quorum::get_quorum() - 1, &events, authors[1..].to_vec());
+        T::BridgeInterfaceNotification::benchmark_setup_incoming_events();
     }: submit_ethereum_events(RawOrigin::None, author, events.clone(), signature )
     verify {
         assert!(ActiveEthereumRange::<T, I>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
+        ensure!(
+            events.events().iter().all(|e| T::BridgeInterfaceNotification::benchmark_incoming_event_handled(&e.event)),
+            "Events not fully handled by the consumers"
+        );
         assert!(EthereumEvents::<T, I>::get(events).is_empty(), "Submitted events not cleared");
     }
 

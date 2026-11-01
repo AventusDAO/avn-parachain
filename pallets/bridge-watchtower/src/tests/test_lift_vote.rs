@@ -339,6 +339,22 @@ fn committee_member_votes() {
 }
 
 #[test]
+fn requested_check_is_voted_on_after_lift_checks_stop() {
+    let (mut ext, offchain, pool) = ExtBuilder::build_default().for_offchain_worker();
+    ext.execute_with(|| {
+        let key = run_as_watchtower();
+        start_check(lift_event(credited_lift()));
+        LiftCheckingEnabled::<TestRuntime>::put(false);
+        expect_receipt_request(&mut offchain.write(), T1Lift::default().response());
+        expect_country_request(&mut offchain.write());
+
+        BridgeWatchtower::vote_on_lift_check(1);
+
+        assert_eq!(submitted_votes(&pool, &key), vec![true]);
+    });
+}
+
+#[test]
 fn vote_is_submitted_again_only_after_the_inclusion_period() {
     let (mut ext, offchain, pool) = ExtBuilder::build_default().for_offchain_worker();
     ext.execute_with(|| {
