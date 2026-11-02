@@ -118,3 +118,12 @@ pub fn discovered_event_ordering_works() {
             .unwrap()
     );
 }
+
+#[test]
+pub fn core_primary_events_filter_excludes_avt_growth() {
+    use crate::event_discovery::{filters::CorePrimaryEventsFilter, EthereumEventsFilterTrait};
+
+    let filter = CorePrimaryEventsFilter::get();
+    assert!(!filter.contains(&ValidEvents::AvtGrowthLifted));
+    assert!(filter.contains(&ValidEvents::Lifted));
+}

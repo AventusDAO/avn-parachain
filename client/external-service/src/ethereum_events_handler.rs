@@ -86,6 +86,9 @@ impl EventRegistry {
             },
         );
 
+        // The runtime no longer asks for growth events, but every primary event is fetched and
+        // parsed so it can shadow secondary events in the same transaction. Without this parser a
+        // growth log would fail the whole range.
         m.insert(
             ValidEvents::AvtGrowthLifted.signature(),
             EventInfo {

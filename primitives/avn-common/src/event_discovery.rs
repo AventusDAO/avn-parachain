@@ -198,7 +198,8 @@ pub mod filters {
     impl EthereumEventsFilterTrait for CorePrimaryEventsFilter {
         fn get() -> EthBridgeEventsFilter {
             let mut filter = NftEventsFilter::get_remaining().into_inner();
-            filter.retain(|e| e.is_primary());
+            // AVT growth is no longer lifted to T2. Its parser is kept in case it is needed again.
+            filter.retain(|e| e.is_primary() && *e != ValidEvents::AvtGrowthLifted);
             EthBridgeEventsFilter::try_from(filter).unwrap_or_default()
         }
     }
