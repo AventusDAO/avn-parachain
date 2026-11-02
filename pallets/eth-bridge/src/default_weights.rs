@@ -44,6 +44,7 @@ pub trait WeightInfo {
 	fn add_corroboration_with_challenge(v: u32, ) -> Weight;
 	fn submit_ethereum_events(c: u32, e: u32, ) -> Weight;
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight;
+	fn submit_ethereum_events_and_process_lower_lock_batch(c: u32, e: u32, ) -> Weight;
 	fn submit_latest_ethereum_block(c: u32, ) -> Weight;
 	fn submit_latest_ethereum_block_with_quorum(c: u32, ) -> Weight;
 	fn base_on_idle() -> Weight;
@@ -179,6 +180,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::Balances` (r:1 w:1)
 	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
 	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
@@ -199,19 +202,65 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1015 + c * (75 ±0) + e * (194 ±0)`
+		//  Measured:  `1042 + c * (75 ±0) + e * (194 ±0)`
 		//  Estimated: `99120 + e * (11323 ±0)`
-		// Minimum execution time: 136_952_000 picoseconds.
-		Weight::from_parts(31_405_535, 99120)
-			// Standard Error: 753_864
-			.saturating_add(Weight::from_parts(6_029_246, 0).saturating_mul(c.into()))
-			// Standard Error: 157_544
-			.saturating_add(Weight::from_parts(61_422_056, 0).saturating_mul(e.into()))
-			.saturating_add(T::DbWeight::get().reads(11_u64))
+		// Minimum execution time: 192_589_000 picoseconds.
+		Weight::from_parts(74_196_357, 99120)
+			// Standard Error: 1_730_713
+			.saturating_add(Weight::from_parts(9_826_809, 0).saturating_mul(c.into()))
+			// Standard Error: 361_689
+			.saturating_add(Weight::from_parts(76_542_488, 0).saturating_mul(e.into()))
+			.saturating_add(T::DbWeight::get().reads(12_u64))
 			.saturating_add(T::DbWeight::get().reads((4_u64).saturating_mul(e.into())))
 			.saturating_add(T::DbWeight::get().writes(4_u64))
 			.saturating_add(T::DbWeight::get().writes((6_u64).saturating_mul(e.into())))
 			.saturating_add(Weight::from_parts(0, 11323).saturating_mul(e.into()))
+	}
+	/// Storage: `EthBridge::Instance` (r:1 w:0)
+	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveEthereumRange` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveEthereumRange` (`max_values`: Some(1), `max_size`: Some(544), added: 1039, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthereumEvents` (r:2 w:1)
+	/// Proof: `EthBridge::EthereumEvents` (`max_values`: None, `max_size`: Some(46590), added: 49065, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ProcessedEthereumEvents` (r:32 w:32)
+	/// Proof: `EthBridge::ProcessedEthereumEvents` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersReadyToClaim` (r:32 w:0)
+	/// Proof: `TokenManager::LowersReadyToClaim` (`max_values`: None, `max_size`: Some(10138), added: 12613, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersPendingProof` (r:32 w:0)
+	/// Proof: `TokenManager::LowersPendingProof` (`max_values`: None, `max_size`: Some(136), added: 2611, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::LowerIdToFreezeTxId` (r:32 w:32)
+	/// Proof: `BridgeWatchtower::LowerIdToFreezeTxId` (`max_values`: None, `max_size`: Some(24), added: 2499, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::NextTxId` (r:1 w:1)
+	/// Proof: `EthBridge::NextTxId` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveRequest` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveRequest` (`max_values`: Some(1), `max_size`: Some(20946), added: 21441, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthTxLifetimeSecs` (r:1 w:0)
+	/// Proof: `EthBridge::EthTxLifetimeSecs` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::PrimaryCollatorIndexForSending` (r:1 w:1)
+	/// Proof: `Avn::PrimaryCollatorIndexForSending` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::RequestQueue` (r:1 w:1)
+	/// Proof: `EthBridge::RequestQueue` (`max_values`: Some(1), `max_size`: Some(79002), added: 79497, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::FreezeTxIdToLowerId` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::FreezeTxIdToLowerId` (`max_values`: None, `max_size`: Some(24), added: 2499, mode: `MaxEncodedLen`)
+	/// The range of component `c` is `[4, 10]`.
+	/// The range of component `e` is `[1, 32]`.
+	fn submit_ethereum_events_and_process_lower_lock_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 144_324_000 picoseconds.
+		Weight::from_parts(628_239_340, 99120)
+			// Standard Error: 605_905
+			.saturating_add(Weight::from_parts(79_919_228, 0).saturating_mul(e.into()))
+			.saturating_add(T::DbWeight::get().reads(11_u64))
+			.saturating_add(T::DbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
 	}
 	/// Storage: `EthBridge::Instance` (r:1 w:0)
 	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
@@ -418,6 +467,8 @@ impl WeightInfo for () {
 	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::Balances` (r:1 w:1)
 	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
 	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
@@ -438,19 +489,65 @@ impl WeightInfo for () {
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight {
 		// Proof Size summary in bytes:
-		//  Measured:  `1015 + c * (75 ±0) + e * (194 ±0)`
+		//  Measured:  `1042 + c * (75 ±0) + e * (194 ±0)`
 		//  Estimated: `99120 + e * (11323 ±0)`
-		// Minimum execution time: 136_952_000 picoseconds.
-		Weight::from_parts(31_405_535, 99120)
-			// Standard Error: 753_864
-			.saturating_add(Weight::from_parts(6_029_246, 0).saturating_mul(c.into()))
-			// Standard Error: 157_544
-			.saturating_add(Weight::from_parts(61_422_056, 0).saturating_mul(e.into()))
-			.saturating_add(RocksDbWeight::get().reads(11_u64))
+		// Minimum execution time: 192_589_000 picoseconds.
+		Weight::from_parts(74_196_357, 99120)
+			// Standard Error: 1_730_713
+			.saturating_add(Weight::from_parts(9_826_809, 0).saturating_mul(c.into()))
+			// Standard Error: 361_689
+			.saturating_add(Weight::from_parts(76_542_488, 0).saturating_mul(e.into()))
+			.saturating_add(RocksDbWeight::get().reads(12_u64))
 			.saturating_add(RocksDbWeight::get().reads((4_u64).saturating_mul(e.into())))
 			.saturating_add(RocksDbWeight::get().writes(4_u64))
 			.saturating_add(RocksDbWeight::get().writes((6_u64).saturating_mul(e.into())))
 			.saturating_add(Weight::from_parts(0, 11323).saturating_mul(e.into()))
+	}
+	/// Storage: `EthBridge::Instance` (r:1 w:0)
+	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveEthereumRange` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveEthereumRange` (`max_values`: Some(1), `max_size`: Some(544), added: 1039, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthereumEvents` (r:2 w:1)
+	/// Proof: `EthBridge::EthereumEvents` (`max_values`: None, `max_size`: Some(46590), added: 49065, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ProcessedEthereumEvents` (r:32 w:32)
+	/// Proof: `EthBridge::ProcessedEthereumEvents` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersReadyToClaim` (r:32 w:0)
+	/// Proof: `TokenManager::LowersReadyToClaim` (`max_values`: None, `max_size`: Some(10138), added: 12613, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersPendingProof` (r:32 w:0)
+	/// Proof: `TokenManager::LowersPendingProof` (`max_values`: None, `max_size`: Some(136), added: 2611, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::LowerIdToFreezeTxId` (r:32 w:32)
+	/// Proof: `BridgeWatchtower::LowerIdToFreezeTxId` (`max_values`: None, `max_size`: Some(24), added: 2499, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::NextTxId` (r:1 w:1)
+	/// Proof: `EthBridge::NextTxId` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveRequest` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveRequest` (`max_values`: Some(1), `max_size`: Some(20946), added: 21441, mode: `MaxEncodedLen`)
+	/// Storage: `Timestamp::Now` (r:1 w:0)
+	/// Proof: `Timestamp::Now` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthTxLifetimeSecs` (r:1 w:0)
+	/// Proof: `EthBridge::EthTxLifetimeSecs` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::PrimaryCollatorIndexForSending` (r:1 w:1)
+	/// Proof: `Avn::PrimaryCollatorIndexForSending` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::RequestQueue` (r:1 w:1)
+	/// Proof: `EthBridge::RequestQueue` (`max_values`: Some(1), `max_size`: Some(79002), added: 79497, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::FreezeTxIdToLowerId` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::FreezeTxIdToLowerId` (`max_values`: None, `max_size`: Some(24), added: 2499, mode: `MaxEncodedLen`)
+	/// The range of component `c` is `[4, 10]`.
+	/// The range of component `e` is `[1, 32]`.
+	fn submit_ethereum_events_and_process_lower_lock_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 144_324_000 picoseconds.
+		Weight::from_parts(628_239_340, 99120)
+			// Standard Error: 605_905
+			.saturating_add(Weight::from_parts(79_919_228, 0).saturating_mul(e.into()))
+			.saturating_add(RocksDbWeight::get().reads(11_u64))
+			.saturating_add(RocksDbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
 	}
 	/// Storage: `EthBridge::Instance` (r:1 w:0)
 	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)

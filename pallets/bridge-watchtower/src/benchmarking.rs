@@ -16,6 +16,12 @@ benchmarks! {
         let tx_id = LowerIdToFreezeTxId::<T>::get(lower_id).expect("freeze is requested");
         assert_eq!(FreezeTxIdToLowerId::<T>::get(tx_id), Some(lower_id));
     }
+
+    toggle_lift_checks {
+    }: _(RawOrigin::Root, true)
+    verify {
+        assert!(LiftCheckingEnabled::<T>::get());
+    }
 }
 
 impl_benchmark_test_suite!(

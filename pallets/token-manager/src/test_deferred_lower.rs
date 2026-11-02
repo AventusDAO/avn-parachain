@@ -373,3 +373,43 @@ fn disable_lowering_works() {
         assert_eq!(LowersDisabled::<TestRuntime>::get(), false);
     });
 }
+
+#[test]
+fn scheduled_lower_is_dropped_when_lowering_is_disabled() {
+    let mut ext = ExtBuilder::build_default().with_genesis_config().as_externality();
+
+    ext.execute_with(|| {
+        let (_, from, _, t1_recipient) = MockData::setup_lower_request_data();
+        let pre_lower_balance = TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from));
+        let execution_block = get_expected_execution_block();
+        schedule_lower(from, pre_lower_balance, t1_recipient);
+
+        // e.g. a lift failed verification while the lower was waiting
+        TokenManager::disable_lowering();
+        fast_forward_to_block(execution_block);
+
+        // The scheduler ran the lower, which failed and was dropped
+        assert!(System::events().iter().any(|e| matches!(
+            &e.event,
+            RuntimeEvent::Scheduler(pallet_scheduler::Event::Dispatched { result, .. })
+                if *result == Err(Error::<TestRuntime>::LoweringDisabled.into())
+        )));
+        assert_eq!(0, Agenda::<TestRuntime>::get(execution_block).len());
+        assert!(!System::events().iter().any(|e| matches!(
+            e.event,
+            RuntimeEvent::TokenManager(crate::Event::TokenLowered { .. })
+        )));
+
+        // The funds stay with the sender, who must request the lower again
+        assert_eq!(
+            TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from)),
+            pre_lower_balance
+        );
+        assert_ok!(TokenManager::toggle_lowering(RuntimeOrigin::root(), true));
+        fast_forward_to_block(execution_block + 1);
+        assert_eq!(
+            TokenManagerBalances::<TestRuntime>::get((NON_AVT_TOKEN_ID, from)),
+            pre_lower_balance
+        );
+    });
+}
