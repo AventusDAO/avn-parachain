@@ -284,7 +284,8 @@ fn setup_incoming_lower_locks<T: Config<I>, I: 'static>(
     })
 }
 
-/// Reverts of lowers T2 issued, so each one refunds its sender.
+/// Reverts of lowers T2 issued, so each one refunds its sender. Each refunds a different sender
+/// and token, so no balance is read twice.
 fn setup_incoming_lower_reverts<T: Config<I>, I: 'static>(
     event_count: u32,
     partition_index: u16,
@@ -296,8 +297,8 @@ fn setup_incoming_lower_reverts<T: Config<I>, I: 'static>(
             transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
         },
         event_data: EventData::LogLowerReverted(LowerRevertedData {
-            token_contract: H160::zero(),
-            receiver_address: H256::zero(),
+            token_contract: H160::repeat_byte(i.try_into().unwrap()),
+            receiver_address: H256::repeat_byte(i.try_into().unwrap()),
             t1_recipient: H160::zero(),
             amount: i.into(),
             lower_id: i,
