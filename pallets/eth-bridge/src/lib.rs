@@ -165,7 +165,7 @@ pub mod pallet {
     };
     use sp_avn_common::{
         eth::EthereumId,
-        event_types::{EthEvent, EthEventId, EventData, ValidEvents},
+        event_types::{EthEvent, EthEventId, ValidEvents},
     };
 
     #[pallet::config]
@@ -415,6 +415,7 @@ pub mod pallet {
         AuthorNotSender,
         SigningError,
         InvalidCorroborationData,
+        EventDataMismatch,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -971,16 +972,24 @@ pub mod pallet {
         let _ = EthereumEvents::<T, I>::take(partition);
         for discovered_event in partition.events().iter() {
             match ValidEvents::try_from(&discovered_event.event.event_id.signature).ok() {
-                // AVT growth is no longer lifted to T2, even if the events filter lets it through.
-                // Handlers act on the event data, so check it as well as the signature.
+                // AVT growth is no longer lifted to T2, even if the events filter lets it through
                 Some(valid_event) =>
                     if active_range.event_types_filter.contains(&valid_event) &&
-                        valid_event != ValidEvents::AvtGrowthLifted &&
-                        !matches!(
-                            discovered_event.event.event_data,
-                            EventData::LogAvtGrowthLifted(_)
-                        )
+                        valid_event != ValidEvents::AvtGrowthLifted
                     {
+                        // Handlers act on the data, so it must be of the type the filter checked
+                        if discovered_event.event.event_data.event_type() != Some(valid_event) {
+                            log::error!(
+                                "💔 Ethereum event data does not match its signature: {:?}",
+                                discovered_event.event
+                            );
+                            <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
+                                eth_event_id: discovered_event.event.event_id.clone(),
+                                reason: Error::<T, I>::EventDataMismatch.into(),
+                            });
+                            continue
+                        }
+
                         if discovered_event.block > active_range.range.end_block().into() {
                             <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
                                 eth_event_id: discovered_event.event.event_id.clone(),

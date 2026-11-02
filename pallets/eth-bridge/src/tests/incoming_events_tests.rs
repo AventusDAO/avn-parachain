@@ -347,7 +347,7 @@ mod process_events {
         }
 
         #[test]
-        fn avt_growth_data_is_skipped_under_another_signature() {
+        fn event_data_of_another_type_gets_rejected() {
             let mut ext = ExtBuilder::build_default()
                 .with_validators()
                 .with_genesis_config()
@@ -356,6 +356,7 @@ mod process_events {
                 let context = EventProcessContext::setup();
                 init_active_range();
 
+                // Growth data under a lift signature would otherwise be credited as growth
                 let growth_event_id = EthEventId {
                     signature: ValidEvents::Lifted.signature(),
                     transaction_hash: H256::from_slice(&[7u8; 32]),
@@ -385,15 +386,11 @@ mod process_events {
                     context.test_signature_two.clone()
                 ));
 
-                // The partition was processed
-                assert_eq!(EthBridge::active_ethereum_range().unwrap().partition, 1);
-                // Skipped like an event outside the filter: neither accepted nor rejected
-                assert!(!System::events().iter().any(|record| matches!(
-                    &record.event,
-                    mock::RuntimeEvent::EthBridge(
-                        Event::<TestRuntime>::EventAccepted { eth_event_id } |
-                        Event::<TestRuntime>::EventRejected { eth_event_id, .. }
-                    ) if *eth_event_id == growth_event_id
+                assert!(mock::contains_event(mock::RuntimeEvent::EthBridge(
+                    Event::<TestRuntime>::EventRejected {
+                        eth_event_id: growth_event_id.clone(),
+                        reason: Error::<TestRuntime>::EventDataMismatch.into(),
+                    }
                 )));
                 assert!(!ProcessedEthereumEvents::<TestRuntime>::contains_key(
                     growth_event_id.transaction_hash

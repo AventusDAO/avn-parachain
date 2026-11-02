@@ -1215,6 +1215,29 @@ impl EventData {
             EventData::EmptyEvent => true,
         }
     }
+
+    /// The type of event this data was parsed from. It must match the event's signature, because
+    /// handlers act on the data while event filters check the signature.
+    pub fn event_type(&self) -> Option<ValidEvents> {
+        match self {
+            EventData::LogAddedValidator(_) => Some(ValidEvents::AddedValidator),
+            EventData::LogLifted(_) => Some(ValidEvents::Lifted),
+            EventData::LogNftMinted(_) => Some(ValidEvents::NftMint),
+            EventData::LogNftTransferTo(_) => Some(ValidEvents::NftTransferTo),
+            EventData::LogNftCancelListing(_) => Some(ValidEvents::NftCancelListing),
+            EventData::LogNftEndBatchListing(_) => Some(ValidEvents::NftEndBatchListing),
+            EventData::LogAvtGrowthLifted(_) => Some(ValidEvents::AvtGrowthLifted),
+            EventData::LogLowerClaimed(_) => Some(ValidEvents::AvtLowerClaimed),
+            EventData::LogLowerReverted(_) => Some(ValidEvents::LowerReverted),
+            EventData::LogLiftedToPredictionMarket(_) =>
+                Some(ValidEvents::LiftedToPredictionMarket),
+            EventData::LogErc20Transfer(_) => Some(ValidEvents::Erc20DirectTransfer),
+            EventData::LogRewardsMinted(_) => Some(ValidEvents::AvtRewardsMinted),
+            EventData::LogLowerCancelled(_) => Some(ValidEvents::LowerCancelled),
+            EventData::LogLowerLocked(_) => Some(ValidEvents::LowerLocked),
+            EventData::EmptyEvent => None,
+        }
+    }
 }
 
 impl Default for EventData {

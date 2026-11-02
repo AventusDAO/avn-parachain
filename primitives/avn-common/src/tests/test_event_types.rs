@@ -440,3 +440,20 @@ fn test_module_hasher_uses_hash_of() {
     let actual = EMPTY_STRING.using_encoded(BlakeTwo256::hash);
     assert_eq!(expected, actual);
 }
+
+#[test]
+fn event_data_reports_the_type_it_was_parsed_from() {
+    let lifted = LiftedData::new(H160::zero(), H256::zero(), 1);
+
+    assert_eq!(EventData::LogLifted(lifted.clone()).event_type(), Some(ValidEvents::Lifted));
+    // These share their data with lifts, but are different events
+    assert_eq!(
+        EventData::LogLiftedToPredictionMarket(lifted.clone()).event_type(),
+        Some(ValidEvents::LiftedToPredictionMarket)
+    );
+    assert_eq!(
+        EventData::LogErc20Transfer(lifted).event_type(),
+        Some(ValidEvents::Erc20DirectTransfer)
+    );
+    assert_eq!(EventData::EmptyEvent.event_type(), None);
+}
