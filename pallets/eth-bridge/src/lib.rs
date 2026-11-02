@@ -973,10 +973,22 @@ pub mod pallet {
         for discovered_event in partition.events().iter() {
             match ValidEvents::try_from(&discovered_event.event.event_id.signature).ok() {
                 // AVT growth is no longer lifted to T2, even if the events filter lets it through
+                Some(ValidEvents::AvtGrowthLifted) => {
+                    log::warn!(
+                        "AVT growth is no longer lifted to T2, ignoring: {:?}",
+                        &discovered_event.event.event_id
+                    );
+                },
                 Some(valid_event) =>
-                    if active_range.event_types_filter.contains(&valid_event) &&
-                        valid_event != ValidEvents::AvtGrowthLifted
-                    {
+                    if active_range.event_types_filter.contains(&valid_event) {
+                        if discovered_event.block > active_range.range.end_block().into() {
+                            <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
+                                eth_event_id: discovered_event.event.event_id.clone(),
+                                reason: Error::<T, I>::EventBelongsInFutureRange.into(),
+                            });
+                            continue
+                        }
+
                         // Handlers act on the data, so it must be of the type the filter checked
                         if discovered_event.event.event_data.event_type() != Some(valid_event) {
                             log::error!(
@@ -986,14 +998,6 @@ pub mod pallet {
                             <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
                                 eth_event_id: discovered_event.event.event_id.clone(),
                                 reason: Error::<T, I>::EventDataMismatch.into(),
-                            });
-                            continue
-                        }
-
-                        if discovered_event.block > active_range.range.end_block().into() {
-                            <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
-                                eth_event_id: discovered_event.event.event_id.clone(),
-                                reason: Error::<T, I>::EventBelongsInFutureRange.into(),
                             });
                             continue
                         }

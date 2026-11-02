@@ -443,17 +443,35 @@ fn test_module_hasher_uses_hash_of() {
 
 #[test]
 fn event_data_reports_the_type_it_was_parsed_from() {
-    let lifted = LiftedData::new(H160::zero(), H256::zero(), 1);
+    let cases = [
+        (EventData::LogAddedValidator(Default::default()), ValidEvents::AddedValidator),
+        (EventData::LogLifted(Default::default()), ValidEvents::Lifted),
+        (EventData::LogNftMinted(Default::default()), ValidEvents::NftMint),
+        (EventData::LogNftTransferTo(Default::default()), ValidEvents::NftTransferTo),
+        (EventData::LogNftCancelListing(Default::default()), ValidEvents::NftCancelListing),
+        (EventData::LogNftEndBatchListing(Default::default()), ValidEvents::NftEndBatchListing),
+        (EventData::LogAvtGrowthLifted(Default::default()), ValidEvents::AvtGrowthLifted),
+        (EventData::LogLowerClaimed(Default::default()), ValidEvents::AvtLowerClaimed),
+        (EventData::LogLowerReverted(Default::default()), ValidEvents::LowerReverted),
+        // These two share their data with lifts, but are different events
+        (
+            EventData::LogLiftedToPredictionMarket(Default::default()),
+            ValidEvents::LiftedToPredictionMarket,
+        ),
+        (EventData::LogErc20Transfer(Default::default()), ValidEvents::Erc20DirectTransfer),
+        (EventData::LogRewardsMinted(Default::default()), ValidEvents::AvtRewardsMinted),
+        (EventData::LogLowerCancelled(Default::default()), ValidEvents::LowerCancelled),
+        (EventData::LogLowerLocked(Default::default()), ValidEvents::LowerLocked),
+    ];
 
-    assert_eq!(EventData::LogLifted(lifted.clone()).event_type(), Some(ValidEvents::Lifted));
-    // These share their data with lifts, but are different events
-    assert_eq!(
-        EventData::LogLiftedToPredictionMarket(lifted.clone()).event_type(),
-        Some(ValidEvents::LiftedToPredictionMarket)
-    );
-    assert_eq!(
-        EventData::LogErc20Transfer(lifted).event_type(),
-        Some(ValidEvents::Erc20DirectTransfer)
-    );
+    for (data, event_type) in cases.iter() {
+        assert_eq!(data.event_type(), Some(event_type.clone()), "{:?}", data);
+    }
+    // Every event type is covered, once
+    let covered: sp_std::collections::btree_set::BTreeSet<_> =
+        cases.iter().map(|(_, event_type)| event_type.clone()).collect();
+    assert_eq!(covered.len(), cases.len());
+    assert_eq!(covered.len(), ValidEvents::values().len());
+
     assert_eq!(EventData::EmptyEvent.event_type(), None);
 }
