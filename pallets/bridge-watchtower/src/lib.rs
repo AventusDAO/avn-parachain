@@ -392,6 +392,9 @@ pub mod pallet {
                     LiftChecks::<T>::contains_key(Self::lift_check_ref(
                         &event.event_id.transaction_hash,
                     )),
+                // Benchmarks lock lowers T2 never issued, so each must be frozen
+                EventData::LogLowerLocked(data) =>
+                    LowerIdToFreezeTxId::<T>::contains_key(data.lower_id),
                 _ => true,
             }
         }

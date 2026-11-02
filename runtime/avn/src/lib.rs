@@ -17,6 +17,8 @@ pub mod governance;
 pub mod migrations;
 pub mod proxy_config;
 pub mod third_party_weights;
+#[cfg(test)]
+mod tests;
 
 use core::cmp::Ordering;
 

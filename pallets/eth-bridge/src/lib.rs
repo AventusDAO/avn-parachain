@@ -574,7 +574,7 @@ pub mod pallet {
         #[pallet::weight( <T as
         pallet::Config<I>>::WeightInfo::submit_ethereum_events(MAX_VALIDATOR_ACCOUNTS,
         MAX_INCOMING_EVENTS_BATCH_SIZE).max(
-            <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_batch(MAX_VALIDATOR_ACCOUNTS, MAX_INCOMING_EVENTS_BATCH_SIZE)
+            Pallet::<T, I>::process_batch_weight(MAX_INCOMING_EVENTS_BATCH_SIZE)
         ))]
         pub fn submit_ethereum_events(
             origin: OriginFor<T>,
@@ -618,12 +618,9 @@ pub mod pallet {
             }
 
             let final_weight = if threshold_met {
-                <T as Config<I>>::WeightInfo::submit_ethereum_events(
-                    MAX_VALIDATOR_ACCOUNTS,
-                    MAX_INCOMING_EVENTS_BATCH_SIZE,
-                )
+                Self::process_batch_weight(MAX_INCOMING_EVENTS_BATCH_SIZE)
             } else {
-                <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_batch(
+                <T as Config<I>>::WeightInfo::submit_ethereum_events(
                     MAX_VALIDATOR_ACCOUNTS,
                     MAX_INCOMING_EVENTS_BATCH_SIZE,
                 )
@@ -1270,6 +1267,21 @@ pub mod pallet {
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
+    /// The weight of a vote that processes a batch of `events`. Takes the most expensive kind of
+    /// batch, since the events are only known once processed.
+    pub fn process_batch_weight(events: u32) -> Weight {
+        <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_batch(
+            MAX_VALIDATOR_ACCOUNTS,
+            events,
+        )
+        .max(
+            <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_lower_lock_batch(
+                MAX_VALIDATOR_ACCOUNTS,
+                events,
+            ),
+        )
+    }
+
     pub fn signatures() -> Vec<H256> {
         match Self::active_ethereum_range() {
             Some(active_range) => active_range
