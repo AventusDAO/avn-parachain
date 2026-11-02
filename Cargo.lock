@@ -409,7 +409,7 @@ dependencies = [
  "itoa",
  "k256",
  "keccak-asm",
- "paste 1.0.15",
+ "paste",
  "proptest",
  "rand 0.9.0",
  "rapidhash",
@@ -1091,7 +1091,7 @@ dependencies = [
  "derivative",
  "num-bigint",
  "num-traits",
- "paste 1.0.15",
+ "paste",
  "rustc_version 0.3.3",
  "zeroize",
 ]
@@ -1111,7 +1111,7 @@ dependencies = [
  "itertools 0.10.5",
  "num-bigint",
  "num-traits",
- "paste 1.0.15",
+ "paste",
  "rustc_version 0.4.0",
  "zeroize",
 ]
@@ -1132,7 +1132,7 @@ dependencies = [
  "itertools 0.13.0",
  "num-bigint",
  "num-traits",
- "paste 1.0.15",
+ "paste",
  "rayon",
  "zeroize",
 ]
@@ -2002,7 +2002,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "avn-node-parachain"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "avn-parachain-runtime",
  "avn-parachain-test-runtime",
@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "avn-parachain-runtime"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "avn-runtime-common",
  "cumulus-pallet-parachain-system",
@@ -2100,6 +2100,7 @@ dependencies = [
  "pallet-avn-proxy",
  "pallet-avn-transaction-payment",
  "pallet-balances",
+ "pallet-bridge-watchtower",
  "pallet-cross-chain-voting",
  "pallet-cross-chain-voting-runtime-api",
  "pallet-eth-bridge",
@@ -2125,7 +2126,7 @@ dependencies = [
 
 [[package]]
 name = "avn-parachain-test-runtime"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "avn-runtime-common",
  "cumulus-pallet-parachain-system",
@@ -2164,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "avn-runtime-common"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "log",
  "parity-scale-codec",
@@ -3191,7 +3192,7 @@ checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
 
 [[package]]
 name = "cli-commands"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "clap",
  "external-service",
@@ -3205,7 +3206,7 @@ dependencies = [
 
 [[package]]
 name = "client-extrinsic-utils"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -5481,7 +5482,7 @@ dependencies = [
 
 [[package]]
 name = "external-service"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -5765,7 +5766,7 @@ dependencies = [
  "linregress",
  "log",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "scale-info",
  "serde",
  "sp-api",
@@ -5993,7 +5994,7 @@ dependencies = [
  "log",
  "macro_magic",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "scale-info",
  "serde",
  "serde_json",
@@ -9072,7 +9073,7 @@ checksum = "0ede8a08c71ad5a95cdd0e4e52facd37190977039a4704eb82a283f713747d34"
 dependencies = [
  "anyhow",
  "byteorder",
- "paste 1.0.15",
+ "paste",
  "thiserror 1.0.65",
 ]
 
@@ -9536,7 +9537,7 @@ dependencies = [
  "num-traits",
  "orml-utilities",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "scale-info",
  "serde",
  "sp-core",
@@ -9851,7 +9852,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-authors-manager"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "cumulus-pallet-session-benchmarking",
  "frame-benchmarking",
@@ -9897,7 +9898,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9924,7 +9925,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-anchor"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9957,7 +9958,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-offence-handler"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -9980,7 +9981,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-proxy"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -10013,7 +10014,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-avn-transaction-payment"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -10244,6 +10245,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-bridge-watchtower"
+version = "10.4.0"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "hex",
+ "log",
+ "pallet-avn",
+ "pallet-node-manager",
+ "pallet-watchtower",
+ "parity-scale-codec",
+ "parking_lot 0.12.3",
+ "scale-info",
+ "sp-avn-common",
+ "sp-core",
+ "sp-io",
+ "sp-keystore",
+ "sp-runtime",
+ "sp-std",
+ "sp-watchtower",
+]
+
+[[package]]
 name = "pallet-broker"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10351,7 +10376,7 @@ dependencies = [
  "pallet-contracts-proc-macro",
  "pallet-contracts-uapi",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "rand 0.8.5",
  "rand_pcg",
  "scale-info",
@@ -10418,7 +10443,7 @@ checksum = "b1175375608ec4900f1172d304f7c7ac1f7e3710be17f365121cf94028db1630"
 dependencies = [
  "bitflags 1.3.2",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "scale-info",
 ]
 
@@ -10460,7 +10485,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-cross-chain-voting"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -10481,7 +10506,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-cross-chain-voting-runtime-api"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "parity-scale-codec",
  "sp-api",
@@ -10678,7 +10703,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-eth-bridge"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -10712,7 +10737,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-eth-bridge-runtime-api"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-support",
  "pallet-avn",
@@ -10726,7 +10751,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-ethereum-events"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "env_logger",
  "frame-benchmarking",
@@ -10745,7 +10770,6 @@ dependencies = [
  "parking_lot 0.12.3",
  "scale-info",
  "serde",
- "simple-json2",
  "sp-application-crypto",
  "sp-avn-common",
  "sp-core",
@@ -11047,7 +11071,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-nft-manager"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -11119,7 +11143,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-node-manager"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -11301,7 +11325,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-parachain-staking"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "assert_matches",
  "cumulus-pallet-session-benchmarking",
@@ -11347,7 +11371,7 @@ dependencies = [
  "frame-support",
  "frame-system",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "scale-info",
  "serde",
  "sp-core",
@@ -11532,7 +11556,7 @@ dependencies = [
  "pallet-revive-uapi",
  "pallet-transaction-payment",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "polkavm",
  "polkavm-common 0.33.0",
  "rand 0.8.5",
@@ -11941,7 +11965,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-summary"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "assert_matches",
  "frame-benchmarking",
@@ -11972,7 +11996,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-summary-watchtower"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -12040,7 +12064,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-token-manager"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "enumflags2",
  "frame-benchmarking",
@@ -12185,7 +12209,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-validators-manager"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "cumulus-pallet-session-benchmarking",
  "frame-benchmarking",
@@ -12273,7 +12297,7 @@ dependencies = [
 
 [[package]]
 name = "pallet-watchtower"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -12617,31 +12641,9 @@ dependencies = [
 
 [[package]]
 name = "paste"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab4fb1930692d1b6a9cfabdde3d06ea0a7d186518e2f4d67660d8970e2fa647a"
-dependencies = [
- "paste-impl",
- "proc-macro-hack",
-]
-
-[[package]]
-name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "paste-impl"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a62486e111e571b1e93b710b61e8f493c0013be39629b714cb166bdb06aa5a8a"
-dependencies = [
- "proc-macro-hack",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "pbkdf2"
@@ -18227,7 +18229,7 @@ dependencies = [
  "approx",
  "num-complex",
  "num-traits",
- "paste 1.0.15",
+ "paste",
  "wide",
 ]
 
@@ -18258,15 +18260,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a75cbde1bf934313596a004973e462f9a82caa814dcf1a5f507bdf51597eeb4"
 dependencies = [
  "bitflags 2.13.1",
-]
-
-[[package]]
-name = "simple-json2"
-version = "0.1.2"
-source = "git+https://github.com/Aventus-Network-Services/simple-json2?branch=fixed_dependencies_1.10#26b95b193f91ef63f2afb55ee0031d7567da3291"
-dependencies = [
- "num-traits",
- "paste 0.1.10",
 ]
 
 [[package]]
@@ -18310,7 +18303,7 @@ checksum = "4dff5345349ca9401f0a7362e54143ab33c4e10fc7175e76330c38ec712c5f7c"
 dependencies = [
  "enumn",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "sp-runtime",
 ]
 
@@ -18594,7 +18587,7 @@ dependencies = [
 
 [[package]]
 name = "sp-avn-common"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -18612,6 +18605,7 @@ dependencies = [
  "sc-transaction-pool-api",
  "scale-info",
  "serde",
+ "serde_json",
  "sha3 0.8.2",
  "sp-core",
  "sp-io",
@@ -18795,7 +18789,7 @@ dependencies = [
  "merlin",
  "parity-scale-codec",
  "parking_lot 0.12.3",
- "paste 1.0.15",
+ "paste",
  "primitive-types 0.13.1",
  "rand 0.8.5",
  "scale-info",
@@ -19121,7 +19115,7 @@ dependencies = [
  "log",
  "num-traits",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "rand 0.8.5",
  "scale-info",
  "serde",
@@ -19407,7 +19401,7 @@ dependencies = [
 
 [[package]]
 name = "sp-watchtower"
-version = "10.3.0"
+version = "10.4.0"
 dependencies = [
  "derive_more 0.99.17",
  "hex",
@@ -20080,7 +20074,7 @@ version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2379beea9476b89d0237078be761cf8e012d92d5ae4ae0c9a329f974838870fc"
 dependencies = [
- "paste 1.0.15",
+ "paste",
  "proc-macro2",
  "quote",
  "syn 2.0.98",
@@ -20319,7 +20313,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c"
 dependencies = [
  "libc",
- "paste 1.0.15",
+ "paste",
  "tikv-jemalloc-sys",
 ]
 
@@ -21379,7 +21373,7 @@ dependencies = [
  "downcast-rs",
  "libm",
  "num-traits",
- "paste 1.0.15",
+ "paste",
 ]
 
 [[package]]
@@ -22521,7 +22515,7 @@ dependencies = [
  "frame-support",
  "frame-system",
  "parity-scale-codec",
- "paste 1.0.15",
+ "paste",
  "polkadot-core-primitives",
  "polkadot-parachain-primitives",
  "polkadot-primitives",

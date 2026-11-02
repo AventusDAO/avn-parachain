@@ -54,7 +54,8 @@ use sp_avn_common::{
         LowerCancelledData, LowerRevertedData, ProcessedEventHandler, TokenInterface,
     },
     primitives::CurrencyId,
-    verify_signature, CallDecoder, InnerCallValidator, OnIdleHandler, PaymentHandler, Proof,
+    verify_signature, CallDecoder, InnerCallValidator, LowerDataProvider, LoweringControl,
+    OnIdleHandler, PaymentHandler, Proof,
 };
 use sp_core::{ConstU32, MaxEncodedLen, H160, H256};
 use sp_runtime::{
@@ -1169,6 +1170,25 @@ impl<T: Config> ProcessedEventHandler for Pallet<T> {
     }
 }
 
+impl<T: Config> LowerDataProvider for Pallet<T> {
+    // A lower whose proof is being regenerated still has a usable proof on T1, but a failed one
+    // never got a proof that can be claimed
+    fn unclaimed_lower_params(lower_id: LowerId) -> Option<LowerParams> {
+        LowersReadyToClaim::<T>::get(lower_id)
+            .map(|lower| lower.params)
+            .or_else(|| LowersPendingProof::<T>::get(lower_id))
+    }
+}
+
+impl<T: Config> LoweringControl for Pallet<T> {
+    fn disable_lowering() {
+        if !LowersDisabled::<T>::get() {
+            LowersDisabled::<T>::put(true);
+            Self::deposit_event(Event::<T>::LoweringDisabled);
+        }
+    }
+}
+
 impl<T: Config> CallDecoder for Pallet<T> {
     type AccountId = T::AccountId;
     type Signature = <T as Config>::Signature;
@@ -1261,6 +1281,25 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
 
     fn on_incoming_event_processed(event: &EthEvent) -> DispatchResult {
         Self::processed_event_handler(event)
+    }
+
+    // Issues the lowers that reverts refund. Their proofs failed, the last stage a lower is
+    // looked up in, which is the slowest to find and remove.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_setup_incoming_events(events: &[EthEvent]) {
+        for event in events {
+            if let EventData::LogLowerReverted(d) = &event.event_data {
+                let params = concat_lower_data(
+                    d.lower_id,
+                    d.token_contract,
+                    &d.amount,
+                    &d.t1_recipient,
+                    d.receiver_address,
+                    0,
+                );
+                FailedLowerProofs::<T>::insert(d.lower_id, params);
+            }
+        }
     }
 }
 

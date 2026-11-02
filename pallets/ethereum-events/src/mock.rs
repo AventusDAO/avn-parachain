@@ -16,6 +16,7 @@ use frame_system::{self as system, DefaultConfig};
 use hex_literal::hex;
 use pallet_avn_proxy::ProvableProxy;
 use pallet_session as session;
+use sp_avn_common::EthQueryResponse;
 
 use codec::{alloc::sync::Arc, DecodeWithMemTracking};
 use parking_lot::RwLock;

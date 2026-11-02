@@ -77,16 +77,16 @@ use crate::{
     weights::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight},
     AccountId, Amount, AsEnsureOriginWithArg, AssetManager, AssetRegistry, Aura, Avn, AvnAnchor,
     AvnGasFeeAdapter, AvnId, AvnOffenceHandler, AvnProxyConfig, Balance, Balances, Block,
-    BlockNumber, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge, Hash, Historical,
-    HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue, Moment, NftManager,
-    NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller, OrmlTokens, PalletInfo,
-    ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp, RestrictedEndpointFilter, Runtime,
-    RuntimeCall, RuntimeEvent, RuntimeFreezeReason, RuntimeHoldReason, RuntimeOrigin, RuntimeTask,
-    Scheduler, Session, SessionKeys, Signature, Summary, SummaryWatchtower, System, Timestamp,
-    TokenManager, TransactionByteFee, UncheckedExtrinsic, ValidatorsManager, Watchtower,
-    WeightToFee, XcmpQueue, AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT,
-    FOREIGN_ASSET_DEFAULT_ED, HOURS, MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION,
-    VERSION,
+    BlockNumber, BridgeWatchtower, ConsensusHook, Contains, CurrencyId, EnsureSigned, EthBridge,
+    Hash, Historical, HoldConsideration, ImOnlineId, Imbalance, LinearStoragePrice, MessageQueue,
+    Moment, NftManager, NodeManager, Nonce, Offences, OnUnbalanced, Ordering, OriginCaller,
+    OrmlTokens, PalletInfo, ParachainStaking, ParachainSystem, Preimage, PrivilegeCmp,
+    RestrictedEndpointFilter, Runtime, RuntimeCall, RuntimeEvent, RuntimeFreezeReason,
+    RuntimeHoldReason, RuntimeOrigin, RuntimeTask, Scheduler, Session, SessionKeys, Signature,
+    Summary, SummaryWatchtower, System, Timestamp, TokenManager, TransactionByteFee,
+    UncheckedExtrinsic, ValidatorsManager, Watchtower, WeightToFee, XcmpQueue,
+    AVERAGE_ON_INITIALIZE_RATIO, EXISTENTIAL_DEPOSIT, FOREIGN_ASSET_DEFAULT_ED, HOURS,
+    MAXIMUM_BLOCK_WEIGHT, NORMAL_DISPATCH_RATIO, SLOT_DURATION, VERSION,
 };
 
 use xcm_config::XcmOriginToTransactDispatchOrigin;
@@ -611,7 +611,7 @@ impl pallet_eth_bridge::Config for Runtime {
     type ReportCorroborationOffence = Offences;
     type WeightInfo = pallet_eth_bridge::default_weights::SubstrateWeight<Runtime>;
     type BridgeInterfaceNotification =
-        (NodeManager, ParachainStaking, Summary, TokenManager, ValidatorsManager);
+        (NodeManager, ParachainStaking, Summary, TokenManager, ValidatorsManager, BridgeWatchtower);
     type ProcessedEventsHandler = CorePrimaryEventsFilter;
     type EthereumEventsMigration = ();
     type Quorum = Avn;
@@ -805,7 +805,7 @@ impl pallet_watchtower::Config for Runtime {
     type Watchtowers = RuntimeNodeManager;
     type SignerId = NodeManagerKeyId;
     type ExternalProposerOrigin = EnsureExternalProposerOrRoot;
-    type WatchtowerHooks = (Summary, SummaryWatchtower);
+    type WatchtowerHooks = (Summary, SummaryWatchtower, BridgeWatchtower);
     type VoteFilter = ();
     type MaxTitleLen = ConstU32<512>;
     type MaxInlineLen = ConstU32<8192>;
@@ -829,6 +829,26 @@ impl pallet_watchtower::Config for Runtime {
 impl pallet_summary_watchtower::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type WeightInfo = ();
+}
+
+parameter_types! {
+    pub const EventCheckThreshold: Perbill = Perbill::from_percent(51);
+}
+
+impl pallet_bridge_watchtower::Config for Runtime {
+    type BridgeInterface = EthBridge;
+    type LowerDataProvider = TokenManager;
+    type WeightInfo = pallet_bridge_watchtower::default_weights::SubstrateWeight<Runtime>;
+    type ExternalValidator = Watchtower;
+    type LoweringControl = TokenManager;
+    type EventCheckThreshold = EventCheckThreshold;
+    /// Each committee member needs a distinct watchtower owner. The `dev-network` feature lowers
+    /// it for local networks with a handful of watchtowers.
+    #[cfg(not(feature = "dev-network"))]
+    type EventCheckCommitteeSize = ConstU32<20>;
+    #[cfg(feature = "dev-network")]
+    type EventCheckCommitteeSize = ConstU32<3>;
+    type MinEthBlockConfirmation = MinEthBlockConfirmation;
 }
 
 parameter_types! {

@@ -88,7 +88,7 @@ use sp_avn_common::{
     event_discovery::*,
     event_types::{self, EthEventId, EthProcessedEvent, EthTransactionId, ValidEvents, Validator},
 };
-use sp_core::{ecdsa, ConstU32, H256};
+use sp_core::{ecdsa, ConstU32, H160, H256};
 use sp_io::hashing::twox_64;
 use sp_runtime::{scale_info::TypeInfo, traits::Dispatchable, Saturating};
 use sp_std::prelude::*;
@@ -415,6 +415,7 @@ pub mod pallet {
         AuthorNotSender,
         SigningError,
         InvalidCorroborationData,
+        EventDataMismatch,
     }
 
     #[pallet::call(weight(<T as Config<I>>::WeightInfo))]
@@ -574,7 +575,7 @@ pub mod pallet {
         #[pallet::weight( <T as
         pallet::Config<I>>::WeightInfo::submit_ethereum_events(MAX_VALIDATOR_ACCOUNTS,
         MAX_INCOMING_EVENTS_BATCH_SIZE).max(
-            <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_batch(MAX_VALIDATOR_ACCOUNTS, MAX_INCOMING_EVENTS_BATCH_SIZE)
+            Pallet::<T, I>::process_batch_weight(MAX_INCOMING_EVENTS_BATCH_SIZE)
         ))]
         pub fn submit_ethereum_events(
             origin: OriginFor<T>,
@@ -618,12 +619,9 @@ pub mod pallet {
             }
 
             let final_weight = if threshold_met {
-                <T as Config<I>>::WeightInfo::submit_ethereum_events(
-                    MAX_VALIDATOR_ACCOUNTS,
-                    MAX_INCOMING_EVENTS_BATCH_SIZE,
-                )
+                Self::process_batch_weight(MAX_INCOMING_EVENTS_BATCH_SIZE)
             } else {
-                <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_batch(
+                <T as Config<I>>::WeightInfo::submit_ethereum_events(
                     MAX_VALIDATOR_ACCOUNTS,
                     MAX_INCOMING_EVENTS_BATCH_SIZE,
                 )
@@ -974,12 +972,32 @@ pub mod pallet {
         let _ = EthereumEvents::<T, I>::take(partition);
         for discovered_event in partition.events().iter() {
             match ValidEvents::try_from(&discovered_event.event.event_id.signature).ok() {
+                // AVT growth is no longer lifted to T2, even if the events filter lets it through
+                Some(ValidEvents::AvtGrowthLifted) => {
+                    log::warn!(
+                        "AVT growth is no longer lifted to T2, ignoring: {:?}",
+                        &discovered_event.event.event_id
+                    );
+                },
                 Some(valid_event) =>
                     if active_range.event_types_filter.contains(&valid_event) {
                         if discovered_event.block > active_range.range.end_block().into() {
                             <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
                                 eth_event_id: discovered_event.event.event_id.clone(),
                                 reason: Error::<T, I>::EventBelongsInFutureRange.into(),
+                            });
+                            continue
+                        }
+
+                        // Handlers act on the data, so it must be of the type the filter checked
+                        if discovered_event.event.event_data.event_type() != Some(valid_event) {
+                            log::error!(
+                                "💔 Ethereum event data does not match its signature: {:?}",
+                                discovered_event.event
+                            );
+                            <Pallet<T, I>>::deposit_event(Event::<T, I>::EventRejected {
+                                eth_event_id: discovered_event.event.event_id.clone(),
+                                reason: Error::<T, I>::EventDataMismatch.into(),
                             });
                             continue
                         }
@@ -1262,10 +1280,25 @@ pub mod pallet {
 
             Ok(latest_block)
         }
+
+        fn bridge_contract_address() -> H160 {
+            Instance::<T, I>::get().bridge_contract
+        }
     }
 }
 
 impl<T: Config<I>, I: 'static> Pallet<T, I> {
+    /// The weight of a vote that processes a batch of `events`. Takes the most expensive kind of
+    /// batch, since the events are only known once processed.
+    pub fn process_batch_weight(events: u32) -> Weight {
+        type W<T, I> = <T as Config<I>>::WeightInfo;
+        let c = MAX_VALIDATOR_ACCOUNTS;
+        W::<T, I>::submit_ethereum_events_and_process_batch(c, events)
+            .max(W::<T, I>::submit_ethereum_events_and_process_lower_lock_batch(c, events))
+            .max(W::<T, I>::submit_ethereum_events_and_process_lower_revert_batch(c, events))
+            .max(W::<T, I>::submit_ethereum_events_and_process_reward_mint_batch(c, events))
+    }
+
     pub fn signatures() -> Vec<H256> {
         match Self::active_ethereum_range() {
             Some(active_range) => active_range

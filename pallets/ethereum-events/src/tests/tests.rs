@@ -30,6 +30,7 @@ mod test_get_contract_address_for {
             ValidEvents::LowerReverted => H160::from(BRIDGE_CONTRACT),
             ValidEvents::AvtRewardsMinted => H160::from(BRIDGE_CONTRACT),
             ValidEvents::LowerCancelled => H160::from(BRIDGE_CONTRACT),
+            ValidEvents::LowerLocked => H160::from(BRIDGE_CONTRACT),
         }
     }
 

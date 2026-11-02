@@ -16,6 +16,8 @@ mod configs;
 pub mod governance;
 pub mod migrations;
 pub mod proxy_config;
+#[cfg(test)]
+mod tests;
 pub mod third_party_weights;
 
 use core::cmp::Ordering;
@@ -197,7 +199,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     spec_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     impl_name: alloc::borrow::Cow::Borrowed("avn-parachain"),
     authoring_version: 1,
-    spec_version: 240,
+    spec_version: 241,
     impl_version: 0,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -454,6 +456,9 @@ mod runtime {
 
     #[runtime::pallet_index(103)]
     pub type CrossChainVoting = pallet_cross_chain_voting;
+
+    #[runtime::pallet_index(104)]
+    pub type BridgeWatchtower = pallet_bridge_watchtower;
 
     // ORML pallets
     #[runtime::pallet_index(110)]

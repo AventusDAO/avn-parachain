@@ -827,6 +827,8 @@ pub trait BridgeInterface {
         eth_block: Option<u32>,
     ) -> Result<Vec<u8>, DispatchError>;
     fn latest_finalised_ethereum_block() -> Result<u32, DispatchError>;
+    /// The T1 contract the bridge sends transactions to and reads events from.
+    fn bridge_contract_address() -> H160;
 }
 
 pub trait BridgeInterfaceNotification {
@@ -836,6 +838,14 @@ pub trait BridgeInterfaceNotification {
     }
     fn on_incoming_event_processed(_event: &EthEvent) -> DispatchResult {
         Ok(())
+    }
+    /// Benchmarks only: makes the consumers do all their work when `events` are processed.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_setup_incoming_events(_events: &[EthEvent]) {}
+    /// Benchmarks only: whether the consumers did all their work for a processed event.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_incoming_event_handled(_event: &EthEvent) -> bool {
+        true
     }
 }
 
@@ -858,6 +868,17 @@ impl BridgeInterfaceNotification for Tuple {
     fn on_incoming_event_processed(_event: &EthEvent) -> DispatchResult {
         for_tuples!( #( Tuple::on_incoming_event_processed(_event)?; )* );
         Ok(())
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_setup_incoming_events(_events: &[EthEvent]) {
+        for_tuples!( #( Tuple::benchmark_setup_incoming_events(_events); )* );
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_incoming_event_handled(_event: &EthEvent) -> bool {
+        for_tuples!( #( if !Tuple::benchmark_incoming_event_handled(_event) { return false } )* );
+        true
     }
 }
 

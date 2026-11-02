@@ -12,7 +12,10 @@ use frame_system::RawOrigin;
 use hex_literal::hex;
 use sp_avn_common::{
     eth::EthereumId,
-    event_types::{EthEvent, EthEventId, LiftedData, ValidEvents},
+    event_types::{
+        EthEvent, EthEventId, EventData, LiftedData, LowerLockedData, LowerRevertedData,
+        TotalSupplyUpdatedData, ValidEvents,
+    },
 };
 use sp_core::{ByteArray, Get, H160, H256, U256};
 use sp_runtime::{traits::One, WeakBoundedVec};
@@ -244,26 +247,99 @@ fn setup_incoming_events<T: Config<I>, I: 'static>(
     partition_index: u16,
     range: EthBlockRange,
 ) -> EthereumEventsPartition {
+    setup_incoming_events_with(event_count, partition_index, range, |i| EthEvent {
+        event_id: EthEventId {
+            signature: ValidEvents::Lifted.signature(),
+            transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
+        },
+        event_data: EventData::LogLifted(LiftedData {
+            token_contract: H160::zero(),
+            sender_address: H160::zero(),
+            receiver_address: H256::zero(),
+            amount: i.into(),
+            nonce: U256::zero(),
+        }),
+    })
+}
+
+/// Lower locks that match no lower issued on T2, so each one is frozen.
+fn setup_incoming_lower_locks<T: Config<I>, I: 'static>(
+    event_count: u32,
+    partition_index: u16,
+    range: EthBlockRange,
+) -> EthereumEventsPartition {
+    setup_incoming_events_with(event_count, partition_index, range, |i| EthEvent {
+        event_id: EthEventId {
+            signature: ValidEvents::LowerLocked.signature(),
+            transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
+        },
+        event_data: EventData::LogLowerLocked(LowerLockedData {
+            lower_id: i,
+            t1_recipient: H160::zero(),
+            token_contract: H160::zero(),
+            amount: i.into(),
+            t2_sender: H256::zero(),
+            unlock_time: 0,
+        }),
+    })
+}
+
+/// Reverts of lowers T2 issued, so each one refunds its sender. Each refunds a different sender
+/// and token, so no balance is read twice.
+fn setup_incoming_lower_reverts<T: Config<I>, I: 'static>(
+    event_count: u32,
+    partition_index: u16,
+    range: EthBlockRange,
+) -> EthereumEventsPartition {
+    setup_incoming_events_with(event_count, partition_index, range, |i| EthEvent {
+        event_id: EthEventId {
+            signature: ValidEvents::LowerReverted.signature(),
+            transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
+        },
+        event_data: EventData::LogLowerReverted(LowerRevertedData {
+            token_contract: H160::repeat_byte(i.try_into().unwrap()),
+            receiver_address: H256::repeat_byte(i.try_into().unwrap()),
+            t1_recipient: H160::zero(),
+            amount: i.into(),
+            lower_id: i,
+        }),
+    })
+}
+
+/// Reward mints that T2 requested, so each one is looked up in the pending mint.
+fn setup_incoming_reward_mints<T: Config<I>, I: 'static>(
+    event_count: u32,
+    partition_index: u16,
+    range: EthBlockRange,
+) -> EthereumEventsPartition {
+    setup_incoming_events_with(event_count, partition_index, range, |i| EthEvent {
+        event_id: EthEventId {
+            signature: ValidEvents::AvtRewardsMinted.signature(),
+            transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
+        },
+        event_data: EventData::LogRewardsMinted(TotalSupplyUpdatedData {
+            amount: i.into(),
+            new_supply: i.into(),
+            t2_tx_id: i,
+        }),
+    })
+}
+
+fn incoming_events(partition: &EthereumEventsPartition) -> Vec<EthEvent> {
+    partition.events().iter().map(|discovered| discovered.event.clone()).collect()
+}
+
+fn setup_incoming_events_with(
+    event_count: u32,
+    partition_index: u16,
+    range: EthBlockRange,
+    event: impl Fn(u32) -> EthEvent,
+) -> EthereumEventsPartition {
     let mut partition: BoundedBTreeSet<DiscoveredEvent, IncomingEventsBatchLimit> =
         BoundedBTreeSet::new();
 
     for i in 1..=event_count {
-        let eth_event_id = EthEventId {
-            signature: ValidEvents::Lifted.signature(),
-            transaction_hash: H256::repeat_byte(i.try_into().unwrap()),
-        };
-        let event = EthEvent {
-            event_id: eth_event_id.clone(),
-            event_data: sp_avn_common::event_types::EventData::LogLifted(LiftedData {
-                token_contract: H160::zero(),
-                sender_address: H160::zero(),
-                receiver_address: H256::zero(),
-                amount: i.into(),
-                nonce: U256::zero(),
-            }),
-        };
-
-        partition.try_insert(DiscoveredEvent { event, block: 2 }).unwrap();
+        partition.try_insert(DiscoveredEvent { event: event(i), block: 2 }).unwrap();
     }
 
     EthereumEventsPartition::new(range, partition_index, false, partition)
@@ -450,9 +526,92 @@ benchmarks_instance_pallet! {
         let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
 
         submit_votes_from_other_authors::<T, I>(T::Quorum::get_quorum() - 1, &events, authors[1..].to_vec());
+        T::BridgeInterfaceNotification::benchmark_setup_incoming_events(&incoming_events(&events));
     }: submit_ethereum_events(RawOrigin::None, author, events.clone(), signature )
     verify {
         assert!(ActiveEthereumRange::<T, I>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
+        ensure!(
+            events.events().iter().all(|e| T::BridgeInterfaceNotification::benchmark_incoming_event_handled(&e.event)),
+            "Events not fully handled by the consumers"
+        );
+        assert!(EthereumEvents::<T, I>::get(events).is_empty(), "Submitted events not cleared");
+    }
+
+    submit_ethereum_events_and_process_lower_lock_batch {
+        let c in 4..MAX_VALIDATOR_ACCOUNTS;
+        let e in 1..MAX_INCOMING_EVENTS_BATCH_SIZE;
+
+        let authors = setup_authors::<T, I>(c);
+        let range = setup_active_range::<T, I>(c.try_into().unwrap());
+        let events = setup_incoming_lower_locks::<T, I>(e, c.try_into().unwrap(), range);
+
+        let author: crate::Author<T> = authors[0].clone();
+
+        #[cfg(not(test))]
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
+
+        submit_votes_from_other_authors::<T, I>(T::Quorum::get_quorum() - 1, &events, authors[1..].to_vec());
+        T::BridgeInterfaceNotification::benchmark_setup_incoming_events(&incoming_events(&events));
+    }: submit_ethereum_events(RawOrigin::None, author, events.clone(), signature )
+    verify {
+        assert!(ActiveEthereumRange::<T, I>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
+        ensure!(
+            events.events().iter().all(|e| T::BridgeInterfaceNotification::benchmark_incoming_event_handled(&e.event)),
+            "Events not fully handled by the consumers"
+        );
+        assert!(EthereumEvents::<T, I>::get(events).is_empty(), "Submitted events not cleared");
+    }
+
+    submit_ethereum_events_and_process_lower_revert_batch {
+        let c in 4..MAX_VALIDATOR_ACCOUNTS;
+        let e in 1..MAX_INCOMING_EVENTS_BATCH_SIZE;
+
+        let authors = setup_authors::<T, I>(c);
+        let range = setup_active_range::<T, I>(c.try_into().unwrap());
+        let events = setup_incoming_lower_reverts::<T, I>(e, c.try_into().unwrap(), range);
+
+        let author: crate::Author<T> = authors[0].clone();
+
+        #[cfg(not(test))]
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
+
+        submit_votes_from_other_authors::<T, I>(T::Quorum::get_quorum() - 1, &events, authors[1..].to_vec());
+        T::BridgeInterfaceNotification::benchmark_setup_incoming_events(&incoming_events(&events));
+    }: submit_ethereum_events(RawOrigin::None, author, events.clone(), signature )
+    verify {
+        assert!(ActiveEthereumRange::<T, I>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
+        ensure!(
+            events.events().iter().all(|e| T::BridgeInterfaceNotification::benchmark_incoming_event_handled(&e.event)),
+            "Events not fully handled by the consumers"
+        );
+        assert!(EthereumEvents::<T, I>::get(events).is_empty(), "Submitted events not cleared");
+    }
+
+    submit_ethereum_events_and_process_reward_mint_batch {
+        let c in 4..MAX_VALIDATOR_ACCOUNTS;
+        let e in 1..MAX_INCOMING_EVENTS_BATCH_SIZE;
+
+        let authors = setup_authors::<T, I>(c);
+        let range = setup_active_range::<T, I>(c.try_into().unwrap());
+        let events = setup_incoming_reward_mints::<T, I>(e, c.try_into().unwrap(), range);
+
+        let author: crate::Author<T> = authors[0].clone();
+
+        #[cfg(not(test))]
+        let author = add_collator_to_avn::<T, I>(&author.account_id, authors.len() as u32 + 1u32)?;
+        let signature = author.key.sign(&("DummyProof").encode()).expect("Error signing proof");
+
+        submit_votes_from_other_authors::<T, I>(T::Quorum::get_quorum() - 1, &events, authors[1..].to_vec());
+        T::BridgeInterfaceNotification::benchmark_setup_incoming_events(&incoming_events(&events));
+    }: submit_ethereum_events(RawOrigin::None, author, events.clone(), signature )
+    verify {
+        assert!(ActiveEthereumRange::<T, I>::get().unwrap().partition as u32 == c + 1, "Range not advanced");
+        ensure!(
+            events.events().iter().all(|e| T::BridgeInterfaceNotification::benchmark_incoming_event_handled(&e.event)),
+            "Events not fully handled by the consumers"
+        );
         assert!(EthereumEvents::<T, I>::get(events).is_empty(), "Submitted events not cleared");
     }
 

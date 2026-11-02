@@ -52,6 +52,7 @@ pub mod benchmarking;
 pub mod constants;
 pub mod eth;
 pub mod eth_key_actions;
+pub mod eth_receipt;
 pub mod event_discovery;
 pub mod event_types;
 pub mod http_data_codec;
@@ -486,6 +487,31 @@ impl<AccountId> NodeSerialLookup<AccountId> for () {
     fn node_serial(_node: &AccountId) -> Option<NodeSerial> {
         None
     }
+}
+
+/// Gives access to the lowers T2 has issued and not yet seen claimed on T1. Implemented
+/// by token-manager and used by bridge-watchtower to check the lowers locked on T1.
+pub trait LowerDataProvider {
+    /// The params of a lower T2 issued that has not been claimed yet and whose proof is ready or
+    /// being (re)generated. Returns `None` if there is no such lower.
+    fn unclaimed_lower_params(lower_id: u32) -> Option<eth::LowerParams>;
+}
+
+/// Default implementation: no lower is unclaimed.
+impl LowerDataProvider for () {
+    fn unclaimed_lower_params(_lower_id: u32) -> Option<eth::LowerParams> {
+        None
+    }
+}
+
+/// Lets a pallet stop lowering on T2, e.g. when it detects a lift that did not happen on T1.
+/// Implemented by token-manager. Only root can enable lowering again.
+pub trait LoweringControl {
+    fn disable_lowering();
+}
+
+impl LoweringControl for () {
+    fn disable_lowering() {}
 }
 
 /// Interface for interacting with app chains.
