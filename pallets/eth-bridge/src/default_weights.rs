@@ -45,6 +45,8 @@ pub trait WeightInfo {
 	fn submit_ethereum_events(c: u32, e: u32, ) -> Weight;
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight;
 	fn submit_ethereum_events_and_process_lower_lock_batch(c: u32, e: u32, ) -> Weight;
+	fn submit_ethereum_events_and_process_lower_revert_batch(c: u32, e: u32, ) -> Weight;
+	fn submit_ethereum_events_and_process_reward_mint_batch(c: u32, e: u32, ) -> Weight;
 	fn submit_latest_ethereum_block(c: u32, ) -> Weight;
 	fn submit_latest_ethereum_block_with_quorum(c: u32, ) -> Weight;
 	fn base_on_idle() -> Weight;
@@ -180,8 +182,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::Balances` (r:1 w:1)
 	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:1 w:0)
-	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
 	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
@@ -196,8 +198,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftChecks` (r:0 w:32)
-	/// Proof: `BridgeWatchtower::LiftChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
 	/// The range of component `c` is `[4, 10]`.
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight {
@@ -249,6 +251,36 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// The range of component `c` is `[4, 10]`.
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_lower_lock_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 144_324_000 picoseconds.
+		Weight::from_parts(628_239_340, 99120)
+			// Standard Error: 605_905
+			.saturating_add(Weight::from_parts(79_919_228, 0).saturating_mul(e.into()))
+			.saturating_add(T::DbWeight::get().reads(11_u64))
+			.saturating_add(T::DbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Placeholder until benchmarked: the lower lock batch weight
+	fn submit_ethereum_events_and_process_lower_revert_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 144_324_000 picoseconds.
+		Weight::from_parts(628_239_340, 99120)
+			// Standard Error: 605_905
+			.saturating_add(Weight::from_parts(79_919_228, 0).saturating_mul(e.into()))
+			.saturating_add(T::DbWeight::get().reads(11_u64))
+			.saturating_add(T::DbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
+			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Placeholder until benchmarked: the lower lock batch weight
+	fn submit_ethereum_events_and_process_reward_mint_batch(_c: u32, e: u32, ) -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
 		//  Estimated: `99120 + e * (12613 ±0)`
@@ -467,8 +499,8 @@ impl WeightInfo for () {
 	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::Balances` (r:1 w:1)
 	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:1 w:0)
-	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
 	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
@@ -483,8 +515,8 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftChecks` (r:0 w:32)
-	/// Proof: `BridgeWatchtower::LiftChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
 	/// The range of component `c` is `[4, 10]`.
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight {
@@ -536,6 +568,36 @@ impl WeightInfo for () {
 	/// The range of component `c` is `[4, 10]`.
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_lower_lock_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 144_324_000 picoseconds.
+		Weight::from_parts(628_239_340, 99120)
+			// Standard Error: 605_905
+			.saturating_add(Weight::from_parts(79_919_228, 0).saturating_mul(e.into()))
+			.saturating_add(RocksDbWeight::get().reads(11_u64))
+			.saturating_add(RocksDbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Placeholder until benchmarked: the lower lock batch weight
+	fn submit_ethereum_events_and_process_lower_revert_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 144_324_000 picoseconds.
+		Weight::from_parts(628_239_340, 99120)
+			// Standard Error: 605_905
+			.saturating_add(Weight::from_parts(79_919_228, 0).saturating_mul(e.into()))
+			.saturating_add(RocksDbWeight::get().reads(11_u64))
+			.saturating_add(RocksDbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
+			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Placeholder until benchmarked: the lower lock batch weight
+	fn submit_ethereum_events_and_process_reward_mint_batch(_c: u32, e: u32, ) -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `685 + c * (75 ±0) + e * (190 ±0)`
 		//  Estimated: `99120 + e * (12613 ±0)`

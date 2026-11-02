@@ -17,10 +17,10 @@ benchmarks! {
         assert_eq!(FreezeTxIdToLowerId::<T>::get(tx_id), Some(lower_id));
     }
 
-    toggle_lift_checks {
+    toggle_event_checks {
     }: _(RawOrigin::Root, true)
     verify {
-        assert!(LiftCheckingEnabled::<T>::get());
+        assert!(EventCheckingEnabled::<T>::get());
     }
 }
 

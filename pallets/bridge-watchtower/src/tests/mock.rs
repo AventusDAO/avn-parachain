@@ -81,7 +81,7 @@ impl pallet_avn::Config for TestRuntime {
 }
 
 parameter_types! {
-    pub const LiftCheckThreshold: Perbill = Perbill::from_percent(51);
+    pub const EventCheckThreshold: Perbill = Perbill::from_percent(51);
 }
 
 impl Config for TestRuntime {
@@ -90,8 +90,8 @@ impl Config for TestRuntime {
     type WeightInfo = ();
     type ExternalValidator = TestWatchtower;
     type LoweringControl = TestLoweringControl;
-    type LiftCheckThreshold = LiftCheckThreshold;
-    type LiftCheckCommitteeSize = ConstU32<20>;
+    type EventCheckThreshold = EventCheckThreshold;
+    type EventCheckCommitteeSize = ConstU32<20>;
 }
 
 pub const BRIDGE_CONTRACT: H160 = H160([9u8; 20]);

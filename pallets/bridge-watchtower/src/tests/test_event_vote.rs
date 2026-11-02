@@ -3,7 +3,10 @@
 use crate::{mock::*, *};
 use parking_lot::RwLock;
 use sp_avn_common::{
-    event_types::{AvtGrowthLiftedData, EthEventId, LiftedData, ValidEvents},
+    event_types::{
+        AvtGrowthLiftedData, EthEventId, LiftedData, LowerRevertedData, TotalSupplyUpdatedData,
+        ValidEvents,
+    },
     EthQueryRequest, EthQueryResponse, EthQueryResponseType, EthTransaction,
 };
 use sp_watchtower::UNKNOWN_COUNTRY;
@@ -79,6 +82,81 @@ impl T1Lift {
     }
 }
 
+/// A 32 byte word holding `value`, as hex.
+fn word(value: u128) -> String {
+    let mut word = [0u8; 32];
+    word[16..].copy_from_slice(&value.to_be_bytes());
+    hex::encode(word)
+}
+
+fn credited_revert() -> LowerRevertedData {
+    LowerRevertedData {
+        token_contract: TOKEN,
+        receiver_address: RECEIVER,
+        t1_recipient: H160::repeat_byte(0x44),
+        amount: AMOUNT,
+        lower_id: 7,
+    }
+}
+
+fn revert_event(revert: LowerRevertedData) -> EthEvent {
+    EthEvent {
+        event_id: EthEventId {
+            signature: ValidEvents::LowerReverted.signature(),
+            transaction_hash: ETH_TX_HASH,
+        },
+        event_data: EventData::LogLowerReverted(revert),
+    }
+}
+
+/// A `LogLowerReverted` on T1, from the bridge.
+fn t1_revert_log(revert: &LowerRevertedData) -> String {
+    format!(
+        r#"{{
+            "address": "{:?}",
+            "topics": ["{:?}", "{:?}", "{:?}", "{:?}"],
+            "data": "0x{}{}"
+        }}"#,
+        BRIDGE_CONTRACT,
+        ValidEvents::LowerReverted.signature(),
+        H256::from(revert.token_contract),
+        revert.receiver_address,
+        H256::from(revert.t1_recipient),
+        word(revert.amount),
+        word(revert.lower_id.into()),
+    )
+}
+
+fn credited_reward_mint() -> TotalSupplyUpdatedData {
+    TotalSupplyUpdatedData { amount: AMOUNT, new_supply: 10 * AMOUNT, t2_tx_id: 3 }
+}
+
+fn reward_mint_event(mint: TotalSupplyUpdatedData) -> EthEvent {
+    EthEvent {
+        event_id: EthEventId {
+            signature: ValidEvents::AvtRewardsMinted.signature(),
+            transaction_hash: ETH_TX_HASH,
+        },
+        event_data: EventData::LogRewardsMinted(mint),
+    }
+}
+
+/// A `LogRewardsMinted` on T1, from the bridge. Its values are all topics.
+fn t1_reward_mint_log(mint: &TotalSupplyUpdatedData) -> String {
+    format!(
+        r#"{{
+            "address": "{:?}",
+            "topics": ["{:?}", "0x{}", "0x{}", "0x{}"],
+            "data": "0x"
+        }}"#,
+        BRIDGE_CONTRACT,
+        ValidEvents::AvtRewardsMinted.signature(),
+        word(mint.amount),
+        word(mint.new_supply),
+        word(mint.t2_tx_id.into()),
+    )
+}
+
 fn receipt(status: &str, logs: &[String]) -> String {
     format!(
         r#"{{"transactionHash": "{:?}", "status": "{}", "logs": [{}]}}"#,
@@ -127,7 +205,7 @@ fn run_as_watchtower() -> SignerId {
 }
 
 fn start_check(event: EthEvent) {
-    ActiveLiftCheck::<TestRuntime>::put((PROPOSAL_ID, event));
+    ActiveEventCheck::<TestRuntime>::put((PROPOSAL_ID, event));
 }
 
 /// The votes the node submitted, checking each is signed by `key`.
@@ -171,7 +249,7 @@ mod votes {
             expect_receipt_request(&mut offchain.write(), t1);
             expect_country_request(&mut offchain.write());
 
-            BridgeWatchtower::vote_on_lift_check(1);
+            BridgeWatchtower::vote_on_event_check(1);
 
             assert_eq!(submitted_votes(&pool, &key), vec![expected_vote]);
         });
@@ -243,6 +321,62 @@ mod votes {
     }
 
     #[test]
+    fn in_favour_of_a_revert_that_matches_t1() {
+        let t1 = query_response(&receipt("0x1", &[t1_revert_log(&credited_revert())]));
+
+        assert_votes(t1, revert_event(credited_revert()), true);
+    }
+
+    #[test]
+    fn against_a_revert_that_differs_from_t1() {
+        for t1_revert in [
+            LowerRevertedData { amount: AMOUNT + 1, ..credited_revert() },
+            LowerRevertedData { lower_id: 8, ..credited_revert() },
+            LowerRevertedData { receiver_address: H256::repeat_byte(0x55), ..credited_revert() },
+            LowerRevertedData { t1_recipient: H160::repeat_byte(0x55), ..credited_revert() },
+        ] {
+            let t1 = query_response(&receipt("0x1", &[t1_revert_log(&t1_revert)]));
+
+            assert_votes(t1, revert_event(credited_revert()), false);
+        }
+    }
+
+    #[test]
+    fn in_favour_of_a_reward_mint_that_matches_t1() {
+        let t1 = query_response(&receipt("0x1", &[t1_reward_mint_log(&credited_reward_mint())]));
+
+        assert_votes(t1, reward_mint_event(credited_reward_mint()), true);
+    }
+
+    #[test]
+    fn against_a_reward_mint_that_differs_from_t1() {
+        for t1_mint in [
+            TotalSupplyUpdatedData { amount: AMOUNT + 1, ..credited_reward_mint() },
+            TotalSupplyUpdatedData { new_supply: AMOUNT, ..credited_reward_mint() },
+            TotalSupplyUpdatedData { t2_tx_id: 4, ..credited_reward_mint() },
+        ] {
+            let t1 = query_response(&receipt("0x1", &[t1_reward_mint_log(&t1_mint)]));
+
+            assert_votes(t1, reward_mint_event(credited_reward_mint()), false);
+        }
+    }
+
+    #[test]
+    fn against_an_event_whose_transaction_holds_another_kind_of_event() {
+        // A real lift does not vouch for a revert in the same transaction
+        let t1 = T1Lift::default().response();
+
+        assert_votes(t1, revert_event(credited_revert()), false);
+    }
+
+    #[test]
+    fn against_a_reward_mint_that_failed_on_t1() {
+        let t1 = query_response(&receipt("0x0", &[t1_reward_mint_log(&credited_reward_mint())]));
+
+        assert_votes(t1, reward_mint_event(credited_reward_mint()), false);
+    }
+
+    #[test]
     fn against_a_growth_lift_without_reading_t1() {
         let (mut ext, offchain, pool) = ExtBuilder::build_default().for_offchain_worker();
         ext.execute_with(|| {
@@ -259,7 +393,7 @@ mod votes {
             });
             expect_country_request(&mut offchain.write());
 
-            BridgeWatchtower::vote_on_lift_check(1);
+            BridgeWatchtower::vote_on_event_check(1);
 
             assert_eq!(submitted_votes(&pool, &key), vec![false]);
         });
@@ -278,7 +412,7 @@ mod does_not_vote {
             start_check(lift_event(credited_lift()));
             setup(&mut offchain.write());
 
-            BridgeWatchtower::vote_on_lift_check(1);
+            BridgeWatchtower::vote_on_event_check(1);
 
             assert!(pool.read().transactions.is_empty());
         });
@@ -292,8 +426,8 @@ mod does_not_vote {
     }
 
     #[test]
-    fn when_no_lift_is_being_checked() {
-        assert_no_vote(|_| ActiveLiftCheck::<TestRuntime>::kill());
+    fn when_no_event_is_being_checked() {
+        assert_no_vote(|_| ActiveEventCheck::<TestRuntime>::kill());
     }
 
     #[test]
@@ -332,23 +466,23 @@ fn committee_member_votes() {
         expect_receipt_request(&mut offchain.write(), T1Lift::default().response());
         expect_country_request(&mut offchain.write());
 
-        BridgeWatchtower::vote_on_lift_check(1);
+        BridgeWatchtower::vote_on_event_check(1);
 
         assert_eq!(submitted_votes(&pool, &key), vec![true]);
     });
 }
 
 #[test]
-fn requested_check_is_voted_on_after_lift_checks_stop() {
+fn requested_check_is_voted_on_after_event_checks_stop() {
     let (mut ext, offchain, pool) = ExtBuilder::build_default().for_offchain_worker();
     ext.execute_with(|| {
         let key = run_as_watchtower();
         start_check(lift_event(credited_lift()));
-        LiftCheckingEnabled::<TestRuntime>::put(false);
+        EventCheckingEnabled::<TestRuntime>::put(false);
         expect_receipt_request(&mut offchain.write(), T1Lift::default().response());
         expect_country_request(&mut offchain.write());
 
-        BridgeWatchtower::vote_on_lift_check(1);
+        BridgeWatchtower::vote_on_event_check(1);
 
         assert_eq!(submitted_votes(&pool, &key), vec![true]);
     });
@@ -362,17 +496,17 @@ fn vote_is_submitted_again_only_after_the_inclusion_period() {
         start_check(lift_event(credited_lift()));
         expect_receipt_request(&mut offchain.write(), T1Lift::default().response());
         expect_country_request(&mut offchain.write());
-        BridgeWatchtower::vote_on_lift_check(1);
+        BridgeWatchtower::vote_on_event_check(1);
 
         // Any request would fail the test
         for block in 2..=6 {
-            BridgeWatchtower::vote_on_lift_check(block);
+            BridgeWatchtower::vote_on_event_check(block);
         }
         assert_eq!(submitted_votes(&pool, &key), vec![true]);
 
         expect_receipt_request(&mut offchain.write(), T1Lift::default().response());
         expect_country_request(&mut offchain.write());
-        BridgeWatchtower::vote_on_lift_check(7);
+        BridgeWatchtower::vote_on_event_check(7);
         assert_eq!(submitted_votes(&pool, &key), vec![true, true]);
     });
 }
@@ -384,15 +518,15 @@ fn reading_t1_is_retried_on_the_next_block_only() {
         let key = run_as_watchtower();
         start_check(lift_event(credited_lift()));
         expect_receipt_request(&mut offchain.write(), b"not hex".to_vec());
-        BridgeWatchtower::vote_on_lift_check(1);
+        BridgeWatchtower::vote_on_event_check(1);
 
         // The offchain worker already ran for this block
-        BridgeWatchtower::vote_on_lift_check(1);
+        BridgeWatchtower::vote_on_event_check(1);
         assert!(pool.read().transactions.is_empty());
 
         expect_receipt_request(&mut offchain.write(), T1Lift::default().response());
         expect_country_request(&mut offchain.write());
-        BridgeWatchtower::vote_on_lift_check(2);
+        BridgeWatchtower::vote_on_event_check(2);
         assert_eq!(submitted_votes(&pool, &key), vec![true]);
     });
 }
