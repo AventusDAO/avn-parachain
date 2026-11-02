@@ -12,7 +12,7 @@ pub extern crate alloc;
 use alloc::collections::BTreeSet;
 use sp_avn_common::{
     event_discovery::EthBridgeEventsFilter,
-    event_types::{EthEvent, EventData, LiftedData, ValidEvents},
+    event_types::{AvtGrowthLiftedData, EthEvent, EventData, LiftedData, ValidEvents},
 };
 
 #[derive(Clone)]
@@ -287,6 +287,117 @@ mod process_events {
                         reason: Error::<TestRuntime>::EventBelongsInFutureRange.into(),
                     }
                 )));
+            });
+        }
+
+        #[test]
+        fn avt_growth_is_skipped_even_if_the_filter_allows_it() {
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
+            ext.execute_with(|| {
+                let context = EventProcessContext::setup();
+                // The active range still expects growth events
+                init_active_range();
+
+                let growth_event_id = EthEventId {
+                    signature: ValidEvents::AvtGrowthLifted.signature(),
+                    transaction_hash: H256::from_slice(&[7u8; 32]),
+                };
+                let growth_partition = create_mock_event_partition(
+                    EthEvent {
+                        event_id: growth_event_id.clone(),
+                        event_data: EventData::LogAvtGrowthLifted(AvtGrowthLiftedData {
+                            amount: 1,
+                            period: 1,
+                        }),
+                    },
+                    2,
+                    0,
+                );
+
+                assert_ok!(EthBridge::submit_ethereum_events(
+                    RuntimeOrigin::none(),
+                    context.author.clone(),
+                    growth_partition.clone(),
+                    context.test_signature.clone()
+                ));
+                assert_ok!(EthBridge::submit_ethereum_events(
+                    RuntimeOrigin::none(),
+                    context.author_two.clone(),
+                    growth_partition.clone(),
+                    context.test_signature_two.clone()
+                ));
+
+                // The partition was processed
+                assert_eq!(EthBridge::active_ethereum_range().unwrap().partition, 1);
+                // Skipped like an event outside the filter: neither accepted nor rejected
+                assert!(!System::events().iter().any(|record| matches!(
+                    &record.event,
+                    mock::RuntimeEvent::EthBridge(
+                        Event::<TestRuntime>::EventAccepted { eth_event_id } |
+                        Event::<TestRuntime>::EventRejected { eth_event_id, .. }
+                    ) if *eth_event_id == growth_event_id
+                )));
+                assert!(!ProcessedEthereumEvents::<TestRuntime>::contains_key(
+                    growth_event_id.transaction_hash
+                ));
+            });
+        }
+
+        #[test]
+        fn avt_growth_data_is_skipped_under_another_signature() {
+            let mut ext = ExtBuilder::build_default()
+                .with_validators()
+                .with_genesis_config()
+                .as_externality();
+            ext.execute_with(|| {
+                let context = EventProcessContext::setup();
+                init_active_range();
+
+                let growth_event_id = EthEventId {
+                    signature: ValidEvents::Lifted.signature(),
+                    transaction_hash: H256::from_slice(&[7u8; 32]),
+                };
+                let growth_partition = create_mock_event_partition(
+                    EthEvent {
+                        event_id: growth_event_id.clone(),
+                        event_data: EventData::LogAvtGrowthLifted(AvtGrowthLiftedData {
+                            amount: 1,
+                            period: 1,
+                        }),
+                    },
+                    2,
+                    0,
+                );
+
+                assert_ok!(EthBridge::submit_ethereum_events(
+                    RuntimeOrigin::none(),
+                    context.author.clone(),
+                    growth_partition.clone(),
+                    context.test_signature.clone()
+                ));
+                assert_ok!(EthBridge::submit_ethereum_events(
+                    RuntimeOrigin::none(),
+                    context.author_two.clone(),
+                    growth_partition.clone(),
+                    context.test_signature_two.clone()
+                ));
+
+                // The partition was processed
+                assert_eq!(EthBridge::active_ethereum_range().unwrap().partition, 1);
+                // Skipped like an event outside the filter: neither accepted nor rejected
+                assert!(!System::events().iter().any(|record| matches!(
+                    &record.event,
+                    mock::RuntimeEvent::EthBridge(
+                        Event::<TestRuntime>::EventAccepted { eth_event_id } |
+                        Event::<TestRuntime>::EventRejected { eth_event_id, .. }
+                    ) if *eth_event_id == growth_event_id
+                )));
+                assert!(!ProcessedEthereumEvents::<TestRuntime>::contains_key(
+                    growth_event_id.transaction_hash
+                ));
             });
         }
     }
