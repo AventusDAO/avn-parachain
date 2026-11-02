@@ -1,4 +1,4 @@
-//! The offchain worker that lets watchtower nodes vote on lift checks.
+//! The offchain worker that lets watchtower nodes vote on event checks.
 
 #[cfg(not(feature = "std"))]
 use alloc::string::ToString;
@@ -9,7 +9,7 @@ use pallet_avn::BridgeInterface;
 use pallet_watchtower::{NodesInterface, VoteChoice};
 use sp_avn_common::{
     eth_receipt::decode_receipt_response,
-    event_types::{LiftedData, ValidEvents},
+    event_types::{LiftedData, LowerRevertedData, TotalSupplyUpdatedData},
     ocw_lock::{self as OcwLock, OcwStorageError},
     EthQueryRequest, EthQueryResponseType, EthTransaction,
 };
@@ -18,14 +18,14 @@ use sp_runtime::{
     RuntimeAppPublic, Saturating,
 };
 
-const OC_DB_PREFIX: &[u8] = b"bridge_wt::lift_vote::";
+const OC_DB_PREFIX: &[u8] = b"bridge_wt::event_vote::";
 /// Blocks a submitted vote has to be included before it is submitted again.
 const VOTE_INCLUSION_PERIOD: u32 = 5;
 
 impl<T: Config> Pallet<T> {
-    /// Votes on the lift being checked, if this node is in its committee and has not voted yet.
-    pub(crate) fn vote_on_lift_check(now: BlockNumberFor<T>) {
-        let Some((proposal_id, event)) = ActiveLiftCheck::<T>::get() else { return };
+    /// Votes on the event being checked, if this node is in its committee and has not voted yet.
+    pub(crate) fn vote_on_event_check(now: BlockNumberFor<T>) {
+        let Some((proposal_id, event)) = ActiveEventCheck::<T>::get() else { return };
         let Some((watchtower, signing_key)) = T::Watchtowers::get_node_from_local_signing_keys()
         else {
             return
@@ -45,54 +45,77 @@ impl<T: Config> Pallet<T> {
         }
 
         // Without an answer from T1 the node does not vote, and tries again next block
-        let Ok(in_favor) = Self::lift_matches_t1(&event) else { return };
+        let Ok(in_favor) = Self::event_matches_t1(&event) else { return };
 
         if let Err(e) = Self::submit_vote(proposal_id, in_favor, signing_key, watchtower, now) {
-            log::error!("❌ Failed to vote on lift check {:?}: {:?}", proposal_id, e);
+            log::error!("❌ Failed to vote on event check {:?}: {:?}", proposal_id, e);
         }
     }
 
-    /// Whether the lift T2 credited happened on T1: its transaction succeeded and the bridge
-    /// emitted the same `LogLifted`. Errors if T1 could not be read.
-    pub(crate) fn lift_matches_t1(event: &EthEvent) -> Result<bool, ()> {
+    /// Whether the event T2 credited happened on T1: its transaction succeeded and the bridge
+    /// emitted the same event. Errors if T1 could not be read.
+    pub(crate) fn event_matches_t1(event: &EthEvent) -> Result<bool, ()> {
         let eth_tx_hash = event.event_id.transaction_hash;
-        let EventData::LogLifted(credited) = &event.event_data else {
-            // Growth lifts are no longer used, so one being credited cannot be verified
-            log::warn!("❌ Lift {:?} is not a LogLifted and cannot be verified", eth_tx_hash);
+        let Some(parse) = Self::event_parser(&event.event_data) else {
+            // e.g. growth lifts, which are no longer used, so one being credited cannot be verified
+            log::warn!("❌ Event {:?} cannot be verified: {:?}", eth_tx_hash, event.event_data);
             return Ok(false)
         };
+        // Has a type, since it has a parser
+        let Some(event_type) = event.event_data.event_type() else { return Ok(false) };
 
         let response = Self::fetch_receipt(eth_tx_hash).map_err(|e| {
-            log::error!("❌ Failed to fetch the receipt of lift {:?}: {:?}", eth_tx_hash, e);
+            log::error!("❌ Failed to fetch the receipt of event {:?}: {:?}", eth_tx_hash, e);
         })?;
         let receipt = match decode_receipt_response(&response) {
             Ok(Some((receipt, _))) => receipt,
             Ok(None) => {
-                log::warn!("❌ Lift {:?} has no transaction on T1", eth_tx_hash);
+                log::warn!("❌ Event {:?} has no transaction on T1", eth_tx_hash);
                 return Ok(false)
             },
             Err(e) => {
-                log::error!("❌ Invalid receipt for lift {:?}: {:?}", eth_tx_hash, e);
+                log::error!("❌ Invalid receipt for event {:?}: {:?}", eth_tx_hash, e);
                 return Err(())
             },
         };
 
         if !receipt.succeeded {
-            log::warn!("❌ Lift {:?} failed on T1", eth_tx_hash);
+            log::warn!("❌ Event {:?} failed on T1", eth_tx_hash);
             return Ok(false)
         }
 
         let bridge = T::BridgeInterface::bridge_contract_address();
-        let signature = ValidEvents::Lifted.signature();
+        let signature = event_type.signature();
         let matches = receipt.logs_from(&bridge, &signature).any(|log| {
-            LiftedData::parse_bytes(log.data(), log.topics.clone())
-                .is_ok_and(|lift| &lift == credited)
+            parse(log.data(), log.topics.clone()).is_ok_and(|t1| t1 == event.event_data)
         });
         if !matches {
-            log::warn!("❌ Lift {:?} does not match any lift on T1", eth_tx_hash);
+            log::warn!("❌ Event {:?} does not match any {:?} on T1", eth_tx_hash, event_type);
         }
 
         Ok(matches)
+    }
+
+    /// Parses a T1 log into the same kind of event as `credited`, if it can be verified.
+    fn event_parser(
+        credited: &EventData,
+    ) -> Option<fn(Option<Vec<u8>>, Vec<Vec<u8>>) -> Result<EventData, ()>> {
+        Some(match credited {
+            EventData::LogLifted(_) => |data, topics| {
+                LiftedData::parse_bytes(data, topics).map(EventData::LogLifted).map_err(|_| ())
+            },
+            EventData::LogLowerReverted(_) => |data, topics| {
+                LowerRevertedData::parse_bytes(data, topics)
+                    .map(EventData::LogLowerReverted)
+                    .map_err(|_| ())
+            },
+            EventData::LogRewardsMinted(_) => |data, topics| {
+                TotalSupplyUpdatedData::parse_bytes(data, topics)
+                    .map(EventData::LogRewardsMinted)
+                    .map_err(|_| ())
+            },
+            _ => return None,
+        })
     }
 
     fn fetch_receipt(eth_tx_hash: EthTransactionId) -> Result<Vec<u8>, DispatchError> {

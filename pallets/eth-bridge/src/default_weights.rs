@@ -45,6 +45,8 @@ pub trait WeightInfo {
 	fn submit_ethereum_events(c: u32, e: u32, ) -> Weight;
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight;
 	fn submit_ethereum_events_and_process_lower_lock_batch(c: u32, e: u32, ) -> Weight;
+	fn submit_ethereum_events_and_process_lower_revert_batch(c: u32, e: u32, ) -> Weight;
+	fn submit_ethereum_events_and_process_reward_mint_batch(c: u32, e: u32, ) -> Weight;
 	fn submit_latest_ethereum_block(c: u32, ) -> Weight;
 	fn submit_latest_ethereum_block_with_quorum(c: u32, ) -> Weight;
 	fn base_on_idle() -> Weight;
@@ -180,8 +182,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::Balances` (r:1 w:1)
 	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:1 w:0)
-	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
 	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
@@ -196,8 +198,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftChecks` (r:0 w:32)
-	/// Proof: `BridgeWatchtower::LiftChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
 	/// The range of component `c` is `[4, 10]`.
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight {
@@ -261,6 +263,112 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(6_u64))
 			.saturating_add(T::DbWeight::get().writes((3_u64).saturating_mul(e.into())))
 			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Benchmarked on a local machine, not the reference one. Regenerate with the rest of the pallet.
+	/// Storage: `EthBridge::Instance` (r:1 w:0)
+	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveEthereumRange` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveEthereumRange` (`max_values`: Some(1), `max_size`: Some(544), added: 1039, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthereumEvents` (r:2 w:1)
+	/// Proof: `EthBridge::EthereumEvents` (`max_values`: None, `max_size`: Some(46590), added: 49065, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ProcessedEthereumEvents` (r:32 w:32)
+	/// Proof: `EthBridge::ProcessedEthereumEvents` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersReadyToClaim` (r:32 w:32)
+	/// Proof: `TokenManager::LowersReadyToClaim` (`max_values`: None, `max_size`: Some(10138), added: 12613, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersPendingProof` (r:32 w:32)
+	/// Proof: `TokenManager::LowersPendingProof` (`max_values`: None, `max_size`: Some(136), added: 2611, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::FailedLowerProofs` (r:32 w:32)
+	/// Proof: `TokenManager::FailedLowerProofs` (`max_values`: None, `max_size`: Some(136), added: 2611, mode: `MaxEncodedLen`)
+	/// Storage: `AssetRegistry::LocationToAssetId` (r:32 w:0)
+	/// Proof: `AssetRegistry::LocationToAssetId` (`max_values`: None, `max_size`: Some(624), added: 3099, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::AVTTokenContract` (r:1 w:0)
+	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::Balances` (r:32 w:32)
+	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
+	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
+	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:32 w:32)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:32 w:32)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// The range of component `c` is `[4, 10]`.
+	/// The range of component `e` is `[1, 32]`.
+	fn submit_ethereum_events_and_process_lower_revert_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1116 + c * (75 ±0) + e * (323 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 233_832_000 picoseconds.
+		Weight::from_parts(385_297_996, 99120)
+			// Standard Error: 1_087_838
+			.saturating_add(Weight::from_parts(100_762_204, 0).saturating_mul(e.into()))
+			.saturating_add(T::DbWeight::get().reads(10_u64))
+			.saturating_add(T::DbWeight::get().reads((9_u64).saturating_mul(e.into())))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
+			.saturating_add(T::DbWeight::get().writes((10_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Benchmarked on a local machine, not the reference one. Regenerate with the rest of the pallet.
+	/// Storage: `EthBridge::Instance` (r:1 w:0)
+	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveEthereumRange` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveEthereumRange` (`max_values`: Some(1), `max_size`: Some(544), added: 1039, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthereumEvents` (r:2 w:1)
+	/// Proof: `EthBridge::EthereumEvents` (`max_values`: None, `max_size`: Some(46590), added: 49065, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ProcessedEthereumEvents` (r:32 w:32)
+	/// Proof: `EthBridge::ProcessedEthereumEvents` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::PendingMintRequestState` (r:1 w:0)
+	/// Proof: `NodeManager::PendingMintRequestState` (`max_values`: Some(1), `max_size`: Some(22), added: 517, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
+	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
+	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:32 w:32)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:32 w:32)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// The range of component `c` is `[4, 10]`.
+	/// The range of component `e` is `[1, 32]`.
+	fn submit_ethereum_events_and_process_reward_mint_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `767 + c * (75 ±0) + e * (109 ±0)`
+		//  Estimated: `99120 + e * (11323 ±0)`
+		// Minimum execution time: 140_634_000 picoseconds.
+		Weight::from_parts(151_649_783, 99120)
+			// Standard Error: 263_973
+			.saturating_add(Weight::from_parts(63_973_593, 0).saturating_mul(e.into()))
+			.saturating_add(T::DbWeight::get().reads(11_u64))
+			.saturating_add(T::DbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
+			.saturating_add(T::DbWeight::get().writes((6_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 11323).saturating_mul(e.into()))
 	}
 	/// Storage: `EthBridge::Instance` (r:1 w:0)
 	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
@@ -467,8 +575,8 @@ impl WeightInfo for () {
 	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
 	/// Storage: `TokenManager::Balances` (r:1 w:1)
 	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:1 w:0)
-	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
 	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
@@ -483,8 +591,8 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
 	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
-	/// Storage: `BridgeWatchtower::LiftChecks` (r:0 w:32)
-	/// Proof: `BridgeWatchtower::LiftChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
 	/// The range of component `c` is `[4, 10]`.
 	/// The range of component `e` is `[1, 32]`.
 	fn submit_ethereum_events_and_process_batch(c: u32, e: u32, ) -> Weight {
@@ -548,6 +656,112 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().writes(6_u64))
 			.saturating_add(RocksDbWeight::get().writes((3_u64).saturating_mul(e.into())))
 			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Benchmarked on a local machine, not the reference one. Regenerate with the rest of the pallet.
+	/// Storage: `EthBridge::Instance` (r:1 w:0)
+	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveEthereumRange` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveEthereumRange` (`max_values`: Some(1), `max_size`: Some(544), added: 1039, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthereumEvents` (r:2 w:1)
+	/// Proof: `EthBridge::EthereumEvents` (`max_values`: None, `max_size`: Some(46590), added: 49065, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ProcessedEthereumEvents` (r:32 w:32)
+	/// Proof: `EthBridge::ProcessedEthereumEvents` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersReadyToClaim` (r:32 w:32)
+	/// Proof: `TokenManager::LowersReadyToClaim` (`max_values`: None, `max_size`: Some(10138), added: 12613, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::LowersPendingProof` (r:32 w:32)
+	/// Proof: `TokenManager::LowersPendingProof` (`max_values`: None, `max_size`: Some(136), added: 2611, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::FailedLowerProofs` (r:32 w:32)
+	/// Proof: `TokenManager::FailedLowerProofs` (`max_values`: None, `max_size`: Some(136), added: 2611, mode: `MaxEncodedLen`)
+	/// Storage: `AssetRegistry::LocationToAssetId` (r:32 w:0)
+	/// Proof: `AssetRegistry::LocationToAssetId` (`max_values`: None, `max_size`: Some(624), added: 3099, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::AVTTokenContract` (r:1 w:0)
+	/// Proof: `TokenManager::AVTTokenContract` (`max_values`: Some(1), `max_size`: Some(20), added: 515, mode: `MaxEncodedLen`)
+	/// Storage: `TokenManager::Balances` (r:32 w:32)
+	/// Proof: `TokenManager::Balances` (`max_values`: None, `max_size`: Some(84), added: 2559, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
+	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
+	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:32 w:32)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:32 w:32)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// The range of component `c` is `[4, 10]`.
+	/// The range of component `e` is `[1, 32]`.
+	fn submit_ethereum_events_and_process_lower_revert_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `1116 + c * (75 ±0) + e * (323 ±0)`
+		//  Estimated: `99120 + e * (12613 ±0)`
+		// Minimum execution time: 233_832_000 picoseconds.
+		Weight::from_parts(385_297_996, 99120)
+			// Standard Error: 1_087_838
+			.saturating_add(Weight::from_parts(100_762_204, 0).saturating_mul(e.into()))
+			.saturating_add(RocksDbWeight::get().reads(10_u64))
+			.saturating_add(RocksDbWeight::get().reads((9_u64).saturating_mul(e.into())))
+			.saturating_add(RocksDbWeight::get().writes(3_u64))
+			.saturating_add(RocksDbWeight::get().writes((10_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 12613).saturating_mul(e.into()))
+	}
+	// Benchmarked on a local machine, not the reference one. Regenerate with the rest of the pallet.
+	/// Storage: `EthBridge::Instance` (r:1 w:0)
+	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ActiveEthereumRange` (r:1 w:1)
+	/// Proof: `EthBridge::ActiveEthereumRange` (`max_values`: Some(1), `max_size`: Some(544), added: 1039, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::EthereumEvents` (r:2 w:1)
+	/// Proof: `EthBridge::EthereumEvents` (`max_values`: None, `max_size`: Some(46590), added: 49065, mode: `MaxEncodedLen`)
+	/// Storage: `Avn::Validators` (r:1 w:0)
+	/// Proof: `Avn::Validators` (`max_values`: Some(1), `max_size`: Some(16386), added: 16881, mode: `MaxEncodedLen`)
+	/// Storage: `EthBridge::ProcessedEthereumEvents` (r:32 w:32)
+	/// Proof: `EthBridge::ProcessedEthereumEvents` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `System::Account` (r:1 w:1)
+	/// Proof: `System::Account` (`max_values`: None, `max_size`: Some(128), added: 2603, mode: `MaxEncodedLen`)
+	/// Storage: `NodeManager::PendingMintRequestState` (r:1 w:0)
+	/// Proof: `NodeManager::PendingMintRequestState` (`max_values`: Some(1), `max_size`: Some(22), added: 517, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:1 w:0)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::MinVotingPeriod` (r:1 w:0)
+	/// Proof: `Watchtower::MinVotingPeriod` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ExternalRef` (r:32 w:32)
+	/// Proof: `Watchtower::ExternalRef` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Proposals` (r:32 w:32)
+	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Tail` (r:1 w:1)
+	/// Proof: `Watchtower::Tail` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::Head` (r:1 w:0)
+	/// Proof: `Watchtower::Head` (`max_values`: Some(1), `max_size`: Some(8), added: 503, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::InternalProposalQueue` (r:32 w:32)
+	/// Proof: `Watchtower::InternalProposalQueue` (`max_values`: None, `max_size`: Some(53), added: 2528, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::ProposalStatus` (r:0 w:32)
+	/// Proof: `Watchtower::ProposalStatus` (`max_values`: None, `max_size`: Some(50), added: 2525, mode: `MaxEncodedLen`)
+	/// Storage: `BridgeWatchtower::EventChecks` (r:0 w:32)
+	/// Proof: `BridgeWatchtower::EventChecks` (`max_values`: None, `max_size`: Some(1239), added: 3714, mode: `MaxEncodedLen`)
+	/// The range of component `c` is `[4, 10]`.
+	/// The range of component `e` is `[1, 32]`.
+	fn submit_ethereum_events_and_process_reward_mint_batch(_c: u32, e: u32, ) -> Weight {
+		// Proof Size summary in bytes:
+		//  Measured:  `767 + c * (75 ±0) + e * (109 ±0)`
+		//  Estimated: `99120 + e * (11323 ±0)`
+		// Minimum execution time: 140_634_000 picoseconds.
+		Weight::from_parts(151_649_783, 99120)
+			// Standard Error: 263_973
+			.saturating_add(Weight::from_parts(63_973_593, 0).saturating_mul(e.into()))
+			.saturating_add(RocksDbWeight::get().reads(11_u64))
+			.saturating_add(RocksDbWeight::get().reads((4_u64).saturating_mul(e.into())))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
+			.saturating_add(RocksDbWeight::get().writes((6_u64).saturating_mul(e.into())))
+			.saturating_add(Weight::from_parts(0, 11323).saturating_mul(e.into()))
 	}
 	/// Storage: `EthBridge::Instance` (r:1 w:0)
 	/// Proof: `EthBridge::Instance` (`max_values`: Some(1), `max_size`: Some(578), added: 1073, mode: `MaxEncodedLen`)

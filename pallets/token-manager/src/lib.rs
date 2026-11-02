@@ -1282,6 +1282,25 @@ impl<T: Config> BridgeInterfaceNotification for Pallet<T> {
     fn on_incoming_event_processed(event: &EthEvent) -> DispatchResult {
         Self::processed_event_handler(event)
     }
+
+    // Issues the lowers that reverts refund. Their proofs failed, the last stage a lower is
+    // looked up in, which is the slowest to find and remove.
+    #[cfg(feature = "runtime-benchmarks")]
+    fn benchmark_setup_incoming_events(events: &[EthEvent]) {
+        for event in events {
+            if let EventData::LogLowerReverted(d) = &event.event_data {
+                let params = concat_lower_data(
+                    d.lower_id,
+                    d.token_contract,
+                    &d.amount,
+                    &d.t1_recipient,
+                    d.receiver_address,
+                    0,
+                );
+                FailedLowerProofs::<T>::insert(d.lower_id, params);
+            }
+        }
+    }
 }
 
 impl<T: Config> PaymentHandler for Pallet<T> {

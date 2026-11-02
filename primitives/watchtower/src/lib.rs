@@ -73,8 +73,8 @@ pub enum ProposalType {
     Anchor,
     Governance,
     Other(u8),
-    /// Checks that a lift credited on T2 happened on T1.
-    Lift,
+    /// Checks that an Ethereum event that credited T2 happened on T1.
+    IncomingEvent,
 }
 
 #[derive(

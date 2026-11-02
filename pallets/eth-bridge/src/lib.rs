@@ -1291,16 +1291,12 @@ impl<T: Config<I>, I: 'static> Pallet<T, I> {
     /// The weight of a vote that processes a batch of `events`. Takes the most expensive kind of
     /// batch, since the events are only known once processed.
     pub fn process_batch_weight(events: u32) -> Weight {
-        <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_batch(
-            MAX_VALIDATOR_ACCOUNTS,
-            events,
-        )
-        .max(
-            <T as Config<I>>::WeightInfo::submit_ethereum_events_and_process_lower_lock_batch(
-                MAX_VALIDATOR_ACCOUNTS,
-                events,
-            ),
-        )
+        type W<T, I> = <T as Config<I>>::WeightInfo;
+        let c = MAX_VALIDATOR_ACCOUNTS;
+        W::<T, I>::submit_ethereum_events_and_process_batch(c, events)
+            .max(W::<T, I>::submit_ethereum_events_and_process_lower_lock_batch(c, events))
+            .max(W::<T, I>::submit_ethereum_events_and_process_lower_revert_batch(c, events))
+            .max(W::<T, I>::submit_ethereum_events_and_process_reward_mint_batch(c, events))
     }
 
     pub fn signatures() -> Vec<H256> {

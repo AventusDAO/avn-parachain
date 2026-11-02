@@ -38,7 +38,7 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_bridge_watchtower.
 pub trait WeightInfo {
 	fn freeze_lower() -> Weight;
-	fn toggle_lift_checks() -> Weight;
+	fn toggle_event_checks() -> Weight;
 }
 
 /// Weights for pallet_bridge_watchtower using the Substrate node and recommended hardware.
@@ -71,9 +71,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().reads(8_u64))
 			.saturating_add(T::DbWeight::get().writes(5_u64))
 	}
-	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:0 w:1)
-	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
-	fn toggle_lift_checks() -> Weight {
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:0 w:1)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	fn toggle_event_checks() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
@@ -112,9 +112,9 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads(8_u64))
 			.saturating_add(RocksDbWeight::get().writes(5_u64))
 	}
-	/// Storage: `BridgeWatchtower::LiftCheckingEnabled` (r:0 w:1)
-	/// Proof: `BridgeWatchtower::LiftCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
-	fn toggle_lift_checks() -> Weight {
+	/// Storage: `BridgeWatchtower::EventCheckingEnabled` (r:0 w:1)
+	/// Proof: `BridgeWatchtower::EventCheckingEnabled` (`max_values`: Some(1), `max_size`: Some(1), added: 496, mode: `MaxEncodedLen`)
+	fn toggle_event_checks() -> Weight {
 		// Proof Size summary in bytes:
 		//  Measured:  `0`
 		//  Estimated: `0`
