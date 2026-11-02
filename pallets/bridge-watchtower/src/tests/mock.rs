@@ -82,6 +82,7 @@ impl pallet_avn::Config for TestRuntime {
 
 parameter_types! {
     pub const EventCheckThreshold: Perbill = Perbill::from_percent(51);
+    pub const MinEthBlockConfirmation: u64 = 20;
 }
 
 impl Config for TestRuntime {
@@ -92,6 +93,7 @@ impl Config for TestRuntime {
     type LoweringControl = TestLoweringControl;
     type EventCheckThreshold = EventCheckThreshold;
     type EventCheckCommitteeSize = ConstU32<20>;
+    type MinEthBlockConfirmation = MinEthBlockConfirmation;
 }
 
 pub const BRIDGE_CONTRACT: H160 = H160([9u8; 20]);

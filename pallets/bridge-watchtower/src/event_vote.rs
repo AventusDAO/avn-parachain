@@ -53,7 +53,8 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Whether the event T2 credited happened on T1: its transaction succeeded and the bridge
-    /// emitted the same event. Errors if T1 could not be read.
+    /// emitted the same event. Errors if T1 could not be read, or if the transaction is not yet
+    /// deep enough to vote on.
     pub(crate) fn event_matches_t1(event: &EthEvent) -> Result<bool, ()> {
         let eth_tx_hash = event.event_id.transaction_hash;
         let Some(parse) = Self::event_parser(&event.event_data) else {
@@ -68,7 +69,20 @@ impl<T: Config> Pallet<T> {
             log::error!("❌ Failed to fetch the receipt of event {:?}: {:?}", eth_tx_hash, e);
         })?;
         let receipt = match decode_receipt_response(&response) {
-            Ok(Some((receipt, _))) => receipt,
+            Ok(Some((receipt, confirmations))) => {
+                // A shallow receipt could still be reorged away, so the node waits to vote
+                let required = T::MinEthBlockConfirmation::get();
+                if confirmations < required {
+                    log::info!(
+                        "⏳ Event {:?} has {} of {} confirmations, waiting to vote",
+                        eth_tx_hash,
+                        confirmations,
+                        required
+                    );
+                    return Err(())
+                }
+                receipt
+            },
             Ok(None) => {
                 log::warn!("❌ Event {:?} has no transaction on T1", eth_tx_hash);
                 return Ok(false)

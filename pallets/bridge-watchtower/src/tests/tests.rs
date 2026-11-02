@@ -758,7 +758,7 @@ mod event_check {
         }
 
         #[test]
-        fn root_can_start_and_stop_lift_checks() {
+        fn root_can_start_and_stop_event_checks() {
             ExtBuilder::build_default().as_externality().execute_with(|| {
                 assert_ok!(BridgeWatchtower::toggle_event_checks(RuntimeOrigin::root(), true));
 
@@ -815,7 +815,7 @@ mod event_check {
         }
 
         #[test]
-        fn lower_locks_are_checked_while_lift_checks_are_off() {
+        fn lower_locks_are_checked_while_event_checks_are_off() {
             ExtBuilder::build_default().as_externality().execute_with(|| {
                 request_freeze_on_mismatch();
                 assert_eq!(published(), vec![freeze_tx(LOWER_ID)]);

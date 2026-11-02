@@ -166,10 +166,14 @@ fn receipt(status: &str, logs: &[String]) -> String {
     )
 }
 
+/// The receipt, just deep enough to vote on.
 fn query_response(receipt: &str) -> Vec<u8> {
+    query_response_at_depth(receipt, MinEthBlockConfirmation::get())
+}
+
+fn query_response_at_depth(receipt: &str, num_confirmations: u64) -> Vec<u8> {
     hex::encode(
-        EthQueryResponse { data: receipt.as_bytes().to_vec().encode(), num_confirmations: 20 }
-            .encode(),
+        EthQueryResponse { data: receipt.as_bytes().to_vec().encode(), num_confirmations }.encode(),
     )
     .into_bytes()
 }
@@ -426,6 +430,20 @@ mod does_not_vote {
     }
 
     #[test]
+    fn when_the_transaction_is_not_deep_enough() {
+        let lift = receipt("0x1", &[T1Lift::default().log()]);
+        let failed_lift = receipt("0x0", &[T1Lift::default().log()]);
+        let shallow = MinEthBlockConfirmation::get() - 1;
+
+        // Not even against: a reorg could still change the transaction's outcome
+        for (t1, depth) in [(&lift, 0), (&lift, shallow), (&failed_lift, shallow)] {
+            assert_no_vote(|state| {
+                expect_receipt_request(state, query_response_at_depth(t1, depth))
+            });
+        }
+    }
+
+    #[test]
     fn when_no_event_is_being_checked() {
         assert_no_vote(|_| ActiveEventCheck::<TestRuntime>::kill());
     }
@@ -508,6 +526,26 @@ fn vote_is_submitted_again_only_after_the_inclusion_period() {
         expect_country_request(&mut offchain.write());
         BridgeWatchtower::vote_on_event_check(7);
         assert_eq!(submitted_votes(&pool, &key), vec![true, true]);
+    });
+}
+
+#[test]
+fn shallow_transaction_is_voted_on_once_it_is_deep_enough() {
+    let (mut ext, offchain, pool) = ExtBuilder::build_default().for_offchain_worker();
+    ext.execute_with(|| {
+        let key = run_as_watchtower();
+        start_check(lift_event(credited_lift()));
+        let lift = receipt("0x1", &[T1Lift::default().log()]);
+        let required = MinEthBlockConfirmation::get();
+
+        expect_receipt_request(&mut offchain.write(), query_response_at_depth(&lift, required - 1));
+        BridgeWatchtower::vote_on_event_check(1);
+        assert!(pool.read().transactions.is_empty());
+
+        expect_receipt_request(&mut offchain.write(), query_response_at_depth(&lift, required));
+        expect_country_request(&mut offchain.write());
+        BridgeWatchtower::vote_on_event_check(2);
+        assert_eq!(submitted_votes(&pool, &key), vec![true]);
     });
 }
 

@@ -87,6 +87,10 @@ pub mod pallet {
         /// Number of watchtowers randomly selected to check each event.
         #[pallet::constant]
         type EventCheckCommitteeSize: Get<u32>;
+        /// Ethereum blocks an event's transaction must be under before watchtowers vote on it, so
+        /// that a reorg cannot remove an event after it is verified.
+        #[pallet::constant]
+        type MinEthBlockConfirmation: Get<u64>;
     }
 
     /// The freeze transaction being checked.

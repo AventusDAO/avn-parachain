@@ -848,6 +848,7 @@ impl pallet_bridge_watchtower::Config for Runtime {
     type EventCheckCommitteeSize = ConstU32<20>;
     #[cfg(feature = "dev-network")]
     type EventCheckCommitteeSize = ConstU32<3>;
+    type MinEthBlockConfirmation = MinEthBlockConfirmation;
 }
 
 parameter_types! {
