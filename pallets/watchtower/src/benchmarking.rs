@@ -174,6 +174,18 @@ fn set_proposal_to_remove<T: Config>(proposal_id: H256) {
     ProposalsToRemove::<T>::insert(proposal_id, ());
 }
 
+/// Stores `count` trusted owners directly and returns them, sorted as the pallet keeps them.
+fn fill_trusted_owners<T: Config>(count: u32) -> Vec<T::AccountId> {
+    let mut owners: Vec<T::AccountId> =
+        (0..count).map(|i| account("trusted_owner", i, 0)).collect();
+    owners.sort();
+    TrustedOwners::<T>::put(
+        BoundedVec::<T::AccountId, MaxTrustedOwners>::try_from(owners.clone())
+            .expect("within MAX_TRUSTED_OWNERS"),
+    );
+    owners
+}
+
 /// Makes an already stored proposal request a committee of `size` nodes.
 fn request_committee<T: Config>(proposal_id: H256, size: u32) -> Proposal<T> {
     Proposals::<T>::mutate(proposal_id, |p| {
@@ -512,6 +524,45 @@ benchmarks! {
     }: set_admin_config(RawOrigin::Root, config)
     verify {
         assert!(<AdminAccount<T>>::get() == new_account);
+    }
+
+    set_admin_config_trusted_voting_start {
+        let start = Some(Perbill::from_percent(50));
+        let config = AdminConfig::TrustedVotingStart(start);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(TrustedVotingStart::<T>::get() == start);
+    }
+
+    // The list already holds `MAX_TRUSTED_OWNERS - n` owners, so after the call it is full.
+    // Every new entry is checked against the node owners.
+    add_trusted_owners {
+        let n in 0 .. MAX_TRUSTED_OWNERS;
+        fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS - n);
+        let owners: Vec<T::AccountId> = (0..n)
+            .map(|i| {
+                let owner: T::AccountId = account("new_trusted_owner", i, 0);
+                T::BenchmarkHelper::setup_owner(&owner, 1);
+                owner
+            })
+            .collect();
+        let owners: BoundedVec<T::AccountId, MaxTrustedOwners> =
+            owners.try_into().expect("within MAX_TRUSTED_OWNERS");
+    }: _(RawOrigin::Root, owners)
+    verify {
+        assert!(TrustedOwners::<T>::get().len() as u32 == MAX_TRUSTED_OWNERS);
+    }
+
+    // Removes `n` owners from a full list.
+    remove_trusted_owners {
+        let n in 0 .. MAX_TRUSTED_OWNERS;
+        let trusted = fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS);
+        let owners: BoundedVec<T::AccountId, MaxTrustedOwners> =
+            trusted.into_iter().take(n as usize).collect::<Vec<_>>().try_into()
+                .expect("within MAX_TRUSTED_OWNERS");
+    }: _(RawOrigin::Root, owners)
+    verify {
+        assert!(TrustedOwners::<T>::get().len() as u32 == MAX_TRUSTED_OWNERS - n);
     }
 
     active_proposal_expiry_status {

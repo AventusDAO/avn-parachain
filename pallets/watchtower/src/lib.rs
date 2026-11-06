@@ -283,15 +283,16 @@ pub mod pallet {
     pub type ProposalCommitteeSize<T: Config> =
         StorageMap<_, Blake2_128Concat, ProposalId, u32, OptionQuery>;
 
-    /// Node owners, set by root, who may vote on a committee proposal once its trusted voting
-    /// window opens (`TrustedVotingStart`), filling seats the committee left empty. Sorted, so
-    /// membership is a binary search, and free of duplicates. Empty means no owner is trusted.
+    /// Node owners, added and removed by root, who may vote on a committee proposal once its
+    /// trusted voting window opens (`TrustedVotingStart`), filling seats the committee left
+    /// empty. Sorted, so membership is a binary search, and free of duplicates. Empty means no
+    /// owner is trusted.
     #[pallet::storage]
     pub type TrustedOwners<T: Config> =
         StorageValue<_, BoundedVec<T::AccountId, MaxTrustedOwners>, ValueQuery>;
 
     /// How far into a committee proposal's voting period trusted owners may start voting, as a
-    /// share of the period. `None` means they never may.
+    /// share of the period: above 0% and below 100%. `None` means they never may.
     #[pallet::storage]
     pub type TrustedVotingStart<T: Config> = StorageValue<_, Perbill, OptionQuery>;
 
@@ -409,6 +410,13 @@ pub mod pallet {
         QueueHeadDemoted { demoted: ProposalId, promoted: ProposalId },
         /// The queue head was cancelled by an admin without being activated
         QueueHeadCancelled { proposal_id: ProposalId },
+        /// Root added these owners to the trusted owners.
+        TrustedOwnersAdded { owners: BoundedVec<T::AccountId, MaxTrustedOwners> },
+        /// Root removed these owners from the trusted owners.
+        TrustedOwnersRemoved { owners: BoundedVec<T::AccountId, MaxTrustedOwners> },
+        /// The share of the voting period after which trusted owners may vote was updated.
+        /// `None` means they may not vote.
+        TrustedVotingStartSet { start: Option<Perbill> },
     }
 
     #[pallet::error]
@@ -487,6 +495,18 @@ pub mod pallet {
         /// Internal proposals are voted on by their committee nodes with `unsigned_vote` or
         /// `unsigned_vote_choice`, not with a signed vote
         SignedVoteOnInternalProposal,
+        /// The same owner is given more than once
+        DuplicateTrustedOwner,
+        /// A trusted owner must own at least one watchtower node when added
+        TrustedOwnerNotWatchtowerOwner,
+        /// The owner is already trusted
+        AlreadyTrustedOwner,
+        /// The owner is not trusted
+        NotTrustedOwner,
+        /// Adding these owners would exceed `MAX_TRUSTED_OWNERS`
+        TooManyTrustedOwners,
+        /// The trusted voting start must be above 0% and below 100%
+        InvalidTrustedVotingStart,
     }
 
     #[pallet::call]
@@ -711,7 +731,9 @@ pub mod pallet {
 
         /// Set admin configurations
         #[pallet::call_index(6)]
-        #[pallet::weight(<T as Config>::WeightInfo::set_admin_config_voting())]
+        #[pallet::weight(<T as Config>::WeightInfo::set_admin_config_voting()
+            .max(<T as Config>::WeightInfo::set_admin_config_account())
+            .max(<T as Config>::WeightInfo::set_admin_config_trusted_voting_start()))]
         pub fn set_admin_config(
             origin: OriginFor<T>,
             config: AdminConfig<BlockNumberFor<T>, T::AccountId>,
@@ -728,6 +750,19 @@ pub mod pallet {
                     <AdminAccount<T>>::mutate(|a| *a = admin_account.clone());
                     Self::deposit_event(Event::AdminAccountSet { new_admin: admin_account });
                     return Ok(Some(<T as Config>::WeightInfo::set_admin_config_account()).into())
+                },
+                AdminConfig::TrustedVotingStart(start) => {
+                    // 0% would drop the time gate and 100% would never open; `None` disables.
+                    ensure!(
+                        start.map_or(true, |s| s > Perbill::zero() && s < Perbill::one()),
+                        Error::<T>::InvalidTrustedVotingStart
+                    );
+                    TrustedVotingStart::<T>::set(start);
+                    Self::deposit_event(Event::TrustedVotingStartSet { start });
+                    return Ok(Some(
+                        <T as Config>::WeightInfo::set_admin_config_trusted_voting_start(),
+                    )
+                    .into())
                 },
             }
         }
@@ -799,6 +834,69 @@ pub mod pallet {
             let proposal = Proposals::<T>::get(proposal_id).ok_or(Error::<T>::ProposalNotFound)?;
             Self::finalise_voting(proposal_id, &proposal, ProposalStatusEnum::Cancelled)?;
             Self::deposit_event(Event::QueueHeadCancelled { proposal_id });
+
+            Ok(())
+        }
+
+        /// Adds `owners` to the trusted owners. Trusted owners vote only once
+        /// `TrustedVotingStart` is set.
+        ///
+        /// Root only. Each entry must appear once, not be trusted already and own at least one
+        /// watchtower node, and the list must stay within `MAX_TRUSTED_OWNERS`. Ownership is
+        /// checked only here: an owner who later deregisters every node stays listed until
+        /// removed, but cannot vote, as a trusted vote must come from a node they own.
+        #[pallet::call_index(11)]
+        #[pallet::weight(<T as Config>::WeightInfo::add_trusted_owners(owners.len() as u32))]
+        pub fn add_trusted_owners(
+            origin: OriginFor<T>,
+            owners: BoundedVec<T::AccountId, MaxTrustedOwners>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::ensure_distinct(&owners)?;
+            ensure!(
+                owners.iter().all(T::Watchtowers::is_watchtower_owner),
+                Error::<T>::TrustedOwnerNotWatchtowerOwner
+            );
+
+            TrustedOwners::<T>::try_mutate(|trusted| -> DispatchResult {
+                for owner in owners.iter() {
+                    let position = trusted
+                        .binary_search(owner)
+                        .err()
+                        .ok_or(Error::<T>::AlreadyTrustedOwner)?;
+                    trusted
+                        .try_insert(position, owner.clone())
+                        .map_err(|_| Error::<T>::TooManyTrustedOwners)?;
+                }
+                Ok(())
+            })?;
+            Self::deposit_event(Event::TrustedOwnersAdded { owners });
+
+            Ok(())
+        }
+
+        /// Removes `owners` from the trusted owners.
+        ///
+        /// Root only. Each entry must appear once and be trusted. An owner need not still own a
+        /// node to be removed.
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::remove_trusted_owners(owners.len() as u32))]
+        pub fn remove_trusted_owners(
+            origin: OriginFor<T>,
+            owners: BoundedVec<T::AccountId, MaxTrustedOwners>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::ensure_distinct(&owners)?;
+
+            TrustedOwners::<T>::try_mutate(|trusted| -> DispatchResult {
+                for owner in owners.iter() {
+                    let position =
+                        trusted.binary_search(owner).map_err(|_| Error::<T>::NotTrustedOwner)?;
+                    trusted.remove(position);
+                }
+                Ok(())
+            })?;
+            Self::deposit_event(Event::TrustedOwnersRemoved { owners });
 
             Ok(())
         }
@@ -960,6 +1058,14 @@ pub mod pallet {
         // If you change the return type, make sure to update `EnsureExternalProposerOrRoot`
         pub fn proposal_admin() -> Result<T::AccountId, Error<T>> {
             Ok(<AdminAccount<T>>::get().ok_or(Error::<T>::AdminAccountNotSet)?)
+        }
+
+        /// Fails if any owner is given more than once.
+        fn ensure_distinct(owners: &[T::AccountId]) -> DispatchResult {
+            let mut sorted = owners.to_vec();
+            sorted.sort();
+            ensure!(sorted.windows(2).all(|w| w[0] != w[1]), Error::<T>::DuplicateTrustedOwner);
+            Ok(())
         }
 
         /// Worst case of the two `activate_next_proposal` outcomes for a committee of `k`.
