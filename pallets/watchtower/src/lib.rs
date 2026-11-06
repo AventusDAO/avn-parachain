@@ -88,9 +88,12 @@ mod voting;
 
 pub use pallet::*;
 
-/// Most `Voters` (and, separately, `ProposalCommittee`) entries of one proposal that `on_idle`
-/// removes per block.
+/// Most `Voters` (and, separately, `ProposalCommittee` and `TrustedVoters`) entries of one
+/// proposal that `on_idle` removes per block.
 pub const CLEANUP_PAGE_SIZE: u32 = 250;
+/// Most node owners root can mark as trusted.
+pub const MAX_TRUSTED_OWNERS: u32 = 64;
+pub type MaxTrustedOwners = ConstU32<MAX_TRUSTED_OWNERS>;
 /// Offchain local storage key caching the node's country, with when it was fetched.
 const NODE_COUNTRY_CACHE_KEY: &[u8] = b"watchtower::node_country";
 /// How long a cached country is used before it is fetched again, in milliseconds.
@@ -279,6 +282,31 @@ pub mod pallet {
     #[pallet::storage]
     pub type ProposalCommitteeSize<T: Config> =
         StorageMap<_, Blake2_128Concat, ProposalId, u32, OptionQuery>;
+
+    /// Node owners, set by root, who may vote on a committee proposal once its trusted voting
+    /// window opens (`TrustedVotingStart`), filling seats the committee left empty. Sorted, so
+    /// membership is a binary search, and free of duplicates. Empty means no owner is trusted.
+    #[pallet::storage]
+    pub type TrustedOwners<T: Config> =
+        StorageValue<_, BoundedVec<T::AccountId, MaxTrustedOwners>, ValueQuery>;
+
+    /// How far into a committee proposal's voting period trusted owners may start voting, as a
+    /// share of the period. `None` means they never may.
+    #[pallet::storage]
+    pub type TrustedVotingStart<T: Config> = StorageValue<_, Perbill, OptionQuery>;
+
+    /// Trusted owners that have voted on a committee proposal, whether through a trusted vote or
+    /// through one of their nodes on the committee, so that each one votes at most once.
+    #[pallet::storage]
+    pub type TrustedVoters<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        ProposalId,
+        Blake2_128Concat,
+        T::AccountId, // Trusted owner
+        (),
+        OptionQuery,
+    >;
 
     /// The currently active internal proposal being voted on, if any
     #[pallet::storage]
@@ -1195,6 +1223,15 @@ pub mod pallet {
                 meter.consume(<T as Config>::WeightInfo::cleanup_committee_page(removed));
             }
 
+            // `TrustedVoters` has the same key and value types as `ProposalCommittee`, so a page
+            // costs the same.
+            let page =
+                Self::affordable_entries(&meter, <T as Config>::WeightInfo::cleanup_committee_page);
+            if page > 0 {
+                let removed = Self::remove_trusted_voters_page(proposal_id, page);
+                meter.consume(<T as Config>::WeightInfo::cleanup_committee_page(removed));
+            }
+
             let page = Self::affordable_entries(
                 &meter,
                 <T as Config>::WeightInfo::cleanup_choice_tally_page,
@@ -1249,6 +1286,16 @@ pub mod pallet {
             members.len() as u32
         }
 
+        /// Same as `remove_voters_page` for the trusted owners that voted.
+        pub(crate) fn remove_trusted_voters_page(proposal_id: ProposalId, max: u32) -> u32 {
+            let owners: Vec<T::AccountId> =
+                TrustedVoters::<T>::iter_key_prefix(proposal_id).take(max as usize).collect();
+            for owner in &owners {
+                TrustedVoters::<T>::remove(proposal_id, owner);
+            }
+            owners.len() as u32
+        }
+
         /// Same as `remove_voters_page` for the per-answer tallies of a `Choice` proposal.
         pub(crate) fn remove_choice_tally_page(proposal_id: ProposalId, max: u32) -> u32 {
             let answers: Vec<H256> =
@@ -1259,11 +1306,12 @@ pub mod pallet {
             answers.len() as u32
         }
 
-        /// Removes the proposal and its remaining data once no voters, no committee members
-        /// and no tallies are left. Returns true if it was removed.
+        /// Removes the proposal and its remaining data once no voters, no committee members, no
+        /// trusted voters and no tallies are left. Returns true if it was removed.
         pub(crate) fn remove_proposal_if_cleaned(proposal_id: ProposalId) -> bool {
             if Voters::<T>::iter_prefix(proposal_id).next().is_some() ||
                 ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_some() ||
+                TrustedVoters::<T>::iter_prefix(proposal_id).next().is_some() ||
                 ChoiceTally::<T>::iter_prefix(proposal_id).next().is_some()
             {
                 return false

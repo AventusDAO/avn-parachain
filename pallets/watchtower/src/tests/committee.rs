@@ -764,6 +764,53 @@ mod cleanup {
             System::assert_last_event(Event::ProposalCleaned { proposal_id: id }.into());
         });
     }
+
+    #[test]
+    fn removes_trusted_voters() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            assert_ok!(activate(id));
+            let selected: Vec<AccountId> = members(id).into_iter().collect();
+            assert_ok!(node_vote(selected[0], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
+            assert!(ProposalsToRemove::<TestRuntime>::contains_key(id));
+
+            // Trusted voting is not wired up yet, so write its rows directly.
+            let trusted_owners: Vec<AccountId> = (0..MAX_TRUSTED_OWNERS)
+                .map(|i| {
+                    let mut seed = [0xddu8; 32];
+                    seed[..4].copy_from_slice(&i.to_le_bytes());
+                    TestAccount::new(seed).account_id()
+                })
+                .collect();
+            for owner in &trusted_owners {
+                TrustedVoters::<TestRuntime>::insert(id, owner, ());
+            }
+
+            roll_forward(2);
+
+            assert!(TrustedVoters::<TestRuntime>::iter_prefix(id).next().is_none());
+            assert!(!Proposals::<TestRuntime>::contains_key(id));
+            System::assert_last_event(Event::ProposalCleaned { proposal_id: id }.into());
+        });
+    }
+
+    #[test]
+    fn keeps_the_proposal_while_trusted_voters_remain() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            assert_ok!(activate(id));
+            let selected: Vec<AccountId> = members(id).into_iter().collect();
+            assert_ok!(node_vote(selected[0], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
+
+            TrustedVoters::<TestRuntime>::insert(id, TestAccount::new([0xdd; 32]).account_id(), ());
+            assert!(!Pallet::<TestRuntime>::remove_proposal_if_cleaned(id));
+            assert!(Proposals::<TestRuntime>::contains_key(id));
+        });
+    }
 }
 
 mod request_validation {
