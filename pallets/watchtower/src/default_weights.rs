@@ -617,6 +617,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ChoiceTally` (r:1 w:0)
 	/// Proof: `Watchtower::ChoiceTally` (`max_values`: None, `max_size`: Some(100), added: 2575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::TrustedVoters` (r:1 w:0)
+	/// Proof: `Watchtower::TrustedVoters` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::WinningChoice` (r:0 w:1)
 	/// Proof: `Watchtower::WinningChoice` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:0 w:1)
@@ -634,8 +636,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Measured:  `215`
 		//  Estimated: `3565`
 		// Minimum execution time: 29_314_000 picoseconds.
+		// `TrustedVoters` read added by hand until this is benchmarked again.
 		Weight::from_parts(33_351_000, 3565)
-			.saturating_add(T::DbWeight::get().reads(4_u64))
+			.saturating_add(T::DbWeight::get().reads(5_u64))
 			.saturating_add(T::DbWeight::get().writes(7_u64))
 	}
 	/// Storage: `Watchtower::ChoiceTally` (r:250 w:250)
@@ -1242,6 +1245,8 @@ impl WeightInfo for () {
 	/// Proof: `Watchtower::ProposalCommittee` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::ChoiceTally` (r:1 w:0)
 	/// Proof: `Watchtower::ChoiceTally` (`max_values`: None, `max_size`: Some(100), added: 2575, mode: `MaxEncodedLen`)
+	/// Storage: `Watchtower::TrustedVoters` (r:1 w:0)
+	/// Proof: `Watchtower::TrustedVoters` (`max_values`: None, `max_size`: Some(96), added: 2571, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::WinningChoice` (r:0 w:1)
 	/// Proof: `Watchtower::WinningChoice` (`max_values`: None, `max_size`: Some(80), added: 2555, mode: `MaxEncodedLen`)
 	/// Storage: `Watchtower::Proposals` (r:0 w:1)
@@ -1259,8 +1264,9 @@ impl WeightInfo for () {
 		//  Measured:  `215`
 		//  Estimated: `3565`
 		// Minimum execution time: 29_314_000 picoseconds.
+		// `TrustedVoters` read added by hand until this is benchmarked again.
 		Weight::from_parts(33_351_000, 3565)
-			.saturating_add(RocksDbWeight::get().reads(4_u64))
+			.saturating_add(RocksDbWeight::get().reads(5_u64))
 			.saturating_add(RocksDbWeight::get().writes(7_u64))
 	}
 	/// Storage: `Watchtower::ChoiceTally` (r:250 w:250)
