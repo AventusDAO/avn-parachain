@@ -806,9 +806,21 @@ mod cleanup {
             assert_ok!(node_vote(selected[0], id, true));
             assert_ok!(node_vote(selected[1], id, true));
 
-            TrustedVoters::<TestRuntime>::insert(id, TestAccount::new([0xdd; 32]).account_id(), ());
+            // Leave the trusted voter as the only row still holding the proposal.
+            Pallet::<TestRuntime>::remove_voters_page(id, CLEANUP_PAGE_SIZE);
+            Pallet::<TestRuntime>::remove_committee_page(id, CLEANUP_PAGE_SIZE);
+            assert!(Voters::<TestRuntime>::iter_prefix(id).next().is_none());
+            assert!(members(id).is_empty());
+            assert!(ChoiceTally::<TestRuntime>::iter_prefix(id).next().is_none());
+
+            let trusted_owner = TestAccount::new([0xdd; 32]).account_id();
+            TrustedVoters::<TestRuntime>::insert(id, &trusted_owner, ());
             assert!(!Pallet::<TestRuntime>::remove_proposal_if_cleaned(id));
             assert!(Proposals::<TestRuntime>::contains_key(id));
+
+            TrustedVoters::<TestRuntime>::remove(id, &trusted_owner);
+            assert!(Pallet::<TestRuntime>::remove_proposal_if_cleaned(id));
+            assert!(!Proposals::<TestRuntime>::contains_key(id));
         });
     }
 }
