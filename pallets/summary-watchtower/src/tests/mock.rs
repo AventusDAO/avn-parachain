@@ -349,6 +349,10 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
         (index == 0 && Self::is_authorized_watchtower(owner)).then(|| owner.clone())
     }
 
+    fn get_owner_nodes_count(owner: &AccountId) -> u32 {
+        Self::is_authorized_watchtower(owner).into()
+    }
+
     // Every node is an owner of its own, as in the owner index above.
     fn get_node_owner(node: &AccountId) -> Option<AccountId> {
         Self::is_authorized_watchtower(node).then(|| node.clone())

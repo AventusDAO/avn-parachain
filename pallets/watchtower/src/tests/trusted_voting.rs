@@ -26,7 +26,13 @@ fn set_owners(grouped: Vec<(AccountId, Vec<AccountId>)>) {
         .filter(|node| !grouped_nodes.contains(node))
         .map(|node| (node, vec![node]))
         .collect();
+    let grouped_any = !grouped.is_empty();
     owners.extend(grouped);
+    // The owner node index follows the grouping too, for trusted owners' turns. Only set
+    // once nodes are grouped, so committee selection before that is the default.
+    if grouped_any {
+        set_committee_owners(Some(owners.clone()));
+    }
     set_node_owners(owners);
 }
 
@@ -154,7 +160,7 @@ mod window {
             let (id, _, trusted) = with_trusted_outsider();
 
             System::set_block_number(opens_at(id) - 1);
-            assert!(!Watchtower::can_vote(id, &trusted));
+            assert!(!Watchtower::voter_seat(id, &trusted).is_ok());
             assert_noop!(node_vote(trusted, id, true), Error::<TestRuntime>::TrustedVotingNotOpen);
             assert_eq!(
                 pool(&vote_call(id, &trusted, true)),
@@ -162,7 +168,7 @@ mod window {
             );
 
             open_window(id);
-            assert!(Watchtower::can_vote(id, &trusted));
+            assert!(Watchtower::voter_seat(id, &trusted).is_ok());
             assert_ok!(pool(&vote_call(id, &trusted, true)));
             assert_ok!(node_vote(trusted, id, true));
         });
@@ -176,7 +182,7 @@ mod window {
             set_start(None);
 
             open_window(id);
-            assert!(!Watchtower::can_vote(id, &trusted));
+            assert!(!Watchtower::voter_seat(id, &trusted).is_ok());
             assert_noop!(node_vote(trusted, id, true), Error::<TestRuntime>::TrustedVotingNotOpen);
         });
     }
@@ -195,7 +201,7 @@ mod eligibility {
             set_start(Some(Perbill::from_percent(50)));
             open_window(id);
 
-            assert!(!Watchtower::can_vote(id, &others[1]));
+            assert!(!Watchtower::voter_seat(id, &others[1]).is_ok());
             assert_noop!(
                 node_vote(others[1], id, true),
                 Error::<TestRuntime>::NotInCommitteeOrTrusted
@@ -318,7 +324,7 @@ mod filling_seats {
             // 3 votes on a committee of 3: neither another trusted owner nor the member who has
             // not voted yet gets in.
             for node in [others[1], committee[2]] {
-                assert!(!Watchtower::can_vote(id, &node));
+                assert!(!Watchtower::voter_seat(id, &node).is_ok());
                 assert_noop!(node_vote(node, id, true), Error::<TestRuntime>::NoEmptySeat);
             }
             assert_eq!(status(id), ProposalStatusEnum::Active);
@@ -414,7 +420,7 @@ mod one_vote_per_owner {
             assert_eq!(first.provides[1], second.provides[1]);
 
             assert_ok!(node_vote(others[0], id, true));
-            assert!(!Watchtower::can_vote(id, &others[1]));
+            assert!(!Watchtower::voter_seat(id, &others[1]).is_ok());
             assert_noop!(node_vote(others[1], id, true), Error::<TestRuntime>::AlreadyVoted);
         });
     }
@@ -479,7 +485,7 @@ mod one_vote_per_owner {
             open_window(id);
 
             assert_ok!(node_vote(others[0], id, true));
-            assert!(!Watchtower::can_vote(id, &committee[0]));
+            assert!(!Watchtower::voter_seat(id, &committee[0]).is_ok());
             assert_noop!(node_vote(committee[0], id, true), Error::<TestRuntime>::AlreadyVoted);
         });
     }
@@ -492,6 +498,94 @@ mod one_vote_per_owner {
             assert_eq!(Watchtower::voter_seat(id, &committee[0]).ok(), Some(VoterSeat::Committee));
             assert_ok!(node_vote(committee[0], id, true));
             assert!(TrustedVoters::<TestRuntime>::iter_prefix(id).next().is_none());
+        });
+    }
+}
+
+mod turns {
+    use super::*;
+
+    /// A trusted owner with two nodes outside the committee, in the open window.
+    fn owner_with_two_outside_nodes() -> (ProposalId, Vec<AccountId>, Vec<AccountId>) {
+        set_owners(vec![]);
+        let (id, committee, others) = activated(3, Perbill::from_percent(50), VotingKind::Binary);
+        let nodes = vec![others[0], others[1]];
+        set_owners(vec![(watchtower_owner_1(), nodes.clone())]);
+        trust(vec![watchtower_owner_1()]);
+        set_start(Some(Perbill::from_percent(50)));
+        open_window(id);
+        (id, committee, nodes)
+    }
+
+    #[test]
+    fn a_trusted_owner_s_nodes_take_turns_by_block() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let (id, _, nodes) = owner_with_two_outside_nodes();
+            let now = System::block_number();
+
+            for block in now..now + 4 {
+                let turn = nodes[(block % 2) as usize];
+                let other = nodes[((block + 1) % 2) as usize];
+                // Both have a seat, but only the node whose turn it is should vote.
+                assert!(Watchtower::voter_seat(id, &other).is_ok());
+                assert!(Watchtower::may_vote_now(id, &turn, block), "block {}", block);
+                assert!(!Watchtower::may_vote_now(id, &other, block), "block {}", block);
+            }
+        });
+    }
+
+    #[test]
+    fn no_node_s_turn_comes_once_the_owner_has_voted() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let (id, _, nodes) = owner_with_two_outside_nodes();
+            let now = System::block_number();
+            assert_ok!(node_vote(nodes[(now % 2) as usize], id, true));
+
+            for block in now..now + 2 {
+                assert!(!Watchtower::may_vote_now(id, &nodes[0], block));
+                assert!(!Watchtower::may_vote_now(id, &nodes[1], block));
+            }
+        });
+    }
+
+    #[test]
+    fn single_node_seats_vote_in_every_block() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            set_owners(vec![]);
+            let (id, committee, others) =
+                activated(3, Perbill::from_percent(50), VotingKind::Binary);
+            let owner = watchtower_owner_1();
+            // `committee[0]` is a trusted owner's committee seat, `committee[1]` a plain one.
+            set_owners(vec![(owner, vec![others[0], committee[0]])]);
+            trust(vec![owner]);
+            set_start(Some(Perbill::from_percent(50)));
+            open_window(id);
+            let now = System::block_number();
+
+            for block in now..now + 2 {
+                assert!(Watchtower::may_vote_now(id, &committee[0], block));
+                assert!(Watchtower::may_vote_now(id, &committee[1], block));
+            }
+            // A node without a seat never votes.
+            assert!(!Watchtower::may_vote_now(id, &others[1], now));
+            assert!(!Watchtower::may_vote_now(id, &others[1], now + 1));
+        });
+    }
+
+    #[test]
+    fn proposals_without_a_committee_are_open_to_every_node() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let context = Context { external_ref: H256::repeat_byte(1), ..Context::default() };
+            assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(vec![1])));
+            let id = ExternalRef::<TestRuntime>::get(&context.external_ref);
+            assert_ok!(Watchtower::activate_next_proposal(RawOrigin::None.into(), id));
+            let now = System::block_number();
+            assert!(Watchtower::may_vote_now(id, &watchtower_1(), now));
+            assert!(Watchtower::may_vote_now(id, &watchtower_1(), now + 1));
         });
     }
 }

@@ -180,6 +180,10 @@ pub trait NodesInterface<AccountId, SignerId> {
     /// `get_owner_at_index`.
     fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId>;
 
+    /// Number of `owner`'s indexed nodes: `get_owner_node_at_index` returns a node for every
+    /// index below it. 0 if the owner has none.
+    fn get_owner_nodes_count(owner: &AccountId) -> u32;
+
     /// Owner of a registered node. `None` if `node` is not registered.
     fn get_node_owner(node: &AccountId) -> Option<AccountId>;
 }

@@ -75,10 +75,32 @@ impl<T: Config> Pallet<T> {
         Ok(VoterSeat::Trusted { owner })
     }
 
-    /// True if `node` may vote on `proposal_id` at the current block. For offchain workers
-    /// deciding whether to vote; the pool refuses votes for which this is false.
-    pub fn can_vote(proposal_id: ProposalId, node: &T::AccountId) -> bool {
-        Self::voter_seat(proposal_id, node).is_ok()
+    /// True if `node` should vote on `proposal_id` in the offchain worker run for block `now`.
+    /// For offchain workers deciding whether to do a vote's work; the pool refuses votes from
+    /// nodes without a seat.
+    ///
+    /// Every seat but `Trusted` belongs to one node, which votes whenever it has the seat. A
+    /// trusted owner's nodes all get a `Trusted` seat, but only one vote counts, so they take
+    /// turns: in each block only the node at position `now % count` of the owner's node index
+    /// votes. Once its vote is in, the owner has voted and the others have no seat. Not
+    /// enforced on chain: a node voting out of turn only does work that may not count.
+    pub fn may_vote_now(
+        proposal_id: ProposalId,
+        node: &T::AccountId,
+        now: BlockNumberFor<T>,
+    ) -> bool {
+        match Self::voter_seat(proposal_id, node) {
+            Ok(VoterSeat::Trusted { owner }) => Self::is_owner_turn(&owner, node, now),
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// True if `node` is the one of `owner`'s nodes whose turn it is at block `now`.
+    fn is_owner_turn(owner: &T::AccountId, node: &T::AccountId, now: BlockNumberFor<T>) -> bool {
+        let count = T::Watchtowers::get_owner_nodes_count(owner);
+        let Some(turn) = now.saturated_into::<u32>().checked_rem(count) else { return false };
+        T::Watchtowers::get_owner_node_at_index(owner, turn).as_ref() == Some(node)
     }
 
     /// `node`'s owner, if that owner is trusted.

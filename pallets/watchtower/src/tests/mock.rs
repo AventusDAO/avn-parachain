@@ -620,6 +620,13 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
             .and_then(|(_, nodes)| nodes.get(index as usize).cloned())
     }
 
+    fn get_owner_nodes_count(owner: &AccountId) -> u32 {
+        committee_owners()
+            .into_iter()
+            .find(|(o, _)| o == owner)
+            .map_or(0, |(_, nodes)| nodes.len() as u32)
+    }
+
     fn get_node_owner(node: &AccountId) -> Option<AccountId> {
         NODE_OWNERS.with(|owners| {
             owners

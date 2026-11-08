@@ -49,6 +49,13 @@ impl<T: Config> Pallet<T> {
         OwnerNodeIndex::<T>::get(owner, index)
     }
 
+    /// Number of `owner`'s nodes in the owner node index. 0 if the owner has none.
+    pub fn owner_node_count(owner: &T::AccountId) -> u32 {
+        OwnerIndexOf::<T>::get(owner)
+            .and_then(OwnerIndex::<T>::get)
+            .map_or(0, |entry| entry.nodes)
+    }
+
     /// Appends `node`, owned by `owner`, to the dense indexes. No-op if it is already indexed.
     pub(crate) fn index_insert(node: &NodeId<T>, owner: &T::AccountId) {
         if NodeIndexOf::<T>::contains_key(node) {

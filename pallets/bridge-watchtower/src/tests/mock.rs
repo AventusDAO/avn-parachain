@@ -312,6 +312,10 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
         None
     }
 
+    fn get_owner_nodes_count(_owner: &AccountId) -> u32 {
+        0
+    }
+
     fn get_node_owner(_node: &AccountId) -> Option<AccountId> {
         None
     }

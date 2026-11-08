@@ -32,9 +32,10 @@ impl<T: Config> Pallet<T> {
         };
 
         // A counted vote is final, and the pool refuses votes from nodes without a seat: outside
-        // the committee and not a trusted owner's node in the open trusted voting window
+        // the committee and not a trusted owner's node in the open trusted voting window. A
+        // trusted owner's nodes take turns, so only one of them does the T1 lookup at a time
         if pallet_watchtower::Voters::<T>::contains_key(proposal_id, &watchtower) ||
-            !pallet_watchtower::Pallet::<T>::can_vote(proposal_id, &watchtower)
+            !pallet_watchtower::Pallet::<T>::may_vote_now(proposal_id, &watchtower, now)
         {
             return
         }

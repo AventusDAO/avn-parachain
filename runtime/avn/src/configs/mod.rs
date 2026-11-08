@@ -1008,6 +1008,10 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
         pallet_node_manager::Pallet::<Runtime>::owner_node_at_index(owner, index)
     }
 
+    fn get_owner_nodes_count(owner: &AccountId) -> u32 {
+        pallet_node_manager::Pallet::<Runtime>::owner_node_count(owner)
+    }
+
     fn get_node_owner(node: &AccountId) -> Option<AccountId> {
         pallet_node_manager::NodeRegistry::<Runtime>::get(node).map(|node_info| node_info.owner)
     }

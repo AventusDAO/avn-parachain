@@ -137,11 +137,12 @@ pub mod pallet {
                 }
 
                 // Only nodes with a seat may vote: committee members, and trusted owners' nodes
-                // once the trusted voting window opens. The pool would reject the vote anyway, so
-                // skip the root validation work on nodes without one.
-                if !pallet_watchtower::Pallet::<T>::can_vote(proposal_id, &watchtower) {
+                // once the trusted voting window opens, one node per owner at a time. The pool
+                // would reject the vote of a node without a seat anyway, so skip the root
+                // validation work on nodes that should not vote now.
+                if !pallet_watchtower::Pallet::<T>::may_vote_now(proposal_id, &watchtower, now) {
                     log::debug!(
-                        "🛠️  Node {:?} has no seat on proposal {:?}, skipping validation.",
+                        "🛠️  Node {:?} should not vote on proposal {:?} now, skipping..",
                         watchtower,
                         proposal_id
                     );
