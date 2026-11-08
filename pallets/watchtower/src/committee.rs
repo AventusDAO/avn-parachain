@@ -34,13 +34,6 @@ pub const MAX_SEATS_PER_OWNER: u32 = 1;
 const _: () = assert!(MAX_SEATS_PER_OWNER == 1, "committee selection assumes one seat per owner");
 
 impl<T: Config> Pallet<T> {
-    /// True if `who` may vote on `proposal_id` as far as committee membership is concerned.
-    /// Proposals without a committee accept every node.
-    pub fn is_committee_member(proposal_id: ProposalId, who: &T::AccountId) -> bool {
-        !ProposalCommitteeSize::<T>::contains_key(proposal_id) ||
-            ProposalCommittee::<T>::contains_key(proposal_id, who)
-    }
-
     /// The seat `node` would vote from on `proposal_id` at the current block, or why it cannot
     /// vote. Shared by the transaction pool, the vote itself and the consumers' offchain
     /// workers, so they agree on who may vote.

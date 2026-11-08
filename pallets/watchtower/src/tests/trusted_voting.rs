@@ -51,11 +51,22 @@ fn activated(
     threshold: Perbill,
     voting: VotingKind,
 ) -> (ProposalId, Vec<AccountId>, Vec<AccountId>) {
+    activated_with_rule(size, threshold, voting, None)
+}
+
+/// `activated` with a decision rule. `None` is the legacy rule (`ExpireUnresolved`).
+fn activated_with_rule(
+    size: u32,
+    threshold: Perbill,
+    voting: VotingKind,
+    decision_rule: Option<DecisionRule>,
+) -> (ProposalId, Vec<AccountId>, Vec<AccountId>) {
     let context = Context {
         external_ref: H256::repeat_byte(1),
         committee_size: Some(size),
         threshold,
         voting,
+        decision_rule,
         ..Context::default()
     };
     assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(vec![1])));
@@ -319,8 +330,13 @@ mod filling_seats {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             set_owners(vec![]);
-            // 100% of 3: every seat must back the same answer.
-            let (id, committee, others) = activated(3, Perbill::one(), VotingKind::Choice);
+            // 100% of 3: every seat must back the same answer. Only `RejectOnExpiry` fails early.
+            let (id, committee, others) = activated_with_rule(
+                3,
+                Perbill::one(),
+                VotingKind::Choice,
+                Some(DecisionRule::RejectOnExpiry),
+            );
             trust(vec![others[0], others[1]]);
             set_start(Some(Perbill::from_percent(50)));
 
@@ -400,6 +416,28 @@ mod one_vote_per_owner {
             assert_ok!(node_vote(others[0], id, true));
             assert!(!Watchtower::can_vote(id, &others[1]));
             assert_noop!(node_vote(others[1], id, true), Error::<TestRuntime>::AlreadyVoted);
+        });
+    }
+
+    #[test]
+    fn across_the_owner_s_committee_and_outside_nodes_in_the_pool() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            set_owners(vec![]);
+            let (id, committee, others) =
+                activated(3, Perbill::from_percent(50), VotingKind::Binary);
+            let owner = watchtower_owner_1();
+            set_owners(vec![(owner, vec![committee[0], others[0]])]);
+            trust(vec![owner]);
+            set_start(Some(Perbill::from_percent(50)));
+            open_window(id);
+
+            // The committee node's vote carries the owner's tag too, so the pool keeps only
+            // one of the two.
+            let member = pool(&vote_call(id, &committee[0], true)).expect("valid");
+            let outsider = pool(&vote_call(id, &others[0], true)).expect("valid");
+            assert_ne!(member.provides[0], outsider.provides[0]);
+            assert_eq!(member.provides[1], outsider.provides[1]);
         });
     }
 

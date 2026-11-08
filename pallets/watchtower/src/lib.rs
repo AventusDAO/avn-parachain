@@ -1498,8 +1498,9 @@ pub mod pallet {
             Ok(seat)
         }
 
-        /// Validity of an unsigned vote in the pool. A trusted vote also provides a tag for its
-        /// owner, so only one of the owner's nodes is kept while the vote waits for inclusion.
+        /// Validity of an unsigned vote in the pool. A trusted owner's vote, cast through a
+        /// committee seat or as a trusted owner, also provides a tag for its owner, so only one of
+        /// the owner's nodes is kept while the vote waits for inclusion.
         fn unsigned_vote_validity(
             proposal_id: ProposalId,
             vote: &VoteChoice,
@@ -1522,7 +1523,7 @@ pub mod pallet {
             let mut validity = ValidTransaction::with_tag_prefix("wt_unsignedVote")
                 .priority(TransactionPriority::max_value() - reduce_priority)
                 .and_provides((watchtower, proposal_id));
-            if let VoterSeat::Trusted { owner } = seat {
+            if let VoterSeat::Trusted { owner } | VoterSeat::TrustedCommittee { owner } = seat {
                 validity =
                     validity.and_provides((WATCHTOWER_TRUSTED_VOTE_CONTEXT, owner, proposal_id));
             }
