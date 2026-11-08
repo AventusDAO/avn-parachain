@@ -311,6 +311,10 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     fn get_owner_node_at_index(_owner: &AccountId, _index: u32) -> Option<AccountId> {
         None
     }
+
+    fn get_node_owner(_node: &AccountId) -> Option<AccountId> {
+        None
+    }
 }
 
 pub struct EnsureRootAsProposer;

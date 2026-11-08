@@ -327,6 +327,26 @@ impl<T: Config> Pallet<T> {
         TotalRegisteredNodes::<T>::mutate(|total| *total = total.saturating_add(n));
     }
 
+    /// Stores a registry entry making `owner` the owner of `node`, for benchmarks that look up
+    /// a node's owner (e.g. watchtower trusted votes). Indexes and counters are left alone.
+    #[cfg(feature = "runtime-benchmarks")]
+    pub fn benchmark_set_node_owner(node: &NodeId<T>, owner: &T::AccountId) {
+        use frame_benchmarking::account;
+        use sp_runtime::traits::Zero;
+
+        let signing_key: T::SignerId = account("owned_node_key", 0, 0);
+        let stake = StakeInfo::<BalanceOf<T>>::new(
+            Zero::zero(),
+            Zero::zero(),
+            None,
+            UnstakeRestriction::Locked,
+        );
+        NodeRegistry::<T>::insert(
+            node,
+            NodeInfo::new(owner.clone(), signing_key, 0, 0u64, false, stake),
+        );
+    }
+
     /// Checks the dense index invariants. The registered-node count, which decides when the
     /// backfill is complete, and the owner indexes, which track `NodeIndex` from its first
     /// entry, are checked at any time; the node index only once the backfill is complete.

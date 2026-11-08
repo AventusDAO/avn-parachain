@@ -259,9 +259,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Measured:  `521`
 		//  Estimated: `12313`
 		// Minimum execution time: 93_251_000 picoseconds.
-		Weight::from_parts(104_567_000, 12313)
-			.saturating_add(T::DbWeight::get().reads(8_u64))
-			.saturating_add(T::DbWeight::get().writes(2_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(119_567_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(12_u64))
+			.saturating_add(T::DbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -294,9 +296,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Measured:  `1130`
 		//  Estimated: `12313`
 		// Minimum execution time: 123_000_000 picoseconds.
-		Weight::from_parts(141_723_000, 12313)
-			.saturating_add(T::DbWeight::get().reads(12_u64))
-			.saturating_add(T::DbWeight::get().writes(5_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(156_723_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(16_u64))
+			.saturating_add(T::DbWeight::get().writes(6_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -321,9 +325,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Measured:  `592`
 		//  Estimated: `12313`
 		// Minimum execution time: 101_583_000 picoseconds.
-		Weight::from_parts(112_648_000, 12313)
-			.saturating_add(T::DbWeight::get().reads(9_u64))
-			.saturating_add(T::DbWeight::get().writes(3_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(127_648_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(13_u64))
+			.saturating_add(T::DbWeight::get().writes(4_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -358,9 +364,11 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 		//  Measured:  `1400`
 		//  Estimated: `12313`
 		// Minimum execution time: 134_653_000 picoseconds.
-		Weight::from_parts(147_996_000, 12313)
-			.saturating_add(T::DbWeight::get().reads(12_u64))
-			.saturating_add(T::DbWeight::get().writes(7_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(162_996_000, 12313)
+			.saturating_add(T::DbWeight::get().reads(16_u64))
+			.saturating_add(T::DbWeight::get().writes(8_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
 	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)
@@ -918,9 +926,11 @@ impl WeightInfo for () {
 		//  Measured:  `521`
 		//  Estimated: `12313`
 		// Minimum execution time: 93_251_000 picoseconds.
-		Weight::from_parts(104_567_000, 12313)
-			.saturating_add(RocksDbWeight::get().reads(8_u64))
-			.saturating_add(RocksDbWeight::get().writes(2_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(119_567_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(12_u64))
+			.saturating_add(RocksDbWeight::get().writes(3_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -953,9 +963,11 @@ impl WeightInfo for () {
 		//  Measured:  `1130`
 		//  Estimated: `12313`
 		// Minimum execution time: 123_000_000 picoseconds.
-		Weight::from_parts(141_723_000, 12313)
-			.saturating_add(RocksDbWeight::get().reads(12_u64))
-			.saturating_add(RocksDbWeight::get().writes(5_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(156_723_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(16_u64))
+			.saturating_add(RocksDbWeight::get().writes(6_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:0)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -980,9 +992,11 @@ impl WeightInfo for () {
 		//  Measured:  `592`
 		//  Estimated: `12313`
 		// Minimum execution time: 101_583_000 picoseconds.
-		Weight::from_parts(112_648_000, 12313)
-			.saturating_add(RocksDbWeight::get().reads(9_u64))
-			.saturating_add(RocksDbWeight::get().writes(3_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(127_648_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(13_u64))
+			.saturating_add(RocksDbWeight::get().writes(4_u64))
 	}
 	/// Storage: `Watchtower::ActiveInternalProposal` (r:1 w:1)
 	/// Proof: `Watchtower::ActiveInternalProposal` (`max_values`: Some(1), `max_size`: Some(32), added: 527, mode: `MaxEncodedLen`)
@@ -1017,9 +1031,11 @@ impl WeightInfo for () {
 		//  Measured:  `1400`
 		//  Estimated: `12313`
 		// Minimum execution time: 134_653_000 picoseconds.
-		Weight::from_parts(147_996_000, 12313)
-			.saturating_add(RocksDbWeight::get().reads(12_u64))
-			.saturating_add(RocksDbWeight::get().writes(7_u64))
+		// Trusted vote path (owner lookup, `TrustedOwners`, `TrustedVotingStart`, `TrustedVoters`)
+		// added by hand until this is benchmarked again.
+		Weight::from_parts(162_996_000, 12313)
+			.saturating_add(RocksDbWeight::get().reads(16_u64))
+			.saturating_add(RocksDbWeight::get().writes(8_u64))
 	}
 	/// Storage: `Watchtower::Proposals` (r:1 w:0)
 	/// Proof: `Watchtower::Proposals` (`max_values`: None, `max_size`: Some(8848), added: 11323, mode: `MaxEncodedLen`)

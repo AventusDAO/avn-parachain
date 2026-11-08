@@ -653,7 +653,7 @@ mod voting {
                         _ => unreachable!(),
                     }
                 ),
-                Error::<TestRuntime>::NotInCommittee
+                Error::<TestRuntime>::NotInCommitteeOrTrusted
             );
 
             // A member's unsigned vote is accepted.

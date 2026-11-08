@@ -1007,6 +1007,10 @@ impl pallet_watchtower::NodesInterface<AccountId, NodeManagerKeyId> for RuntimeN
     fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
         pallet_node_manager::Pallet::<Runtime>::owner_node_at_index(owner, index)
     }
+
+    fn get_node_owner(node: &AccountId) -> Option<AccountId> {
+        pallet_node_manager::NodeRegistry::<Runtime>::get(node).map(|node_info| node_info.owner)
+    }
 }
 
 /// Gives the watchtower benchmarks real node-manager and summary state to run against.
@@ -1024,6 +1028,10 @@ impl pallet_watchtower::BenchmarkHelper<AccountId> for WatchtowerBenchmarkHelper
             pallet_node_manager::OwnedNodes::<Runtime>::insert(owner, node, ());
         }
         pallet_node_manager::OwnedNodesCount::<Runtime>::insert(owner, nodes);
+    }
+
+    fn set_node_owner(node: &AccountId, owner: &AccountId) {
+        pallet_node_manager::Pallet::<Runtime>::benchmark_set_node_owner(node, owner);
     }
 
     fn setup_consumer_proposal(external_ref: sp_core::H256, payload: sp_std::vec::Vec<u8>) {

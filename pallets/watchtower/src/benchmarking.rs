@@ -186,6 +186,22 @@ fn fill_trusted_owners<T: Config>(count: u32) -> Vec<T::AccountId> {
     owners
 }
 
+/// Takes the benchmark voter off the committee of `proposal_id` and makes it a trusted owner's
+/// node voting once the trusted voting window has opened. Node vote benchmarks measure this
+/// path: it reads everything a committee vote reads plus the node's owner, a full list of
+/// trusted owners, the window and the seats taken, and also writes `TrustedVoters`.
+fn make_voter_trusted<T: Config>(proposal_id: ProposalId, proposal: &Proposal<T>) -> T::AccountId {
+    let (_, voter) = get_voter::<T>();
+    ProposalCommittee::<T>::remove(proposal_id, &voter);
+    let owner = fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS)[0].clone();
+    T::BenchmarkHelper::set_node_owner(&voter, &owner);
+    TrustedVotingStart::<T>::put(Perbill::from_percent(1));
+    // The last block of the voting period: the window is open and the proposal has not expired.
+    let end_at = proposal.end_at.expect("active proposal has an end");
+    <frame_system::Pallet<T>>::set_block_number(end_at - 1u32.into());
+    owner
+}
+
 /// Makes an already stored proposal request a committee of `size` nodes.
 fn request_committee<T: Config>(proposal_id: H256, size: u32) -> Proposal<T> {
     Proposals::<T>::mutate(proposal_id, |p| {
@@ -396,7 +412,8 @@ benchmarks! {
         let (voter_key, voter) = get_voter::<T>();
         let in_favor = true;
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let owner = make_voter_trusted::<T>(proposal_id, &proposal);
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
@@ -406,8 +423,9 @@ benchmarks! {
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
+        assert!(TrustedVoters::<T>::contains_key(proposal_id, &owner));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: Some(BENCH_COUNTRY) }.into()
+            Event::TrustedVoteCast { proposal_id, owner, node: voter }.into()
         );
     }
 
@@ -416,13 +434,19 @@ benchmarks! {
         let in_favor = true;
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let _ = make_voter_trusted::<T>(proposal_id, &proposal);
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
         );
         let signature = voter_key.sign(&proof).unwrap();
-        // Add some votes to be above the threshold
-        setup_votes::<T>(proposal_id, 9u32);
+        // Committee of 10 at 50%: 4 votes in favour already in, this one decides. The 5 seats
+        // taken leave room for the trusted vote.
+        Votes::<T>::insert(proposal_id, Vote { in_favors: 4, againsts: 1 });
+        for i in 0..5u32 {
+            let other: T::AccountId = account("voter", i, 0);
+            Voters::<T>::insert(proposal_id, &other, i < 4);
+        }
     }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
@@ -441,8 +465,9 @@ benchmarks! {
         let (voter_key, voter) = get_voter::<T>();
         let choice = H256::repeat_byte(7);
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
         VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+        let owner = make_voter_trusted::<T>(proposal_id, &proposal);
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
@@ -452,8 +477,9 @@ benchmarks! {
     verify {
         assert_eq!(ChoiceTally::<T>::get(proposal_id, choice), 1);
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
+        assert!(TrustedVoters::<T>::contains_key(proposal_id, &owner));
         assert_last_event::<T>(
-            Event::ChoiceVoteSubmitted { proposal_id, voter, choice, country: Some(BENCH_COUNTRY) }.into()
+            Event::TrustedVoteCast { proposal_id, owner, node: voter }.into()
         );
     }
 
@@ -463,6 +489,7 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
         VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+        let _ = make_voter_trusted::<T>(proposal_id, &proposal);
         // Committee of 10 at 50%: 4 votes for `choice` already in, this one decides. The other
         // answers only show in the running standing, which is all the decision reads.
         ChoiceTally::<T>::insert(proposal_id, choice, 4u32);

@@ -88,6 +88,10 @@ impl BenchmarkHelper<AccountId> for TestBenchmarkHelper {
         NODE_OWNERS.with(|owners| owners.borrow_mut().insert(*owner, nodes));
     }
 
+    fn set_node_owner(node: &AccountId, owner: &AccountId) {
+        NODE_OWNERS.with(|owners| owners.borrow_mut().entry(*owner).or_default().push(*node));
+    }
+
     fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
 
     fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
@@ -615,6 +619,22 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
             .find(|(o, _)| o == owner)
             .and_then(|(_, nodes)| nodes.get(index as usize).cloned())
     }
+
+    fn get_node_owner(node: &AccountId) -> Option<AccountId> {
+        NODE_OWNERS.with(|owners| {
+            owners
+                .borrow()
+                .iter()
+                .find(|(_, nodes)| nodes.contains(node))
+                .map(|(owner, _)| *owner)
+        })
+    }
+}
+
+/// Replaces who owns which nodes, as `(owner, nodes)`, for `is_watchtower_owner`,
+/// `get_watchtower_voting_weight` and `get_node_owner`.
+pub fn set_node_owners(owners: Vec<(AccountId, Vec<AccountId>)>) {
+    NODE_OWNERS.with(|o| *o.borrow_mut() = owners.into_iter().collect());
 }
 
 pub struct EnsureExternalProposerOrRoot;
