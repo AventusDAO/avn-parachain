@@ -357,7 +357,8 @@ pub mod pallet {
                 payload: RawPayload::Inline(event.encode()),
                 threshold: T::EventCheckThreshold::get(),
                 source: ProposalSource::Internal(ProposalType::IncomingEvent),
-                // Expiry still disables lowering, but is reported apart from a rejection
+                // An unresolved vote still disables lowering, but is reported apart from a
+                // rejection
                 decision_rule: DecisionRule::ReportUnresolved,
                 external_ref,
                 created_at: frame_system::Pallet::<T>::block_number().saturated_into::<u32>(),

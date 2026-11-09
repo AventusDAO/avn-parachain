@@ -1,31 +1,27 @@
 use crate::*;
+use frame_support::traits::Defensive;
 
 impl<T: Config> Pallet<T> {
     /// The one place a proposal's outcome is decided.
     ///
-    /// Either side holding `threshold` of the eligible voters resolves the proposal, before or
-    /// after expiry: without a committee the eligible count is the live node count, which can
-    /// drop after the last vote. Otherwise, once the voting period has ended (`expired`), the
-    /// proposal's `DecisionRule` decides, so the result is always `Some` for an expired proposal.
-    /// A committee proposal whose seats have all voted is decided the same way without waiting
-    /// for the end of the period: it can get no more votes, so waiting would not change the
-    /// outcome. Under `RejectUnresolved`, a committee proposal is also rejected as soon as it can
-    /// no longer pass, since expiry would reject it anyway.
+    /// Either side (or, for `Choice`, an answer) holding `threshold` of the eligible voters
+    /// resolves the proposal, before or after expiry: without a committee the eligible count is
+    /// the live node count, which can drop after the last vote. Otherwise the proposal's
+    /// `DecisionRule` decides once `decision_rule_applies`: when the voting period has ended
+    /// (`expired`), so the result is always `Some` for an expired proposal, and earlier for
+    /// committee proposals that cannot change any more.
     pub fn decide(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
         expired: bool,
     ) -> Option<ProposalStatusEnum> {
-        let expired = expired || Self::committee_full(proposal_id);
+        let committee_size = ProposalCommitteeSize::<T>::get(proposal_id);
+        let needed = Self::needed_of(proposal, committee_size);
         if VotingKindOf::<T>::get(proposal_id) == VotingKind::Choice {
-            return Self::decide_choice(proposal_id, proposal, expired)
+            return Self::decide_choice(proposal_id, proposal, committee_size, needed, expired)
         }
 
         let votes = Votes::<T>::get(proposal_id);
-
-        // A committee fixes the denominator at activation; otherwise every node may vote and
-        // the live node count is used.
-        let needed = Self::votes_needed(proposal_id, proposal);
         if let Some(needed) = needed {
             if votes.in_favors >= needed {
                 return Some(ProposalStatusEnum::Resolved { passed: true })
@@ -34,17 +30,18 @@ impl<T: Config> Pallet<T> {
                 return Some(ProposalStatusEnum::Resolved { passed: false })
             }
         }
-        if !expired {
-            if proposal.decision_rule == DecisionRule::RejectUnresolved &&
-                needed.is_some_and(|needed| {
-                    Self::out_of_reach(proposal_id, votes.in_favors, needed)
-                })
-            {
-                return Some(ProposalStatusEnum::Resolved { passed: false })
-            }
+
+        let cast = votes.in_favors.saturating_add(votes.againsts);
+        if !Self::decision_rule_applies(
+            proposal,
+            committee_size,
+            needed,
+            cast,
+            votes.in_favors,
+            expired,
+        ) {
             return None
         }
-
         Some(match proposal.decision_rule {
             DecisionRule::ReportUnresolved => ProposalStatusEnum::Unresolved,
             DecisionRule::SimpleMajority =>
@@ -55,48 +52,71 @@ impl<T: Config> Pallet<T> {
 
     /// Voters eligible for a proposal: the committee fixed at activation, else every node.
     pub fn eligible_voters(proposal_id: ProposalId) -> u32 {
-        ProposalCommitteeSize::<T>::get(proposal_id)
-            .unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count)
+        Self::eligible_of(ProposalCommitteeSize::<T>::get(proposal_id))
     }
 
     /// Votes one side (or one answer) needs to decide the proposal. `None` while nobody is
     /// eligible.
     pub fn votes_needed(proposal_id: ProposalId, proposal: &Proposal<T>) -> Option<u32> {
-        let eligible = Self::eligible_voters(proposal_id);
+        Self::needed_of(proposal, ProposalCommitteeSize::<T>::get(proposal_id))
+    }
+
+    /// `eligible_voters` for a proposal whose committee size is already read.
+    fn eligible_of(committee_size: Option<u32>) -> u32 {
+        committee_size.unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count)
+    }
+
+    /// `votes_needed` for a proposal whose committee size is already read.
+    fn needed_of(proposal: &Proposal<T>, committee_size: Option<u32>) -> Option<u32> {
+        let eligible = Self::eligible_of(committee_size);
         if eligible == 0 {
             return None
         }
         Some(proposal.threshold.mul_ceil(eligible))
     }
 
-    /// True if a committee proposal can no longer reach `needed` from `tally`: even if every
-    /// seat left voted for it, it would fall short. Always false without a committee, whose
-    /// eligible voter count can still grow.
-    fn out_of_reach(proposal_id: ProposalId, tally: u32, needed: u32) -> bool {
-        let Some(size) = ProposalCommitteeSize::<T>::get(proposal_id) else { return false };
-        let remaining = size.saturating_sub(Self::votes_cast(proposal_id));
-        tally.saturating_add(remaining) < needed
+    /// True once the `DecisionRule` decides a proposal that has not reached its threshold, with
+    /// `cast` votes cast and `leading` votes for its leading side or answer:
+    /// - the voting period has ended (`expired`);
+    /// - every seat of its committee has voted, so it can get no more votes;
+    /// - under `RejectUnresolved`, `leading` can no longer reach `needed` even if every seat left
+    ///   voted for it, so expiry would reject it anyway.
+    ///
+    /// The last two only apply to committee proposals: without a committee more nodes may still
+    /// register.
+    fn decision_rule_applies(
+        proposal: &Proposal<T>,
+        committee_size: Option<u32>,
+        needed: Option<u32>,
+        cast: u32,
+        leading: u32,
+        expired: bool,
+    ) -> bool {
+        let Some(size) = committee_size else { return expired };
+        let seats_left = size.saturating_sub(cast);
+        if expired || seats_left == 0 {
+            return true
+        }
+        proposal.decision_rule == DecisionRule::RejectUnresolved &&
+            needed.is_some_and(|needed| leading.saturating_add(seats_left) < needed)
     }
 
     /// Decision for `Choice` proposals. The first answer whose tally reaches the threshold
-    /// wins and is stored in `WinningChoice`, before or after expiry. Under `RejectUnresolved`,
-    /// a committee proposal where no answer can still get there with the seats left fails
-    /// early, since expiry would reject it anyway. Otherwise once voting ends the decision rule
-    /// applies, where "majority" means the single answer with the most votes. The other rules
-    /// do not fail early: they can still pass a proposal that misses the threshold, or leave it
-    /// unresolved.
-    /// Reads only the running `ChoiceStandings`, so its cost does not grow with the number of
-    /// distinct answers.
+    /// wins and is stored in `WinningChoice`, before or after expiry. Otherwise the decision
+    /// rule applies as for `Binary` (see `decision_rule_applies`), with the leading answer as the
+    /// leading side, and "majority" meaning the single answer with the most votes. Reads only
+    /// the running `ChoiceStandings`, so its cost does not grow with the number of distinct
+    /// answers.
     fn decide_choice(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
+        committee_size: Option<u32>,
+        needed: Option<u32>,
         expired: bool,
     ) -> Option<ProposalStatusEnum> {
         let standing = ChoiceStandings::<T>::get(proposal_id);
         let best = standing.leader.map(|answer| (answer, standing.leader_tally));
-        let tie_at_best = standing.tied;
 
-        let needed = Self::votes_needed(proposal_id, proposal);
         if let (Some(needed), Some((answer, tally))) = (needed, best) {
             if tally >= needed {
                 WinningChoice::<T>::insert(proposal_id, answer);
@@ -104,23 +124,21 @@ impl<T: Config> Pallet<T> {
             }
         }
 
-        if !expired {
-            // Even if every seat left backed the leader it would fall short.
-            if proposal.decision_rule == DecisionRule::RejectUnresolved {
-                if let (Some(needed), Some((_, tally))) = (needed, best) {
-                    if Self::out_of_reach(proposal_id, tally, needed) {
-                        return Some(ProposalStatusEnum::Resolved { passed: false })
-                    }
-                }
-            }
+        if !Self::decision_rule_applies(
+            proposal,
+            committee_size,
+            needed,
+            standing.cast,
+            standing.leader_tally,
+            expired,
+        ) {
             return None
         }
-
         Some(match proposal.decision_rule {
             DecisionRule::ReportUnresolved => ProposalStatusEnum::Unresolved,
             DecisionRule::RejectUnresolved => ProposalStatusEnum::Resolved { passed: false },
             DecisionRule::SimpleMajority => match best {
-                Some((answer, _)) if !tie_at_best => {
+                Some((answer, _)) if !standing.tied => {
                     WinningChoice::<T>::insert(proposal_id, answer);
                     ProposalStatusEnum::Resolved { passed: true }
                 },
@@ -129,9 +147,12 @@ impl<T: Config> Pallet<T> {
         })
     }
 
-    /// Outcome of a proposal whose voting period has ended.
+    /// Outcome of a proposal whose voting period has ended. `decide` always reaches one then;
+    /// should it not, the proposal is rejected rather than reported unresolved, which the
+    /// summary pallet would treat as accepted.
     pub fn expiry_result(proposal_id: ProposalId, proposal: &Proposal<T>) -> ProposalStatusEnum {
-        Self::decide(proposal_id, proposal, true).unwrap_or(ProposalStatusEnum::Unresolved)
+        Self::decide(proposal_id, proposal, true)
+            .defensive_unwrap_or(ProposalStatusEnum::Resolved { passed: false })
     }
 
     pub fn finalise_expired_voting(

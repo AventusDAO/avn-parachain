@@ -132,13 +132,6 @@ impl<T: Config> Pallet<T> {
         <frame_system::Pallet<T>>::block_number() >= opens_at
     }
 
-    /// True once every seat of a committee proposal has voted. No further vote is accepted, so
-    /// its outcome can no longer change. False for proposals without a committee.
-    pub(crate) fn committee_full(proposal_id: ProposalId) -> bool {
-        ProposalCommitteeSize::<T>::get(proposal_id)
-            .is_some_and(|size| Self::votes_cast(proposal_id) >= size)
-    }
-
     /// Votes cast on a committee proposal so far. Node votes weigh 1, so it is also the number
     /// of seats taken.
     pub(crate) fn votes_cast(proposal_id: ProposalId) -> u32 {
