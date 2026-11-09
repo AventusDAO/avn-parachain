@@ -60,6 +60,9 @@ pub trait WeightInfo {
 	fn cleanup_choice_tally_page(n: u32, ) -> Weight;
 	fn cleanup_voters_page(n: u32, ) -> Weight;
 	fn cleanup_committee_page(n: u32, ) -> Weight;
+	fn set_admin_config_trusted_voting_start() -> Weight;
+	fn add_trusted_owners(n: u32, ) -> Weight;
+	fn remove_trusted_owners(n: u32, ) -> Weight;
 }
 
 /// Weights for pallet_watchtower using the Substrate node and recommended hardware.
@@ -689,6 +692,37 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
 			.saturating_add(Weight::from_parts(0, 2570).saturating_mul(n.into()))
 	}
+	// Placeholder until benchmarked: copied from `set_admin_config_voting` (one 4-byte value).
+	/// Storage: `Watchtower::TrustedVotingStart` (r:0 w:1)
+	/// Proof: `Watchtower::TrustedVotingStart` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_admin_config_trusted_voting_start() -> Weight {
+		Weight::from_parts(9_795_000, 1489)
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
+	// Placeholder until benchmarked: one owner lookup per new entry, then the list is
+	// rewritten.
+	/// Storage: `Watchtower::TrustedOwners` (r:1 w:1)
+	/// Proof: `Watchtower::TrustedOwners` (`max_values`: Some(1), `max_size`: Some(2050), added: 2545, mode: `MaxEncodedLen`)
+	/// The range of component `n` is `[0, 64]`.
+	fn add_trusted_owners(n: u32, ) -> Weight {
+		Weight::from_parts(12_000_000, 3535)
+			.saturating_add(Weight::from_parts(3_500_000, 0).saturating_mul(n.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().reads((1_u64).saturating_mul(n.into())))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+			.saturating_add(Weight::from_parts(0, 2570).saturating_mul(n.into()))
+	}
+	// Placeholder until benchmarked: the list is read and rewritten once.
+	/// Storage: `Watchtower::TrustedOwners` (r:1 w:1)
+	/// Proof: `Watchtower::TrustedOwners` (`max_values`: Some(1), `max_size`: Some(2050), added: 2545, mode: `MaxEncodedLen`)
+	/// The range of component `n` is `[0, 64]`.
+	fn remove_trusted_owners(n: u32, ) -> Weight {
+		Weight::from_parts(12_000_000, 3535)
+			.saturating_add(Weight::from_parts(200_000, 0).saturating_mul(n.into()))
+			.saturating_add(T::DbWeight::get().reads(1_u64))
+			.saturating_add(T::DbWeight::get().writes(1_u64))
+	}
 }
 
 // For backwards compatibility and tests.
@@ -1316,5 +1350,36 @@ impl WeightInfo for () {
 			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(n.into())))
 			.saturating_add(RocksDbWeight::get().writes((1_u64).saturating_mul(n.into())))
 			.saturating_add(Weight::from_parts(0, 2570).saturating_mul(n.into()))
+	}
+	// Placeholder until benchmarked: copied from `set_admin_config_voting` (one 4-byte value).
+	/// Storage: `Watchtower::TrustedVotingStart` (r:0 w:1)
+	/// Proof: `Watchtower::TrustedVotingStart` (`max_values`: Some(1), `max_size`: Some(4), added: 499, mode: `MaxEncodedLen`)
+	fn set_admin_config_trusted_voting_start() -> Weight {
+		Weight::from_parts(9_795_000, 1489)
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+	}
+	// Placeholder until benchmarked: one owner lookup per new entry, then the list is
+	// rewritten.
+	/// Storage: `Watchtower::TrustedOwners` (r:1 w:1)
+	/// Proof: `Watchtower::TrustedOwners` (`max_values`: Some(1), `max_size`: Some(2050), added: 2545, mode: `MaxEncodedLen`)
+	/// The range of component `n` is `[0, 64]`.
+	fn add_trusted_owners(n: u32, ) -> Weight {
+		Weight::from_parts(12_000_000, 3535)
+			.saturating_add(Weight::from_parts(3_500_000, 0).saturating_mul(n.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().reads((1_u64).saturating_mul(n.into())))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
+			.saturating_add(Weight::from_parts(0, 2570).saturating_mul(n.into()))
+	}
+	// Placeholder until benchmarked: the list is read and rewritten once.
+	/// Storage: `Watchtower::TrustedOwners` (r:1 w:1)
+	/// Proof: `Watchtower::TrustedOwners` (`max_values`: Some(1), `max_size`: Some(2050), added: 2545, mode: `MaxEncodedLen`)
+	/// The range of component `n` is `[0, 64]`.
+	fn remove_trusted_owners(n: u32, ) -> Weight {
+		Weight::from_parts(12_000_000, 3535)
+			.saturating_add(Weight::from_parts(200_000, 0).saturating_mul(n.into()))
+			.saturating_add(RocksDbWeight::get().reads(1_u64))
+			.saturating_add(RocksDbWeight::get().writes(1_u64))
 	}
 }

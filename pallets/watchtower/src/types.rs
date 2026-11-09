@@ -278,4 +278,7 @@ impl ChoiceStanding {
 pub enum AdminConfig<BlockNumber, AccountId> {
     MinVotingPeriod(BlockNumber),
     AdminAccount(Option<AccountId>),
+    /// Share of a committee proposal's voting period after which trusted owners may vote,
+    /// above 0% and below 100%. `None` stops them voting.
+    TrustedVotingStart(Option<Perbill>),
 }
