@@ -348,6 +348,15 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
     fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId> {
         (index == 0 && Self::is_authorized_watchtower(owner)).then(|| owner.clone())
     }
+
+    fn get_owner_nodes_count(owner: &AccountId) -> u32 {
+        Self::is_authorized_watchtower(owner).into()
+    }
+
+    // Every node is an owner of its own, as in the owner index above.
+    fn get_node_owner(node: &AccountId) -> Option<AccountId> {
+        Self::is_authorized_watchtower(node).then(|| node.clone())
+    }
 }
 
 pub struct EnsureExternalProposerOrRoot;

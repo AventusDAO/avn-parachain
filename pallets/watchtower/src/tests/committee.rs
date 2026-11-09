@@ -152,8 +152,8 @@ mod selection {
 
             assert_eq!(committee_size(id), None);
             assert!(members(id).is_empty());
-            assert!(Watchtower::is_committee_member(id, &watchtower_1()));
-            assert!(Watchtower::is_committee_member(id, &random_user()));
+            assert_eq!(Watchtower::voter_seat(id, &watchtower_1()).ok(), Some(VoterSeat::Open));
+            assert_eq!(Watchtower::voter_seat(id, &random_user()).ok(), Some(VoterSeat::Open));
         });
     }
 }
@@ -653,7 +653,7 @@ mod voting {
                         _ => unreachable!(),
                     }
                 ),
-                Error::<TestRuntime>::NotInCommittee
+                Error::<TestRuntime>::NotInCommitteeOrTrusted
             );
 
             // A member's unsigned vote is accepted.
@@ -764,6 +764,65 @@ mod cleanup {
             System::assert_last_event(Event::ProposalCleaned { proposal_id: id }.into());
         });
     }
+
+    #[test]
+    fn removes_trusted_voters() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            assert_ok!(activate(id));
+            let selected: Vec<AccountId> = members(id).into_iter().collect();
+            assert_ok!(node_vote(selected[0], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
+            assert!(ProposalsToRemove::<TestRuntime>::contains_key(id));
+
+            // Trusted voting is not wired up yet, so write its rows directly.
+            let trusted_owners: Vec<AccountId> = (0..MAX_TRUSTED_OWNERS)
+                .map(|i| {
+                    let mut seed = [0xddu8; 32];
+                    seed[..4].copy_from_slice(&i.to_le_bytes());
+                    TestAccount::new(seed).account_id()
+                })
+                .collect();
+            for owner in &trusted_owners {
+                TrustedVoters::<TestRuntime>::insert(id, owner, ());
+            }
+
+            roll_forward(2);
+
+            assert!(TrustedVoters::<TestRuntime>::iter_prefix(id).next().is_none());
+            assert!(!Proposals::<TestRuntime>::contains_key(id));
+            System::assert_last_event(Event::ProposalCleaned { proposal_id: id }.into());
+        });
+    }
+
+    #[test]
+    fn keeps_the_proposal_while_trusted_voters_remain() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = submit_internal(1, Some(3));
+            assert_ok!(activate(id));
+            let selected: Vec<AccountId> = members(id).into_iter().collect();
+            assert_ok!(node_vote(selected[0], id, true));
+            assert_ok!(node_vote(selected[1], id, true));
+
+            // Leave the trusted voter as the only row still holding the proposal.
+            Pallet::<TestRuntime>::remove_voters_page(id, CLEANUP_PAGE_SIZE);
+            Pallet::<TestRuntime>::remove_committee_page(id, CLEANUP_PAGE_SIZE);
+            assert!(Voters::<TestRuntime>::iter_prefix(id).next().is_none());
+            assert!(members(id).is_empty());
+            assert!(ChoiceTally::<TestRuntime>::iter_prefix(id).next().is_none());
+
+            let trusted_owner = TestAccount::new([0xdd; 32]).account_id();
+            TrustedVoters::<TestRuntime>::insert(id, &trusted_owner, ());
+            assert!(!Pallet::<TestRuntime>::remove_proposal_if_cleaned(id));
+            assert!(Proposals::<TestRuntime>::contains_key(id));
+
+            TrustedVoters::<TestRuntime>::remove(id, &trusted_owner);
+            assert!(Pallet::<TestRuntime>::remove_proposal_if_cleaned(id));
+            assert!(!Proposals::<TestRuntime>::contains_key(id));
+        });
+    }
 }
 
 mod request_validation {
@@ -865,16 +924,16 @@ mod decision_rules {
     }
 
     #[test]
-    fn expire_unresolved_keeps_the_legacy_internal_result() {
+    fn report_unresolved_keeps_the_legacy_internal_result() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(
-                DecisionRule::ExpireUnresolved,
+                DecisionRule::ReportUnresolved,
                 ProposalSource::Internal(ProposalType::Summary),
             );
             assert_ok!(node_vote(watchtower_1(), id, true));
             expire();
-            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Expired);
+            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Unresolved);
         });
     }
 
@@ -883,7 +942,7 @@ mod decision_rules {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(
-                DecisionRule::RejectOnExpiry,
+                DecisionRule::RejectUnresolved,
                 ProposalSource::Internal(ProposalType::Summary),
             );
             assert_ok!(node_vote(watchtower_1(), id, true));
@@ -897,7 +956,7 @@ mod decision_rules {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(
-                DecisionRule::SimpleMajorityOnExpiry,
+                DecisionRule::SimpleMajority,
                 ProposalSource::Internal(ProposalType::Summary),
             );
             assert_ok!(node_vote(watchtower_1(), id, true));
@@ -913,7 +972,7 @@ mod decision_rules {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(
-                DecisionRule::SimpleMajorityOnExpiry,
+                DecisionRule::SimpleMajority,
                 ProposalSource::Internal(ProposalType::Summary),
             );
             expire();
@@ -925,7 +984,7 @@ mod decision_rules {
     fn external_proposals_honour_reject() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            let id = submit_and_activate(DecisionRule::RejectOnExpiry, ProposalSource::External);
+            let id = submit_and_activate(DecisionRule::RejectUnresolved, ProposalSource::External);
             assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
             assert_eq!(status_after_expiry(id), ProposalStatusEnum::Resolved { passed: false });
@@ -933,18 +992,18 @@ mod decision_rules {
     }
 
     #[test]
-    fn external_proposals_can_expire_unresolved() {
+    fn external_proposals_can_end_unresolved() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            let id = submit_and_activate(DecisionRule::ExpireUnresolved, ProposalSource::External);
+            let id = submit_and_activate(DecisionRule::ReportUnresolved, ProposalSource::External);
             assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
-            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Expired);
+            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Unresolved);
         });
     }
 
     #[test]
-    fn external_proposals_default_to_simple_majority_on_expiry() {
+    fn external_proposals_default_to_simple_majority() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let context = Context::default();
@@ -955,7 +1014,7 @@ mod decision_rules {
             let id = ExternalRef::<TestRuntime>::get(&context.external_ref);
             assert_eq!(
                 Proposals::<TestRuntime>::get(id).unwrap().decision_rule,
-                DecisionRule::SimpleMajorityOnExpiry
+                DecisionRule::SimpleMajority
             );
             assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
@@ -998,7 +1057,7 @@ mod migration {
             assert_eq!(new.proposer, Some(watchtower_owner_1()));
             assert_eq!(new.end_at, Some(11));
             assert_eq!(new.committee_size, None);
-            assert_eq!(new.decision_rule, DecisionRule::ExpireUnresolved);
+            assert_eq!(new.decision_rule, DecisionRule::ReportUnresolved);
             assert_eq!(Watchtower::on_chain_storage_version(), StorageVersion::new(1));
         });
     }
@@ -1027,6 +1086,145 @@ mod migration {
 
             // Untouched: still not decodable as the new type.
             assert!(Proposals::<TestRuntime>::get(id).is_none());
+        });
+    }
+}
+
+mod full_committee {
+    use super::*;
+
+    /// A committee of 3 at a 100% threshold, so no side decides before every seat has voted.
+    /// The members split 2 for, 1 against.
+    fn split_vote(rule: DecisionRule) -> ProposalId {
+        let context = Context {
+            committee_size: Some(3),
+            threshold: Perbill::one(),
+            decision_rule: Some(rule),
+            ..Context::default()
+        };
+        assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(vec![1])));
+        let id = ExternalRef::<TestRuntime>::get(&context.external_ref);
+        assert_ok!(activate(id));
+        let selected: Vec<AccountId> = members(id).into_iter().collect();
+
+        assert_ok!(node_vote(selected[0], id, true));
+        assert_ok!(node_vote(selected[1], id, true));
+        assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Active);
+        assert_ok!(node_vote(selected[2], id, false));
+        id
+    }
+
+    #[test]
+    fn the_last_seat_applies_simple_majority() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = split_vote(DecisionRule::SimpleMajority);
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(id),
+                ProposalStatusEnum::Resolved { passed: true }
+            );
+        });
+    }
+
+    #[test]
+    fn the_last_seat_applies_report_unresolved() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = split_vote(DecisionRule::ReportUnresolved);
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Unresolved);
+            // Decided before the end of the voting period, and the active slot is free.
+            let end_at = Proposals::<TestRuntime>::get(id).unwrap().end_at.unwrap();
+            assert!(System::block_number() < end_at);
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
+        });
+    }
+
+    #[test]
+    fn the_last_seat_applies_reject() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = split_vote(DecisionRule::RejectUnresolved);
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(id),
+                ProposalStatusEnum::Resolved { passed: false }
+            );
+        });
+    }
+}
+
+mod early_rejection {
+    use super::*;
+
+    /// A committee of 4 at a 75% threshold, so a side needs 3 votes. The members vote 1 for, 2
+    /// against: the againsts are short of the threshold, but with one seat left in favour can
+    /// reach only 2.
+    fn out_of_reach(rule: DecisionRule) -> ProposalId {
+        let context = Context {
+            committee_size: Some(4),
+            threshold: Perbill::from_percent(75),
+            decision_rule: Some(rule),
+            ..Context::default()
+        };
+        assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(vec![1])));
+        let id = ExternalRef::<TestRuntime>::get(&context.external_ref);
+        assert_ok!(activate(id));
+        let selected: Vec<AccountId> = members(id).into_iter().collect();
+
+        assert_ok!(node_vote(selected[0], id, true));
+        assert_ok!(node_vote(selected[1], id, false));
+        // 1 + 2 seats left: in favour can still reach 3.
+        assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Active);
+        assert_ok!(node_vote(selected[2], id, false));
+        id
+    }
+
+    #[test]
+    fn reject_fails_the_proposal_once_it_cannot_pass() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = out_of_reach(DecisionRule::RejectUnresolved);
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(id),
+                ProposalStatusEnum::Resolved { passed: false }
+            );
+        });
+    }
+
+    #[test]
+    fn the_other_rules_wait() {
+        for rule in [DecisionRule::ReportUnresolved, DecisionRule::SimpleMajority] {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                let id = out_of_reach(rule);
+                assert_eq!(
+                    ProposalStatus::<TestRuntime>::get(id),
+                    ProposalStatusEnum::Active,
+                    "{:?}",
+                    rule
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn proposals_without_a_committee_are_not_rejected_early() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            // 80% of the 10 nodes is 8. After 3 againsts, in favour could reach only 7 with the
+            // nodes registered now, but more may register before the end of the period.
+            let context = Context {
+                threshold: Perbill::from_percent(80),
+                decision_rule: Some(DecisionRule::RejectUnresolved),
+                ..Context::default()
+            };
+            assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(vec![1])));
+            let id = ExternalRef::<TestRuntime>::get(&context.external_ref);
+            assert_ok!(activate(id));
+
+            for voter in [watchtower_1(), watchtower_2(), watchtower_3()] {
+                assert_ok!(node_vote(voter, id, false));
+            }
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Active);
         });
     }
 }

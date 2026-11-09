@@ -39,6 +39,8 @@ pub const DEFAULT_VOTING_PERIOD_BLOCKS: u32 = 100;
 pub const WATCHTOWER_UNSIGNED_VOTE_CONTEXT: &'static [u8] = b"wt_unsigned_vote";
 pub const WATCHTOWER_FINALISE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_finalise_proposal";
 pub const WATCHTOWER_ACTIVATE_PROPOSAL_CONTEXT: &'static [u8] = b"wt_activate_proposal";
+/// Pool tag context for a trusted owner's vote, so only one of the owner's nodes is kept.
+pub const WATCHTOWER_TRUSTED_VOTE_CONTEXT: &'static [u8] = b"wt_trusted_vote";
 pub const UNSIGNED_VOTE_NOT_VALID: u8 = 2;
 pub const ACTIVATE_PROPOSAL_NOT_VALID: u8 = 3;
 /// The queue head requests a committee that cannot be sampled yet (index backfilling).
@@ -83,14 +85,20 @@ mod committee_tests;
 #[path = "tests/mock.rs"]
 mod mock;
 #[cfg(test)]
+#[path = "tests/trusted_voting.rs"]
+mod trusted_voting;
+#[cfg(test)]
 #[path = "tests/voting.rs"]
 mod voting;
 
 pub use pallet::*;
 
-/// Most `Voters` (and, separately, `ProposalCommittee`) entries of one proposal that `on_idle`
-/// removes per block.
+/// Most `Voters` (and, separately, `ProposalCommittee` and `TrustedVoters`) entries of one
+/// proposal that `on_idle` removes per block.
 pub const CLEANUP_PAGE_SIZE: u32 = 250;
+/// Most node owners root can mark as trusted.
+pub const MAX_TRUSTED_OWNERS: u32 = 64;
+pub type MaxTrustedOwners = ConstU32<MAX_TRUSTED_OWNERS>;
 /// Offchain local storage key caching the node's country, with when it was fetched.
 const NODE_COUNTRY_CACHE_KEY: &[u8] = b"watchtower::node_country";
 /// How long a cached country is used before it is fetched again, in milliseconds.
@@ -280,6 +288,32 @@ pub mod pallet {
     pub type ProposalCommitteeSize<T: Config> =
         StorageMap<_, Blake2_128Concat, ProposalId, u32, OptionQuery>;
 
+    /// Node owners, added and removed by root, who may vote on a committee proposal once its
+    /// trusted voting window opens (`TrustedVotingStart`), filling seats the committee left
+    /// empty. Sorted, so membership is a binary search, and free of duplicates. Empty means no
+    /// owner is trusted.
+    #[pallet::storage]
+    pub type TrustedOwners<T: Config> =
+        StorageValue<_, BoundedVec<T::AccountId, MaxTrustedOwners>, ValueQuery>;
+
+    /// How far into a committee proposal's voting period trusted owners may start voting, as a
+    /// share of the period: above 0% and below 100%. `None` means they never may.
+    #[pallet::storage]
+    pub type TrustedVotingStart<T: Config> = StorageValue<_, Perbill, OptionQuery>;
+
+    /// Trusted owners that have voted on a committee proposal, whether through a trusted vote or
+    /// through one of their nodes on the committee, so that each one votes at most once.
+    #[pallet::storage]
+    pub type TrustedVoters<T: Config> = StorageDoubleMap<
+        _,
+        Blake2_128Concat,
+        ProposalId,
+        Blake2_128Concat,
+        T::AccountId, // Trusted owner
+        (),
+        OptionQuery,
+    >;
+
     /// The currently active internal proposal being voted on, if any
     #[pallet::storage]
     pub type ActiveInternalProposal<T: Config> = StorageValue<_, ProposalId, OptionQuery>;
@@ -318,7 +352,7 @@ pub mod pallet {
     #[pallet::storage] // next free slot to push
     pub type Tail<T: Config> = StorageValue<_, u64, ValueQuery>;
 
-    /// Completed or Expired proposals that need to be removed from storage.
+    /// Finished proposals that need to be removed from storage.
     #[pallet::storage]
     pub type ProposalsToRemove<T: Config> =
         StorageMap<_, Blake2_128Concat, ProposalId, (), OptionQuery>;
@@ -381,6 +415,17 @@ pub mod pallet {
         QueueHeadDemoted { demoted: ProposalId, promoted: ProposalId },
         /// The queue head was cancelled by an admin without being activated
         QueueHeadCancelled { proposal_id: ProposalId },
+        /// Root added these owners to the trusted owners.
+        TrustedOwnersAdded { owners: BoundedVec<T::AccountId, MaxTrustedOwners> },
+        /// Root removed these owners from the trusted owners.
+        TrustedOwnersRemoved { owners: BoundedVec<T::AccountId, MaxTrustedOwners> },
+        /// A trusted owner's node outside the committee voted in a seat the committee left
+        /// empty. That can be the owner's own committee seat, if their committee node had not
+        /// voted. Follows the vote's `VoteSubmitted` or `ChoiceVoteSubmitted`.
+        TrustedVoteCast { proposal_id: ProposalId, owner: T::AccountId, node: T::AccountId },
+        /// The share of the voting period after which trusted owners may vote was updated.
+        /// `None` means they may not vote.
+        TrustedVotingStartSet { start: Option<Perbill> },
     }
 
     #[pallet::error]
@@ -439,8 +484,8 @@ pub mod pallet {
         ProposalAlreadyActive,
         /// The proposal is not at the head of the internal proposal queue
         ProposalNotNextInQueue,
-        /// The voter is not in the committee selected for this proposal
-        NotInCommittee,
+        /// The voter is not in this proposal's committee and its owner is not trusted
+        NotInCommitteeOrTrusted,
         /// The requested committee is smaller than `MinCommitteeSize`
         CommitteeSizeTooSmall,
         /// The requested committee is larger than `MaxCommitteeSize`
@@ -459,6 +504,24 @@ pub mod pallet {
         /// Internal proposals are voted on by their committee nodes with `unsigned_vote` or
         /// `unsigned_vote_choice`, not with a signed vote
         SignedVoteOnInternalProposal,
+        /// The same owner is given more than once
+        DuplicateTrustedOwner,
+        /// A trusted owner must own at least one watchtower node when added
+        TrustedOwnerNotWatchtowerOwner,
+        /// The owner is already trusted
+        AlreadyTrustedOwner,
+        /// The owner is not trusted
+        NotTrustedOwner,
+        /// Adding these owners would exceed `MAX_TRUSTED_OWNERS`
+        TooManyTrustedOwners,
+        /// The trusted voting start must be above 0% and below 100%
+        InvalidTrustedVotingStart,
+        /// Trusted owners may not vote on this proposal yet
+        TrustedVotingNotOpen,
+        /// Every committee seat has been taken, so no further vote is accepted
+        NoEmptySeat,
+        /// The list of owners is empty
+        NoTrustedOwnersGiven,
     }
 
     #[pallet::call]
@@ -683,7 +746,9 @@ pub mod pallet {
 
         /// Set admin configurations
         #[pallet::call_index(6)]
-        #[pallet::weight(<T as Config>::WeightInfo::set_admin_config_voting())]
+        #[pallet::weight(<T as Config>::WeightInfo::set_admin_config_voting()
+            .max(<T as Config>::WeightInfo::set_admin_config_account())
+            .max(<T as Config>::WeightInfo::set_admin_config_trusted_voting_start()))]
         pub fn set_admin_config(
             origin: OriginFor<T>,
             config: AdminConfig<BlockNumberFor<T>, T::AccountId>,
@@ -700,6 +765,19 @@ pub mod pallet {
                     <AdminAccount<T>>::mutate(|a| *a = admin_account.clone());
                     Self::deposit_event(Event::AdminAccountSet { new_admin: admin_account });
                     return Ok(Some(<T as Config>::WeightInfo::set_admin_config_account()).into())
+                },
+                AdminConfig::TrustedVotingStart(start) => {
+                    // 0% would drop the time gate and 100% would never open; `None` disables.
+                    ensure!(
+                        start.map_or(true, |s| s > Perbill::zero() && s < Perbill::one()),
+                        Error::<T>::InvalidTrustedVotingStart
+                    );
+                    TrustedVotingStart::<T>::set(start);
+                    Self::deposit_event(Event::TrustedVotingStartSet { start });
+                    return Ok(Some(
+                        <T as Config>::WeightInfo::set_admin_config_trusted_voting_start(),
+                    )
+                    .into())
                 },
             }
         }
@@ -774,6 +852,70 @@ pub mod pallet {
 
             Ok(())
         }
+
+        /// Adds `owners` to the trusted owners. Trusted owners vote only once
+        /// `TrustedVotingStart` is set.
+        ///
+        /// Root only. The list must not be empty. Each entry must appear once, not be trusted
+        /// already and own at least one
+        /// watchtower node, and the list must stay within `MAX_TRUSTED_OWNERS`. Ownership is
+        /// checked only here: an owner who later deregisters every node stays listed until
+        /// removed, but cannot vote, as a trusted vote must come from a node they own.
+        #[pallet::call_index(11)]
+        #[pallet::weight(<T as Config>::WeightInfo::add_trusted_owners(owners.len() as u32))]
+        pub fn add_trusted_owners(
+            origin: OriginFor<T>,
+            owners: BoundedVec<T::AccountId, MaxTrustedOwners>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::ensure_owner_list(&owners)?;
+            ensure!(
+                owners.iter().all(T::Watchtowers::is_watchtower_owner),
+                Error::<T>::TrustedOwnerNotWatchtowerOwner
+            );
+
+            TrustedOwners::<T>::try_mutate(|trusted| -> DispatchResult {
+                for owner in owners.iter() {
+                    let position = trusted
+                        .binary_search(owner)
+                        .err()
+                        .ok_or(Error::<T>::AlreadyTrustedOwner)?;
+                    trusted
+                        .try_insert(position, owner.clone())
+                        .map_err(|_| Error::<T>::TooManyTrustedOwners)?;
+                }
+                Ok(())
+            })?;
+            Self::deposit_event(Event::TrustedOwnersAdded { owners });
+
+            Ok(())
+        }
+
+        /// Removes `owners` from the trusted owners.
+        ///
+        /// Root only. The list must not be empty. Each entry must appear once and be trusted. An
+        /// owner need not still own a node to be removed.
+        #[pallet::call_index(12)]
+        #[pallet::weight(<T as Config>::WeightInfo::remove_trusted_owners(owners.len() as u32))]
+        pub fn remove_trusted_owners(
+            origin: OriginFor<T>,
+            owners: BoundedVec<T::AccountId, MaxTrustedOwners>,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            Self::ensure_owner_list(&owners)?;
+
+            TrustedOwners::<T>::try_mutate(|trusted| -> DispatchResult {
+                for owner in owners.iter() {
+                    let position =
+                        trusted.binary_search(owner).map_err(|_| Error::<T>::NotTrustedOwner)?;
+                    trusted.remove(position);
+                }
+                Ok(())
+            })?;
+            Self::deposit_event(Event::TrustedOwnersRemoved { owners });
+
+            Ok(())
+        }
     }
 
     #[pallet::validate_unsigned]
@@ -818,49 +960,27 @@ pub mod pallet {
                         .propagate(false)
                         .build()
                 },
-                Call::unsigned_vote { proposal_id, in_favor, country, watchtower, signature } => {
-                    // Fail early if vote is invalid. This avoids DDos attacks with invalid votes
-                    if let Err(_) = Self::validate_unsigned_vote(
+                Call::unsigned_vote { proposal_id, in_favor, country, watchtower, signature } =>
+                    Self::unsigned_vote_validity(
                         *proposal_id,
                         &VoteChoice::Binary(*in_favor),
                         country,
-                        watchtower.clone(),
-                        signature.clone(),
-                    ) {
-                        return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
-                    }
-
-                    ValidTransaction::with_tag_prefix("wt_unsignedVote")
-                        .priority(TransactionPriority::max_value() - reduce_priority)
-                        .and_provides((watchtower, proposal_id))
-                        .longevity(64_u64)
-                        .propagate(true)
-                        .build()
-                },
+                        watchtower,
+                        signature,
+                    ),
                 Call::unsigned_vote_choice {
                     proposal_id,
                     choice,
                     country,
                     watchtower,
                     signature,
-                } => {
-                    if let Err(_) = Self::validate_unsigned_vote(
-                        *proposal_id,
-                        &VoteChoice::Choice(*choice),
-                        country,
-                        watchtower.clone(),
-                        signature.clone(),
-                    ) {
-                        return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
-                    }
-
-                    ValidTransaction::with_tag_prefix("wt_unsignedVote")
-                        .priority(TransactionPriority::max_value() - reduce_priority)
-                        .and_provides((watchtower, proposal_id))
-                        .longevity(64_u64)
-                        .propagate(true)
-                        .build()
-                },
+                } => Self::unsigned_vote_validity(
+                    *proposal_id,
+                    &VoteChoice::Choice(*choice),
+                    country,
+                    watchtower,
+                    signature,
+                ),
                 _ => InvalidTransaction::Call.into(),
             }
         }
@@ -932,6 +1052,15 @@ pub mod pallet {
         // If you change the return type, make sure to update `EnsureExternalProposerOrRoot`
         pub fn proposal_admin() -> Result<T::AccountId, Error<T>> {
             Ok(<AdminAccount<T>>::get().ok_or(Error::<T>::AdminAccountNotSet)?)
+        }
+
+        /// Fails if `owners` is empty or gives any owner more than once.
+        fn ensure_owner_list(owners: &[T::AccountId]) -> DispatchResult {
+            ensure!(!owners.is_empty(), Error::<T>::NoTrustedOwnersGiven);
+            let mut sorted = owners.to_vec();
+            sorted.sort();
+            ensure!(sorted.windows(2).all(|w| w[0] != w[1]), Error::<T>::DuplicateTrustedOwner);
+            Ok(())
         }
 
         /// Worst case of the two `activate_next_proposal` outcomes for a committee of `k`.
@@ -1052,16 +1181,15 @@ pub mod pallet {
             ensure!(!Voters::<T>::contains_key(proposal_id, voter), Error::<T>::AlreadyVoted);
 
             let vote_weight;
+            // `Some` for node votes on internal proposals.
+            let mut seat = None;
             match proposal.source {
                 ProposalSource::Internal(_) => {
                     ensure!(
                         T::Watchtowers::is_authorized_watchtower(voter),
                         Error::<T>::UnauthorizedVoter
                     );
-                    ensure!(
-                        Self::is_committee_member(proposal_id, voter),
-                        Error::<T>::NotInCommittee
-                    );
+                    seat = Some(Self::voter_seat(proposal_id, voter)?);
                     T::VoteFilter::ensure_can_vote(proposal_id, voter, &vote)?;
 
                     // This should not happen but just in case (defensive programming)
@@ -1120,7 +1248,25 @@ pub mod pallet {
                 },
             }
 
-            // Expiry was handled above, so only an early decision is possible here.
+            match seat {
+                // A trusted owner's vote is recorded however it was cast.
+                Some(VoterSeat::TrustedCommittee { owner }) => {
+                    TrustedVoters::<T>::insert(proposal_id, owner, ());
+                },
+                Some(VoterSeat::Trusted { owner }) => {
+                    TrustedVoters::<T>::insert(proposal_id, &owner, ());
+                    Self::deposit_event(Event::TrustedVoteCast {
+                        proposal_id,
+                        owner,
+                        node: voter.clone(),
+                    });
+                },
+                // A committe owner's vote is already handled.
+                Some(VoterSeat::Open) | Some(VoterSeat::Committee) | None => {},
+            }
+
+            // Expiry was handled above, so only an early decision is possible here: a side
+            // reaching the threshold, or a committee whose seats have all voted.
             if let Some(result) = Self::decide(proposal_id, &proposal, false) {
                 // Consensus has been reached, finalise voting
                 Self::finalise_voting(proposal_id, &proposal, result)?;
@@ -1195,6 +1341,15 @@ pub mod pallet {
                 meter.consume(<T as Config>::WeightInfo::cleanup_committee_page(removed));
             }
 
+            // `TrustedVoters` has the same key and value types as `ProposalCommittee`, so a page
+            // costs the same.
+            let page =
+                Self::affordable_entries(&meter, <T as Config>::WeightInfo::cleanup_committee_page);
+            if page > 0 {
+                let removed = Self::remove_trusted_voters_page(proposal_id, page);
+                meter.consume(<T as Config>::WeightInfo::cleanup_committee_page(removed));
+            }
+
             let page = Self::affordable_entries(
                 &meter,
                 <T as Config>::WeightInfo::cleanup_choice_tally_page,
@@ -1249,6 +1404,16 @@ pub mod pallet {
             members.len() as u32
         }
 
+        /// Same as `remove_voters_page` for the trusted owners that voted.
+        pub(crate) fn remove_trusted_voters_page(proposal_id: ProposalId, max: u32) -> u32 {
+            let owners: Vec<T::AccountId> =
+                TrustedVoters::<T>::iter_key_prefix(proposal_id).take(max as usize).collect();
+            for owner in &owners {
+                TrustedVoters::<T>::remove(proposal_id, owner);
+            }
+            owners.len() as u32
+        }
+
         /// Same as `remove_voters_page` for the per-answer tallies of a `Choice` proposal.
         pub(crate) fn remove_choice_tally_page(proposal_id: ProposalId, max: u32) -> u32 {
             let answers: Vec<H256> =
@@ -1259,11 +1424,12 @@ pub mod pallet {
             answers.len() as u32
         }
 
-        /// Removes the proposal and its remaining data once no voters, no committee members
-        /// and no tallies are left. Returns true if it was removed.
+        /// Removes the proposal and its remaining data once no voters, no committee members, no
+        /// trusted voters and no tallies are left. Returns true if it was removed.
         pub(crate) fn remove_proposal_if_cleaned(proposal_id: ProposalId) -> bool {
             if Voters::<T>::iter_prefix(proposal_id).next().is_some() ||
                 ProposalCommittee::<T>::iter_prefix(proposal_id).next().is_some() ||
+                TrustedVoters::<T>::iter_prefix(proposal_id).next().is_some() ||
                 ChoiceTally::<T>::iter_prefix(proposal_id).next().is_some()
             {
                 return false
@@ -1300,7 +1466,7 @@ pub mod pallet {
             country: &CountryCode,
             watchtower: T::AccountId,
             signature: <T::SignerId as RuntimeAppPublic>::Signature,
-        ) -> Result<(), DispatchError> {
+        ) -> Result<VoterSeat<T::AccountId>, DispatchError> {
             // Only Active internal proposals can be voted on with unsigned txs
             ensure!(
                 ActiveInternalProposal::<T>::get() == Some(proposal_id),
@@ -1310,11 +1476,9 @@ pub mod pallet {
                 VotingKindOf::<T>::get(proposal_id) == Self::kind_of(vote),
                 Error::<T>::WrongVoteKind
             );
-            // Reject non-members before the signature check so they never reach the pool.
-            ensure!(
-                Self::is_committee_member(proposal_id, &watchtower),
-                Error::<T>::NotInCommittee
-            );
+            // Reject nodes without a seat before the signature check so they never reach the
+            // pool.
+            let seat = Self::voter_seat(proposal_id, &watchtower)?;
             // Same for votes a consumer cannot accept. Before the uniqueness check, so a vote
             // the consumer refuses gets the consumer's reason.
             T::VoteFilter::ensure_can_vote(proposal_id, &watchtower, vote)?;
@@ -1337,7 +1501,39 @@ pub mod pallet {
                 Error::<T>::UnauthorizedUnsignedTransaction
             );
 
-            Ok(())
+            Ok(seat)
+        }
+
+        /// Validity of an unsigned vote in the pool. A trusted owner's vote, cast through a
+        /// committee seat or as a trusted owner, also provides a tag for its owner, so only one of
+        /// the owner's nodes is kept while the vote waits for inclusion.
+        fn unsigned_vote_validity(
+            proposal_id: ProposalId,
+            vote: &VoteChoice,
+            country: &CountryCode,
+            watchtower: &T::AccountId,
+            signature: &<T::SignerId as RuntimeAppPublic>::Signature,
+        ) -> TransactionValidity {
+            let reduce_priority: TransactionPriority = TransactionPriority::from(1000u64);
+            // Fail early if vote is invalid. This avoids DDos attacks with invalid votes
+            let Ok(seat) = Self::validate_unsigned_vote(
+                proposal_id,
+                vote,
+                country,
+                watchtower.clone(),
+                signature.clone(),
+            ) else {
+                return InvalidTransaction::Custom(UNSIGNED_VOTE_NOT_VALID).into()
+            };
+
+            let mut validity = ValidTransaction::with_tag_prefix("wt_unsignedVote")
+                .priority(TransactionPriority::max_value() - reduce_priority)
+                .and_provides((watchtower, proposal_id));
+            if let VoterSeat::Trusted { owner } | VoterSeat::TrustedCommittee { owner } = seat {
+                validity =
+                    validity.and_provides((WATCHTOWER_TRUSTED_VOTE_CONTEXT, owner, proposal_id));
+            }
+            validity.longevity(64_u64).propagate(true).build()
         }
     }
 

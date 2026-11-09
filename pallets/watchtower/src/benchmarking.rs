@@ -20,9 +20,9 @@ fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::Runt
 /// The rule v0 proposals implicitly had for each source.
 fn legacy_decision_rule(is_internal: bool) -> DecisionRule {
     if is_internal {
-        DecisionRule::ExpireUnresolved
+        DecisionRule::ReportUnresolved
     } else {
-        DecisionRule::SimpleMajorityOnExpiry
+        DecisionRule::SimpleMajority
     }
 }
 
@@ -168,10 +168,38 @@ fn setup_consumer_for_queued_proposal<T: Config>(proposal: &Proposal<T>, created
 fn set_proposal_to_remove<T: Config>(proposal_id: H256) {
     let proposal = create_proposal::<T>(1, 5u32.into(), Some(55u32.into()), true);
     Proposals::<T>::insert(proposal_id, &proposal);
-    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Expired);
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Unresolved);
     Votes::<T>::insert(proposal_id, Vote { in_favors: 1, againsts: 0 });
     ProposalCommitteeSize::<T>::insert(proposal_id, 10u32);
     ProposalsToRemove::<T>::insert(proposal_id, ());
+}
+
+/// Stores `count` trusted owners directly and returns them, sorted as the pallet keeps them.
+fn fill_trusted_owners<T: Config>(count: u32) -> Vec<T::AccountId> {
+    let mut owners: Vec<T::AccountId> =
+        (0..count).map(|i| account("trusted_owner", i, 0)).collect();
+    owners.sort();
+    TrustedOwners::<T>::put(
+        BoundedVec::<T::AccountId, MaxTrustedOwners>::try_from(owners.clone())
+            .expect("within MAX_TRUSTED_OWNERS"),
+    );
+    owners
+}
+
+/// Takes the benchmark voter off the committee of `proposal_id` and makes it a trusted owner's
+/// node voting once the trusted voting window has opened. Node vote benchmarks measure this
+/// path: it reads everything a committee vote reads plus the node's owner, a full list of
+/// trusted owners, the window and the seats taken, and also writes `TrustedVoters`.
+fn make_voter_trusted<T: Config>(proposal_id: ProposalId, proposal: &Proposal<T>) -> T::AccountId {
+    let (_, voter) = get_voter::<T>();
+    ProposalCommittee::<T>::remove(proposal_id, &voter);
+    let owner = fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS)[0].clone();
+    T::BenchmarkHelper::set_node_owner(&voter, &owner);
+    TrustedVotingStart::<T>::put(Perbill::from_percent(1));
+    // The last block of the voting period: the window is open and the proposal has not expired.
+    let end_at = proposal.end_at.expect("active proposal has an end");
+    <frame_system::Pallet<T>>::set_block_number(end_at - 1u32.into());
+    owner
 }
 
 /// Makes an already stored proposal request a committee of `size` nodes.
@@ -384,7 +412,8 @@ benchmarks! {
         let (voter_key, voter) = get_voter::<T>();
         let in_favor = true;
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let owner = make_voter_trusted::<T>(proposal_id, &proposal);
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
@@ -394,8 +423,9 @@ benchmarks! {
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
+        assert!(TrustedVoters::<T>::contains_key(proposal_id, &owner));
         assert_last_event::<T>(
-            Event::VoteSubmitted { proposal_id, voter, in_favor, vote_weight: 1, country: Some(BENCH_COUNTRY) }.into()
+            Event::TrustedVoteCast { proposal_id, owner, node: voter }.into()
         );
     }
 
@@ -404,13 +434,19 @@ benchmarks! {
         let in_favor = true;
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let _ = make_voter_trusted::<T>(proposal_id, &proposal);
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Binary(in_favor), &BENCH_COUNTRY, &voter
         );
         let signature = voter_key.sign(&proof).unwrap();
-        // Add some votes to be above the threshold
-        setup_votes::<T>(proposal_id, 9u32);
+        // Committee of 10 at 50%: 4 votes in favour already in, this one decides. The 5 seats
+        // taken leave room for the trusted vote.
+        Votes::<T>::insert(proposal_id, Vote { in_favors: 4, againsts: 1 });
+        for i in 0..5u32 {
+            let other: T::AccountId = account("voter", i, 0);
+            Voters::<T>::insert(proposal_id, &other, i < 4);
+        }
     }: unsigned_vote(RawOrigin::None, proposal_id, in_favor, BENCH_COUNTRY, voter.clone(), signature.into())
     verify {
         assert!(Votes::<T>::contains_key(proposal_id));
@@ -429,8 +465,9 @@ benchmarks! {
         let (voter_key, voter) = get_voter::<T>();
         let choice = H256::repeat_byte(7);
         let proposal_id = H256::repeat_byte(3);
-        let _ = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
+        let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
         VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+        let owner = make_voter_trusted::<T>(proposal_id, &proposal);
 
         let proof = Pallet::<T>::unsigned_vote_signing_payload(
             proposal_id, &VoteChoice::Choice(choice), &BENCH_COUNTRY, &voter
@@ -440,8 +477,9 @@ benchmarks! {
     verify {
         assert_eq!(ChoiceTally::<T>::get(proposal_id, choice), 1);
         assert!(Voters::<T>::contains_key(proposal_id, &voter));
+        assert!(TrustedVoters::<T>::contains_key(proposal_id, &owner));
         assert_last_event::<T>(
-            Event::ChoiceVoteSubmitted { proposal_id, voter, choice, country: Some(BENCH_COUNTRY) }.into()
+            Event::TrustedVoteCast { proposal_id, owner, node: voter }.into()
         );
     }
 
@@ -451,6 +489,7 @@ benchmarks! {
         let proposal_id = H256::repeat_byte(3);
         let proposal = set_active_proposal::<T>(proposal_id, 1u32, 50u32);
         VotingKindOf::<T>::insert(proposal_id, VotingKind::Choice);
+        let _ = make_voter_trusted::<T>(proposal_id, &proposal);
         // Committee of 10 at 50%: 4 votes for `choice` already in, this one decides. The other
         // answers only show in the running standing, which is all the decision reads.
         ChoiceTally::<T>::insert(proposal_id, choice, 4u32);
@@ -490,7 +529,7 @@ benchmarks! {
         let _ = queue_proposal::<T>(queued_proposal_id, 100u32);
     }: finalise_proposal(RawOrigin::Signed(signer), proposal_id)
     verify {
-        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
+        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Unresolved);
         assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
         // Finalisation no longer activates the next proposal; that is done by
         // `activate_next_proposal`.
@@ -512,6 +551,47 @@ benchmarks! {
     }: set_admin_config(RawOrigin::Root, config)
     verify {
         assert!(<AdminAccount<T>>::get() == new_account);
+    }
+
+    set_admin_config_trusted_voting_start {
+        let start = Some(Perbill::from_percent(50));
+        let config = AdminConfig::TrustedVotingStart(start);
+    }: set_admin_config(RawOrigin::Root, config)
+    verify {
+        assert!(TrustedVotingStart::<T>::get() == start);
+    }
+
+    // The list already holds `MAX_TRUSTED_OWNERS - n` owners, so after the call it is full.
+    // Every new entry is checked against the node owners.
+    add_trusted_owners {
+        // At least one owner: an empty list is refused.
+        let n in 1 .. MAX_TRUSTED_OWNERS;
+        fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS - n);
+        let owners: Vec<T::AccountId> = (0..n)
+            .map(|i| {
+                let owner: T::AccountId = account("new_trusted_owner", i, 0);
+                T::BenchmarkHelper::setup_owner(&owner, 1);
+                owner
+            })
+            .collect();
+        let owners: BoundedVec<T::AccountId, MaxTrustedOwners> =
+            owners.try_into().expect("within MAX_TRUSTED_OWNERS");
+    }: _(RawOrigin::Root, owners)
+    verify {
+        assert!(TrustedOwners::<T>::get().len() as u32 == MAX_TRUSTED_OWNERS);
+    }
+
+    // Removes `n` owners from a full list.
+    remove_trusted_owners {
+        // At least one owner: an empty list is refused.
+        let n in 1 .. MAX_TRUSTED_OWNERS;
+        let trusted = fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS);
+        let owners: BoundedVec<T::AccountId, MaxTrustedOwners> =
+            trusted.into_iter().take(n as usize).collect::<Vec<_>>().try_into()
+                .expect("within MAX_TRUSTED_OWNERS");
+    }: _(RawOrigin::Root, owners)
+    verify {
+        assert!(TrustedOwners::<T>::get().len() as u32 == MAX_TRUSTED_OWNERS - n);
     }
 
     active_proposal_expiry_status {
@@ -544,7 +624,7 @@ benchmarks! {
         let _ = queue_proposal::<T>(queued_proposal_id, 100u32);
     }: { let _ = Pallet::<T>::finalise_expired_voting(proposal_id, &active_proposal); }
     verify {
-        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
+        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Unresolved);
         assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
         assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
         assert!(ActiveInternalProposal::<T>::get().is_none());

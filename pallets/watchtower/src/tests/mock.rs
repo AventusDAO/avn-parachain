@@ -88,6 +88,16 @@ impl BenchmarkHelper<AccountId> for TestBenchmarkHelper {
         NODE_OWNERS.with(|owners| owners.borrow_mut().insert(*owner, nodes));
     }
 
+    fn set_node_owner(node: &AccountId, owner: &AccountId) {
+        // A node has one owner: take it from its previous owner first, or `get_node_owner`,
+        // which walks a `HashMap`, may find either owner.
+        NODE_OWNERS.with(|owners| {
+            let mut owners = owners.borrow_mut();
+            owners.values_mut().for_each(|nodes| nodes.retain(|n| n != node));
+            owners.entry(*owner).or_default().push(*node);
+        })
+    }
+
     fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
 
     fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
@@ -615,6 +625,29 @@ impl NodesInterface<AccountId, SignerId> for TestNodeManager {
             .find(|(o, _)| o == owner)
             .and_then(|(_, nodes)| nodes.get(index as usize).cloned())
     }
+
+    fn get_owner_nodes_count(owner: &AccountId) -> u32 {
+        committee_owners()
+            .into_iter()
+            .find(|(o, _)| o == owner)
+            .map_or(0, |(_, nodes)| nodes.len() as u32)
+    }
+
+    fn get_node_owner(node: &AccountId) -> Option<AccountId> {
+        NODE_OWNERS.with(|owners| {
+            owners
+                .borrow()
+                .iter()
+                .find(|(_, nodes)| nodes.contains(node))
+                .map(|(owner, _)| *owner)
+        })
+    }
+}
+
+/// Replaces who owns which nodes, as `(owner, nodes)`, for `is_watchtower_owner`,
+/// `get_watchtower_voting_weight` and `get_node_owner`.
+pub fn set_node_owners(owners: Vec<(AccountId, Vec<AccountId>)>) {
+    NODE_OWNERS.with(|o| *o.borrow_mut() = owners.into_iter().collect());
 }
 
 pub struct EnsureExternalProposerOrRoot;
@@ -650,8 +683,8 @@ pub struct Context {
     pub title: Vec<u8>,
     pub threshold: Perbill,
     pub source: ProposalSource,
-    /// `None` = the legacy rule for the source (`ExpireUnresolved` internally,
-    /// `SimpleMajorityOnExpiry` externally).
+    /// `None` = the legacy rule for the source (`ReportUnresolved` internally,
+    /// `SimpleMajority` externally).
     pub decision_rule: Option<DecisionRule>,
     pub external_ref: H256,
     pub created_at: u32,
@@ -690,8 +723,8 @@ impl Context {
 
     pub fn build_request(&self, payload: RawPayload, source: ProposalSource) -> ProposalRequest {
         let decision_rule = self.decision_rule.unwrap_or(match source {
-            ProposalSource::Internal(_) => DecisionRule::ExpireUnresolved,
-            ProposalSource::External => DecisionRule::SimpleMajorityOnExpiry,
+            ProposalSource::Internal(_) => DecisionRule::ReportUnresolved,
+            ProposalSource::External => DecisionRule::SimpleMajority,
         });
         ProposalRequest {
             title: self.title.clone(),

@@ -49,6 +49,13 @@ impl<T: Config> Pallet<T> {
         OwnerNodeIndex::<T>::get(owner, index)
     }
 
+    /// Number of `owner`'s nodes in the owner node index. 0 if the owner has none.
+    pub fn owner_node_count(owner: &T::AccountId) -> u32 {
+        OwnerIndexOf::<T>::get(owner)
+            .and_then(OwnerIndex::<T>::get)
+            .map_or(0, |entry| entry.nodes)
+    }
+
     /// Appends `node`, owned by `owner`, to the dense indexes. No-op if it is already indexed.
     pub(crate) fn index_insert(node: &NodeId<T>, owner: &T::AccountId) {
         if NodeIndexOf::<T>::contains_key(node) {
@@ -325,6 +332,26 @@ impl<T: Config> Pallet<T> {
             Self::index_insert(&node, &owner);
         }
         TotalRegisteredNodes::<T>::mutate(|total| *total = total.saturating_add(n));
+    }
+
+    /// Stores a registry entry making `owner` the owner of `node`, for benchmarks that look up
+    /// a node's owner (e.g. watchtower trusted votes). Indexes and counters are left alone.
+    #[cfg(feature = "runtime-benchmarks")]
+    pub fn benchmark_set_node_owner(node: &NodeId<T>, owner: &T::AccountId) {
+        use frame_benchmarking::account;
+        use sp_runtime::traits::Zero;
+
+        let signing_key: T::SignerId = account("owned_node_key", 0, 0);
+        let stake = StakeInfo::<BalanceOf<T>>::new(
+            Zero::zero(),
+            Zero::zero(),
+            None,
+            UnstakeRestriction::Locked,
+        );
+        NodeRegistry::<T>::insert(
+            node,
+            NodeInfo::new(owner.clone(), signing_key, 0, 0u64, false, stake),
+        );
     }
 
     /// Checks the dense index invariants. The registered-node count, which decides when the
