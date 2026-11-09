@@ -16,7 +16,7 @@ impl<T: Config> Pallet<T> {
         expired: bool,
     ) -> Option<ProposalStatusEnum> {
         let committee_size = ProposalCommitteeSize::<T>::get(proposal_id);
-        let needed = Self::needed_of(proposal, committee_size);
+        let needed = Self::votes_needed(proposal, committee_size);
         if VotingKindOf::<T>::get(proposal_id) == VotingKind::Choice {
             return Self::decide_choice(proposal_id, proposal, committee_size, needed, expired)
         }
@@ -31,12 +31,11 @@ impl<T: Config> Pallet<T> {
             }
         }
 
-        let cast = votes.in_favors.saturating_add(votes.againsts);
         if !Self::decision_rule_applies(
             proposal,
             committee_size,
             needed,
-            cast,
+            votes.cast(),
             votes.in_favors,
             expired,
         ) {
@@ -50,25 +49,11 @@ impl<T: Config> Pallet<T> {
         })
     }
 
-    /// Voters eligible for a proposal: the committee fixed at activation, else every node.
-    pub fn eligible_voters(proposal_id: ProposalId) -> u32 {
-        Self::eligible_of(ProposalCommitteeSize::<T>::get(proposal_id))
-    }
-
-    /// Votes one side (or one answer) needs to decide the proposal. `None` while nobody is
-    /// eligible.
-    pub fn votes_needed(proposal_id: ProposalId, proposal: &Proposal<T>) -> Option<u32> {
-        Self::needed_of(proposal, ProposalCommitteeSize::<T>::get(proposal_id))
-    }
-
-    /// `eligible_voters` for a proposal whose committee size is already read.
-    fn eligible_of(committee_size: Option<u32>) -> u32 {
-        committee_size.unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count)
-    }
-
-    /// `votes_needed` for a proposal whose committee size is already read.
-    fn needed_of(proposal: &Proposal<T>, committee_size: Option<u32>) -> Option<u32> {
-        let eligible = Self::eligible_of(committee_size);
+    /// Votes one side (or one answer) needs to decide a proposal with `committee_size`: a share
+    /// of the committee fixed at activation, else of every node. `None` while nobody is eligible.
+    fn votes_needed(proposal: &Proposal<T>, committee_size: Option<u32>) -> Option<u32> {
+        let eligible =
+            committee_size.unwrap_or_else(T::Watchtowers::get_authorized_watchtowers_count);
         if eligible == 0 {
             return None
         }
@@ -76,11 +61,12 @@ impl<T: Config> Pallet<T> {
     }
 
     /// True once the `DecisionRule` decides a proposal that has not reached its threshold, with
-    /// `cast` votes cast and `leading` votes for its leading side or answer:
+    /// `cast` votes cast, of which `towards_passing` count towards passing it (`in_favors` for
+    /// `Binary`, the leading answer's tally for `Choice`):
     /// - the voting period has ended (`expired`);
     /// - every seat of its committee has voted, so it can get no more votes;
-    /// - under `RejectUnresolved`, `leading` can no longer reach `needed` even if every seat left
-    ///   voted for it, so expiry would reject it anyway.
+    /// - under `RejectUnresolved`, `towards_passing` can no longer reach `needed` even if every
+    ///   seat left voted to pass, so expiry would reject it anyway.
     ///
     /// The last two only apply to committee proposals: without a committee more nodes may still
     /// register.
@@ -89,7 +75,7 @@ impl<T: Config> Pallet<T> {
         committee_size: Option<u32>,
         needed: Option<u32>,
         cast: u32,
-        leading: u32,
+        towards_passing: u32,
         expired: bool,
     ) -> bool {
         let Some(size) = committee_size else { return expired };
@@ -98,13 +84,14 @@ impl<T: Config> Pallet<T> {
             return true
         }
         proposal.decision_rule == DecisionRule::RejectUnresolved &&
-            needed.is_some_and(|needed| leading.saturating_add(seats_left) < needed)
+            needed.is_some_and(|needed| towards_passing.saturating_add(seats_left) < needed)
     }
 
     /// Decision for `Choice` proposals. The first answer whose tally reaches the threshold
     /// wins and is stored in `WinningChoice`, before or after expiry. Otherwise the decision
-    /// rule applies as for `Binary` (see `decision_rule_applies`), with the leading answer as the
-    /// leading side, and "majority" meaning the single answer with the most votes. Reads only
+    /// rule applies as for `Binary` (see `decision_rule_applies`), with the leading answer's
+    /// votes counting towards passing, and "majority" meaning the single answer with the most
+    /// votes. Reads only
     /// the running `ChoiceStandings`, so its cost does not grow with the number of distinct
     /// answers.
     fn decide_choice(

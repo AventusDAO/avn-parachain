@@ -136,10 +136,7 @@ impl<T: Config> Pallet<T> {
     /// of seats taken.
     pub(crate) fn votes_cast(proposal_id: ProposalId) -> u32 {
         match VotingKindOf::<T>::get(proposal_id) {
-            VotingKind::Binary => {
-                let votes = Votes::<T>::get(proposal_id);
-                votes.in_favors.saturating_add(votes.againsts)
-            },
+            VotingKind::Binary => Votes::<T>::get(proposal_id).cast(),
             VotingKind::Choice => ChoiceStandings::<T>::get(proposal_id).cast,
         }
     }
