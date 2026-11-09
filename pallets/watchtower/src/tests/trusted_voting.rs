@@ -524,9 +524,12 @@ mod turns {
             let (id, _, nodes) = owner_with_two_outside_nodes();
             let now = System::block_number();
 
-            for block in now..now + 4 {
-                let turn = nodes[(block % 2) as usize];
-                let other = nodes[((block + 1) % 2) as usize];
+            // Each node holds the turn for `TRUSTED_TURN_BLOCKS` blocks, then the other does.
+            let turn_blocks = TRUSTED_TURN_BLOCKS as u64;
+            for block in now..now + 4 * turn_blocks {
+                let slot = block / turn_blocks;
+                let turn = nodes[(slot % 2) as usize];
+                let other = nodes[((slot + 1) % 2) as usize];
                 // Both have a seat, but only the node whose turn it is should vote.
                 assert!(Watchtower::voter_seat(id, &other).is_ok());
                 assert!(Watchtower::may_vote_now(id, &turn, block), "block {}", block);
@@ -541,9 +544,9 @@ mod turns {
         ext.execute_with(|| {
             let (id, _, nodes) = owner_with_two_outside_nodes();
             let now = System::block_number();
-            assert_ok!(node_vote(nodes[(now % 2) as usize], id, true));
+            assert_ok!(node_vote(nodes[0], id, true));
 
-            for block in now..now + 2 {
+            for block in now..now + 2 * TRUSTED_TURN_BLOCKS as u64 {
                 assert!(!Watchtower::may_vote_now(id, &nodes[0], block));
                 assert!(!Watchtower::may_vote_now(id, &nodes[1], block));
             }
@@ -565,7 +568,7 @@ mod turns {
             open_window(id);
             let now = System::block_number();
 
-            for block in now..now + 2 {
+            for block in now..now + 2 * TRUSTED_TURN_BLOCKS as u64 {
                 assert!(Watchtower::may_vote_now(id, &committee[0], block));
                 assert!(Watchtower::may_vote_now(id, &committee[1], block));
             }

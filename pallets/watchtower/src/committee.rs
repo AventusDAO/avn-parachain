@@ -28,6 +28,11 @@ pub const COMMITTEE_RANDOMNESS_CONTEXT: &'static [u8] = b"wt_committee";
 /// Most committee seats one owner can hold, however many nodes they run.
 pub const MAX_SEATS_PER_OWNER: u32 = 1;
 
+/// Blocks each of a trusted owner's nodes holds the turn to vote. Long enough for a vote
+/// submitted at the start of a turn to usually be included before the next node's turn, so the
+/// next node sees the owner has voted instead of repeating the vote's work.
+pub const TRUSTED_TURN_BLOCKS: u32 = 2;
+
 // `seats_available` counts owners and `select_committee` draws one owner per seat. Both are
 // only right for one seat per owner: a larger cap needs the sum of `seats_for` over every
 // owner (kept as a counter by the node provider) and seats spread evenly over owners.
@@ -81,9 +86,10 @@ impl<T: Config> Pallet<T> {
     ///
     /// Every seat but `Trusted` belongs to one node, which votes whenever it has the seat. A
     /// trusted owner's nodes all get a `Trusted` seat, but only one vote counts, so they take
-    /// turns: in each block only the node at position `now % count` of the owner's node index
-    /// votes. Once its vote is in, the owner has voted and the others have no seat. Not
-    /// enforced on chain: a node voting out of turn only does work that may not count.
+    /// turns of `TRUSTED_TURN_BLOCKS` blocks: only the node at position
+    /// `(now / TRUSTED_TURN_BLOCKS) % count` of the owner's node index votes. Once its vote is
+    /// in, the owner has voted and the others have no seat. Not enforced on chain: a node voting
+    /// out of turn only does work that may not count.
     pub fn may_vote_now(
         proposal_id: ProposalId,
         node: &T::AccountId,
@@ -99,7 +105,8 @@ impl<T: Config> Pallet<T> {
     /// True if `node` is the one of `owner`'s nodes whose turn it is at block `now`.
     fn is_owner_turn(owner: &T::AccountId, node: &T::AccountId, now: BlockNumberFor<T>) -> bool {
         let count = T::Watchtowers::get_owner_nodes_count(owner);
-        let Some(turn) = now.saturated_into::<u32>().checked_rem(count) else { return false };
+        let slot = now.saturated_into::<u32>() / TRUSTED_TURN_BLOCKS;
+        let Some(turn) = slot.checked_rem(count) else { return false };
         T::Watchtowers::get_owner_node_at_index(owner, turn).as_ref() == Some(node)
     }
 
