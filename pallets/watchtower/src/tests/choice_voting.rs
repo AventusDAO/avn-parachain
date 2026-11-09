@@ -133,7 +133,7 @@ mod kinds {
     #[test]
     fn choice_votes_are_rejected_on_binary_proposals() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Binary, DecisionRule::ExpireUnresolved);
+            let id = active_proposal(VotingKind::Binary, DecisionRule::ReportUnresolved);
             let wt = watchtowers();
             assert!(!VotingKindOf::<TestRuntime>::contains_key(id), "binary is the default");
 
@@ -240,7 +240,7 @@ mod tally {
 
     #[test]
     fn only_reject_on_expiry_fails_early() {
-        for rule in [DecisionRule::ExpireUnresolved, DecisionRule::SimpleMajorityOnExpiry] {
+        for rule in [DecisionRule::ReportUnresolved, DecisionRule::SimpleMajorityOnExpiry] {
             ExtBuilder::build_default().as_externality().execute_with(|| {
                 let id = active_proposal(VotingKind::Choice, rule);
                 let wt = watchtowers();
@@ -352,7 +352,7 @@ mod tally {
                 ProposalStatusEnum::Resolved { passed: true },
                 Some(A),
             ),
-            (DecisionRule::ExpireUnresolved, ProposalStatusEnum::Expired, None),
+            (DecisionRule::ReportUnresolved, ProposalStatusEnum::Unresolved, None),
             (DecisionRule::RejectOnExpiry, ProposalStatusEnum::Resolved { passed: false }, None),
         ] {
             ExtBuilder::build_default().as_externality().execute_with(|| {
@@ -415,21 +415,21 @@ mod expiry {
     }
 
     #[test]
-    fn expire_unresolved_expires() {
+    fn report_unresolved_reports_unresolved() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::ExpireUnresolved);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::ReportUnresolved);
             let wt = watchtowers();
             assert_ok!(vote_choice(&wt[0], id, A));
 
             expire(id);
-            assert_eq!(status(id), ProposalStatusEnum::Expired);
+            assert_eq!(status(id), ProposalStatusEnum::Unresolved);
         });
     }
 
     #[test]
     fn an_answer_that_reaches_the_threshold_after_nodes_leave_wins() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::ExpireUnresolved);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::ReportUnresolved);
             let wt = watchtowers();
             // 4 of 10 is short of the 5 needed...
             for voter in &wt[..4] {

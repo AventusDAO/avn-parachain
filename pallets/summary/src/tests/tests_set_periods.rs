@@ -181,7 +181,7 @@ mod test_set_periods {
                 // Legacy default: no objection in time means accepted.
                 assert_eq!(
                     <ExternalValidationDecisionRule<TestRuntime>>::get(),
-                    DecisionRule::ExpireUnresolved
+                    DecisionRule::ReportUnresolved
                 );
 
                 let config =

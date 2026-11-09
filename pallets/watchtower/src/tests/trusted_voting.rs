@@ -60,7 +60,7 @@ fn activated(
     activated_with_rule(size, threshold, voting, None)
 }
 
-/// `activated` with a decision rule. `None` is the legacy rule (`ExpireUnresolved`).
+/// `activated` with a decision rule. `None` is the legacy rule (`ReportUnresolved`).
 fn activated_with_rule(
     size: u32,
     threshold: Perbill,
@@ -322,9 +322,9 @@ mod filling_seats {
             assert_ok!(node_vote(others[0], id, true));
 
             // 3 votes on a committee of 3: the outcome cannot change, so the decision rule
-            // (`ExpireUnresolved` here) applies at once. Neither another trusted owner nor the
+            // (`ReportUnresolved` here) applies at once. Neither another trusted owner nor the
             // member who has not voted gets a seat.
-            assert_eq!(status(id), ProposalStatusEnum::Expired);
+            assert_eq!(status(id), ProposalStatusEnum::Unresolved);
             for node in [others[1], committee[2]] {
                 assert!(matches!(
                     Watchtower::voter_seat(id, &node),

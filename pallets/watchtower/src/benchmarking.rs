@@ -20,7 +20,7 @@ fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::Runt
 /// The rule v0 proposals implicitly had for each source.
 fn legacy_decision_rule(is_internal: bool) -> DecisionRule {
     if is_internal {
-        DecisionRule::ExpireUnresolved
+        DecisionRule::ReportUnresolved
     } else {
         DecisionRule::SimpleMajorityOnExpiry
     }
@@ -168,7 +168,7 @@ fn setup_consumer_for_queued_proposal<T: Config>(proposal: &Proposal<T>, created
 fn set_proposal_to_remove<T: Config>(proposal_id: H256) {
     let proposal = create_proposal::<T>(1, 5u32.into(), Some(55u32.into()), true);
     Proposals::<T>::insert(proposal_id, &proposal);
-    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Expired);
+    ProposalStatus::<T>::insert(proposal_id, ProposalStatusEnum::Unresolved);
     Votes::<T>::insert(proposal_id, Vote { in_favors: 1, againsts: 0 });
     ProposalCommitteeSize::<T>::insert(proposal_id, 10u32);
     ProposalsToRemove::<T>::insert(proposal_id, ());
@@ -529,7 +529,7 @@ benchmarks! {
         let _ = queue_proposal::<T>(queued_proposal_id, 100u32);
     }: finalise_proposal(RawOrigin::Signed(signer), proposal_id)
     verify {
-        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
+        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Unresolved);
         assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
         // Finalisation no longer activates the next proposal; that is done by
         // `activate_next_proposal`.
@@ -624,7 +624,7 @@ benchmarks! {
         let _ = queue_proposal::<T>(queued_proposal_id, 100u32);
     }: { let _ = Pallet::<T>::finalise_expired_voting(proposal_id, &active_proposal); }
     verify {
-        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Expired);
+        assert!(ProposalStatus::<T>::get(proposal_id) == ProposalStatusEnum::Unresolved);
         assert!(ProposalsToRemove::<T>::contains_key(proposal_id));
         assert!(ProposalStatus::<T>::get(queued_proposal_id) == ProposalStatusEnum::Queued);
         assert!(ActiveInternalProposal::<T>::get().is_none());

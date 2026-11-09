@@ -924,16 +924,16 @@ mod decision_rules {
     }
 
     #[test]
-    fn expire_unresolved_keeps_the_legacy_internal_result() {
+    fn report_unresolved_keeps_the_legacy_internal_result() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             let id = submit_and_activate(
-                DecisionRule::ExpireUnresolved,
+                DecisionRule::ReportUnresolved,
                 ProposalSource::Internal(ProposalType::Summary),
             );
             assert_ok!(node_vote(watchtower_1(), id, true));
             expire();
-            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Expired);
+            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Unresolved);
         });
     }
 
@@ -992,13 +992,13 @@ mod decision_rules {
     }
 
     #[test]
-    fn external_proposals_can_expire_unresolved() {
+    fn external_proposals_can_end_unresolved() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            let id = submit_and_activate(DecisionRule::ExpireUnresolved, ProposalSource::External);
+            let id = submit_and_activate(DecisionRule::ReportUnresolved, ProposalSource::External);
             assert_ok!(owner_vote(watchtower_owner_1(), id, true));
             expire();
-            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Expired);
+            assert_eq!(status_after_expiry(id), ProposalStatusEnum::Unresolved);
         });
     }
 
@@ -1057,7 +1057,7 @@ mod migration {
             assert_eq!(new.proposer, Some(watchtower_owner_1()));
             assert_eq!(new.end_at, Some(11));
             assert_eq!(new.committee_size, None);
-            assert_eq!(new.decision_rule, DecisionRule::ExpireUnresolved);
+            assert_eq!(new.decision_rule, DecisionRule::ReportUnresolved);
             assert_eq!(Watchtower::on_chain_storage_version(), StorageVersion::new(1));
         });
     }
@@ -1127,11 +1127,11 @@ mod full_committee {
     }
 
     #[test]
-    fn the_last_seat_applies_expire_unresolved() {
+    fn the_last_seat_applies_report_unresolved() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
-            let id = split_vote(DecisionRule::ExpireUnresolved);
-            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Expired);
+            let id = split_vote(DecisionRule::ReportUnresolved);
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Unresolved);
             // Decided before the end of the voting period, and the active slot is free.
             let end_at = Proposals::<TestRuntime>::get(id).unwrap().end_at.unwrap();
             assert!(System::block_number() < end_at);

@@ -96,7 +96,7 @@ mod finalising_a_vote {
                 MinVotingPeriod::<TestRuntime>::get().saturated_into::<u32>() + 10u32;
             roll_forward(target_block.into());
 
-            assert_eq!(ProposalStatus::<TestRuntime>::get(p1), ProposalStatusEnum::Expired);
+            assert_eq!(ProposalStatus::<TestRuntime>::get(p1), ProposalStatusEnum::Unresolved);
             assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
             assert_eq!(ProposalStatus::<TestRuntime>::get(p2), ProposalStatusEnum::Queued);
             assert_eq!(queue_head(), Some(p2));

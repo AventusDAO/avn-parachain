@@ -37,7 +37,7 @@ impl<T: Config> Pallet<T> {
         }
 
         Some(match proposal.decision_rule {
-            DecisionRule::ExpireUnresolved => ProposalStatusEnum::Expired,
+            DecisionRule::ReportUnresolved => ProposalStatusEnum::Unresolved,
             DecisionRule::SimpleMajorityOnExpiry =>
                 ProposalStatusEnum::Resolved { passed: votes.in_favors > votes.againsts },
             DecisionRule::RejectOnExpiry => ProposalStatusEnum::Resolved { passed: false },
@@ -102,7 +102,7 @@ impl<T: Config> Pallet<T> {
         }
 
         Some(match proposal.decision_rule {
-            DecisionRule::ExpireUnresolved => ProposalStatusEnum::Expired,
+            DecisionRule::ReportUnresolved => ProposalStatusEnum::Unresolved,
             DecisionRule::RejectOnExpiry => ProposalStatusEnum::Resolved { passed: false },
             DecisionRule::SimpleMajorityOnExpiry => match best {
                 Some((answer, _)) if !tie_at_best => {
@@ -116,7 +116,7 @@ impl<T: Config> Pallet<T> {
 
     /// Outcome of a proposal whose voting period has ended.
     pub fn expiry_result(proposal_id: ProposalId, proposal: &Proposal<T>) -> ProposalStatusEnum {
-        Self::decide(proposal_id, proposal, true).unwrap_or(ProposalStatusEnum::Expired)
+        Self::decide(proposal_id, proposal, true).unwrap_or(ProposalStatusEnum::Unresolved)
     }
 
     pub fn finalise_expired_voting(

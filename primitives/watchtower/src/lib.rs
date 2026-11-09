@@ -83,9 +83,14 @@ pub enum ProposalType {
 pub enum ProposalStatusEnum {
     Queued,
     Active,
-    Resolved { passed: bool },
+    Resolved {
+        passed: bool,
+    },
     Cancelled,
-    Expired,
+    /// Voting ended without a decision under `DecisionRule::ReportUnresolved`: neither side
+    /// reached the threshold before the voting period ended or, for a committee proposal, before
+    /// every seat had voted.
+    Unresolved,
     Unknown,
 }
 
@@ -108,10 +113,10 @@ pub enum ProposalStatusEnum {
     Default,
 )]
 pub enum DecisionRule {
-    /// Report `Expired` and let the consumer decide what that means. The summary pallet treats
-    /// it as "no objection in time, accepted". Legacy default for internal proposals.
+    /// Report `Unresolved` and let the consumer decide what that means. The summary pallet
+    /// treats it as "no objection, accepted". Legacy default for internal proposals.
     #[default]
-    ExpireUnresolved,
+    ReportUnresolved,
     /// `Resolved { passed: in_favors > againsts }` over the votes actually cast. Legacy
     /// behaviour of external proposals.
     SimpleMajorityOnExpiry,

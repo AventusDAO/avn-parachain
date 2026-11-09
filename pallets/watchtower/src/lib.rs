@@ -352,7 +352,7 @@ pub mod pallet {
     #[pallet::storage] // next free slot to push
     pub type Tail<T: Config> = StorageValue<_, u64, ValueQuery>;
 
-    /// Completed or Expired proposals that need to be removed from storage.
+    /// Finished proposals that need to be removed from storage.
     #[pallet::storage]
     pub type ProposalsToRemove<T: Config> =
         StorageMap<_, Blake2_128Concat, ProposalId, (), OptionQuery>;

@@ -406,9 +406,9 @@ pub mod pallet {
     pub type ExternalValidationCommitteeSize<T: Config<I>, I: 'static = ()> =
         StorageValue<_, u32, OptionQuery>;
 
-    /// How a root's proposal is decided when its voting period ends without reaching the
-    /// threshold. The default, `ExpireUnresolved`, keeps the legacy behaviour: no objection in
-    /// time means accepted.
+    /// How a root's proposal is decided when voting ends without reaching the threshold: its
+    /// voting period ends or, with a committee, every seat has voted. The default,
+    /// `ReportUnresolved`, keeps the legacy behaviour: no objection means accepted.
     #[pallet::storage]
     pub type ExternalValidationDecisionRule<T: Config<I>, I: 'static = ()> =
         StorageValue<_, DecisionRule, ValueQuery>;
@@ -1627,7 +1627,7 @@ pub mod pallet {
             result: &ProposalStatusEnum,
         ) {
             if let Ok(root_id) = Self::get_root_id_by_external_ref(external_ref) {
-                if matches!(result, ProposalStatusEnum::Expired) ||
+                if matches!(result, ProposalStatusEnum::Unresolved) ||
                     matches!(result, ProposalStatusEnum::Resolved { passed: true })
                 {
                     let root_data = match Self::try_get_root_data(&root_id) {
