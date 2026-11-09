@@ -89,7 +89,13 @@ impl BenchmarkHelper<AccountId> for TestBenchmarkHelper {
     }
 
     fn set_node_owner(node: &AccountId, owner: &AccountId) {
-        NODE_OWNERS.with(|owners| owners.borrow_mut().entry(*owner).or_default().push(*node));
+        // A node has one owner: take it from its previous owner first, or `get_node_owner`,
+        // which walks a `HashMap`, may find either owner.
+        NODE_OWNERS.with(|owners| {
+            let mut owners = owners.borrow_mut();
+            owners.values_mut().for_each(|nodes| nodes.retain(|n| n != node));
+            owners.entry(*owner).or_default().push(*node);
+        })
     }
 
     fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
