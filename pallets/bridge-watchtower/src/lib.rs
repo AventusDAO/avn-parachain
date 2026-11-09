@@ -34,7 +34,8 @@ pub enum EventCheckFailure {
     RequestFailed,
     /// Watchtowers voted that the event does not match T1.
     Rejected,
-    /// The vote did not resolve in time.
+    /// The vote ended without either side reaching the threshold: the voting period ran out,
+    /// or every committee seat voted.
     Expired,
     /// The vote was cancelled, e.g. no committee could be selected.
     Cancelled,

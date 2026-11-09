@@ -7,11 +7,15 @@ impl<T: Config> Pallet<T> {
     /// after expiry: without a committee the eligible count is the live node count, which can
     /// drop after the last vote. Otherwise, once the voting period has ended (`expired`), the
     /// proposal's `DecisionRule` decides, so the result is always `Some` for an expired proposal.
+    /// A committee proposal whose seats have all voted is decided the same way without waiting
+    /// for the end of the period: it can get no more votes, so waiting would not change the
+    /// outcome.
     pub fn decide(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
         expired: bool,
     ) -> Option<ProposalStatusEnum> {
+        let expired = expired || Self::committee_full(proposal_id);
         if VotingKindOf::<T>::get(proposal_id) == VotingKind::Choice {
             return Self::decide_choice(proposal_id, proposal, expired)
         }

@@ -1089,3 +1089,65 @@ mod migration {
         });
     }
 }
+
+mod full_committee {
+    use super::*;
+
+    /// A committee of 3 at a 100% threshold, so no side decides before every seat has voted.
+    /// The members split 2 for, 1 against.
+    fn split_vote(rule: DecisionRule) -> ProposalId {
+        let context = Context {
+            committee_size: Some(3),
+            threshold: Perbill::one(),
+            decision_rule: Some(rule),
+            ..Context::default()
+        };
+        assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(vec![1])));
+        let id = ExternalRef::<TestRuntime>::get(&context.external_ref);
+        assert_ok!(activate(id));
+        let selected: Vec<AccountId> = members(id).into_iter().collect();
+
+        assert_ok!(node_vote(selected[0], id, true));
+        assert_ok!(node_vote(selected[1], id, true));
+        assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Active);
+        assert_ok!(node_vote(selected[2], id, false));
+        id
+    }
+
+    #[test]
+    fn the_last_seat_applies_simple_majority() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = split_vote(DecisionRule::SimpleMajorityOnExpiry);
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(id),
+                ProposalStatusEnum::Resolved { passed: true }
+            );
+        });
+    }
+
+    #[test]
+    fn the_last_seat_applies_expire_unresolved() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = split_vote(DecisionRule::ExpireUnresolved);
+            assert_eq!(ProposalStatus::<TestRuntime>::get(id), ProposalStatusEnum::Expired);
+            // Decided before the end of the voting period, and the active slot is free.
+            let end_at = Proposals::<TestRuntime>::get(id).unwrap().end_at.unwrap();
+            assert!(System::block_number() < end_at);
+            assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
+        });
+    }
+
+    #[test]
+    fn the_last_seat_applies_reject() {
+        let mut ext = ExtBuilder::build_default().as_externality();
+        ext.execute_with(|| {
+            let id = split_vote(DecisionRule::RejectOnExpiry);
+            assert_eq!(
+                ProposalStatus::<TestRuntime>::get(id),
+                ProposalStatusEnum::Resolved { passed: false }
+            );
+        });
+    }
+}

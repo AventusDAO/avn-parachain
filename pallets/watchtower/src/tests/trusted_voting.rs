@@ -307,7 +307,7 @@ mod filling_seats {
     }
 
     #[test]
-    fn no_vote_is_accepted_once_every_seat_is_taken() {
+    fn the_vote_that_takes_the_last_seat_decides_the_proposal() {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             set_owners(vec![]);
@@ -321,13 +321,20 @@ mod filling_seats {
             open_window(id);
             assert_ok!(node_vote(others[0], id, true));
 
-            // 3 votes on a committee of 3: neither another trusted owner nor the member who has
-            // not voted yet gets in.
+            // 3 votes on a committee of 3: the outcome cannot change, so the decision rule
+            // (`ExpireUnresolved` here) applies at once. Neither another trusted owner nor the
+            // member who has not voted gets a seat.
+            assert_eq!(status(id), ProposalStatusEnum::Expired);
             for node in [others[1], committee[2]] {
-                assert!(!Watchtower::voter_seat(id, &node).is_ok());
-                assert_noop!(node_vote(node, id, true), Error::<TestRuntime>::NoEmptySeat);
+                assert!(matches!(
+                    Watchtower::voter_seat(id, &node),
+                    Err(Error::<TestRuntime>::NoEmptySeat)
+                ));
+                assert_noop!(
+                    node_vote(node, id, true),
+                    Error::<TestRuntime>::InvalidProposalForUnsignedVote
+                );
             }
-            assert_eq!(status(id), ProposalStatusEnum::Active);
         });
     }
 
@@ -355,7 +362,7 @@ mod filling_seats {
             assert_eq!(status(id), ProposalStatusEnum::Resolved { passed: false });
             assert_noop!(
                 choice_vote(&committee[1], id, ANSWER),
-                Error::<TestRuntime>::ProposalNotActive
+                Error::<TestRuntime>::InvalidProposalForUnsignedVote
             );
         });
     }

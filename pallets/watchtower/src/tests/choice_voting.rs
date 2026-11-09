@@ -343,6 +343,49 @@ mod tally {
             assert_eq!(status(id), ProposalStatusEnum::Resolved { passed: true });
         });
     }
+
+    #[test]
+    fn the_rule_decides_once_every_seat_has_voted() {
+        for (rule, result, winner) in [
+            (
+                DecisionRule::SimpleMajorityOnExpiry,
+                ProposalStatusEnum::Resolved { passed: true },
+                Some(A),
+            ),
+            (DecisionRule::ExpireUnresolved, ProposalStatusEnum::Expired, None),
+            (DecisionRule::RejectOnExpiry, ProposalStatusEnum::Resolved { passed: false }, None),
+        ] {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                // 100% of 3: no answer wins unless every seat backs it.
+                let context = Context {
+                    voting: VotingKind::Choice,
+                    decision_rule: Some(rule),
+                    committee_size: Some(3),
+                    threshold: Perbill::one(),
+                    ..Default::default()
+                };
+                assert_ok!(Watchtower::submit_proposal(
+                    None,
+                    context.build_internal_request(b"x".to_vec())
+                ));
+                let id = activate_head();
+                let members: Vec<AccountId> = watchtowers()
+                    .into_iter()
+                    .filter(|w| ProposalCommittee::<TestRuntime>::contains_key(id, w))
+                    .collect();
+
+                assert_ok!(vote_choice(&members[0], id, A));
+                assert_ok!(vote_choice(&members[1], id, A));
+                assert_eq!(status(id), ProposalStatusEnum::Active, "{:?}", rule);
+
+                // The last seat cannot change the outcome any more, so the rule applies now
+                // rather than at the end of the voting period.
+                assert_ok!(vote_choice(&members[2], id, B));
+                assert_eq!(status(id), result, "{:?}", rule);
+                assert_eq!(Watchtower::winning_choice(id), winner, "{:?}", rule);
+            });
+        }
+    }
 }
 
 mod expiry {

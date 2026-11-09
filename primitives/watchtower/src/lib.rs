@@ -92,7 +92,8 @@ pub enum ProposalStatusEnum {
 /// How a proposal is decided.
 ///
 /// Either side holding `threshold` of the eligible voters always resolves the proposal early,
-/// whatever the rule. The rule says what happens when the voting period ends first.
+/// whatever the rule. The rule says what happens when neither does: when the voting period
+/// ends, or, for a committee proposal, as soon as every seat has voted.
 #[derive(
     Encode,
     Decode,
