@@ -419,8 +419,9 @@ pub mod pallet {
         TrustedOwnersAdded { owners: BoundedVec<T::AccountId, MaxTrustedOwners> },
         /// Root removed these owners from the trusted owners.
         TrustedOwnersRemoved { owners: BoundedVec<T::AccountId, MaxTrustedOwners> },
-        /// A trusted owner's node voted in a seat the committee left empty. Follows the vote's
-        /// `VoteSubmitted` or `ChoiceVoteSubmitted`.
+        /// A trusted owner's node outside the committee voted in a seat the committee left
+        /// empty. That can be the owner's own committee seat, if their committee node had not
+        /// voted. Follows the vote's `VoteSubmitted` or `ChoiceVoteSubmitted`.
         TrustedVoteCast { proposal_id: ProposalId, owner: T::AccountId, node: T::AccountId },
         /// The share of the voting period after which trusted owners may vote was updated.
         /// `None` means they may not vote.
@@ -519,6 +520,8 @@ pub mod pallet {
         TrustedVotingNotOpen,
         /// Every committee seat has been taken, so no further vote is accepted
         NoEmptySeat,
+        /// The list of owners is empty
+        NoTrustedOwnersGiven,
     }
 
     #[pallet::call]
@@ -853,7 +856,8 @@ pub mod pallet {
         /// Adds `owners` to the trusted owners. Trusted owners vote only once
         /// `TrustedVotingStart` is set.
         ///
-        /// Root only. Each entry must appear once, not be trusted already and own at least one
+        /// Root only. The list must not be empty. Each entry must appear once, not be trusted
+        /// already and own at least one
         /// watchtower node, and the list must stay within `MAX_TRUSTED_OWNERS`. Ownership is
         /// checked only here: an owner who later deregisters every node stays listed until
         /// removed, but cannot vote, as a trusted vote must come from a node they own.
@@ -864,7 +868,7 @@ pub mod pallet {
             owners: BoundedVec<T::AccountId, MaxTrustedOwners>,
         ) -> DispatchResult {
             ensure_root(origin)?;
-            Self::ensure_distinct(&owners)?;
+            Self::ensure_owner_list(&owners)?;
             ensure!(
                 owners.iter().all(T::Watchtowers::is_watchtower_owner),
                 Error::<T>::TrustedOwnerNotWatchtowerOwner
@@ -889,8 +893,8 @@ pub mod pallet {
 
         /// Removes `owners` from the trusted owners.
         ///
-        /// Root only. Each entry must appear once and be trusted. An owner need not still own a
-        /// node to be removed.
+        /// Root only. The list must not be empty. Each entry must appear once and be trusted. An
+        /// owner need not still own a node to be removed.
         #[pallet::call_index(12)]
         #[pallet::weight(<T as Config>::WeightInfo::remove_trusted_owners(owners.len() as u32))]
         pub fn remove_trusted_owners(
@@ -898,7 +902,7 @@ pub mod pallet {
             owners: BoundedVec<T::AccountId, MaxTrustedOwners>,
         ) -> DispatchResult {
             ensure_root(origin)?;
-            Self::ensure_distinct(&owners)?;
+            Self::ensure_owner_list(&owners)?;
 
             TrustedOwners::<T>::try_mutate(|trusted| -> DispatchResult {
                 for owner in owners.iter() {
@@ -1050,8 +1054,9 @@ pub mod pallet {
             Ok(<AdminAccount<T>>::get().ok_or(Error::<T>::AdminAccountNotSet)?)
         }
 
-        /// Fails if any owner is given more than once.
-        fn ensure_distinct(owners: &[T::AccountId]) -> DispatchResult {
+        /// Fails if `owners` is empty or gives any owner more than once.
+        fn ensure_owner_list(owners: &[T::AccountId]) -> DispatchResult {
+            ensure!(!owners.is_empty(), Error::<T>::NoTrustedOwnersGiven);
             let mut sorted = owners.to_vec();
             sorted.sort();
             ensure!(sorted.windows(2).all(|w| w[0] != w[1]), Error::<T>::DuplicateTrustedOwner);

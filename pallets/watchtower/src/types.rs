@@ -297,7 +297,8 @@ pub enum VoterSeat<AccountId> {
     /// cannot vote again as a trusted owner through another node.
     TrustedCommittee { owner: AccountId },
     /// The node's owner is trusted, the trusted voting window is open and the vote fills a seat
-    /// the committee left empty.
+    /// the committee left empty. That can be the owner's own committee seat, if their committee
+    /// node has not voted: a fallback for a committee node that is offline.
     Trusted { owner: AccountId },
 }
 

@@ -564,7 +564,8 @@ benchmarks! {
     // The list already holds `MAX_TRUSTED_OWNERS - n` owners, so after the call it is full.
     // Every new entry is checked against the node owners.
     add_trusted_owners {
-        let n in 0 .. MAX_TRUSTED_OWNERS;
+        // At least one owner: an empty list is refused.
+        let n in 1 .. MAX_TRUSTED_OWNERS;
         fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS - n);
         let owners: Vec<T::AccountId> = (0..n)
             .map(|i| {
@@ -582,7 +583,8 @@ benchmarks! {
 
     // Removes `n` owners from a full list.
     remove_trusted_owners {
-        let n in 0 .. MAX_TRUSTED_OWNERS;
+        // At least one owner: an empty list is refused.
+        let n in 1 .. MAX_TRUSTED_OWNERS;
         let trusted = fill_trusted_owners::<T>(MAX_TRUSTED_OWNERS);
         let owners: BoundedVec<T::AccountId, MaxTrustedOwners> =
             trusted.into_iter().take(n as usize).collect::<Vec<_>>().try_into()
