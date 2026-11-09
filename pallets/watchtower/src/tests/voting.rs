@@ -179,13 +179,13 @@ mod voting_on_proposals {
         #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External, ProposalStatusEnum::Resolved { passed: true }; "external_resolved_passed")]
         #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External, ProposalStatusEnum::Resolved { passed: false }; "external_resolved_failed")]
         #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External, ProposalStatusEnum::Cancelled; "external_cancelled")]
-        #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External, ProposalStatusEnum::Expired; "external_expired")]
+        #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External, ProposalStatusEnum::Unresolved; "external_expired")]
         #[test_case(RawPayload::Uri(b"test".to_vec()), ProposalSource::External, ProposalStatusEnum::Unknown; "external_unknown")]
         #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Queued; "internal_queued")]
         #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Resolved { passed: true }; "internal_resolved_passed")]
         #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Resolved { passed: false }; "internal_resolved_failed")]
         #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Cancelled; "internal_cancelled")]
-        #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Expired; "internal_expired")]
+        #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Unresolved; "internal_expired")]
         #[test_case(RawPayload::Inline(b"test".to_vec()), ProposalSource::Internal(ProposalType::Summary), ProposalStatusEnum::Unknown; "internal_unknown")]
         fn invalid_proposal_state(
             payload: RawPayload,
@@ -426,7 +426,7 @@ mod proposal_lifecycle {
 
             assert_eq!(
                 ProposalStatus::<TestRuntime>::get(proposal_id),
-                ProposalStatusEnum::Expired
+                ProposalStatusEnum::Unresolved
             );
             assert_eq!(ActiveInternalProposal::<TestRuntime>::get(), None);
             System::assert_last_event(Event::ProposalCleaned { proposal_id }.into());

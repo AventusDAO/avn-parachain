@@ -352,7 +352,7 @@ pub mod pallet {
     #[pallet::storage] // next free slot to push
     pub type Tail<T: Config> = StorageValue<_, u64, ValueQuery>;
 
-    /// Completed or Expired proposals that need to be removed from storage.
+    /// Finished proposals that need to be removed from storage.
     #[pallet::storage]
     pub type ProposalsToRemove<T: Config> =
         StorageMap<_, Blake2_128Concat, ProposalId, (), OptionQuery>;
@@ -1265,7 +1265,8 @@ pub mod pallet {
                 Some(VoterSeat::Open) | Some(VoterSeat::Committee) | None => {},
             }
 
-            // Expiry was handled above, so only an early decision is possible here.
+            // Expiry was handled above, so only an early decision is possible here: a side
+            // reaching the threshold, or a committee whose seats have all voted.
             if let Some(result) = Self::decide(proposal_id, &proposal, false) {
                 // Consensus has been reached, finalise voting
                 Self::finalise_voting(proposal_id, &proposal, result)?;

@@ -83,16 +83,22 @@ pub enum ProposalType {
 pub enum ProposalStatusEnum {
     Queued,
     Active,
-    Resolved { passed: bool },
+    Resolved {
+        passed: bool,
+    },
     Cancelled,
-    Expired,
+    /// Voting ended without a decision under `DecisionRule::ReportUnresolved`: neither side
+    /// reached the threshold before the voting period ended or, for a committee proposal, before
+    /// every seat had voted.
+    Unresolved,
     Unknown,
 }
 
 /// How a proposal is decided.
 ///
 /// Either side holding `threshold` of the eligible voters always resolves the proposal early,
-/// whatever the rule. The rule says what happens when the voting period ends first.
+/// whatever the rule. The rule says what happens when neither does: when the voting period
+/// ends, or, for a committee proposal, as soon as every seat has voted.
 #[derive(
     Encode,
     Decode,
@@ -107,15 +113,16 @@ pub enum ProposalStatusEnum {
     Default,
 )]
 pub enum DecisionRule {
-    /// Report `Expired` and let the consumer decide what that means. The summary pallet treats
-    /// it as "no objection in time, accepted". Legacy default for internal proposals.
+    /// Report `Unresolved` and let the consumer decide what that means. The summary pallet
+    /// treats it as "no objection, accepted". Legacy default for internal proposals.
     #[default]
-    ExpireUnresolved,
-    /// `Resolved { passed: in_favors > againsts }` over the votes actually cast. Legacy
-    /// behaviour of external proposals.
-    SimpleMajorityOnExpiry,
-    /// `Resolved { passed: false }`.
-    RejectOnExpiry,
+    ReportUnresolved,
+    /// `Resolved { passed: in_favors > againsts }` over the votes actually cast (for `Choice`,
+    /// the single answer with the most votes wins). Legacy behaviour of external proposals.
+    SimpleMajority,
+    /// `Resolved { passed: false }`. A committee proposal is rejected as soon as it can no
+    /// longer reach the threshold, without waiting for the voting period to end.
+    RejectUnresolved,
 }
 
 //implement default for ProposalStatusEnum to be Unknown

@@ -34,8 +34,9 @@ pub enum EventCheckFailure {
     RequestFailed,
     /// Watchtowers voted that the event does not match T1.
     Rejected,
-    /// The vote did not resolve in time.
-    Expired,
+    /// The vote ended without either side reaching the threshold: the voting period ran out,
+    /// or every committee seat voted.
+    Unresolved,
     /// The vote was cancelled, e.g. no committee could be selected.
     Cancelled,
     /// The vote ended with a status that is not a result.
@@ -356,8 +357,9 @@ pub mod pallet {
                 payload: RawPayload::Inline(event.encode()),
                 threshold: T::EventCheckThreshold::get(),
                 source: ProposalSource::Internal(ProposalType::IncomingEvent),
-                // Expiry still disables lowering, but is reported apart from a rejection
-                decision_rule: DecisionRule::ExpireUnresolved,
+                // An unresolved vote still disables lowering, but is reported apart from a
+                // rejection
+                decision_rule: DecisionRule::ReportUnresolved,
                 external_ref,
                 created_at: frame_system::Pallet::<T>::block_number().saturated_into::<u32>(),
                 vote_duration: None,
@@ -471,7 +473,7 @@ pub mod pallet {
                     return
                 },
                 ProposalStatusEnum::Resolved { passed: false } => EventCheckFailure::Rejected,
-                ProposalStatusEnum::Expired => EventCheckFailure::Expired,
+                ProposalStatusEnum::Unresolved => EventCheckFailure::Unresolved,
                 ProposalStatusEnum::Cancelled => EventCheckFailure::Cancelled,
                 // Never reported as a result. The check is over either way, so fail safe.
                 ProposalStatusEnum::Queued |

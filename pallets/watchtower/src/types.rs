@@ -244,6 +244,14 @@ pub struct Vote {
     pub againsts: u32,
 }
 
+impl Vote {
+    /// Votes cast so far. On a committee proposal node votes weigh 1, so it is also the number
+    /// of seats taken.
+    pub fn cast(&self) -> u32 {
+        self.in_favors.saturating_add(self.againsts)
+    }
+}
+
 /// Running totals of a `Choice` proposal, updated with every answer so deciding the proposal
 /// never iterates `ChoiceTally`.
 #[derive(

@@ -677,8 +677,8 @@ pub struct Context {
     pub title: Vec<u8>,
     pub threshold: Perbill,
     pub source: ProposalSource,
-    /// `None` = the legacy rule for the source (`ExpireUnresolved` internally,
-    /// `SimpleMajorityOnExpiry` externally).
+    /// `None` = the legacy rule for the source (`ReportUnresolved` internally,
+    /// `SimpleMajority` externally).
     pub decision_rule: Option<DecisionRule>,
     pub external_ref: H256,
     pub created_at: u32,
@@ -717,8 +717,8 @@ impl Context {
 
     pub fn build_request(&self, payload: RawPayload, source: ProposalSource) -> ProposalRequest {
         let decision_rule = self.decision_rule.unwrap_or(match source {
-            ProposalSource::Internal(_) => DecisionRule::ExpireUnresolved,
-            ProposalSource::External => DecisionRule::SimpleMajorityOnExpiry,
+            ProposalSource::Internal(_) => DecisionRule::ReportUnresolved,
+            ProposalSource::External => DecisionRule::SimpleMajority,
         });
         ProposalRequest {
             title: self.title.clone(),

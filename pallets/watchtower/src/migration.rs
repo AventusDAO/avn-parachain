@@ -36,8 +36,8 @@ pub mod v1 {
     impl DecisionRuleV0 {
         pub fn into_v1(self, source: &ProposalSource) -> DecisionRule {
             match source {
-                ProposalSource::Internal(_) => DecisionRule::ExpireUnresolved,
-                ProposalSource::External => DecisionRule::SimpleMajorityOnExpiry,
+                ProposalSource::Internal(_) => DecisionRule::ReportUnresolved,
+                ProposalSource::External => DecisionRule::SimpleMajority,
             }
         }
     }

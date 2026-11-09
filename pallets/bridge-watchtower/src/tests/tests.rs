@@ -18,7 +18,7 @@ fn make_proposal(source: ProposalSource, external_ref: H256) -> Proposal<TestRun
         payload: Payload::Inline(BoundedVec::try_from(b"payload".to_vec()).unwrap()),
         threshold: Perbill::from_percent(50),
         source,
-        decision_rule: DecisionRule::ExpireUnresolved,
+        decision_rule: DecisionRule::ReportUnresolved,
         external_ref,
         proposer: None,
         created_at: 1,
@@ -476,7 +476,7 @@ mod event_check {
             assert_eq!(request.external_ref, external_ref());
             assert_eq!(request.payload, RawPayload::Inline(event.encode()));
             assert_eq!(request.source, ProposalSource::Internal(ProposalType::IncomingEvent));
-            assert_eq!(request.decision_rule, DecisionRule::ExpireUnresolved);
+            assert_eq!(request.decision_rule, DecisionRule::ReportUnresolved);
             assert_eq!(request.threshold, Perbill::from_percent(51));
             assert_eq!(request.committee_size, Some(20));
             assert_eq!(request.voting, VotingKind::Binary);
@@ -615,7 +615,7 @@ mod event_check {
     fn unpassed_vote_disables_lowering() {
         for (status, reason) in [
             (ProposalStatusEnum::Resolved { passed: false }, EventCheckFailure::Rejected),
-            (ProposalStatusEnum::Expired, EventCheckFailure::Expired),
+            (ProposalStatusEnum::Unresolved, EventCheckFailure::Unresolved),
             (ProposalStatusEnum::Cancelled, EventCheckFailure::Cancelled),
             (ProposalStatusEnum::Queued, EventCheckFailure::UnexpectedResult),
             (ProposalStatusEnum::Active, EventCheckFailure::UnexpectedResult),

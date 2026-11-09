@@ -16,7 +16,7 @@ fn make_proposal(created_at: u64, root_id: RootId<u64>, root_hash: H256) -> Prop
         payload: Payload::Inline(BoundedVec::try_from(payload_bytes).unwrap()),
         threshold: Perbill::from_percent(50),
         source: ProposalSource::Internal(ProposalType::Summary),
-        decision_rule: DecisionRule::ExpireUnresolved,
+        decision_rule: DecisionRule::ReportUnresolved,
         external_ref: H256::repeat_byte(0xaa),
         proposer: None,
         created_at,
@@ -52,7 +52,7 @@ mod process_new_proposal {
                 payload: Payload::Inline(inline_payload),
                 threshold: Perbill::from_percent(60),
                 source: ProposalSource::Internal(ProposalType::Summary),
-                decision_rule: DecisionRule::ExpireUnresolved,
+                decision_rule: DecisionRule::ReportUnresolved,
                 external_ref: H256::repeat_byte(0xaa),
                 proposer: None,
                 created_at: 5u64,
@@ -276,7 +276,7 @@ mod on_voting {
             SummaryWatchtower::on_voting_completed(
                 proposal_id,
                 &proposal.external_ref,
-                &ProposalStatusEnum::Expired,
+                &ProposalStatusEnum::Unresolved,
             );
             // assert its cleared
             assert_eq!(RootInfo::<TestRuntime>::get(), None);
