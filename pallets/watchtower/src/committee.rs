@@ -28,17 +28,120 @@ pub const COMMITTEE_RANDOMNESS_CONTEXT: &'static [u8] = b"wt_committee";
 /// Most committee seats one owner can hold, however many nodes they run.
 pub const MAX_SEATS_PER_OWNER: u32 = 1;
 
+/// Blocks each of a trusted owner's nodes holds the turn to vote. Long enough for a vote
+/// submitted at the start of a turn to usually be included before the next node's turn, so the
+/// next node sees the owner has voted instead of repeating the vote's work.
+pub const TRUSTED_TURN_BLOCKS: u32 = 2;
+
 // `seats_available` counts owners and `select_committee` draws one owner per seat. Both are
 // only right for one seat per owner: a larger cap needs the sum of `seats_for` over every
 // owner (kept as a counter by the node provider) and seats spread evenly over owners.
 const _: () = assert!(MAX_SEATS_PER_OWNER == 1, "committee selection assumes one seat per owner");
 
 impl<T: Config> Pallet<T> {
-    /// True if `who` may vote on `proposal_id` as far as committee membership is concerned.
-    /// Proposals without a committee accept every node.
-    pub fn is_committee_member(proposal_id: ProposalId, who: &T::AccountId) -> bool {
-        !ProposalCommitteeSize::<T>::contains_key(proposal_id) ||
-            ProposalCommittee::<T>::contains_key(proposal_id, who)
+    /// The seat `node` would vote from on `proposal_id` at the current block, or why it cannot
+    /// vote. Shared by the transaction pool, the vote itself and the consumers' offchain
+    /// workers, so they agree on who may vote.
+    ///
+    /// A committee proposal takes at most as many votes as its committee has seats, members'
+    /// and trusted owners' alike: once trusted votes have filled the empty seats, a member who
+    /// had not voted is refused.
+    ///
+    /// A trusted owner votes once per proposal: through a committee seat or as a trusted owner,
+    /// not both.
+    pub fn voter_seat(
+        proposal_id: ProposalId,
+        node: &T::AccountId,
+    ) -> Result<VoterSeat<T::AccountId>, Error<T>> {
+        let Some(committee_size) = ProposalCommitteeSize::<T>::get(proposal_id) else {
+            return Ok(VoterSeat::Open)
+        };
+        let trusted_owner = Self::trusted_owner_of(node);
+
+        if ProposalCommittee::<T>::contains_key(proposal_id, node) {
+            if let Some(owner) = &trusted_owner {
+                ensure!(
+                    !TrustedVoters::<T>::contains_key(proposal_id, owner),
+                    Error::<T>::AlreadyVoted
+                );
+            }
+            ensure!(Self::votes_cast(proposal_id) < committee_size, Error::<T>::NoEmptySeat);
+            return Ok(match trusted_owner {
+                Some(owner) => VoterSeat::TrustedCommittee { owner },
+                None => VoterSeat::Committee,
+            })
+        }
+
+        let owner = trusted_owner.ok_or(Error::<T>::NotInCommitteeOrTrusted)?;
+        ensure!(Self::trusted_voting_open(proposal_id), Error::<T>::TrustedVotingNotOpen);
+        ensure!(!TrustedVoters::<T>::contains_key(proposal_id, &owner), Error::<T>::AlreadyVoted);
+        ensure!(Self::votes_cast(proposal_id) < committee_size, Error::<T>::NoEmptySeat);
+
+        Ok(VoterSeat::Trusted { owner })
+    }
+
+    /// True if `node` should vote on `proposal_id` in the offchain worker run for block `now`.
+    /// For offchain workers deciding whether to do a vote's work; the pool refuses votes from
+    /// nodes without a seat.
+    ///
+    /// Every seat but `Trusted` belongs to one node, which votes whenever it has the seat. A
+    /// trusted owner's nodes all get a `Trusted` seat, but only one vote counts, so they take
+    /// turns of `TRUSTED_TURN_BLOCKS` blocks: only the node at position
+    /// `(now / TRUSTED_TURN_BLOCKS) % count` of the owner's node index votes. Once its vote is
+    /// in, the owner has voted and the others have no seat. Not enforced on chain: a node voting
+    /// out of turn only does work that may not count.
+    pub fn may_vote_now(
+        proposal_id: ProposalId,
+        node: &T::AccountId,
+        now: BlockNumberFor<T>,
+    ) -> bool {
+        match Self::voter_seat(proposal_id, node) {
+            Ok(VoterSeat::Trusted { owner }) => Self::is_owner_turn(&owner, node, now),
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// True if `node` is the one of `owner`'s nodes whose turn it is at block `now`.
+    fn is_owner_turn(owner: &T::AccountId, node: &T::AccountId, now: BlockNumberFor<T>) -> bool {
+        let count = T::Watchtowers::get_owner_nodes_count(owner);
+        let slot = now.saturated_into::<u32>() / TRUSTED_TURN_BLOCKS;
+        let Some(turn) = slot.checked_rem(count) else { return false };
+        T::Watchtowers::get_owner_node_at_index(owner, turn).as_ref() == Some(node)
+    }
+
+    /// `node`'s owner, if that owner is trusted.
+    fn trusted_owner_of(node: &T::AccountId) -> Option<T::AccountId> {
+        let trusted = TrustedOwners::<T>::get();
+        if trusted.is_empty() {
+            return None
+        }
+        T::Watchtowers::get_node_owner(node).filter(|owner| trusted.binary_search(owner).is_ok())
+    }
+
+    /// True once trusted owners may vote on `proposal_id`: `TrustedVotingStart` of its voting
+    /// period, counted from activation, has passed.
+    pub(crate) fn trusted_voting_open(proposal_id: ProposalId) -> bool {
+        let Some(start) = TrustedVotingStart::<T>::get() else { return false };
+        let Some(proposal) = Proposals::<T>::get(proposal_id) else { return false };
+        let Some(end_at) = proposal.end_at else { return false };
+
+        // Activation sets `end_at` to the activation block plus `vote_duration`.
+        let activated_at = end_at.saturating_sub(proposal.vote_duration.into());
+        let opens_at = activated_at.saturating_add(start.mul_ceil(proposal.vote_duration).into());
+        <frame_system::Pallet<T>>::block_number() >= opens_at
+    }
+
+    /// Votes cast on a committee proposal so far. Node votes weigh 1, so it is also the number
+    /// of seats taken.
+    pub(crate) fn votes_cast(proposal_id: ProposalId) -> u32 {
+        match VotingKindOf::<T>::get(proposal_id) {
+            VotingKind::Binary => {
+                let votes = Votes::<T>::get(proposal_id);
+                votes.in_favors.saturating_add(votes.againsts)
+            },
+            VotingKind::Choice => ChoiceStandings::<T>::get(proposal_id).cast,
+        }
     }
 
     /// Checks that a committee of exactly `size` members can be built right now. The bounds

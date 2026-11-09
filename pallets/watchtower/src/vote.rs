@@ -57,11 +57,13 @@ impl<T: Config> Pallet<T> {
     }
 
     /// Decision for `Choice` proposals. The first answer whose tally reaches the threshold
-    /// wins and is stored in `WinningChoice`, before or after expiry. If no answer can still
-    /// get there with the votes left, the proposal fails early. Otherwise on expiry the
-    /// decision rule applies, where "majority" means the single answer with the most votes. Reads
-    /// only the running `ChoiceStandings`, so its cost does not grow with the number of
-    /// distinct answers.
+    /// wins and is stored in `WinningChoice`, before or after expiry. Under `RejectOnExpiry`,
+    /// a proposal where no answer can still get there with the votes left fails early, since
+    /// expiry would reject it anyway. Otherwise on expiry the decision rule applies, where
+    /// "majority" means the single answer with the most votes. The other rules do not fail
+    /// early: they can still pass or expire a proposal that misses the threshold. Reads only
+    /// the running `ChoiceStandings`, so its cost does not grow with the number of distinct
+    /// answers.
     fn decide_choice(
         proposal_id: ProposalId,
         proposal: &Proposal<T>,
@@ -81,6 +83,9 @@ impl<T: Config> Pallet<T> {
         }
 
         if !expired {
+            if proposal.decision_rule != DecisionRule::RejectOnExpiry {
+                return None
+            }
             let Some(needed) = needed else { return None };
             if let Some((_, tally)) = best {
                 // Even if every remaining voter backed the leader it would fall short.

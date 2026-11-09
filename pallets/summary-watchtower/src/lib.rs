@@ -136,11 +136,13 @@ pub mod pallet {
                     return
                 }
 
-                // Only committee members may vote; the pool would reject the vote anyway, so
-                // skip the root validation work on nodes that were not selected.
-                if !pallet_watchtower::Pallet::<T>::is_committee_member(proposal_id, &watchtower) {
+                // Only nodes with a seat may vote: committee members, and trusted owners' nodes
+                // once the trusted voting window opens, one node per owner at a time. The pool
+                // would reject the vote of a node without a seat anyway, so skip the root
+                // validation work on nodes that should not vote now.
+                if !pallet_watchtower::Pallet::<T>::may_vote_now(proposal_id, &watchtower, now) {
                     log::debug!(
-                        "🛠️  Node {:?} is not in the committee for proposal {:?}, skipping validation.",
+                        "🛠️  Node {:?} should not vote on proposal {:?} now, skipping..",
                         watchtower,
                         proposal_id
                     );

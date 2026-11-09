@@ -239,6 +239,23 @@ mod tally {
     }
 
     #[test]
+    fn only_reject_on_expiry_fails_early() {
+        for rule in [DecisionRule::ExpireUnresolved, DecisionRule::SimpleMajorityOnExpiry] {
+            ExtBuilder::build_default().as_externality().execute_with(|| {
+                let id = active_proposal(VotingKind::Choice, rule);
+                let wt = watchtowers();
+
+                // Needed 5 of 10. After seven distinct answers no answer can get there, but
+                // expiry under this rule can still pass or expire the proposal, so it waits.
+                for i in 0..7 {
+                    assert_ok!(vote_choice(&wt[i], id, H256::repeat_byte(i as u8 + 1)));
+                }
+                assert_eq!(status(id), ProposalStatusEnum::Active, "{:?}", rule);
+            });
+        }
+    }
+
+    #[test]
     fn standing_tracks_the_leader_ties_and_votes_cast() {
         let mut standing = ChoiceStanding::default();
         standing.record(A, 1, 1);
@@ -315,7 +332,7 @@ mod tally {
             let id = activate_head();
             let members: Vec<AccountId> = watchtowers()
                 .into_iter()
-                .filter(|w| Watchtower::is_committee_member(id, w))
+                .filter(|w| ProposalCommittee::<TestRuntime>::contains_key(id, w))
                 .collect();
             assert_eq!(members.len(), 4);
 

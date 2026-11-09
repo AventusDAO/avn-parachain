@@ -152,8 +152,8 @@ mod selection {
 
             assert_eq!(committee_size(id), None);
             assert!(members(id).is_empty());
-            assert!(Watchtower::is_committee_member(id, &watchtower_1()));
-            assert!(Watchtower::is_committee_member(id, &random_user()));
+            assert_eq!(Watchtower::voter_seat(id, &watchtower_1()).ok(), Some(VoterSeat::Open));
+            assert_eq!(Watchtower::voter_seat(id, &random_user()).ok(), Some(VoterSeat::Open));
         });
     }
 }
@@ -653,7 +653,7 @@ mod voting {
                         _ => unreachable!(),
                     }
                 ),
-                Error::<TestRuntime>::NotInCommittee
+                Error::<TestRuntime>::NotInCommitteeOrTrusted
             );
 
             // A member's unsigned vote is accepted.

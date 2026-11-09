@@ -179,6 +179,13 @@ pub trait NodesInterface<AccountId, SignerId> {
     /// Node at `index` among `owner`'s indexed nodes, for `index` below the count returned by
     /// `get_owner_at_index`.
     fn get_owner_node_at_index(owner: &AccountId, index: u32) -> Option<AccountId>;
+
+    /// Number of `owner`'s indexed nodes: `get_owner_node_at_index` returns a node for every
+    /// index below it. 0 if the owner has none.
+    fn get_owner_nodes_count(owner: &AccountId) -> u32;
+
+    /// Owner of a registered node. `None` if `node` is not registered.
+    fn get_node_owner(node: &AccountId) -> Option<AccountId>;
 }
 
 /// Runtime-provided setup for benchmarks, so they measure the real storage work of the
@@ -195,6 +202,10 @@ pub trait BenchmarkHelper<AccountId> {
     /// `is_watchtower_owner` holds and `get_watchtower_voting_weight` returns `nodes`.
     fn setup_owner(owner: &AccountId, nodes: u32);
 
+    /// Registers `node` as owned by `owner`, so that `get_node_owner(node)` reads a stored entry
+    /// and returns `owner`.
+    fn set_node_owner(node: &AccountId, owner: &AccountId);
+
     /// Makes the consumers recognise `external_ref` as a proposal they are waiting on, with
     /// `payload` being the consumer-specific encoded payload such a proposal carries. After
     /// this, the completion hooks do their real work for that proposal.
@@ -209,6 +220,7 @@ pub trait BenchmarkHelper<AccountId> {
 impl<AccountId> BenchmarkHelper<AccountId> for () {
     fn setup_nodes(_n: u32) {}
     fn setup_owner(_owner: &AccountId, _nodes: u32) {}
+    fn set_node_owner(_node: &AccountId, _owner: &AccountId) {}
     fn setup_consumer_proposal(_external_ref: H256, _payload: Vec<u8>) {}
     fn consumer_proposal_cancelled(_external_ref: H256) -> bool {
         true
@@ -272,6 +284,22 @@ impl ChoiceStanding {
             self.tied = true;
         }
     }
+}
+
+/// Why a node may vote on a proposal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VoterSeat<AccountId> {
+    /// The proposal has no committee, so every node votes.
+    Open,
+    /// The node holds a committee seat and its owner is not trusted.
+    Committee,
+    /// The node holds a committee seat and its owner is trusted. The owner is recorded so they
+    /// cannot vote again as a trusted owner through another node.
+    TrustedCommittee { owner: AccountId },
+    /// The node's owner is trusted, the trusted voting window is open and the vote fills a seat
+    /// the committee left empty. That can be the owner's own committee seat, if their committee
+    /// node has not voted: a fallback for a committee node that is offline.
+    Trusted { owner: AccountId },
 }
 
 #[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq, DecodeWithMemTracking)]

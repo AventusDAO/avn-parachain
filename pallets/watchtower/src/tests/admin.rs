@@ -230,6 +230,14 @@ mod trusted_owners {
         }
 
         #[test]
+        fn rejects_an_empty_list() {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                assert_noop!(add(vec![]), Error::<TestRuntime>::NoTrustedOwnersGiven);
+            });
+        }
+
+        #[test]
         fn rejects_duplicates() {
             let mut ext = ExtBuilder::build_default().as_externality();
             ext.execute_with(|| {
@@ -326,6 +334,15 @@ mod trusted_owners {
                     ),
                     DispatchError::BadOrigin
                 );
+            });
+        }
+
+        #[test]
+        fn rejects_an_empty_list() {
+            let mut ext = ExtBuilder::build_default().as_externality();
+            ext.execute_with(|| {
+                assert_ok!(add(vec![watchtower_owner_1()]));
+                assert_noop!(remove(vec![]), Error::<TestRuntime>::NoTrustedOwnersGiven);
             });
         }
 
