@@ -22,7 +22,7 @@ fn legacy_decision_rule(is_internal: bool) -> DecisionRule {
     if is_internal {
         DecisionRule::ReportUnresolved
     } else {
-        DecisionRule::SimpleMajorityOnExpiry
+        DecisionRule::SimpleMajority
     }
 }
 

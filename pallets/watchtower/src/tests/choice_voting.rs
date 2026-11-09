@@ -84,6 +84,25 @@ fn active_proposal(voting: VotingKind, decision_rule: DecisionRule) -> ProposalI
     activate_head()
 }
 
+/// Submits and activates an internal `Choice` proposal with a committee of 5 at a 60% threshold,
+/// so an answer needs 3 votes. Returns the proposal and its members.
+fn active_committee_proposal(decision_rule: DecisionRule) -> (ProposalId, Vec<AccountId>) {
+    let context = Context {
+        voting: VotingKind::Choice,
+        decision_rule: Some(decision_rule),
+        committee_size: Some(5),
+        threshold: Perbill::from_percent(60),
+        ..Default::default()
+    };
+    assert_ok!(Watchtower::submit_proposal(None, context.build_internal_request(b"x".to_vec())));
+    let id = activate_head();
+    let members = watchtowers()
+        .into_iter()
+        .filter(|w| ProposalCommittee::<TestRuntime>::contains_key(id, w))
+        .collect();
+    (id, members)
+}
+
 fn status(id: ProposalId) -> ProposalStatusEnum {
     ProposalStatus::<TestRuntime>::get(id)
 }
@@ -94,7 +113,7 @@ mod kinds {
     #[test]
     fn binary_votes_are_rejected_on_choice_proposals() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
             assert_eq!(VotingKindOf::<TestRuntime>::get(id), VotingKind::Choice);
 
@@ -155,7 +174,7 @@ mod tally {
     fn first_answer_to_reach_the_threshold_wins() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             reset_hook_state();
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
 
             // A, B, A, B, A, A: A reaches 4, not yet 5.
@@ -207,7 +226,7 @@ mod tally {
     #[test]
     fn a_lone_first_answer_cannot_block_the_majority() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
 
             // A malicious first voter names B; five honest voters name A.
@@ -223,36 +242,50 @@ mod tally {
     #[test]
     fn fails_early_once_no_answer_can_reach_the_threshold() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
-            let wt = watchtowers();
+            let (id, members) = active_committee_proposal(DecisionRule::RejectUnresolved);
 
-            // Needed 5 of 10. After six distinct answers the leader has 1 and 4 voters remain:
-            // still possible. After the seventh, 1 + 3 < 5: hopeless.
-            for i in 0..6 {
-                assert_ok!(vote_choice(&wt[i], id, H256::repeat_byte(i as u8 + 1)));
+            // Needed 3 of 5. After three distinct answers the leader has 1 and 2 seats are left:
+            // still possible. After the fourth, 1 + 1 < 3: hopeless.
+            for i in 0..3 {
+                assert_ok!(vote_choice(&members[i], id, H256::repeat_byte(i as u8 + 1)));
                 assert_eq!(status(id), ProposalStatusEnum::Active, "vote {}", i);
             }
-            assert_ok!(vote_choice(&wt[6], id, H256::repeat_byte(7)));
+            assert_ok!(vote_choice(&members[3], id, H256::repeat_byte(4)));
             assert_eq!(status(id), ProposalStatusEnum::Resolved { passed: false });
             assert_eq!(Watchtower::winning_choice(id), None);
         });
     }
 
     #[test]
-    fn only_reject_on_expiry_fails_early() {
-        for rule in [DecisionRule::ReportUnresolved, DecisionRule::SimpleMajorityOnExpiry] {
+    fn only_reject_unresolved_fails_early() {
+        for rule in [DecisionRule::ReportUnresolved, DecisionRule::SimpleMajority] {
             ExtBuilder::build_default().as_externality().execute_with(|| {
-                let id = active_proposal(VotingKind::Choice, rule);
-                let wt = watchtowers();
+                let (id, members) = active_committee_proposal(rule);
 
-                // Needed 5 of 10. After seven distinct answers no answer can get there, but
-                // expiry under this rule can still pass or expire the proposal, so it waits.
-                for i in 0..7 {
-                    assert_ok!(vote_choice(&wt[i], id, H256::repeat_byte(i as u8 + 1)));
+                // Needed 3 of 5. After four distinct answers no answer can get there, but the
+                // rule can still pass or leave the proposal unresolved, so it waits for the last
+                // seat or the end of the period.
+                for i in 0..4 {
+                    assert_ok!(vote_choice(&members[i], id, H256::repeat_byte(i as u8 + 1)));
                 }
                 assert_eq!(status(id), ProposalStatusEnum::Active, "{:?}", rule);
             });
         }
+    }
+
+    #[test]
+    fn proposals_without_a_committee_do_not_fail_early() {
+        ExtBuilder::build_default().as_externality().execute_with(|| {
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
+            let wt = watchtowers();
+
+            // Needed 5 of 10. After seven distinct answers no answer could get there with the
+            // nodes registered now, but more nodes may register before the end of the period.
+            for i in 0..7 {
+                assert_ok!(vote_choice(&wt[i], id, H256::repeat_byte(i as u8 + 1)));
+            }
+            assert_eq!(status(id), ProposalStatusEnum::Active);
+        });
     }
 
     #[test]
@@ -298,7 +331,7 @@ mod tally {
     #[test]
     fn standing_matches_the_tallies() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
             let c = H256::repeat_byte(0xcc);
 
@@ -321,7 +354,7 @@ mod tally {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             let context = Context {
                 voting: VotingKind::Choice,
-                decision_rule: Some(DecisionRule::RejectOnExpiry),
+                decision_rule: Some(DecisionRule::RejectUnresolved),
                 committee_size: Some(4),
                 ..Default::default()
             };
@@ -347,13 +380,9 @@ mod tally {
     #[test]
     fn the_rule_decides_once_every_seat_has_voted() {
         for (rule, result, winner) in [
-            (
-                DecisionRule::SimpleMajorityOnExpiry,
-                ProposalStatusEnum::Resolved { passed: true },
-                Some(A),
-            ),
+            (DecisionRule::SimpleMajority, ProposalStatusEnum::Resolved { passed: true }, Some(A)),
             (DecisionRule::ReportUnresolved, ProposalStatusEnum::Unresolved, None),
-            (DecisionRule::RejectOnExpiry, ProposalStatusEnum::Resolved { passed: false }, None),
+            (DecisionRule::RejectUnresolved, ProposalStatusEnum::Resolved { passed: false }, None),
         ] {
             ExtBuilder::build_default().as_externality().execute_with(|| {
                 // 100% of 3: no answer wins unless every seat backs it.
@@ -401,9 +430,9 @@ mod expiry {
     }
 
     #[test]
-    fn reject_on_expiry_fails() {
+    fn reject_unresolved_fails() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
             assert_ok!(vote_choice(&wt[0], id, A));
             assert_ok!(vote_choice(&wt[1], id, A));
@@ -448,7 +477,7 @@ mod expiry {
     #[test]
     fn simple_majority_picks_the_plurality_and_fails_ties() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::SimpleMajorityOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::SimpleMajority);
             let wt = watchtowers();
             assert_ok!(vote_choice(&wt[0], id, A));
             assert_ok!(vote_choice(&wt[1], id, A));
@@ -468,7 +497,7 @@ mod expiry {
         });
 
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::SimpleMajorityOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::SimpleMajority);
             let wt = watchtowers();
             assert_ok!(vote_choice(&wt[0], id, A));
             assert_ok!(vote_choice(&wt[1], id, B));
@@ -485,7 +514,7 @@ mod cleanup {
     #[test]
     fn tallies_and_outcome_are_removed_with_the_proposal() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
             assert_ok!(vote_choice(&wt[0], id, B));
             for i in 1..=5 {
@@ -513,7 +542,7 @@ mod filter {
     fn filter_sees_the_answer_and_can_reject_it() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
             reset_hook_state();
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
 
             assert_ok!(vote_choice(&wt[0], id, A));
@@ -533,7 +562,7 @@ mod filter {
     #[test]
     fn bad_signatures_never_reach_the_pool() {
         ExtBuilder::build_default().as_externality().execute_with(|| {
-            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectOnExpiry);
+            let id = active_proposal(VotingKind::Choice, DecisionRule::RejectUnresolved);
             let wt = watchtowers();
 
             // Signed for answer A, submitted for B.

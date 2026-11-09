@@ -117,11 +117,12 @@ pub enum DecisionRule {
     /// treats it as "no objection, accepted". Legacy default for internal proposals.
     #[default]
     ReportUnresolved,
-    /// `Resolved { passed: in_favors > againsts }` over the votes actually cast. Legacy
-    /// behaviour of external proposals.
-    SimpleMajorityOnExpiry,
-    /// `Resolved { passed: false }`.
-    RejectOnExpiry,
+    /// `Resolved { passed: in_favors > againsts }` over the votes actually cast (for `Choice`,
+    /// the single answer with the most votes wins). Legacy behaviour of external proposals.
+    SimpleMajority,
+    /// `Resolved { passed: false }`. A committee proposal is rejected as soon as it can no
+    /// longer reach the threshold, without waiting for the voting period to end.
+    RejectUnresolved,
 }
 
 //implement default for ProposalStatusEnum to be Unknown

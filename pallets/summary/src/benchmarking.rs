@@ -850,12 +850,12 @@ mod benchmarks {
 
     #[benchmark]
     fn set_external_validation_decision_rule() {
-        let config = AdminConfig::ExternalValidationDecisionRule(DecisionRule::RejectOnExpiry);
+        let config = AdminConfig::ExternalValidationDecisionRule(DecisionRule::RejectUnresolved);
 
         #[extrinsic_call]
         set_admin_config(RawOrigin::Root, config);
 
-        assert!(<ExternalValidationDecisionRule<T, I>>::get() == DecisionRule::RejectOnExpiry);
+        assert!(<ExternalValidationDecisionRule<T, I>>::get() == DecisionRule::RejectUnresolved);
     }
 
     #[benchmark]

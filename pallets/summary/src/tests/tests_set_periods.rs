@@ -185,15 +185,15 @@ mod test_set_periods {
                 );
 
                 let config =
-                    AdminConfig::ExternalValidationDecisionRule(DecisionRule::RejectOnExpiry);
+                    AdminConfig::ExternalValidationDecisionRule(DecisionRule::RejectUnresolved);
                 assert_ok!(Summary::set_admin_config(RawOrigin::Root.into(), config));
                 assert_eq!(
                     <ExternalValidationDecisionRule<TestRuntime>>::get(),
-                    DecisionRule::RejectOnExpiry
+                    DecisionRule::RejectUnresolved
                 );
                 System::assert_last_event(
                     crate::Event::<TestRuntime>::ExternalValidationDecisionRuleSet {
-                        new_rule: DecisionRule::RejectOnExpiry,
+                        new_rule: DecisionRule::RejectUnresolved,
                     }
                     .into(),
                 );

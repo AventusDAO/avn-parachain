@@ -343,12 +343,12 @@ mod filling_seats {
         let mut ext = ExtBuilder::build_default().as_externality();
         ext.execute_with(|| {
             set_owners(vec![]);
-            // 100% of 3: every seat must back the same answer. Only `RejectOnExpiry` fails early.
+            // 100% of 3: every seat must back the same answer. Only `RejectUnresolved` fails early.
             let (id, committee, others) = activated_with_rule(
                 3,
                 Perbill::one(),
                 VotingKind::Choice,
-                Some(DecisionRule::RejectOnExpiry),
+                Some(DecisionRule::RejectUnresolved),
             );
             trust(vec![others[0], others[1]]);
             set_start(Some(Perbill::from_percent(50)));
