@@ -29,7 +29,7 @@ pallet-avn.workspace = true
 # Optional imports for benchmarking
 frame-benchmarking = { optional = true, workspace = true }
 
-# serde = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
 [dev-dependencies]
 parking_lot.workspace = true
 sp-keystore = { default-features = true, workspace = true }
@@ -38,7 +38,7 @@ sp-avn-common = { workspace = true, default-features = true, features=["test-uti
 [features]
 default = ['std']
 std = [
-    # "serde/std",
+    "serde/std",
 	"scale-info/std",
     "frame-benchmarking?/std",
     'codec/std',
